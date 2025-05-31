@@ -11,14 +11,6 @@ PyRC is a terminal-based IRC client written in Python. It allows users to connec
 - User interface managed in the terminal
 - Configurable settings
 - **Logging**: Application events, errors, and IRC communications are logged to files in the `logs/` directory. Log behavior (e.g., level, file size) is configurable in [`pyterm_irc_config.ini`](./pyterm_irc_config.ini:0).
-- **Context Management**: Robust handling of different chat windows (server status, channels, private messages) via a dedicated `ContextManager`.
-- **UI Consistency**: Sidebar, message window, and status bar consistently reflect the active chat context.
-
-## Recent Changes (May 2025)
-
-- **Context Management Refactoring**: The core logic for managing different chat contexts (server status, channels, private messages) was centralized into `context_manager.py`. This involved updating `irc_client_logic.py` and `irc_protocol.py` to use the new `ContextManager`, ensuring cleaner separation of concerns.
-- **UI Consistency Fixes**: Resolved issues where different parts of the UI (sidebar user list vs. main message window/status bar) could show information for different active contexts. The UI now consistently uses a snapshot of the active context for each refresh cycle.
-- **Bug Fixes**: Addressed various minor bugs, including a double-printing issue for messages and several Pylance-reported errors related to attribute access and indentation.
 
 ### Command Shortcuts
 

@@ -1238,3 +1238,362 @@ AttributeError: 'IRCClient_Logic' object has no attribute 'contexts'
 2025-05-31 02:51:19,367 - pyrc.context - WARNING - Context #testchannel already exists, not creating.
 2025-05-31 02:51:19,367 - pyrc.protocol - INFO - RPL_TOPIC for #testchannel: Do your worst, testing of all sorts encouraged!...
 2025-05-31 02:51:19,367 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #testchannel. User count: 4
+2025-05-31 02:53:54,285 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:54:01,273 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:54:16,685 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:54:19,791 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:54:27,771 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:54:31,945 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:54:35,452 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:54:52,543 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:54:53,346 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:55:07,886 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:55:10,276 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:55:42,131 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:55:48,593 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:56:11,032 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:56:18,057 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:56:22,773 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:56:50,082 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:56:50,334 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:56:54,629 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:57:26,991 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:57:31,947 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:58:16,840 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:58:18,481 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:58:34,007 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:58:38,868 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:58:46,450 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:58:52,260 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:59:00,164 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:59:08,155 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:59:17,257 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:59:42,689 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:59:44,633 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:00:22,569 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:00:29,094 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:00:49,448 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:00:51,258 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:00:54,030 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:01:05,891 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:01:14,020 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:01:42,088 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:01:54,127 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:02:00,619 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:02:11,560 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:02:41,162 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:02:41,538 - pyrc - INFO - Logging initialized.
+2025-05-31 03:02:41,538 - pyrc - INFO - PyRC application started.
+2025-05-31 03:02:41,552 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:02:41,552 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:02:41,552 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:02:41,552 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:02:41,552 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:02:41,553 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:02:42,067 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:02:42,067 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:02:42,268 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :platinum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:02:42,268 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :platinum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:02:42,268 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :platinum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:02:48,117 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** No Ident response'. Raw: :platinum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:02:48,117 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :platinum.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 03:02:48,118 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 03:02:48,311 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: +Ziw
+2025-05-31 03:02:52,714 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:03:05,719 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:03:06,673 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 03:03:06,847 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 03:03:06,948 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38
+2025-05-31 03:03:22,326 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:03:28,239 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:03:29,373 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:03:53,799 - pyrc.command_handler - INFO - Processing command: /clear with args: ''
+2025-05-31 03:04:06,127 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:04:32,861 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:04:34,229 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:04:42,161 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:05:00,304 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:05:04,785 - pyrc.command_handler - INFO - Processing command: /nick with args: 'testerr'
+2025-05-31 03:05:04,858 - pyrc.protocol - INFO - Our nick changed from PyTermUser_ to testerr.
+2025-05-31 03:05:05,140 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:05:09,402 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:05:27,623 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:05:27,996 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:05:53,348 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:06:26,483 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:06:37,676 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:06:43,420 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:06:44,876 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:06:44,876 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:06:44,876 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:06:44,876 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:06:44,877 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:06:44,877 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:06:44,877 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:06:44,878 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:06:44,878 - pyrc - INFO - PyRC exited.
+2025-05-31 03:06:46,904 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:01,563 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:12,465 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:15,474 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:20,380 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:32,693 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:33,802 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:46,840 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:48,856 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:07:56,430 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:08:13,152 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:08:41,480 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:08:44,859 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:08:56,211 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:09:06,174 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:09:16,498 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:09:28,740 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:09:30,333 - pyrc - INFO - Logging initialized.
+2025-05-31 03:09:30,333 - pyrc - INFO - PyRC application started.
+2025-05-31 03:09:30,347 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:09:30,347 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:09:30,348 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:09:30,348 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:09:30,348 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:09:30,349 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:09:31,258 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:09:31,259 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:09:31,441 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :platinum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:09:31,441 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :platinum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:09:34,224 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :platinum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:09:37,070 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** No Ident response'. Raw: :platinum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:09:37,171 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :platinum.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 03:09:37,171 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 03:09:37,524 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: +Ziw
+2025-05-31 03:09:54,286 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:09:57,083 - pyrc.command_handler - INFO - Processing command: /ccc with args: ''
+2025-05-31 03:10:00,082 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:10:06,085 - pyrc.command_handler - INFO - Processing command: /join with args: 'test'
+2025-05-31 03:10:06,317 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 03:10:06,506 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38
+2025-05-31 03:10:12,490 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:10:15,790 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:10:17,571 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:13:43,366 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:14:18,952 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:14:18,952 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:14:18,953 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:14:18,953 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:14:18,953 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:14:18,954 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:14:18,954 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:14:18,954 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:14:18,954 - pyrc - INFO - PyRC exited.
+2025-05-31 03:14:29,373 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:14:30,163 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:14:54,654 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:14:58,604 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:15:15,574 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:15:24,550 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:15:26,479 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:15:35,039 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:15:50,864 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:15:51,673 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 03:15:59,710 - pyrc.ui - ERROR - Terminal too small for UI layout: H=2, W=193. Required H>2, W>30.
+2025-05-31 03:15:59,710 - pyrc.logic - CRITICAL - Unhandled exception in main client loop: Terminal too small to initialize UI.
+Traceback (most recent call last):
+  File "C:\Users\Administrator\ideas\pyRC\irc_client_logic.py", line 324, in run_main_loop
+    new_active_channel_name = channel_context_names[new_idx]
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyRC\input_handler.py", line 36, in handle_key_press
+    ui.setup_layout()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\Administrator\ideas\pyRC\ui_manager.py", line 125, in setup_layout
+    logger.debug("Message window created.")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    
+    self.sidebar_win = curses.newwin(
+    ^
+Exception: Terminal too small to initialize UI.
+2025-05-31 03:15:59,733 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:15:59,733 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:15:59,733 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:15:59,733 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:15:59,734 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:15:59,734 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:15:59,734 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:15:59,735 - pyrc - INFO - PyRC exited.
+2025-05-31 03:17:59,863 - pyrc - INFO - Logging initialized.
+2025-05-31 03:17:59,863 - pyrc - INFO - PyRC application started.
+2025-05-31 03:17:59,876 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:17:59,876 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:17:59,876 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:17:59,876 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:17:59,876 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:17:59,877 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:18:00,316 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:18:00,316 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:18:00,316 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:18:00,384 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'mercury.libera.chat': P='*' T=':*** Checking Ident'. Raw: :mercury.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:18:00,384 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'mercury.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :mercury.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:18:00,384 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'mercury.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :mercury.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:18:07,039 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'mercury.libera.chat': P='*' T=':*** No Ident response'. Raw: :mercury.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:18:07,251 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: :+Ziw
+2025-05-31 03:18:09,469 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 03:18:13,097 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 03:18:13,142 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38. Current joined: {'#test'}
+2025-05-31 03:18:18,416 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:18:22,585 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:18:24,974 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:26:15,168 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:26:15,169 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:26:15,169 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:26:15,169 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:26:15,169 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:26:15,170 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:26:15,170 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:26:15,171 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:26:15,171 - pyrc - INFO - PyRC exited.
+2025-05-31 03:26:22,396 - pyrc - INFO - Logging initialized.
+2025-05-31 03:26:22,396 - pyrc - INFO - PyRC application started.
+2025-05-31 03:26:22,409 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:26:22,409 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:26:22,410 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:26:22,410 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:26:22,410 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:26:22,410 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:26:23,103 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:26:23,104 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:26:23,104 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:26:23,274 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :osmium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:26:23,274 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :osmium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:26:23,274 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :osmium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:26:28,270 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** No Ident response'. Raw: :osmium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:26:28,330 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: :+Ziw
+2025-05-31 03:26:39,357 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 03:26:39,676 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 03:26:39,841 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38. Current joined: {'#test'}
+2025-05-31 03:26:45,069 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:26:45,070 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:26:45,070 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:26:45,070 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:26:45,070 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:26:45,071 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:26:45,071 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:26:45,071 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:26:45,071 - pyrc - INFO - PyRC exited.
+2025-05-31 03:26:47,535 - pyrc - INFO - Logging initialized.
+2025-05-31 03:26:47,535 - pyrc - INFO - PyRC application started.
+2025-05-31 03:26:47,548 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:26:47,548 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:26:47,549 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:26:47,549 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:26:47,549 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:26:47,550 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:26:47,954 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:26:47,954 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:26:47,954 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:26:48,208 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :osmium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:26:48,208 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :osmium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:26:48,209 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :osmium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:26:50,857 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 03:26:53,393 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** No Ident response'. Raw: :osmium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:26:53,585 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: :+Ziw
+2025-05-31 03:26:59,311 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 03:26:59,618 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38. Current joined: {'#test'}
+2025-05-31 03:27:18,799 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:27:22,003 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:27:27,287 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:28:17,493 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:28:17,493 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:28:17,493 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:28:17,493 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:28:17,494 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:28:17,495 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:28:17,495 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:28:17,495 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:28:17,495 - pyrc - INFO - PyRC exited.
+2025-05-31 03:28:19,534 - pyrc - INFO - Logging initialized.
+2025-05-31 03:28:19,535 - pyrc - INFO - PyRC application started.
+2025-05-31 03:28:19,548 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:28:19,548 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:28:19,548 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:28:19,548 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:28:19,548 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:28:19,549 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:28:20,164 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:28:20,165 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:28:20,165 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:28:20,309 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :osmium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:28:20,309 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :osmium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:28:20,310 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :osmium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:28:26,265 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'osmium.libera.chat': P='*' T=':*** No Ident response'. Raw: :osmium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:28:26,463 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: :+Ziw
+2025-05-31 03:28:33,557 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:28:36,964 - pyrc.command_handler - INFO - Processing command: /ccc with args: ''
+2025-05-31 03:28:54,961 - pyrc.command_handler - INFO - Processing command: /j with args: 'new'
+2025-05-31 03:28:55,235 - pyrc.protocol - INFO - Successfully joined channel: #new
+2025-05-31 03:28:55,336 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #new. User count: 2. Current joined: {'#new'}
+2025-05-31 03:29:57,880 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:29:57,881 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:29:57,881 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:29:57,881 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:29:57,881 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:29:57,882 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:29:57,882 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:29:57,882 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:29:57,883 - pyrc - INFO - PyRC exited.
+2025-05-31 03:30:01,266 - pyrc - INFO - Logging initialized.
+2025-05-31 03:30:01,266 - pyrc - INFO - PyRC application started.
+2025-05-31 03:30:01,279 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:30:01,279 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:30:01,279 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:30:01,279 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:30:01,279 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:30:01,280 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:30:02,003 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:30:02,003 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:30:02,004 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:30:02,153 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Checking Ident'. Raw: :copper.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:30:02,153 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :copper.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:30:02,153 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :copper.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:30:07,455 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** No Ident response'. Raw: :copper.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:30:07,522 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: :+Ziw
+2025-05-31 03:30:28,534 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 03:30:28,709 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 03:30:30,137 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1813. Current joined: {'#libera'}
+2025-05-31 03:32:42,601 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:32:42,601 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:32:42,601 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:32:42,601 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:32:42,601 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:32:42,602 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:32:42,602 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:32:42,603 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:32:42,603 - pyrc - INFO - PyRC exited.
+2025-05-31 03:34:20,492 - pyrc - INFO - Logging initialized.
+2025-05-31 03:34:20,493 - pyrc - INFO - PyRC application started.
+2025-05-31 03:34:20,507 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:34:20,507 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:34:20,508 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:34:20,508 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:34:20,508 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:34:20,509 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:34:20,808 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:34:20,808 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:34:20,809 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:34:20,923 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :tantalum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:34:20,924 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :tantalum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:34:20,924 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :tantalum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:34:26,693 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** No Ident response'. Raw: :tantalum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:34:26,731 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: :+Ziw
+2025-05-31 03:34:30,243 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 03:34:32,619 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 03:34:32,620 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38. Current joined: {'#test'}
+2025-05-31 03:34:34,467 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:34:44,283 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:34:44,283 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:34:44,283 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:34:44,284 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:34:44,284 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:34:44,285 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:34:44,285 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:34:44,285 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:34:44,285 - pyrc - INFO - PyRC exited.

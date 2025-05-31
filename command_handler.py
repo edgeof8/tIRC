@@ -45,6 +45,12 @@ class CommandHandler:
             "/s",
             "/disconnect",
             "/clear",
+            "/next", "/nextwindow",
+            "/prev", "/prevwindow",
+            "/win", "/window",
+            "/close", "/wc", "/partchannel",
+            "/cyclechannel", "/cc", # Added
+            "/prevchannel", "/pc",   # Added
         ]
 
     def _handle_topic_command(self, args_str: str):
@@ -91,27 +97,26 @@ class CommandHandler:
                 return
             new_topic = args_str  # The whole arg string is the new topic
 
-        # target_channel_ctx_name is guaranteed to be a string here due to initial check or assignment from topic_parts[0]
-        self.client.context_manager.create_context(
-            target_channel_ctx_name, context_type="channel"
-        )
+        if target_channel_ctx_name.startswith("#"):
+             self.client.context_manager.create_context(
+                target_channel_ctx_name, context_type="channel"
+            )
 
         if new_topic is not None:
             self.client.network.send_raw(
                 f"TOPIC {target_channel_ctx_name} :{new_topic}"
             )
-        else:  # Requesting topic
+        else:
             self.client.network.send_raw(f"TOPIC {target_channel_ctx_name}")
 
     def _handle_connect_command(self, args_str: str):
-        from config import DEFAULT_PORT, DEFAULT_SSL_PORT  # Local import is fine here
+        from config import DEFAULT_PORT, DEFAULT_SSL_PORT
 
         conn_args = args_str.split()
         if not conn_args:
             self.client.add_message(
                 "Usage: /connect <server[:port]> [ssl|nossl]",
                 self.client.ui.colors["error"],
-                # active_context_name can be None, add_message handles it by defaulting to its active or "Status"
                 context_name=self.client.context_manager.active_context_name,
             )
             return
@@ -124,7 +129,7 @@ class CommandHandler:
                 self.client.add_message(
                     f"Invalid port: {port_str}",
                     self.client.ui.colors["error"],
-                    context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                    context_name=self.client.context_manager.active_context_name,
                 )
                 return
         if len(conn_args) > 1:
@@ -155,13 +160,18 @@ class CommandHandler:
         logger.debug("Clearing existing contexts for new server connection.")
         status_context = self.client.context_manager.get_context("Status")
         current_status_msgs = list(status_context.messages) if status_context else []
+        status_scroll_offset = status_context.scrollback_offset if status_context and hasattr(status_context, 'scrollback_offset') else 0
 
-        self.client.context_manager.contexts.clear()  # Direct access for full clear, or add a clear_all_contexts method
+
+        self.client.context_manager.contexts.clear()
         self.client.context_manager.create_context("Status", context_type="status")
         new_status_context = self.client.context_manager.get_context("Status")
         if new_status_context:
             for msg_tuple in current_status_msgs:
                 new_status_context.add_message(msg_tuple[0], msg_tuple[1])
+            if hasattr(new_status_context, 'scrollback_offset'):
+                new_status_context.scrollback_offset = status_scroll_offset
+
         logger.debug(
             f"Restored {len(current_status_msgs)} messages to 'Status' context."
         )
@@ -179,7 +189,7 @@ class CommandHandler:
         logger.info(
             f"Set active context to '{self.client.context_manager.active_context_name}' after server change."
         )
-        self.client.ui_needs_update.set()  # Ensure UI updates
+        self.client.ui_needs_update.set()
         self.client.network.update_connection_params(
             self.client.server, self.client.port, self.client.use_ssl
         )
@@ -195,7 +205,7 @@ class CommandHandler:
             if command in ["/quit", "/q"]:
                 self.client.should_quit = True
                 quit_message = args if args else "Client quitting"
-                if self.client.network.connected:  # Only send QUIT if connected
+                if self.client.network.connected:
                     self.client.network.send_raw(f"QUIT :{quit_message}")
                 logger.info(f"QUIT command processed with message: {quit_message}")
                 self.client.add_message(
@@ -209,28 +219,27 @@ class CommandHandler:
                     if not new_channel_target.startswith("#"):
                         new_channel_target = "#" + new_channel_target
 
-                    # Optional: Part current active channel if it's different and a channel type
                     current_active_ctx_name_for_join = (
                         self.client.context_manager.active_context_name
                     )
-                    if (
-                        current_active_ctx_name_for_join
-                    ):  # Only proceed if there is an active context
-                        active_ctx = self.client.context_manager.get_context(
-                            current_active_ctx_name_for_join
-                        )
-                        if (
-                            current_active_ctx_name_for_join.startswith(
-                                "#"
-                            )  # Check str type implicitly
-                            and current_active_ctx_name_for_join.lower()
-                            != new_channel_target.lower()
-                            and active_ctx
-                            and active_ctx.type == "channel"
-                        ):
-                            self.client.network.send_raw(
-                                f"PART {current_active_ctx_name_for_join} :Changing channels"
-                            )
+                    # Auto-parting logic removed for now based on previous decision
+                    # if (
+                    #     current_active_ctx_name_for_join
+                    # ):
+                    #     active_ctx = self.client.context_manager.get_context(
+                    #         current_active_ctx_name_for_join
+                    #     )
+                    #     if (
+                    #         current_active_ctx_name_for_join.startswith("#")
+                    #         and current_active_ctx_name_for_join.lower()
+                    #         != new_channel_target.lower()
+                    #         and active_ctx
+                    #         and active_ctx.type == "channel"
+                    #     ):
+                    #         # self.client.network.send_raw(
+                    #         #     f"PART {current_active_ctx_name_for_join} :Changing channels"
+                    #         # )
+                    #         pass
 
                     if self.client.context_manager.create_context(
                         new_channel_target, context_type="channel"
@@ -242,33 +251,36 @@ class CommandHandler:
                     self.client.add_message(
                         f"Attempting to join {new_channel_target}...",
                         self.client.ui.colors["system"],
-                        context_name=new_channel_target,
+                        context_name=new_channel_target, # Message to the new channel context
                     )
+                    # Optionally switch to the new channel context immediately
+                    self.client.switch_active_context(new_channel_target)
+
                 else:
                     logger.warning("JOIN command issued with no arguments.")
                     self.client.add_message(
                         "Usage: /join #channel",
                         self.client.ui.colors["error"],
-                        context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                        context_name=self.client.context_manager.active_context_name,
                     )
             elif command in ["/part", "/p"]:
                 current_active_ctx_name = (
                     self.client.context_manager.active_context_name
                 )
-                target_part_channel = current_active_ctx_name  # Default to current
+                target_part_channel = current_active_ctx_name
                 part_message = "Leaving"
                 part_args_parts = args.split(" ", 1)
 
-                if args and args.startswith("#"):  # /part #channel [message]
+                if args and args.startswith("#"):
                     target_part_channel = part_args_parts[0]
                     if len(part_args_parts) > 1:
                         part_message = part_args_parts[1]
-                elif args:  # /part [message for current channel]
+                elif args: # /part message for current channel
                     part_message = args
 
                 if (
                     not target_part_channel
-                ):  # Check if target_part_channel could be None
+                ):
                     self.client.add_message(
                         "No active window to part from.",
                         self.client.ui.colors["error"],
@@ -283,6 +295,7 @@ class CommandHandler:
                     self.client.network.send_raw(
                         f"PART {target_part_channel} :{part_message}"
                     )
+                    # Message about parting will be added to the channel context by protocol handler for self-part
                 else:
                     self.client.add_message(
                         f"Cannot part: '{target_part_channel}' is not a channel or you are not in it.",
@@ -300,14 +313,14 @@ class CommandHandler:
                     self.client.add_message(
                         "Usage: /nick <new_nickname>",
                         self.client.ui.colors["error"],
-                        context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                        context_name=self.client.context_manager.active_context_name,
                     )
             elif command in ["/msg", "/query", "/m"]:
                 msg_parts = args.split(" ", 1)
                 if len(msg_parts) == 2:
                     target_nick, message = msg_parts
                     self.client.network.send_raw(f"PRIVMSG {target_nick} :{message}")
-                    query_context_name = f"Query:{target_nick}"  # Consistent naming
+                    query_context_name = f"Query:{target_nick}"
                     if self.client.context_manager.create_context(
                         query_context_name, context_type="query"
                     ):
@@ -323,14 +336,13 @@ class CommandHandler:
                     ):
                         self.client.switch_active_context(
                             query_context_name
-                        )  # switch_active_context is in IRCClient_Logic, already updated
-                    # self.client.ui_needs_update.set() # switch_active_context usually handles this
+                        )
                 else:
                     logger.warning("MSG/QUERY command with insufficient arguments.")
                     self.client.add_message(
                         "Usage: /msg <nickname> <message>",
                         self.client.ui.colors["error"],
-                        context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                        context_name=self.client.context_manager.active_context_name,
                     )
             elif command == "/me":
                 current_active_ctx_name = (
@@ -349,35 +361,43 @@ class CommandHandler:
                 )
                 if (
                     args
-                    and active_ctx  # active_ctx implies current_active_ctx_name was not None
-                    and active_ctx.type == "channel"
+                    and active_ctx
+                    and (active_ctx.type == "channel" or active_ctx.type == "query") # Allow /me in queries
                     and self.client.network.connected
                 ):
+                    target_for_action = current_active_ctx_name
+                    if active_ctx.type == "query":
+                         if ":" in current_active_ctx_name:
+                            target_for_action = current_active_ctx_name.split(":", 1)[1]
+                         else: # Should not happen
+                            logger.warning(f"Malformed query context for /me: {current_active_ctx_name}")
+                            return
+
                     self.client.network.send_raw(
-                        f"PRIVMSG {current_active_ctx_name} :\x01ACTION {args}\x01"
+                        f"PRIVMSG {target_for_action} :\x01ACTION {args}\x01"
                     )
                     self.client.add_message(
                         f"* {self.client.nick} {args}",
-                        self.client.ui.colors["channel_message"],
+                        self.client.ui.colors["my_message"] if active_ctx.type == "query" else self.client.ui.colors["channel_message"],
                         context_name=current_active_ctx_name,
                     )
-                elif not (active_ctx and active_ctx.type == "channel"):
+                elif not (active_ctx and (active_ctx.type == "channel" or active_ctx.type == "query")):
                     self.client.add_message(
-                        "You can only use /me in a channel.",
+                        "You can only use /me in a channel or query window.",
                         self.client.ui.colors["error"],
-                        context_name=current_active_ctx_name,  # It's not None here
+                        context_name=current_active_ctx_name,
                     )
                 elif not self.client.network.connected:
                     self.client.add_message(
                         "Not connected.",
                         self.client.ui.colors["error"],
-                        context_name="Status",
+                        context_name="Status", # Or current_active_ctx_name
                     )
-                else:
+                else: # No args
                     self.client.add_message(
                         "Usage: /me <action>",
                         self.client.ui.colors["error"],
-                        context_name=current_active_ctx_name,  # It's not None here
+                        context_name=current_active_ctx_name,
                     )
             elif command == "/away":
                 if args:
@@ -404,25 +424,25 @@ class CommandHandler:
                     self.client.add_message(
                         f"Invited {nick} to {chan}.",
                         self.client.ui.colors["system"],
-                        context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                        context_name=self.client.context_manager.active_context_name,
                     )
                 else:
                     self.client.add_message(
                         "Usage: /invite <nick> <#channel>",
                         self.client.ui.colors["error"],
-                        context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                        context_name=self.client.context_manager.active_context_name,
                     )
             elif command in [
                 "/whois",
                 "/w",
-            ]:  # Note: /w conflicts with /win if not careful with parsing
+            ]:
                 if args:
                     self.client.network.send_raw(f"WHOIS {args.split(' ')[0]}")
                 else:
                     self.client.add_message(
                         "Usage: /whois <nick>",
                         self.client.ui.colors["error"],
-                        context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                        context_name=self.client.context_manager.active_context_name,
                     )
             elif command == "/topic":
                 self._handle_topic_command(args)
@@ -438,7 +458,7 @@ class CommandHandler:
                     self.client.add_message(
                         "Usage: /raw <raw IRC command>",
                         self.client.ui.colors["error"],
-                        context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                        context_name=self.client.context_manager.active_context_name,
                     )
             elif command == "/clear":
                 current_active_ctx_name = (
@@ -455,12 +475,11 @@ class CommandHandler:
                 active_ctx = self.client.context_manager.get_context(
                     current_active_ctx_name
                 )
-                if (
-                    active_ctx
-                ):  # active_ctx implies current_active_ctx_name was not None
+                if active_ctx:
                     active_ctx.messages.clear()
                     active_ctx.unread_count = 0
-                    self.client.ui.current_line_in_history = 0
+                    if hasattr(active_ctx, 'scrollback_offset'):
+                        active_ctx.scrollback_offset = 0
                     self.client.add_message(
                         "Messages cleared for current context.",
                         self.client.ui.colors["system"],
@@ -468,12 +487,11 @@ class CommandHandler:
                         context_name=current_active_ctx_name,
                     )
                 else:
-                    # This case implies current_active_ctx_name was set but context not found, which is an anomaly
                     logger.error(
                         f"'/clear' command: Active context '{current_active_ctx_name}' not found in manager."
                     )
                     self.client.add_message(
-                        "No active context to clear.",
+                        f"Error: Active context '{current_active_ctx_name}' not found to clear.",
                         self.client.ui.colors["error"],
                         context_name="Status",
                     )
@@ -492,52 +510,71 @@ class CommandHandler:
                 else:
                     self.client.add_message(
                         "Not currently connected.",
-                        self.client.ui.colors["system"],  # Not an error, just info
+                        self.client.ui.colors["system"],
                         context_name="Status",
                     )
             elif command in ["/next", "/nextwindow"]:
                 self.client.switch_active_context("next")
             elif command in ["/prev", "/prevwindow"]:
                 self.client.switch_active_context("prev")
+            elif command in ["/cyclechannel", "/cc"]: # New command
+                self.client.switch_active_channel("next")
+            elif command in ["/prevchannel", "/pc"]:   # New command
+                self.client.switch_active_channel("prev")
             elif command in [
                 "/win",
                 "/window",
-            ]:  # /w was removed due to /whois conflict
+            ]:
                 win_args = args.split(" ", 1)
-                if win_args[0]:  # Check if there's an argument for window name/number
+                if win_args[0]:
                     self.client.switch_active_context(win_args[0])
-                else:  # List windows
+                else:
                     msg_lines = ["Open contexts (use /win <number_or_name> to switch):"]
-                    # Sort for consistent numbering
-                    context_keys = sorted(
-                        list(self.client.context_manager.get_all_context_names())
-                    )
+                    # Sort for consistent numbering, Status first
+                    all_context_names = self.client.context_manager.get_all_context_names()
+                    context_keys = ["Status"] + sorted([name for name in all_context_names if name != "Status"])
+
                     active_ctx_name_for_list = (
                         self.client.context_manager.active_context_name
                     )
                     for i, name in enumerate(context_keys):
+                        if name not in all_context_names: continue # if Status was manually removed somehow
+
                         ctx_obj = self.client.context_manager.get_context(name)
                         unread_str = ""
                         if ctx_obj and ctx_obj.unread_count > 0:
                             unread_str = f" ({ctx_obj.unread_count} unread)"
+
+                        type_indicator = ""
+                        if ctx_obj:
+                            if ctx_obj.type == "channel": type_indicator = "[C]"
+                            elif ctx_obj.type == "query": type_indicator = "[Q]"
+                            elif ctx_obj.type == "status": type_indicator = "[S]"
+
                         active_marker = "*" if name == active_ctx_name_for_list else " "
-                        msg_lines.append(f" {i+1}: {active_marker}{name}{unread_str}")
+                        msg_lines.append(f" {i+1}: {active_marker}{name}{type_indicator}{unread_str}")
+
+                    target_ctx_for_listing = active_ctx_name_for_list if active_ctx_name_for_list else "Status"
+                    # Ensure target_ctx_for_listing exists, fallback to Status if it was closed.
+                    if not self.client.context_manager.get_context(target_ctx_for_listing):
+                        target_ctx_for_listing = "Status"
+                        if not self.client.context_manager.get_context(target_ctx_for_listing): # If even status is gone (should not happen)
+                             print("CRITICAL: No Status context for /win listing") # Last resort
+                             return
+
+
                     for m_line in msg_lines:
                         self.client.add_message(
                             m_line,
                             self.client.ui.colors["system"],
                             prefix_time=False,
-                            context_name=(
-                                active_ctx_name_for_list
-                                if active_ctx_name_for_list
-                                else "Status"
-                            ),
+                            context_name=target_ctx_for_listing,
                         )
             elif command in ["/close", "/wc", "/partchannel"]:
                 current_active_ctx_name = (
                     self.client.context_manager.active_context_name
                 )
-                context_to_close = current_active_ctx_name  # Default to current
+                context_to_close = current_active_ctx_name
                 close_reason = "Closed by user"
                 close_args_parts = args.split(" ", 1)
 
@@ -547,6 +584,7 @@ class CommandHandler:
                         close_reason = close_args_parts[1]
                 elif args:
                     close_reason = args
+
 
                 if not context_to_close:
                     self.client.add_message(
@@ -563,7 +601,6 @@ class CommandHandler:
                         context_name="Status",
                     )
                 else:
-                    # context_to_close is guaranteed to be a string here
                     ctx_to_close_obj = self.client.context_manager.get_context(
                         context_to_close
                     )
@@ -578,13 +615,8 @@ class CommandHandler:
                             self.client.network.send_raw(
                                 f"PART {context_to_close} :{close_reason}"
                             )
-                            self.client.add_message(
-                                f"Parting channel {context_to_close}...",
-                                self.client.ui.colors["system"],
-                                context_name=context_to_close,
-                            )
-                            if is_active_context:
-                                self.client.switch_active_context("Status")
+                            # Message will be added by protocol handler.
+                            # Context removal/switch will also be handled by protocol handler for self-part.
                         elif ctx_type == "query" or ctx_type == "generic":
                             removed = self.client.context_manager.remove_context(
                                 context_to_close
@@ -596,7 +628,13 @@ class CommandHandler:
                                     context_name="Status",
                                 )
                                 if is_active_context:
-                                    self.client.switch_active_context("Status")
+                                    # Determine next context to switch to
+                                    all_contexts = self.client.context_manager.get_all_context_names()
+                                    if "Status" in all_contexts:
+                                        self.client.switch_active_context("Status")
+                                    elif all_contexts: # Switch to first available if Status is somehow gone
+                                        self.client.switch_active_context(all_contexts[0])
+                                    # If no contexts left, active_context_name will be None, handled by UI
                             else:
                                 logger.error(
                                     f"Failed to remove context '{context_to_close}' though it was found."
@@ -611,13 +649,13 @@ class CommandHandler:
                                 else "Status"
                             ),
                         )
-            else:  # Unknown command
+            else:
                 self.client.add_message(
                     f"Unknown command: {command}",
                     self.client.ui.colors["error"],
-                    context_name=self.client.context_manager.active_context_name,  # Fallbacks in add_message
+                    context_name=self.client.context_manager.active_context_name,
                 )
-        else:  # Regular message to active context
+        else:
             current_active_ctx_name_msg = (
                 self.client.context_manager.active_context_name
             )
@@ -629,7 +667,6 @@ class CommandHandler:
                 )
                 return
 
-            # current_active_ctx_name_msg is a string here
             active_ctx = self.client.context_manager.get_context(
                 current_active_ctx_name_msg
             )
@@ -640,7 +677,6 @@ class CommandHandler:
             ):
                 target_for_privmsg = current_active_ctx_name_msg
                 if active_ctx.type == "query":
-                    # current_active_ctx_name_msg is guaranteed to be a string here
                     if ":" in current_active_ctx_name_msg:
                         target_for_privmsg = current_active_ctx_name_msg.split(":", 1)[
                             1
@@ -668,7 +704,7 @@ class CommandHandler:
                     self.client.ui.colors["error"],
                     context_name="Status",
                 )
-            else:  # E.g. trying to send message in "Status" window or other non-messageable context
+            else:
                 self.client.add_message(
                     "Cannot send messages here. Join a channel with /join #channel or start a query with /msg <nick> <message>.",
                     self.client.ui.colors["error"],
