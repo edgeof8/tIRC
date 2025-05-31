@@ -1597,3 +1597,43 @@ Exception: Terminal too small to initialize UI.
 2025-05-31 03:34:44,285 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
 2025-05-31 03:34:44,285 - pyrc - INFO - Shutting down PyRC.
 2025-05-31 03:34:44,285 - pyrc - INFO - PyRC exited.
+2025-05-31 03:37:39,345 - pyrc - INFO - Logging initialized.
+2025-05-31 03:37:39,345 - pyrc - INFO - PyRC application started.
+2025-05-31 03:37:39,358 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:37:39,359 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:37:39,359 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:37:39,359 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:37:39,359 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:37:39,360 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:37:41,573 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:37:41,573 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:37:41,573 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:37:41,778 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Checking Ident'. Raw: :copper.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:37:41,778 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :copper.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:37:41,779 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :copper.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:37:46,532 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** No Ident response'. Raw: :copper.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:37:46,602 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: :+Ziw
+2025-05-31 03:38:07,762 - pyrc - INFO - Logging initialized.
+2025-05-31 03:38:07,763 - pyrc - INFO - PyRC application started.
+2025-05-31 03:38:07,776 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:38:07,776 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:38:07,776 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:38:07,776 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:38:07,777 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:38:07,777 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:38:09,088 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:38:09,088 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:38:09,088 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:38:09,492 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Checking Ident'. Raw: :copper.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:38:09,492 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :copper.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:38:09,493 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :copper.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:38:14,544 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** No Ident response'. Raw: :copper.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:38:14,852 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :copper.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 03:38:14,853 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 03:38:15,367 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 03:38:18,687 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 03:38:20,476 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 03:38:20,784 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38. Current joined: {'#test'}
+2025-05-31 03:39:30,104 - pyrc.command_handler - INFO - Processing command: /nick with args: 'testing'
+2025-05-31 03:39:30,366 - pyrc.protocol - INFO - Our nick changed from PyTermUser_ to testing.
+2025-05-31 03:39:30,527 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='testing' T=':This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY frytaped <password>'. Raw: :NickServ!NickServ@services.libera.chat NOTICE testing :This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY frytaped <password>
