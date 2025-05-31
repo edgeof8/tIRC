@@ -1213,3 +1213,28 @@ AttributeError: 'IRCClient_Logic' object has no attribute 'contexts'
 2025-05-31 02:48:55,052 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
 2025-05-31 02:48:55,053 - pyrc - INFO - Shutting down PyRC.
 2025-05-31 02:48:55,053 - pyrc - INFO - PyRC exited.
+2025-05-31 02:51:06,353 - pyrc - INFO - Logging initialized.
+2025-05-31 02:51:06,354 - pyrc - INFO - PyRC application started.
+2025-05-31 02:51:06,367 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 02:51:06,367 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 02:51:06,367 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 02:51:06,367 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 02:51:06,367 - pyrc.network - INFO - Starting network thread.
+2025-05-31 02:51:06,368 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 02:51:06,822 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 02:51:06,822 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 02:51:07,111 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Checking Ident'. Raw: :zinc.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 02:51:07,111 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :zinc.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 02:51:07,112 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :zinc.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 02:51:13,238 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** No Ident response'. Raw: :zinc.libera.chat NOTICE * :*** No Ident response
+2025-05-31 02:51:13,529 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: +Ziw
+2025-05-31 02:51:19,167 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:51:19,168 - pyrc.protocol - INFO - Successfully joined channel: #python
+2025-05-31 02:51:19,168 - pyrc.context - WARNING - Context #python already exists, not creating.
+2025-05-31 02:51:19,168 - pyrc.protocol - INFO - RPL_TOPIC for #python: Anything Python is on-topic. | Don't paste, use ht...
+2025-05-31 02:51:19,366 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #python. User count: 1557
+2025-05-31 02:51:19,366 - pyrc.context - WARNING - Context #testchannel already exists, not creating.
+2025-05-31 02:51:19,366 - pyrc.protocol - INFO - Successfully joined channel: #testchannel
+2025-05-31 02:51:19,367 - pyrc.context - WARNING - Context #testchannel already exists, not creating.
+2025-05-31 02:51:19,367 - pyrc.protocol - INFO - RPL_TOPIC for #testchannel: Do your worst, testing of all sorts encouraged!...
+2025-05-31 02:51:19,367 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #testchannel. User count: 4

@@ -69,5 +69,7 @@ The project is organized into several Python modules:
 - `irc_protocol.py`: Implements the IRC protocol.
 - `network_handler.py`: Manages network connections.
 - `ui_manager.py`: Handles the terminal-based user interface.
+- `input_handler.py`: Manages user input from the terminal.
+- `command_handler.py`: Processes user-entered IRC commands.
 - `config.py`: Manages configuration loading and access.
 - `context_manager.py`: Manages different chat contexts (server, channels, private messages).
