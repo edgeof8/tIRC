@@ -10,3 +10,15 @@
 2025-05-31 01:09:07,974 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'molybdenum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :molybdenum.libera.chat NOTICE * :*** Checking Ident
 2025-05-31 01:09:07,975 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'molybdenum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :molybdenum.libera.chat NOTICE * :*** Looking up your hostname...
 2025-05-31 01:09:07,975 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'molybdenum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :molybdenum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 01:09:13,890 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'molybdenum.libera.chat': P='*' T=':*** No Ident response'. Raw: :molybdenum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 01:09:13,984 - pyrc.protocol - INFO - MODE received: By: PyTermUser, Target: PyTermUser, Changes: +Ziw
+2025-05-31 01:09:19,570 - pyrc.logic - WARNING - Context #python already exists, not creating.
+2025-05-31 01:09:19,570 - pyrc.protocol - INFO - Successfully joined channel: #python
+2025-05-31 01:09:19,570 - pyrc.logic - WARNING - Context #python already exists, not creating.
+2025-05-31 01:09:19,570 - pyrc.protocol - INFO - RPL_TOPIC for #python: Anything Python is on-topic. | Don't paste, use ht...
+2025-05-31 01:09:19,664 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #python. User count: 1568
+2025-05-31 01:09:19,664 - pyrc.logic - WARNING - Context #testchannel already exists, not creating.
+2025-05-31 01:09:19,665 - pyrc.protocol - INFO - Successfully joined channel: #testchannel
+2025-05-31 01:09:19,665 - pyrc.logic - WARNING - Context #testchannel already exists, not creating.
+2025-05-31 01:09:19,665 - pyrc.protocol - INFO - RPL_TOPIC for #testchannel: Do your worst, testing of all sorts encouraged!...
+2025-05-31 01:09:19,665 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #testchannel. User count: 4
