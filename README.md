@@ -10,6 +10,7 @@ PyRC is a terminal-based IRC client written in Python. It allows users to connec
 - Basic IRC command support
 - User interface managed in the terminal
 - Configurable settings
+- **Logging**: Application events, errors, and IRC communications are logged to files in the `logs/` directory. Log behavior (e.g., level, file size) is configurable in [`pyterm_irc_config.ini`](./pyterm_irc_config.ini:0).
 
 ### Command Shortcuts
 
@@ -33,6 +34,7 @@ The client can be configured using the [`pyterm_irc_config.ini`](./pyterm_irc_co
 - Default IRC server and port
 - Default nickname
 - Default channels to join on connect
+- Logging settings (enabled, file name, level, rotation parameters)
 
 ## Dependencies
 
