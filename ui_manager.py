@@ -185,17 +185,23 @@ class UIManager:
             )
             return  # Window not usable
 
-        active_ctx_name = self.client.active_context_name
-        if not active_ctx_name or active_ctx_name not in self.client.contexts:
+        active_ctx_name = self.client.context_manager.active_context_name
+        active_context_obj = (
+            self.client.context_manager.get_context(active_ctx_name)
+            if active_ctx_name
+            else None
+        )
+
+        if not active_context_obj:
             logger.warning(
-                f"draw_messages called with invalid active_context_name: {active_ctx_name}"
+                f"draw_messages called with invalid or no active_context: {active_ctx_name}"
             )
             try:
                 self.msg_win.addstr(
                     0,
                     0,
-                    f"Error: Context '{active_ctx_name}' not found.",
-                    self.colors.get("error", 0),  # curses.color_pair(0) is default
+                    f"Error: Context '{active_ctx_name if active_ctx_name else "None"}' not found or no active context.",
+                    self.colors.get("error", 0),
                 )
             except curses.error as e:
                 logger.debug(f"Curses error adding 'context not found' message: {e}")
@@ -203,7 +209,7 @@ class UIManager:
             self.msg_win.noutrefresh()
             return
 
-        active_context_messages = self.client.contexts[active_ctx_name]["messages"]
+        active_context_messages = active_context_obj.messages
 
         # When switching contexts, self.current_line_in_history should be reset or loaded.
         # For now, it's a global scroll for the active window.
@@ -277,29 +283,33 @@ class UIManager:
 
         line_num = 2
         # Ensure a consistent order for contexts, e.g., "Status" first, then sorted.
+        all_context_names = self.client.context_manager.get_all_context_names()
         context_names_ordered = ["Status"] + sorted(
-            [name for name in self.client.contexts.keys() if name != "Status"]
+            [name for name in all_context_names if name != "Status"]
+        )
+
+        current_active_ctx_name_sidebar = (
+            self.client.context_manager.active_context_name
         )
 
         for i, ctx_name in enumerate(context_names_ordered):
             if line_num >= max_y - 1:  # Leave space for user list header if needed
                 break
-            if ctx_name not in self.client.contexts:
-                continue  # Should not happen
 
-            ctx_data = self.client.contexts[ctx_name]
+            ctx_obj = self.client.context_manager.get_context(ctx_name)
+            if not ctx_obj:
+                continue
+
             display_name = ctx_name[: max_x - 2]  # Truncate if too long
 
             attr = default_user_color
             prefix = "  "
-            if ctx_name == self.client.active_context_name:
+            if ctx_name == current_active_ctx_name_sidebar:
                 attr = highlight_color  # Highlight active window
                 prefix = "* "
-            elif ctx_data.get("unread_count", 0) > 0:
-                attr = self.colors.get(
-                    "highlight", curses.A_BOLD
-                )  # Or a different color for unread
-                display_name += f" ({ctx_data['unread_count']})"
+            elif ctx_obj.unread_count > 0:
+                attr = self.colors.get("highlight", curses.A_BOLD)
+                display_name += f" ({ctx_obj.unread_count})"
                 display_name = display_name[: max_x - 2]
 
             try:
@@ -312,17 +322,19 @@ class UIManager:
             line_num += 1
 
         # 2. Draw User List for Active Channel (if it's a channel)
-        active_ctx_name = self.client.active_context_name
-        active_ctx_data = self.client.contexts.get(active_ctx_name)
+        # current_active_ctx_name_sidebar is already defined above
+        active_ctx_obj_for_users = (
+            self.client.context_manager.get_context(current_active_ctx_name_sidebar)
+            if current_active_ctx_name_sidebar
+            else None
+        )
 
-        if active_ctx_data and active_ctx_data["type"] == "channel":
+        if active_ctx_obj_for_users and active_ctx_obj_for_users.type == "channel":
             if (
                 line_num < max_y - 2
             ):  # Check if space for user header and at least one user
                 line_num += 1  # Blank line separator
-                user_header = (
-                    f"Users in {active_ctx_name} ({len(active_ctx_data['users'])})"
-                )
+                user_header = f"Users in {current_active_ctx_name_sidebar} ({len(active_ctx_obj_for_users.users)})"
                 try:
                     self.sidebar_win.hline(line_num, 0, curses.ACS_HLINE, max_x)
                     line_num += 1
@@ -336,7 +348,9 @@ class UIManager:
                     )
                     pass
 
-                sorted_users = sorted(list(active_ctx_data["users"]), key=str.lower)
+                sorted_users = sorted(
+                    list(active_ctx_obj_for_users.users), key=str.lower
+                )
                 for user in sorted_users:
                     if line_num >= max_y:
                         break
@@ -363,24 +377,31 @@ class UIManager:
             )
             return
 
-        active_ctx_name = self.client.active_context_name
-        active_ctx_data = self.client.contexts.get(active_ctx_name)
+        active_ctx_name_status = self.client.context_manager.active_context_name
+        active_ctx_obj_status = (
+            self.client.context_manager.get_context(active_ctx_name_status)
+            if active_ctx_name_status
+            else None
+        )
 
         topic_display = ""
         if (
-            active_ctx_data
-            and active_ctx_data["type"] == "channel"
-            and active_ctx_data["topic"]
+            active_ctx_obj_status
+            and active_ctx_obj_status.type == "channel"
+            and active_ctx_obj_status.topic
         ):
+            topic_str = active_ctx_obj_status.topic
             topic_display = (
-                f"Topic: {active_ctx_data['topic'][:30]}..."
-                if len(active_ctx_data["topic"]) > 33
-                else f"Topic: {active_ctx_data['topic']}"
+                f"Topic: {topic_str[:30]}..."
+                if len(topic_str) > 33
+                else f"Topic: {topic_str}"
             )
 
         # Basic status: Nick@Server [ActiveContextName] SSL Topic...
         status_text = f" {self.client.nick}@{self.client.server}:{self.client.port} "
-        status_text += f"[{active_ctx_name}] "
+        status_text += (
+            f"[{active_ctx_name_status if active_ctx_name_status else 'N/A'}] "
+        )
         if self.client.use_ssl:
             status_text += "SSL "
         if topic_display:
@@ -422,9 +443,11 @@ class UIManager:
         prompt = "> "
         available_width = max_x - len(prompt) - 1
 
-        display_buffer = self.client.input_buffer
-        if len(self.client.input_buffer) > available_width:
-            display_buffer = "..." + self.client.input_buffer[-(available_width - 3) :]
+        # Get input buffer from InputHandler
+        current_input_buffer = self.client.input_handler.get_current_input_buffer()
+        display_buffer = current_input_buffer
+        if len(current_input_buffer) > available_width:
+            display_buffer = "..." + current_input_buffer[-(available_width - 3) :]
 
         try:
             self.input_win.addstr(0, 0, prompt + display_buffer, self.colors["input"])
@@ -515,11 +538,17 @@ class UIManager:
             logger.warning("scroll_messages called but msg_win is None.")
             return
 
-        active_ctx_name = self.client.active_context_name
-        if not active_ctx_name or active_ctx_name not in self.client.contexts:
+        active_ctx_name_scroll = self.client.context_manager.active_context_name
+        active_ctx_obj_scroll = (
+            self.client.context_manager.get_context(active_ctx_name_scroll)
+            if active_ctx_name_scroll
+            else None
+        )
+
+        if not active_ctx_obj_scroll:
             return
 
-        active_context_messages = self.client.contexts[active_ctx_name]["messages"]
+        active_context_messages = active_ctx_obj_scroll.messages
         viewable_lines = self.msg_win_height  # Number of lines visible in msg_win
         history_len = len(active_context_messages)
 

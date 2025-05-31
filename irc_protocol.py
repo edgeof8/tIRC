@@ -1,6 +1,7 @@
 # irc_protocol.py
 import re
 import logging  # Added for logging
+from collections import deque # For NICK query context message copying
 from config import IRC_MSG_REGEX_PATTERN
 
 IRC_MSG_RE = re.compile(IRC_MSG_REGEX_PATTERN)
@@ -88,7 +89,7 @@ def handle_server_message(client, line):
 
         if target_lower == client_nick_lower:  # PM to us
             msg_context_name = f"Query:{src_nick}"
-            if client._create_context(msg_context_name, context_type="query"):
+            if client.context_manager.create_context(msg_context_name, context_type="query"):
                 logger.debug(
                     f"Created query context for PM from {src_nick}: {msg_context_name}"
                 )
@@ -99,7 +100,7 @@ def handle_server_message(client, line):
             )
         elif target.startswith("#"):  # Channel message
             msg_context_name = target
-            if client._create_context(
+            if client.context_manager.create_context(
                 msg_context_name, context_type="channel"
             ):  # Ensure context exists
                 logger.debug(
@@ -146,18 +147,20 @@ def handle_server_message(client, line):
             logger.warning(f"Invalid JOIN message (no channel): {line.strip()}")
             return
 
-        if client._create_context(joined_channel, context_type="channel"):
+        if client.context_manager.create_context(joined_channel, context_type="channel"):
             logger.debug(f"Ensured channel context exists for JOIN: {joined_channel}")
 
         if src_nick_lower == client_nick_lower:  # We joined
             logger.info(f"Successfully joined channel: {joined_channel}")
-            client.active_context_name = joined_channel
-            client.contexts[joined_channel][
-                "users"
-            ].clear()  # Clear old user list on rejoin
-            logger.debug(
-                f"Cleared user list for {joined_channel} on our join, sending WHO."
-            )
+            client.context_manager.set_active_context(joined_channel) # Use manager to set active context
+            joined_ctx = client.context_manager.get_context(joined_channel)
+            if joined_ctx:
+                joined_ctx.users.clear()  # Clear old user list on rejoin
+                logger.debug(
+                    f"Cleared user list for {joined_channel} on our join, sending WHO."
+                )
+            else:
+                logger.error(f"JOIN: Context {joined_channel} not found after create for clearing users.")
             client.network.send_raw(f"WHO {joined_channel}")
             client.add_message(
                 f"You joined {joined_channel}",
@@ -166,8 +169,8 @@ def handle_server_message(client, line):
             )
         else:  # Someone else joined a channel
             # Add user to the specific channel's user list
-            if joined_channel in client.contexts:
-                client.contexts[joined_channel]["users"].add(src_nick)
+            if client.context_manager.get_context(joined_channel):
+                client.context_manager.add_user(joined_channel, src_nick)
                 logger.debug(f"Added user {src_nick} to {joined_channel} user list.")
                 client.add_message(
                     f"{src_nick} joined {joined_channel}",
@@ -199,7 +202,7 @@ def handle_server_message(client, line):
         reason = f" ({trailing})" if trailing else ""
 
         # Ensure context exists, though it should if we were in it or got a PART for it
-        if client._create_context(
+        if client.context_manager.create_context(
             parted_channel, context_type="channel"
         ):  # Ensure context exists, though it should
             logger.debug(f"Ensured channel context exists for PART: {parted_channel}")
@@ -211,27 +214,26 @@ def handle_server_message(client, line):
                 client.ui.colors["join_part"],
                 context_name=parted_channel,  # Message to the channel we just left
             )
-            if parted_channel in client.contexts:
-                client.contexts[parted_channel]["users"].clear()
+            parted_ctx = client.context_manager.get_context(parted_channel)
+            if parted_ctx:
+                parted_ctx.users.clear()
                 logger.debug(f"Cleared user list for {parted_channel} on our part.")
-                # client.contexts[parted_channel]["active_join"] = False # Mark as not actively joined
-            if client.active_context_name == parted_channel:
-                client.active_context_name = (
-                    "Status"  # Switch to Status or next available
-                )
+                # parted_ctx.active_join = False # If such an attribute existed on Context
+            if client.context_manager.active_context_name == parted_channel: # Check active context via manager
+                client.context_manager.set_active_context("Status") # Switch via manager
                 logger.debug(
                     f"Active context was {parted_channel}, switched to Status."
                 )
         else:  # Someone else parted
-            if parted_channel in client.contexts:
-                if src_nick and src_nick in client.contexts[parted_channel]["users"]:
-                    client.contexts[parted_channel]["users"].remove(src_nick)
+            parted_ctx = client.context_manager.get_context(parted_channel)
+            if parted_ctx:
+                if src_nick and client.context_manager.remove_user(parted_channel, src_nick):
                     logger.debug(
                         f"Removed {src_nick} from {parted_channel} user list due to PART."
                     )
-                else:
+                elif src_nick: # remove_user returned False, meaning user wasn't there
                     logger.warning(
-                        f"{src_nick} PARTed {parted_channel}, but was not in local user list."
+                        f"{src_nick} PARTed {parted_channel}, but was not in local user list (via context_manager)."
                     )
                 client.add_message(
                     f"{src_nick} left {parted_channel}{reason}",
@@ -257,13 +259,14 @@ def handle_server_message(client, line):
         )  # Should always have src_nick for QUIT
 
         # Announce quit in all relevant channel contexts
-        for ctx_name, ctx_data in client.contexts.items():
+        for ctx_name, ctx_obj in client.context_manager.contexts.items():
             if (
-                ctx_data["type"] == "channel"
+                ctx_obj.type == "channel"
                 and src_nick
-                and src_nick in ctx_data["users"]
+                and src_nick in ctx_obj.users # Check directly on context object's users set
             ):
-                ctx_data["users"].remove(src_nick)
+                # ctx_obj.users.remove(src_nick) # Or use manager method
+                client.context_manager.remove_user(ctx_name, src_nick)
                 client.add_message(
                     f"{display_src_nick} quit{reason}",
                     client.ui.colors["join_part"],
@@ -301,11 +304,19 @@ def handle_server_message(client, line):
 
         # Announce nick change in all relevant channel contexts
         nick_change_message = f"{src_nick} is now known as {new_nick}"
-        for ctx_name, ctx_data in client.contexts.items():
-            if ctx_data["type"] == "channel":
-                if src_nick in ctx_data["users"]:
-                    ctx_data["users"].remove(src_nick)
-                    ctx_data["users"].add(new_nick)
+        active_context_before_nick_change = client.context_manager.active_context_name
+        renamed_query_context_new_name = None
+
+        # Iterate over a copy of keys if removing/renaming contexts inside the loop
+        for ctx_name in list(client.context_manager.contexts.keys()):
+            ctx_obj = client.context_manager.get_context(ctx_name)
+            if not ctx_obj: # Context might have been removed (e.g. renamed query)
+                continue
+
+            if ctx_obj.type == "channel":
+                if src_nick in ctx_obj.users:
+                    client.context_manager.remove_user(ctx_name, src_nick)
+                    client.context_manager.add_user(ctx_name, new_nick)
                     client.add_message(
                         nick_change_message,
                         client.ui.colors["nick_change"],
@@ -314,27 +325,42 @@ def handle_server_message(client, line):
                     logger.debug(
                         f"Processed NICK change for {src_nick} to {new_nick} in channel context {ctx_name}."
                     )
-            elif ctx_data["type"] == "query" and ctx_name == f"Query:{src_nick}":
-                # If we have a query window with the old nick, rename it? Or just message?
-                # For now, just message in the query window if it exists.
-                # Renaming query windows on NICK change can be complex if the user has scrolled etc.
-                client.add_message(
-                    nick_change_message,
-                    client.ui.colors["nick_change"],
-                    context_name=ctx_name,  # Message in the old query window
-                )
+            elif ctx_obj.type == "query" and ctx_name == f"Query:{src_nick}":
+                new_query_ctx_name = f"Query:{new_nick}"
+                logger.info(f"Attempting to rename query context from {ctx_name} to {new_query_ctx_name} for NICK change.")
+
+                # Create the new context (or get if exists)
+                client.context_manager.create_context(new_query_ctx_name, context_type="query", topic=ctx_obj.topic)
+                new_query_ctx_obj = client.context_manager.get_context(new_query_ctx_name)
+
+                if new_query_ctx_obj:
+                    # Copy messages from old to new (ensure new deque has correct maxlen)
+                    new_query_ctx_obj.messages = deque(list(ctx_obj.messages), maxlen=client.context_manager.max_history)
+                    new_query_ctx_obj.users = set(list(ctx_obj.users)) # Copy users if any
+                    new_query_ctx_obj.unread_count = ctx_obj.unread_count # Copy unread count
+
+                    was_active = (active_context_before_nick_change == ctx_name)
+                    client.context_manager.remove_context(ctx_name) # Remove old context
+                    logger.info(f"Successfully renamed query context from {ctx_name} to {new_query_ctx_name}.")
+
+                    if was_active:
+                        renamed_query_context_new_name = new_query_ctx_name # Mark to set active later
+                else:
+                    logger.error(f"Failed to create/get new query context {new_query_ctx_name} during NICK rename. Old context {ctx_name} messaged instead.")
+                    # Fallback: Message in the old query window if rename failed
+                    client.add_message(
+                        nick_change_message,
+                        client.ui.colors["nick_change"],
+                        context_name=ctx_name,
+                    )
                 logger.debug(
-                    f"Processed NICK change for {src_nick} to {new_nick} in query context {ctx_name}."
+                    f"Processed NICK change for {src_nick} to {new_nick} involving query context {ctx_name}."
                 )
-                # Potentially rename context:
-                # new_query_ctx_name = f"Query:{new_nick}"
-                # if client._create_context(new_query_ctx_name, context_type="query"):
-                #    logger.info(f"Renaming query context from {ctx_name} to {new_query_ctx_name}")
-                #    client.contexts[new_query_ctx_name]["messages"] = client.contexts[ctx_name]["messages"] # copy messages
-                #    # Potentially copy other attributes like scroll position if tracked
-                #    del client.contexts[ctx_name]
-                #    if client.active_context_name == ctx_name:
-                #        client.active_context_name = new_query_ctx_name
+
+        if renamed_query_context_new_name:
+            client.context_manager.set_active_context(renamed_query_context_new_name)
+            logger.debug(f"Restored active context to renamed query: {renamed_query_context_new_name}")
+
 
         # If it's our own nick changing
         if src_nick_lower == client_nick_lower:
@@ -381,13 +407,16 @@ def handle_server_message(client, line):
         elif code == 331:  # RPL_NOTOPIC
             # Params: <client> <channel> :No topic is set
             channel_name = params[1] if len(params) > 1 else "channel"
-            if client._create_context(
+            if client.context_manager.create_context(
                 channel_name, context_type="channel"
             ):  # Ensure context exists
                 logger.debug(f"Ensured channel context {channel_name} for RPL_NOTOPIC.")
-            client.contexts[channel_name][
-                "topic"
-            ] = None  # Explicitly set topic to None
+            # Ensure context exists via context_manager before trying to access client.contexts directly
+            context = client.context_manager.get_context(channel_name)
+            if context:
+                context.topic = None # Explicitly set topic to None
+            else: # Should not happen if create_context succeeded or context already existed
+                logger.error(f"RPL_NOTOPIC: Context {channel_name} not found after create/get attempt.")
             logger.info(f"RPL_NOTOPIC for {channel_name}.")
             client.add_message(
                 f"No topic set for {channel_name}.",
@@ -398,14 +427,17 @@ def handle_server_message(client, line):
             # Params: <client> <channel> :<topic>
             channel_name = params[1] if len(params) > 1 else "channel"
             topic_text = trailing if trailing else ""
-            if client._create_context(
+            if client.context_manager.create_context(
                 channel_name, context_type="channel"
             ):  # Ensure context exists
                 logger.debug(f"Ensured channel context {channel_name} for RPL_TOPIC.")
-            client.contexts[channel_name]["topic"] = topic_text
-            logger.info(
-                f"RPL_TOPIC for {channel_name}: {topic_text[:50]}..."
-            )  # Log truncated topic
+            # Update topic via ContextManager method
+            if client.context_manager.update_topic(channel_name, topic_text):
+                logger.info(
+                    f"RPL_TOPIC for {channel_name}: {topic_text[:50]}..."
+                ) # Log truncated topic
+            else: # Should not happen if create_context succeeded or context already existed
+                 logger.error(f"RPL_TOPIC: Failed to update topic for {channel_name} after create/get attempt.")
             client.add_message(
                 f"Topic for {channel_name}: {topic_text}",
                 client.ui.colors["system"],
@@ -415,24 +447,24 @@ def handle_server_message(client, line):
             # Params: <client> <symbol> <channel> :<nick list>
             # Symbol can be = (public), * (private), @ (secret)
             channel_in_reply = params[2] if len(params) > 2 else None
-            if channel_in_reply and channel_in_reply in client.contexts:
+            if channel_in_reply and client.context_manager.get_context(channel_in_reply):
                 nicks_on_list = trailing.split() if trailing else []
                 for nick_entry in nicks_on_list:
                     actual_nick = nick_entry.lstrip(
                         "@+&~%"
                     )  # Remove prefixes like @ for op, + for voice
-                    client.contexts[channel_in_reply]["users"].add(actual_nick)
+                    client.context_manager.add_user(channel_in_reply, actual_nick)
                     # logger.debug(f"RPL_NAMREPLY: Added {actual_nick} to {channel_in_reply}") # Can be verbose
             else:
                 logger.warning(
-                    f"RPL_NAMREPLY for unknown channel: {channel_in_reply}. Raw: {line.strip()}"
+                    f"RPL_NAMREPLY for non-existent or unknown context: {channel_in_reply}. Raw: {line.strip()}"
                 )
             # No message added to UI for 353 itself, 366 handles summary.
         elif code == 366:  # RPL_ENDOFNAMES
             # Params: <client> <channel> :End of /NAMES list.
             channel_ended = params[1] if len(params) > 1 else "Unknown Channel"
-            if channel_ended in client.contexts:
-                user_count = len(client.contexts[channel_ended]["users"])
+            if client.context_manager.get_context(channel_ended):
+                user_count = len(client.context_manager.get_users(channel_ended))
                 logger.info(
                     f"RPL_ENDOFNAMES for {channel_ended}. User count: {user_count}"
                 )
@@ -549,7 +581,7 @@ def handle_server_message(client, line):
         if (
             mode_target
             and mode_target.startswith("#")
-            and mode_target in client.contexts
+            and client.context_manager.get_context(mode_target)
         ):
             context_for_mode = mode_target
         elif (

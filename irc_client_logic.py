@@ -7,11 +7,17 @@ from collections import deque
 from typing import Optional, Any  # Added Optional, Any
 import logging  # Added for logging
 
-from config import MAX_HISTORY
-from config import RECONNECT_INITIAL_DELAY as CFG_RECONNECT_INITIAL_DELAY
+from config import (
+    MAX_HISTORY,
+)  # MAX_HISTORY might be used by ContextManager if not passed
+from context_manager import ContextManager  # Import the new ContextManager
+
+# from config import RECONNECT_INITIAL_DELAY as CFG_RECONNECT_INITIAL_DELAY # No longer used directly here
 from ui_manager import UIManager
 from network_handler import NetworkHandler
 import irc_protocol
+from command_handler import CommandHandler  # Import the new CommandHandler
+from input_handler import InputHandler  # Import the new InputHandler
 
 # Get a logger instance (child of the main pyrc logger if configured that way)
 logger = logging.getLogger("pyrc.logic")
@@ -51,29 +57,32 @@ class IRCClient_Logic:
         self.nickserv_password = nickserv_password
         self.use_ssl = use_ssl
 
-        self.contexts = {}
-        self.active_context_name = "Status"  # Default active context
-        self._create_context("Status", context_type="status")
+        self.context_manager = ContextManager(max_history_per_context=MAX_HISTORY)
+        self.context_manager.create_context("Status", context_type="status")
+        self.context_manager.set_active_context("Status")  # Set initial active context
 
         for ch_name in self.initial_channels_list:
-            self._create_context(ch_name, context_type="channel")
+            self.context_manager.create_context(ch_name, context_type="channel")
 
         if self.initial_channels_list:
-            self.active_context_name = self.initial_channels_list[0]
+            # Set the first channel as active if any exist, otherwise Status remains active
+            self.context_manager.set_active_context(self.initial_channels_list[0])
 
         # self.message_history is deprecated
         # self.channel_users is deprecated
-        self.input_buffer = ""
-        self.partial_input_history = deque(maxlen=20)
-        self.partial_input_history_idx = -1
+        # self.input_buffer, self.partial_input_history, self.partial_input_history_idx moved to InputHandler
 
         self.should_quit = False
         self.ui_needs_update = threading.Event()
 
         self.network = NetworkHandler(self)
-        self.ui = UIManager(stdscr, self)
+        self.ui = UIManager(
+            stdscr, self
+        )  # UIManager might need adjustment to get input_buffer from input_handler
+        self.command_handler = CommandHandler(self)  # Initialize CommandHandler
+        self.input_handler = InputHandler(self)  # Initialize InputHandler
 
-        self.add_message(
+        self.add_message(  # This will now use the context_manager implicitly
             "Simple IRC Client starting...",
             self.ui.colors["system"],
             context_name="Status",
@@ -83,7 +92,7 @@ class IRCClient_Logic:
             if self.initial_channels_list
             else "None"
         )
-        self.add_message(
+        self.add_message(  # This will now use the context_manager implicitly
             f"Target: {self.server}:{self.port}, Nick: {self.nick}, Channels: {initial_channels_display}",
             self.ui.colors["system"],
             context_name="Status",
@@ -91,26 +100,6 @@ class IRCClient_Logic:
         logger.info(
             f"IRCClient_Logic initialized for {self.server}:{self.port} as {self.nick}. Channels: {initial_channels_display}"
         )
-
-    def _create_context(
-        self,
-        context_name: str,
-        context_type: str = "generic",
-        topic: Optional[str] = None,
-    ):
-        if context_name not in self.contexts:
-            self.contexts[context_name] = {
-                "messages": deque(maxlen=MAX_HISTORY),
-                "users": set(),
-                "topic": topic,
-                "unread_count": 0,
-                "type": context_type,  # "status", "channel", "query"
-                "last_read_line_count": 0,  # For UI to track scroll position on switch
-            }
-            logger.debug(f"Created context: {context_name} of type {context_type}")
-            return True
-        logger.warning(f"Context {context_name} already exists, not creating.")
-        return False
 
     def add_message(
         self,
@@ -120,37 +109,60 @@ class IRCClient_Logic:
         context_name: Optional[str] = None,
     ):
         target_context_name = (
-            context_name if context_name is not None else self.active_context_name
+            context_name
+            if context_name is not None
+            else self.context_manager.active_context_name
         )
+        if (
+            not target_context_name
+        ):  # Should not happen if active_context_name is always set
+            logger.error(
+                "add_message called with no target_context_name and no active context."
+            )
+            target_context_name = "Status"  # Fallback
 
-        if target_context_name not in self.contexts:
-            # If context doesn't exist (e.g. new PM), create it.
-            # For now, assume it's a query if not 'Status' or an existing channel.
-            # This logic might need refinement based on where add_message is called from.
+        # Ensure context exists, create if it's a new PM or similar
+        if not self.context_manager.get_context(target_context_name):
             context_type = (
                 "query"
                 if not target_context_name.startswith("#")
                 and target_context_name != "Status"
-                else "generic"
+                else "generic"  # Or "channel" if it starts with # but wasn't pre-created
             )
-            if self._create_context(target_context_name, context_type=context_type):
+            if (
+                target_context_name.startswith("#") and target_context_name != "Status"
+            ):  # A bit more specific for channels
+                context_type = "channel"
+
+            if self.context_manager.create_context(
+                target_context_name, context_type=context_type
+            ):
                 logger.info(
                     f"Dynamically created context '{target_context_name}' of type '{context_type}' for message."
                 )
             else:
-                # This case should ideally not be hit if _create_context handles existing contexts gracefully
-                logger.error(
-                    f"Failed to create context '{target_context_name}' for message, or it already existed unexpectedly."
+                # This case implies the context was created by another thread or already existed.
+                logger.warning(
+                    f"Context '{target_context_name}' either already existed or creation failed (should be handled by create_context)."
                 )
-                # Fallback to Status if context creation fails for some reason
-                # self.add_message(f"Error: Tried to add message to non-existent context '{target_context_name}'. Msg: {text}", self.ui.colors["error"], context_name="Status")
-                # return # Decided to let it proceed and add to the context if it was created by another thread in the meantime.
+                # If creation failed and context still doesn't exist, we have an issue.
+                if not self.context_manager.get_context(target_context_name):
+                    logger.error(
+                        f"FATAL: Failed to ensure context '{target_context_name}' for message. Message lost: {text}"
+                    )
+                    # Fallback to Status to report error
+                    self.context_manager.add_message_to_context(
+                        "Status",
+                        f"Error: Failed to create context '{target_context_name}' for message: {text}",
+                        self.ui.colors["error"],
+                    )
+                    self.ui_needs_update.set()
+                    return
 
-        max_w = (
-            self.ui.msg_win_width - 1 if self.ui.msg_win_width > 1 else 80
-        )  # This will need context later
+        max_w = self.ui.msg_win_width - 1 if self.ui.msg_win_width > 1 else 80
         timestamp = time.strftime("%H:%M:%S ") if prefix_time else ""
         full_message = f"{timestamp}{text}"
+
         lines = []
         current_line = ""
         for word in full_message.split(" "):
@@ -164,19 +176,21 @@ class IRCClient_Logic:
         if current_line:
             lines.append(current_line)
 
-        context_messages = self.contexts[target_context_name]["messages"]
+        num_lines_added = len(lines)
+        # The loop below correctly adds each line part to the context manager.
+        # The ContextManager's add_message_to_context handles unread counts appropriately
+        # by incrementing based on the num_lines_added (which is 1 per call here) if the context is not active.
+
         for line_part in lines:
-            context_messages.append((line_part, color_attr))
+            self.context_manager.add_message_to_context(
+                target_context_name, line_part, color_attr, 1
+            )  # Add 1 line at a time, context_manager handles unread count.
 
-        if target_context_name != self.active_context_name:
-            self.contexts[target_context_name]["unread_count"] += len(lines)
-
-        # This part needs to be context-aware when UIManager is updated
         if (
             self.ui.current_line_in_history > 0
-            and target_context_name == self.active_context_name
+            and target_context_name == self.context_manager.active_context_name
         ):
-            self.ui.current_line_in_history += len(lines)
+            self.ui.current_line_in_history += num_lines_added
 
         self.ui_needs_update.set()
 
@@ -184,729 +198,140 @@ class IRCClient_Logic:
         logger.debug(f"S << {line.strip()}")
         irc_protocol.handle_server_message(self, line)
 
-    def handle_input(self, key_code):
-        # logger.debug(f"Input key_code: {key_code}") # Can be very verbose
-        if key_code == curses.ERR:
-            return
-        if key_code == curses.KEY_RESIZE:
-            self.ui.setup_layout()
-        elif key_code in [curses.KEY_BACKSPACE, 127, 8]:
-            self.input_buffer = self.input_buffer[:-1]
-        elif key_code in [curses.KEY_ENTER, 10, 13]:
-            if self.input_buffer:
-                command_to_process = self.input_buffer
-                self.process_user_command(command_to_process)  # process a copy
-                if command_to_process:  # Use the copy for history
-                    if (
-                        not self.partial_input_history
-                        or self.partial_input_history[-1] != command_to_process
-                    ):
-                        self.partial_input_history.append(command_to_process)
-                self.input_buffer = ""
-                self.partial_input_history_idx = -1
-        elif key_code == curses.KEY_UP:
-            if self.partial_input_history:
-                if self.partial_input_history_idx == -1:
-                    self.partial_input_history_idx = len(self.partial_input_history) - 1
-                elif self.partial_input_history_idx > 0:
-                    self.partial_input_history_idx -= 1
-                if (
-                    0
-                    <= self.partial_input_history_idx
-                    < len(self.partial_input_history)
-                ):
-                    self.input_buffer = self.partial_input_history[
-                        self.partial_input_history_idx
-                    ]
-        elif key_code == curses.KEY_DOWN:
-            if self.partial_input_history and self.partial_input_history_idx != -1:
-                if self.partial_input_history_idx < len(self.partial_input_history) - 1:
-                    self.partial_input_history_idx += 1
-                    self.input_buffer = self.partial_input_history[
-                        self.partial_input_history_idx
-                    ]
-                else:
-                    self.partial_input_history_idx = -1
-                    self.input_buffer = ""
-        elif key_code == curses.KEY_PPAGE:
-            self.ui.scroll_messages("up")
-        elif key_code == curses.KEY_NPAGE:
-            self.ui.scroll_messages("down")
-        elif key_code == curses.KEY_HOME:
-            self.ui.scroll_messages("home")
-        elif key_code == curses.KEY_END:
-            self.ui.scroll_messages("end")
-        # Ctrl+N for next window, Ctrl+P for previous window
-        # ASCII 14 is Ctrl+N, ASCII 16 is Ctrl+P
-        elif key_code == 14:  # CTRL+N
-            self.switch_active_context("next")
-        elif key_code == 16:  # CTRL+P
-            self.switch_active_context("prev")
-        elif key_code == 9:
-            self.do_tab_complete()
-        elif key_code >= 0:
-            try:
-                if key_code <= 255:
-                    self.input_buffer += chr(key_code)
-            except (ValueError, Exception):
-                pass
-        self.ui_needs_update.set()
+    # def handle_input(self, key_code):
+    #     # This method's logic is now in InputHandler.handle_key_press
+    #     pass
 
-    def do_tab_complete(self):
-        if not self.input_buffer:
-            return
-        parts = self.input_buffer.split(" ")
-        to_complete = parts[-1]
-        prefix_str = " ".join(parts[:-1]) + (" " if len(parts) > 1 else "")
-        if not to_complete:
-            return
-        candidates = []
-        if len(parts) == 1 and self.input_buffer.startswith("/"):
-            commands = [
-                "/join",
-                "/j",
-                "/part",
-                "/p",
-                "/msg",
-                "/m",
-                "/query",
-                "/nick",
-                "/n",
-                "/quit",
-                "/q",
-                "/whois",
-                "/w",
-                "/me",
-                "/away",
-                "/invite",
-                "/topic",
-                "/raw",
-                "/quote",
-                "/connect",
-                "/server",
-                "/s",
-                "/disconnect",
-                "/clear",
-            ]
-            candidates = [
-                cmd for cmd in commands if cmd.lower().startswith(to_complete.lower())
-            ]
-        else:
-            # Tab completion for nicks should use users from the active_context_name
-            active_users = []
-            if (
-                self.active_context_name in self.contexts
-                and self.contexts[self.active_context_name]["type"] == "channel"
-            ):
-                active_users = list(self.contexts[self.active_context_name]["users"])
-
-            unique_nicks = list(active_users)  # Make a mutable copy
-            if (
-                self.nick and self.nick not in unique_nicks
-            ):  # Add self if not already in list (e.g. for PMs or if WHO hasn't populated yet)
-                unique_nicks.append(self.nick)
-            candidates = [
-                nick
-                for nick in unique_nicks
-                if nick.lower().startswith(to_complete.lower())
-            ]
-        if len(candidates) == 1:
-            self.input_buffer = prefix_str + candidates[0] + " "
-        elif len(candidates) > 1:
-            sorted_candidates = sorted(list(set(c.lower() for c in candidates)))
-            if not sorted_candidates:
-                return
-            common_prefix_lower = sorted_candidates[0]
-            for cand_lower in sorted_candidates[1:]:
-                while not cand_lower.startswith(common_prefix_lower):
-                    common_prefix_lower = common_prefix_lower[:-1]
-                    if not common_prefix_lower:
-                        break
-                if not common_prefix_lower:
-                    break
-            original_cased_common_prefix = ""
-            if common_prefix_lower:
-                for original_cand in candidates:
-                    if original_cand.lower().startswith(common_prefix_lower):
-                        original_cased_common_prefix = original_cand[
-                            : len(common_prefix_lower)
-                        ]
-                        break
-            if original_cased_common_prefix and len(original_cased_common_prefix) > len(
-                to_complete
-            ):
-                self.input_buffer = prefix_str + original_cased_common_prefix
-            else:
-                self.add_message(
-                    f"Options: {' '.join(sorted(list(set(candidates))))}",
-                    self.ui.colors["system"],
-                    False,
-                    context_name=self.active_context_name,  # Tab completion options go to active context
-                )
+    # def do_tab_complete(self):
+    #     # This method's logic is now in InputHandler.do_tab_complete
+    #     pass
 
     def switch_active_context(self, direction: str):
-        if not self.contexts:
+        context_names = (
+            self.context_manager.get_all_context_names()
+        )  # Assuming this returns a consistent order or we sort it
+        if not context_names:
             return
 
-        context_names = list(self.contexts.keys())
+        # For consistent next/prev, it's better if get_all_context_names() returns a sorted list
+        # or we sort it here. For now, let's assume the order from dict.keys() is stable enough for this session.
+        # A more robust solution might involve an ordered list of context names in ContextManager.
+        # For now, let's sort them to ensure consistent next/prev behavior.
+        context_names.sort()
+
+        current_active_name = self.context_manager.active_context_name
+        if (
+            not current_active_name and context_names
+        ):  # If no active context, pick the first one
+            current_active_name = context_names[0]
+        elif not current_active_name:  # No contexts at all
+            return
+
         try:
-            current_idx = context_names.index(self.active_context_name)
+            current_idx = context_names.index(current_active_name)
         except ValueError:
-            current_idx = 0  # Default to first if active not found (should not happen)
+            current_idx = 0  # Default to first if active not found
+
+        new_active_context_name = None
 
         if direction == "next":
             new_idx = (current_idx + 1) % len(context_names)
+            new_active_context_name = context_names[new_idx]
         elif direction == "prev":
             new_idx = (current_idx - 1 + len(context_names)) % len(context_names)
-        else:  # Specific context name
+            new_active_context_name = context_names[new_idx]
+        else:  # Specific context name or number
             if direction in context_names:
-                new_idx = context_names.index(direction)
-            else:  # Try to find partial match or number
+                new_active_context_name = direction
+            else:
                 try:
                     num_idx = int(direction) - 1  # 1-based index for user
                     if 0 <= num_idx < len(context_names):
-                        new_idx = num_idx
+                        new_active_context_name = context_names[
+                            num_idx
+                        ]  # Use sorted list
                     else:
                         self.add_message(
                             f"Invalid window number: {direction}",
                             self.ui.colors["error"],
-                            context_name=self.active_context_name,
+                            context_name=current_active_name,
                         )
                         return
                 except ValueError:
-                    # Partial name matching
+                    # Partial name matching against the sorted list
                     found_ctx = [
                         name
                         for name in context_names
                         if direction.lower() in name.lower()
                     ]
                     if len(found_ctx) == 1:
-                        new_idx = context_names.index(found_ctx[0])
+                        new_active_context_name = found_ctx[0]
                     elif len(found_ctx) > 1:
                         self.add_message(
-                            f"Ambiguous window name '{direction}'. Matches: {', '.join(found_ctx)}",
+                            f"Ambiguous window name '{direction}'. Matches: {', '.join(sorted(found_ctx))}",
                             self.ui.colors["error"],
-                            context_name=self.active_context_name,
+                            context_name=current_active_name,
                         )
                         return
                     else:
                         self.add_message(
                             f"Window '{direction}' not found.",
                             self.ui.colors["error"],
-                            context_name=self.active_context_name,
+                            context_name=current_active_name,
                         )
                         return
 
-        new_active_context_name = context_names[new_idx]
+        if new_active_context_name:
+            # Save scroll position of old context (UI concern, might need UIManager method)
+            # old_context = self.context_manager.get_active_context()
+            # if old_context:
+            #     old_context.last_read_line_count = self.ui.current_line_in_history
 
-        # Save scroll position of old context (optional, can be complex)
-        # self.contexts[self.active_context_name]["last_read_line_count"] = self.ui.current_line_in_history
-
-        self.active_context_name = new_active_context_name
-
-        # Reset/Load scroll position for new context
-        self.ui.current_line_in_history = 0  # Reset to bottom for new active window
-        # self.ui.current_line_in_history = self.contexts[self.active_context_name].get("last_read_line_count", 0)
-
-        if self.active_context_name in self.contexts:  # Should always be true
-            self.contexts[self.active_context_name]["unread_count"] = 0
-        logger.debug(f"Switched active context to: {self.active_context_name}")
-        self.ui_needs_update.set()
-
-    def process_user_command(self, line):
-        if not line:
-            return
-        if line.startswith("/"):
-            parts = line.split(" ", 1)
-            command = parts[0].lower()
-            args = parts[1] if len(parts) > 1 else ""
-            logger.info(f"Processing command: {command} with args: '{args}'")
-            if command in ["/quit", "/q"]:
-                self.should_quit = True
-                quit_message = args if args else "Client quitting"
-                self.network.send_raw(f"QUIT :{quit_message}")
-                logger.info(f"QUIT command sent with message: {quit_message}")
-                self.add_message(
-                    "Quitting...", self.ui.colors["system"], context_name="Status"
+            if self.context_manager.set_active_context(new_active_context_name):
+                # Reset/Load scroll position for new context (UI concern)
+                self.ui.current_line_in_history = (
+                    0  # Reset to bottom for new active window
                 )
-            elif command in ["/join", "/j"]:
-                if args:
-                    new_channel_target = args.split(" ")[0]
-                    if not new_channel_target.startswith("#"):
-                        new_channel_target = "#" + new_channel_target
+                # new_ctx_obj = self.context_manager.get_active_context()
+                # if new_ctx_obj:
+                #     self.ui.current_line_in_history = new_ctx_obj.get("last_read_line_count", 0) # If we store it in Context object
 
-                    # Part current active channel if it's different and a channel type
-                    if (
-                        self.active_context_name.startswith("#")
-                        and self.active_context_name.lower()
-                        != new_channel_target.lower()
-                    ):
-                        if (
-                            self.active_context_name in self.contexts
-                            and self.contexts[self.active_context_name]["type"]
-                            == "channel"
-                        ):
-                            self.network.send_raw(
-                                f"PART {self.active_context_name} :Changing channels"
-                            )
-
-                    if self._create_context(new_channel_target, context_type="channel"):
-                        logger.debug(
-                            f"Ensured context for {new_channel_target} exists before sending JOIN."
-                        )
-                    self.network.send_raw(f"JOIN {new_channel_target}")
-                    # Active context will be set by server response (JOIN message)
-                    self.add_message(
-                        f"Attempting to join {new_channel_target}...",
-                        self.ui.colors["system"],
-                        context_name=new_channel_target,  # Or "Status"? For now, new channel.
-                    )
-                else:
-                    logger.warning("JOIN command issued with no arguments.")
-                    self.add_message(
-                        "Usage: /join #channel",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-            elif command in ["/part", "/p"]:
-                target_part_channel = self.active_context_name
-                part_args = args.split(" ", 1)
-                if part_args[0].startswith("#"):  # Allow specifying channel to part
-                    target_part_channel = part_args[0]
-                    args = part_args[1] if len(part_args) > 1 else ""
-
-                if (
-                    target_part_channel in self.contexts
-                    and self.contexts[target_part_channel]["type"] == "channel"
-                ):
-                    self.network.send_raw(
-                        f"PART {target_part_channel} :{args if args else 'Leaving'}"
-                    )
-                    # Active context will be changed by server response (PART message)
-                    # Or we can proactively change it here to "Status" if parting active
-                else:
-                    self.add_message(
-                        f"You are not in channel '{target_part_channel}' or it's not a channel context.",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-            elif command in ["/nick", "/n"]:
-                if args:
-                    self.network.send_raw(f"NICK {args.split(' ')[0]}")
-                else:
-                    self.add_message(
-                        "Usage: /nick <new_nickname>", self.ui.colors["error"]
-                    )
-            elif command in ["/msg", "/query", "/m"]:
-                msg_parts = args.split(" ", 1)
-                if len(msg_parts) == 2:
-                    target_nick, message = msg_parts
-                    self.network.send_raw(f"PRIVMSG {target_nick} :{message}")
-                    query_context_name = f"Query:{target_nick}"
-                    if self._create_context(query_context_name, context_type="query"):
-                        logger.debug(f"Ensured query context for {target_nick} exists.")
-                    self.add_message(
-                        f"[To {target_nick}] {message}",
-                        self.ui.colors["my_message"],
-                        context_name=query_context_name,
-                    )
-                    self.active_context_name = (
-                        query_context_name  # Switch to query context
-                    )
-                    logger.info(f"Switched to query context: {query_context_name}")
-                else:
-                    logger.warning("MSG/QUERY command with insufficient arguments.")
-                    self.add_message(
-                        "Usage: /msg <nickname> <message>",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-            elif command == "/me":
-                if (
-                    args
-                    and self.active_context_name in self.contexts
-                    and self.contexts[self.active_context_name]["type"] == "channel"
-                    and self.network.connected
-                ):
-                    self.network.send_raw(
-                        f"PRIVMSG {self.active_context_name} :\x01ACTION {args}\x01"
-                    )
-                    self.add_message(
-                        f"* {self.nick} {args}",
-                        self.ui.colors["channel_message"],
-                        context_name=self.active_context_name,
-                    )
-                elif not (
-                    self.active_context_name in self.contexts
-                    and self.contexts[self.active_context_name]["type"] == "channel"
-                ):
-                    self.add_message(
-                        "You are not in a channel.",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-                elif not self.network.connected:
-                    self.add_message(
-                        "Not connected.", self.ui.colors["error"], context_name="Status"
-                    )
-                else:
-                    self.add_message(
-                        "Usage: /me <action>",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-            elif command == "/away":
-                if args:
-                    self.network.send_raw(f"AWAY :{args}")
-                    self.add_message(
-                        f"Away: {args}", self.ui.colors["system"], context_name="Status"
-                    )
-                else:
-                    self.network.send_raw("AWAY")
-                    self.add_message(
-                        "No longer away.",
-                        self.ui.colors["system"],
-                        context_name="Status",
-                    )
-            elif command == "/invite":
-                invite_parts = args.split(" ", 1)
-                if len(invite_parts) == 2:
-                    nick, chan = invite_parts
-                    if not chan.startswith("#"):
-                        chan = "#" + chan
-                    self.network.send_raw(f"INVITE {nick} {chan}")
-                    self.add_message(
-                        f"Invited {nick} to {chan}.",
-                        self.ui.colors["system"],
-                        context_name=self.active_context_name,  # Or "Status"?
-                    )
-                else:
-                    self.add_message(
-                        "Usage: /invite <nick> <#channel>",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-            elif command in ["/whois", "/w"]:
-                if args:
-                    self.network.send_raw(f"WHOIS {args.split(' ')[0]}")
-                else:
-                    self.add_message(
-                        "Usage: /whois <nick>",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-            elif command == "/topic":
-                self._handle_topic_command(args)
-            elif command in ["/raw", "/quote"]:
-                if args:
-                    self.network.send_raw(args)
-                    self.add_message(
-                        f"RAW: {args}", self.ui.colors["system"], context_name="Status"
-                    )
-                else:
-                    self.add_message(
-                        "Usage: /raw <command>",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-            elif command == "/clear":
-                if self.active_context_name in self.contexts:
-                    self.contexts[self.active_context_name]["messages"].clear()
-                    self.contexts[self.active_context_name]["unread_count"] = 0
-                    # self.ui.current_line_in_history needs to be reset for this context in UIManager
-                    self.add_message(
-                        "History cleared for current context.",
-                        self.ui.colors["system"],
-                        False,
-                        context_name=self.active_context_name,
-                    )
-                else:
-                    self.add_message(
-                        "No active context to clear.",
-                        self.ui.colors["error"],
-                        context_name="Status",
-                    )
-            elif command in ["/connect", "/server", "/s"]:
-                self._handle_connect_command(args)
-            elif command == "/disconnect":
-                if self.network.connected:
-                    self.network.disconnect_gracefully("Client disconnect")
-                    self.add_message(
-                        "Disconnecting...",
-                        self.ui.colors["system"],
-                        context_name="Status",
-                    )
-                else:
-                    self.add_message(
-                        "Not connected.",
-                        self.ui.colors["system"],
-                        context_name="Status",
-                    )
-            elif command in ["/next", "/n", "/nextwindow"]:
-                self.switch_active_context("next")
-            elif command in ["/prev", "/p", "/prevwindow"]:
-                self.switch_active_context("prev")
-            elif command.startswith(("/win", "/w", "/window")):
-                parts = line.split(" ", 1)
-                if len(parts) > 1 and parts[1]:
-                    self.switch_active_context(parts[1])
-                else:
-                    # List windows with numbers and unread counts
-                    msg_lines = ["Open contexts:"]
-                    for i, name in enumerate(self.contexts.keys()):
-                        unread_str = ""
-                        if self.contexts[name]["unread_count"] > 0:
-                            unread_str = (
-                                f" ({self.contexts[name]['unread_count']} unread)"
-                            )
-                        active_marker = "*" if name == self.active_context_name else " "
-                        msg_lines.append(f" {i+1}: {active_marker}{name}{unread_str}")
-                    for m_line in msg_lines:
-                        self.add_message(
-                            m_line,
-                            self.ui.colors["system"],
-                            prefix_time=False,
-                            context_name=self.active_context_name,
-                        )
-            elif command in [
-                "/close",
-                "/wc",
-                "/partchannel",
-            ]:  # /partchannel is more explicit
-                context_to_close = self.active_context_name
-                args_parts = args.split(" ", 1)
-                # Allow specifying context to close: /close #channel or /close Query:User
-                if args and (args.startswith("#") or args.lower().startswith("query:")):
-                    context_to_close = args
-                    args = (
-                        args_parts[1] if len(args_parts) > 1 else ""
-                    )  # Reason for part
-
-                if context_to_close == "Status":
-                    self.add_message(
-                        "Cannot close the Status window.",
-                        self.ui.colors["error"],
-                        context_name="Status",
-                    )
-                elif context_to_close in self.contexts:
-                    ctx_type = self.contexts[context_to_close]["type"]
-                    if ctx_type == "channel":
-                        self.network.send_raw(
-                            f"PART {context_to_close} :{args if args else 'Closed by user'}"
-                        )
-                        # Context will be fully removed/handled by PART server message processing
-                        # Or we can proactively switch here if it was active
-                        if self.active_context_name == context_to_close:
-                            self.switch_active_context(
-                                "Status"
-                            )  # Switch to status after parting
-                    elif ctx_type == "query":
-                        del self.contexts[context_to_close]
-                        self.add_message(
-                            f"Closed query window: {context_to_close}",
-                            self.ui.colors["system"],
-                            context_name="Status",
-                        )
-                        if self.active_context_name == context_to_close:
-                            self.switch_active_context("Status")
-                    else:  # Generic or other types, just remove locally
-                        del self.contexts[context_to_close]
-                        self.add_message(
-                            f"Closed window: {context_to_close}",
-                            self.ui.colors["system"],
-                            context_name="Status",
-                        )
-                        if self.active_context_name == context_to_close:
-                            self.switch_active_context("Status")
-                    self.ui_needs_update.set()
-                else:
-                    self.add_message(
-                        f"Window '{context_to_close}' not found.",
-                        self.ui.colors["error"],
-                        context_name=self.active_context_name,
-                    )
-
+                logger.debug(
+                    f"Switched active context to: {self.context_manager.active_context_name}"
+                )
+                self.ui_needs_update.set()
             else:
+                # This should not happen if logic above is correct
+                logger.error(
+                    f"Failed to set active context to {new_active_context_name} via ContextManager."
+                )
                 self.add_message(
-                    f"Unknown command: {command}",
+                    f"Error switching to window '{new_active_context_name}'.",
                     self.ui.colors["error"],
-                    context_name=self.active_context_name,
+                    context_name=current_active_name,
                 )
-        else:  # Regular message to active context
-            if (
-                self.active_context_name in self.contexts
-                and (
-                    self.contexts[self.active_context_name]["type"] == "channel"
-                    or self.contexts[self.active_context_name]["type"] == "query"
-                )
-                and self.network.connected
-            ):
 
-                # For queries, target is different from context name
-                target_for_privmsg = self.active_context_name
-                if self.contexts[self.active_context_name]["type"] == "query":
-                    target_for_privmsg = self.active_context_name.split(":", 1)[
-                        1
-                    ]  # Get nick from "Query:Nick"
-
-                self.network.send_raw(f"PRIVMSG {target_for_privmsg} :{line}")
-                self.add_message(
-                    f"<{self.nick}> {line}",
-                    self.ui.colors["my_message"],
-                    context_name=self.active_context_name,
-                )
-            elif not self.network.connected:
-                self.add_message(
-                    "Not connected.", self.ui.colors["error"], context_name="Status"
-                )
-            else:
-                self.add_message(
-                    "Not in a channel or query. Use /join #channel or /msg <nick>.",
-                    self.ui.colors["error"],
-                    context_name=self.active_context_name,
-                )
-        self.ui_needs_update.set()
-
-    def _handle_topic_command(self, args_str):
-        topic_parts = args_str.split(" ", 1)
-        target_channel_ctx_name = self.active_context_name
-        new_topic = None
-
-        if not topic_parts or not topic_parts[0]:  # /topic (current channel)
-            if not (
-                target_channel_ctx_name in self.contexts
-                and self.contexts[target_channel_ctx_name]["type"] == "channel"
-            ):
-                self.add_message(
-                    "Not in a channel to get/set topic.",
-                    self.ui.colors["error"],
-                    context_name=self.active_context_name,
-                )
-                return
-        elif topic_parts[0].startswith("#"):  # /topic #channel [new_topic]
-            target_channel_ctx_name = topic_parts[0]
-            if len(topic_parts) > 1:
-                new_topic = topic_parts[1]
-        else:  # /topic new topic for current channel
-            if not (
-                target_channel_ctx_name in self.contexts
-                and self.contexts[target_channel_ctx_name]["type"] == "channel"
-            ):
-                self.add_message(
-                    "Not in a channel to set topic.",
-                    self.ui.colors["error"],
-                    context_name=self.active_context_name,
-                )
-                return
-            new_topic = args_str
-
-        self._create_context(
-            target_channel_ctx_name, context_type="channel"
-        )  # Ensure context exists
-
-        if new_topic is not None:
-            self.network.send_raw(f"TOPIC {target_channel_ctx_name} :{new_topic}")
-            # Server will confirm with RPL_TOPIC or error, message added there.
-            # self.add_message(f"Topic set for {target_channel_ctx_name}.", self.ui.colors["system"], context_name=target_channel_ctx_name)
-        else:  # Requesting topic
-            self.network.send_raw(f"TOPIC {target_channel_ctx_name}")
-            # Server will respond with RPL_TOPIC or RPL_NOTOPIC
-            # self.add_message(f"Requesting topic for {target_channel_ctx_name}.", self.ui.colors["system"], context_name=target_channel_ctx_name)
-
-    def _handle_connect_command(self, args_str):
-        from config import DEFAULT_PORT, DEFAULT_SSL_PORT
-
-        conn_args = args_str.split()
-        if not conn_args:
-            self.add_message(
-                "Usage: /connect <server[:port]> [ssl|nossl]", self.ui.colors["error"]
-            )
-            return
-        new_server_host, new_port, new_ssl = conn_args[0], None, self.use_ssl
-        if ":" in new_server_host:
-            new_server_host, port_str = new_server_host.split(":", 1)
-            try:
-                new_port = int(port_str)
-            except ValueError:
-                self.add_message(f"Invalid port: {port_str}", self.ui.colors["error"])
-                return
-        if len(conn_args) > 1:
-            ssl_arg = conn_args[1].lower()
-            if ssl_arg == "ssl":
-                new_ssl = True
-            elif ssl_arg == "nossl":
-                new_ssl = False
-        if new_port is None:
-            new_port = DEFAULT_SSL_PORT if new_ssl else DEFAULT_PORT
-
-        # Disconnect from current server if connected.
-        if self.network.connected:
-            # disconnect_gracefully will send QUIT and handle socket closure.
-            self.network.disconnect_gracefully("Changing servers")
-            # Brief pause to allow network thread to process disconnect if it's very quick
-            # time.sleep(0.1) # Optional: may not be necessary depending on thread behavior
-
-        # Update client's own server/port/ssl attributes, NetworkHandler reads these.
-        self.server = new_server_host
-        self.port = new_port
-        self.use_ssl = new_ssl
-
-        self.add_message(
-            f"Attempting to connect to: {self.server}:{self.port} (SSL: {self.use_ssl})",
-            self.ui.colors["system"],
-            context_name="Status",
-        )
-        logger.info(
-            f"Attempting new connection to: {self.server}:{self.port} (SSL: {self.use_ssl})"
-        )
-
-        # Reset contexts for the new connection (or decide how to handle existing ones)
-        # For now, let's clear contexts other than "Status" and re-init based on initial_channels_list
-        # A more advanced approach might keep logs but mark channels as disconnected.
-        logger.debug("Clearing existing contexts for new server connection.")
-        current_status_msgs = list(self.contexts.get("Status", {}).get("messages", []))
-        self.contexts.clear()
-        self._create_context("Status", context_type="status")  # Re-create Status first
-        logger.debug("Re-created 'Status' context.")
-        for msg_tuple in current_status_msgs:  # Restore status messages
-            self.contexts["Status"]["messages"].append(msg_tuple)
-        logger.debug(
-            f"Restored {len(current_status_msgs)} messages to 'Status' context."
-        )
-
-        for ch_name in self.initial_channels_list:
-            self._create_context(ch_name, context_type="channel")
-            logger.debug(f"Re-created initial channel context: {ch_name}")
-
-        if self.initial_channels_list:
-            self.active_context_name = self.initial_channels_list[0]
-        else:
-            self.active_context_name = "Status"
-        logger.info(
-            f"Set active context to '{self.active_context_name}' after server change."
-        )
-
-        # Tell NetworkHandler to use new parameters and attempt connection.
-        # The NetworkHandler's _network_loop will use the updated self.client.server etc.
-        self.network.update_connection_params(self.server, self.port, self.use_ssl)
-        # The network.start() call within update_connection_params (if thread wasn't running)
-        # or the existing running loop in NetworkHandler will handle the new connection attempt.
+    # process_user_command, _handle_topic_command, and _handle_connect_command
+    # have been moved to CommandHandler.
 
     def run_main_loop(self):
         logger.info("Starting main client loop.")
         self.network.start()
         while not self.should_quit:
             try:
-                key_code = self.ui.get_input_char()
-                if key_code != curses.ERR:
-                    self.handle_input(key_code)
+                key_code = self.ui.get_input_char()  # Blocks until input or timeout
+                if key_code != curses.ERR:  # curses.ERR means no input
+                    self.input_handler.handle_key_press(key_code)  # Use InputHandler
+
+                # Refresh UI if flag is set OR if there was any input (even non-command input)
                 if (
                     self.ui_needs_update.is_set() or key_code != curses.ERR
-                ):  # Refresh on input or if flag is set
+                ):  # ui_needs_update is set by InputHandler
                     self.ui.refresh_all_windows()
                     if self.ui_needs_update.is_set():
-                        self.ui_needs_update.clear()
-                time.sleep(0.05)  # Keep UI responsive
+                        self.ui_needs_update.clear()  # Clear the flag after refresh
+
+                time.sleep(0.05)  # Small sleep to prevent busy-waiting if no input
             except curses.error as e:
                 logger.error(f"Curses error in main loop: {e}", exc_info=True)
                 self.add_message(
@@ -914,41 +339,46 @@ class IRCClient_Logic:
                     self.ui.colors["error"],
                     context_name="Status",
                 )
-                self.should_quit = True
-                break
+                self.should_quit = True  # Signal quit
+                break  # Exit loop
             except KeyboardInterrupt:
                 logger.info("KeyboardInterrupt received. Initiating quit.")
                 self.add_message(
-                    "Ctrl+C. Quitting...",
-                    self.ui.colors["error"],
+                    "Ctrl+C pressed. Quitting...",
+                    self.ui.colors["system"],  # Using system color for this message
                     context_name="Status",
                 )
                 self.should_quit = True
                 if self.network.connected:
-                    self.network.send_raw("QUIT :Ctrl+C")
-                    logger.debug("Sent QUIT due to Ctrl+C.")
+                    self.network.send_raw("QUIT :Ctrl+C pressed")
                 break
             except Exception as e:
                 logger.critical(
                     f"Unhandled exception in main client loop: {e}", exc_info=True
                 )
-                self.add_message(
-                    f"CRITICAL ERROR: {e}. Attempting to quit.",
-                    self.ui.colors["error"],
-                    context_name="Status",
-                )
-                self.should_quit = True  # Try to quit gracefully
-                # self.network.send_raw("QUIT :Client Critical Error") # Optional: send a quit message
-                break  # Exit loop on unhandled exception
+                # Try to add message to UI, might fail if curses is broken
+                try:
+                    self.add_message(
+                        f"CRITICAL ERROR: {e}. Attempting to quit.",
+                        self.ui.colors["error"],
+                        context_name="Status",
+                    )
+                except Exception as ui_e:
+                    logger.error(f"Failed to add critical error message to UI: {ui_e}")
+
+                self.should_quit = True
+                # Optionally send QUIT if network is still up
+                # if self.network.connected:
+                #     self.network.send_raw("QUIT :Client Critical Error")
+                break
 
         logger.info("Main client loop ended.")
-        self.should_quit = True  # Ensure flag is set
-        self.network.stop(
-            send_quit=not self.network.connected  # Avoid double QUIT if already sent by /quit or Ctrl+C
-        )
+        # Ensure should_quit is True for network thread cleanup
+        self.should_quit = True
+        self.network.stop(send_quit=self.network.connected)
         if self.network.network_thread and self.network.network_thread.is_alive():
             logger.debug("Waiting for network thread to join...")
-            self.network.network_thread.join(timeout=2.0)
+            self.network.network_thread.join(timeout=2.0)  # Wait up to 2 seconds
             if self.network.network_thread.is_alive():
                 logger.warning("Network thread did not join in time.")
             else:

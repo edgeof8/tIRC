@@ -70,3 +70,4 @@ The project is organized into several Python modules:
 - `network_handler.py`: Manages network connections.
 - `ui_manager.py`: Handles the terminal-based user interface.
 - `config.py`: Manages configuration loading and access.
+- `context_manager.py`: Manages different chat contexts (server, channels, private messages).
