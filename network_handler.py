@@ -4,7 +4,7 @@ import ssl
 import threading
 import time
 import logging
-from typing import List, Optional
+from typing import List, Optional, Set # Added Set for type hint
 from config import CONNECTION_TIMEOUT, RECONNECT_INITIAL_DELAY, RECONNECT_MAX_DELAY
 
 logger = logging.getLogger("pyrc.network")
@@ -21,6 +21,7 @@ class NetworkHandler:
         self._should_thread_stop = threading.Event()
         self.channels_to_join_on_connect: List[str] = []
         self.is_handling_nick_collision: bool = False # Flag for NICK collision handling
+        self.initial_registration_sent: bool = False # Track if NICK/USER sent for this connection
 
     def start(self):
         if self.network_thread and self.network_thread.is_alive():
@@ -99,6 +100,32 @@ class NetworkHandler:
             )
             self.connected = False
             # The loop will pick this up. If it's sleeping, it will eventually wake.
+
+    def send_cap_ls(self, version: Optional[str] = "302"):
+        if self.connected:
+            if version:
+                self.send_raw(f"CAP LS {version}")
+            else:
+                self.send_raw("CAP LS")
+        else:
+            logger.warning("send_cap_ls called but not connected.")
+
+    def send_cap_req(self, capabilities: List[str]):
+        if self.connected:
+            if capabilities:
+                self.send_raw(f"CAP REQ :{ ' '.join(capabilities)}")
+        else:
+            logger.warning("send_cap_req called but not connected.")
+
+    def send_cap_end(self):
+        logger.debug("Sending CAP END")
+        self.send_raw("CAP END")
+
+    def send_authenticate(self, payload: str):
+        logger.debug(f"Sending AUTHENTICATE {payload[:20]}...") # Log only part of payload for security if it's creds
+        self.send_raw(f"AUTHENTICATE {payload}")
+
+    # Internal method to establish or re-establish the socket connection
 
     def _connect_socket(self):
         self.is_handling_nick_collision = False # Reset flag on new connection attempt
@@ -297,7 +324,11 @@ class NetworkHandler:
                     line_bytes, buffer = buffer.split(b"\r\n", 1)
                     try:
                         decoded_line = line_bytes.decode("utf-8", errors="replace")
-                        self.client.on_server_message(decoded_line)
+                        # Ensure client reference is valid before calling
+                        if self.client:
+                            self.client.on_server_message(decoded_line)
+                        else:
+                            logger.error("Client reference is None in _network_loop. Cannot process message.")
                     except UnicodeDecodeError as e:
                         logger.error(
                             f"Unicode decode error: {e} on line: {line_bytes.hex()}",

@@ -1,83 +1,120 @@
-# PyRC - Python IRC Client
+# PyRC - Python Terminal IRC Client
 
-PyRC is a terminal-based IRC client written in Python. It allows users to connect to IRC servers, join channels, and communicate with other users.
+PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It aims to provide a feature-rich, yet lightweight and user-friendly experience for IRC users who prefer the command line.
 
-## Features
+## Key Features
 
-- Connect to IRC servers
-- Join and part channels
-- Send and receive messages
-- Basic IRC command support
-- User interface managed in the terminal
-- Configurable settings
-- **Logging**: Application events, errors, and IRC communications are logged to files in the `logs/` directory. Log behavior (e.g., level, file size) is configurable in [`pyterm_irc_config.ini`](./pyterm_irc_config.ini:0).
-- **Context Management**: Robust handling of different chat windows (server status, channels, private messages) via a dedicated `ContextManager`.
-- **UI Consistency**: Sidebar, message window, and status bar consistently reflect the active chat context.
+*   **Text-based UI:** Clean and navigable interface using the `curses` library.
+*   **Multiple Server Connections:** (Planned)
+*   **Channel and Query Windows:** Separate contexts for channels and private messages.
+*   **IRCv3 Support:** Including SASL PLAIN authentication and CAP negotiation.
+*   **Configuration File:** Easy setup via `pyterm_irc_config.ini`.
+*   **Logging:** Comprehensive logging for debugging and session history.
+*   **Tab Completion:** For commands and nicks.
+*   **Color Themes:** (Basic support, planned for expansion)
+*   **SSL/TLS Encryption:** Secure connections to IRC servers.
 
-## Recent Changes (May 2025)
+## Prerequisites
 
-- **Context Management Refactoring**: The core logic for managing different chat contexts (server status, channels, private messages) was centralized into `context_manager.py`. This involved updating `irc_client_logic.py` and `irc_protocol.py` to use the new `ContextManager`, ensuring cleaner separation of concerns.
-- **UI Consistency Fixes**: Resolved issues where different parts of the UI (sidebar user list vs. main message window/status bar) could show information for different active contexts. The UI now consistently uses a snapshot of the active context for each refresh cycle.
-- **Bug Fixes**: Addressed various minor bugs, including a double-printing issue for messages and several Pylance-reported errors related to attribute access and indentation.
+*   Python 3.8 or higher.
+*   `pip` (Python package installer).
 
-### Command Shortcuts
+## Installation
 
-The client supports common IRC command shortcuts:
+1.  **Clone the repository (or download the source code):**
+    ```bash
+    git clone https://github.com/yourusername/pyrc.git  # Replace with your actual repository URL
+    cd pyrc
+    ```
 
-- `/j <channel>` or `/join <channel>`: Join a channel.
-- `/p <channel>` or `/part <channel>`: Leave a channel.
-- `/q` or `/quit [message]`: Disconnect from the server with an optional quit message.
-- `/nick <new_nickname>`: Change your nickname.
-- `/me <action_message>`: Send an action message (e.g., "/me is coding").
-- `/msg <nickname> <message>`: Send a private message to a user.
-- `/whois <nickname>`: Get information about a user.
-- `/topic <channel> [new_topic]`: View or set the channel topic.
-- `/away [message]`: Set or remove an away message.
-- `/invite <nickname> <channel>`: Invite a user to a channel.
+2.  **Create a virtual environment (recommended):**
+    ```bash
+    python -m venv venv
+    ```
+    Activate it:
+    *   Windows: `venv\Scripts\activate`
+    *   Linux/macOS: `source venv/bin/activate`
+
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 ## Configuration
 
-The client can be configured using the [`pyterm_irc_config.ini`](./pyterm_irc_config.ini:0) file. This file typically includes settings such as:
+PyRC uses a configuration file named `pyterm_irc_config.ini` located in the root directory of the application.
 
-- Default IRC server and port
-- Default nickname
-- Default channels to join on connect
-- Logging settings (enabled, file name, level, rotation parameters)
+1.  **Copy the example configuration (if it doesn't exist or you want to start fresh):**
+    If an example like `pyterm_irc_config.ini.example` is provided, copy it to `pyterm_irc_config.ini`.
+    ```bash
+    # On Linux/macOS:
+    # cp pyterm_irc_config.ini.example pyterm_irc_config.ini
+    # On Windows:
+    # copy pyterm_irc_config.ini.example pyterm_irc_config.ini
+    ```
+    If no example exists, PyRC might create a default one on first run, or you may need to create it manually based on the structure below.
 
-## Dependencies
+2.  **Edit `pyterm_irc_config.ini`:**
+    Open the file in a text editor and customize the settings. Key settings include:
 
-The project dependencies are listed in the [`requirements.txt`](./requirements.txt:0) file. You can install them using pip:
+    *   `[Connection]`
+        *   `default_server`: The IRC server address (e.g., `irc.libera.chat`).
+        *   `default_port`: The server port (e.g., `6697` for SSL, `6667` for non-SSL).
+        *   `default_ssl`: `true` or `false` to enable/disable SSL.
+        *   `default_nick`: Your preferred nickname.
+        *   `default_channels`: Comma-separated list of channels to auto-join (e.g., `#python,#testchannel`).
+        *   `password`: Server password, if required by the server (rarely used for user connections).
+        *   `nickserv_password`: Your NickServ password for services authentication. Leave blank if not used.
 
-```bash
-pip install -r requirements.txt
-```
+    *   `[UI]`
+        *   `message_history_lines`: Number of lines to keep in channel/query buffers (e.g., `500`).
+        *   `colorscheme`: (e.g., `default` - future support for more themes).
 
-## How to Run
+    *   `[Logging]`
+        *   `log_enabled`: `true` or `false`.
+        *   `log_file`: Name of the log file (e.g., `pyrc.log`). Defaults to `logs/pyrc.log`.
+        *   `log_level`: Logging verbosity (e.g., `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
+        *   `log_max_bytes`: Maximum size of a log file before rotation (e.g., `5242880` for 5MB).
+        *   `log_backup_count`: Number of backup log files to keep (e.g., `3`).
 
-To start the IRC client, you can likely run the main script (assuming it's `pyrc.py`):
+## Usage
+
+Once installed and configured, run PyRC from its root directory:
 
 ```bash
 python pyrc.py
 ```
 
-Or, if there's a specific entry point like `simple_irc_client.py`:
+### Basic Commands
 
-```bash
-python simple_irc_client.py
-```
+PyRC supports a variety of commands, most of which are standard IRC commands. Type `/help` within the client for a list of available commands and their aliases.
 
-Please verify the correct command to run the client.
+*   `/join #channelname`: Joins the specified channel.
+*   `/part [message]`: Leaves the current channel, optionally with a message.
+*   `/msg <nickname> <message>`: Sends a private message to a user.
+*   `/query <nickname>`: Opens a new query window with the specified user.
+*   `/nick <newnickname>`: Changes your nickname.
+*   `/quit [message]`: Disconnects from the server and exits PyRC.
+*   `/connect <server>[:<port>] [ssl|nossl] [#channel1,#channel2,...]`: Connects to a new server.
+*   `/server <server_alias_or_host>`: Switches to a different server connection (if multiple active - planned feature).
+*   `/wc` or `/close`: Closes the current query window or parts the current channel.
+*   `/clear`: Clears the current window's messages.
+*   `/help [command]`: Displays general help or help for a specific command.
+*   `PageUp`/`PageDown`: Scroll through the message buffer in the current window.
+*   `Ctrl+N`/`Ctrl+P` (or `/nextwindow`, `/prevwindow`): Switch to the next/previous active context (channel/query/status window).
 
-## Project Structure
+## Contributing
 
-The project is organized into several Python modules:
+Contributions are welcome! If you'd like to contribute, please:
 
-- `pyrc.py`: Likely the main application script or entry point.
-- `irc_client_logic.py`: Handles the core IRC client logic.
-- `irc_protocol.py`: Implements the IRC protocol.
-- `network_handler.py`: Manages network connections.
-- `ui_manager.py`: Handles the terminal-based user interface.
-- `input_handler.py`: Manages user input from the terminal.
-- `command_handler.py`: Processes user-entered IRC commands.
-- `config.py`: Manages configuration loading and access.
-- `context_manager.py`: Manages different chat contexts (server, channels, private messages).
+1.  Fork the repository.
+2.  Create a new branch for your feature or bug fix (`git checkout -b feature/your-feature-name`).
+3.  Make your changes and commit them (`git commit -am 'Add some feature'`).
+4.  Push to the branch (`git push origin feature/your-feature-name`).
+5.  Create a new Pull Request.
+
+For major changes, please open an issue first to discuss what you would like to change.
+
+## License
+
+This project is licensed under the MIT License - see the `LICENSE` file for details (if a `LICENSE` file exists, otherwise assume MIT or specify as appropriate).

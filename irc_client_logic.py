@@ -4,7 +4,8 @@ import threading
 import time
 import socket
 from collections import deque
-from typing import Optional, Any, List, Set # Added Set
+from typing import Optional, Any, List, Set, Dict # Added Set, Dict
+import base64
 import logging
 
 from config import (
@@ -67,6 +68,30 @@ class IRCClient_Logic:
 
         self.should_quit = False
         self.ui_needs_update = threading.Event()
+
+        self.supported_caps: Set[str] = set()
+        self.requested_caps: Set[str] = set() # Caps we've sent in CAP REQ
+        self.enabled_caps: Set[str] = set()   # Caps ACKed by server
+        self.cap_negotiation_pending: bool = False
+        self.cap_negotiation_finished_event = threading.Event() # To signal NICK/USER can proceed
+        self.desired_caps: Set[str] = {
+            "sasl",
+            "multi-prefix",
+            "server-time",
+            "message-tags",
+            "account-tag",
+            "echo-message",
+            "away-notify",
+            "chghost",
+            "userhost-in-names",
+            "cap-notify", # For CAP NEW/DEL
+            "extended-join", # If we want to parse extended JOIN info
+            "account-notify", # For account changes
+            "invite-notify", # For server-side invite tracking
+        }
+        self.sasl_authentication_initiated: bool = False # To prevent double SASL attempts
+        self.sasl_flow_active: bool = False
+        self.sasl_authentication_succeeded: Optional[bool] = None
 
         self.network = NetworkHandler(self)
         self.ui = UIManager(stdscr, self)
@@ -275,16 +300,32 @@ class IRCClient_Logic:
         """Switches active context only among 'channel' type contexts."""
         all_context_names = self.context_manager.get_all_context_names()
 
-        # Explicitly build the list of channel names
-        channel_context_names_temp: List[str] = []
+        # Build the list of contexts to cycle through: channels and "Status"
+        cyclable_context_names_temp: List[str] = []
+        status_context_name_const = "Status" # Define to avoid typos
+
+        channel_names_only: List[str] = []
+
         for name in all_context_names:
             context_obj = self.context_manager.get_context(name)
-            if context_obj and context_obj.type == "channel":
-                channel_context_names_temp.append(name)
-        channel_context_names: List[str] = sorted(channel_context_names_temp)
+            if context_obj:
+                if context_obj.type == "channel":
+                    channel_names_only.append(name)
+                # "Status" will be added specifically later if it exists
 
+        # Sort channel names alphabetically (case-insensitive)
+        channel_names_only.sort(key=lambda x: x.lower())
 
-        if not channel_context_names:
+        # Start with sorted channels
+        cyclable_context_names_temp.extend(channel_names_only)
+
+        # Add "Status" to the end if it exists
+        if status_context_name_const in all_context_names:
+            cyclable_context_names_temp.append(status_context_name_const)
+
+        channel_context_names: List[str] = cyclable_context_names_temp # Rename for less diff below
+
+        if not channel_context_names: # Should not be empty if Status always exists
             self.add_message(
                 "No channels to switch to.",
                 self.ui.colors["system"],
@@ -339,6 +380,218 @@ class IRCClient_Logic:
                     context_name=current_active_name_str or "Status", # Use the string version or fallback
                 )
 
+
+    def initiate_cap_negotiation(self):
+        """Called by NetworkHandler after connection is established."""
+        if self.network.connected:
+            self.cap_negotiation_pending = True
+            self.cap_negotiation_finished_event.clear()
+            self.sasl_authentication_initiated = False # Reset for new connection
+            self.enabled_caps.clear() # Clear previously enabled caps
+            self.supported_caps.clear()
+            self.requested_caps.clear()
+            self.add_message("Negotiating capabilities with server (CAP)...", self.ui.colors["system"], context_name="Status")
+            self.network.send_cap_ls() # Request capabilities list
+
+    def proceed_with_registration(self):
+        """Called after CAP negotiation is done or SASL is handled."""
+        # Ensure this is called only once per connection attempt after CAP/SASL
+        if self.cap_negotiation_finished_event.is_set() and not self.cap_negotiation_pending:
+            logger.debug("proceed_with_registration called but registration already signaled or not in CAP pending state.")
+            return
+
+        self.cap_negotiation_pending = False # Ensure this is false
+        self.cap_negotiation_finished_event.set() # Signal that NICK/USER can be sent
+        logger.info("CAP negotiation concluded. Proceeding with NICK/USER registration.")
+        self.add_message("Proceeding with NICK/USER registration.", self.ui.colors["system"], context_name="Status")
+        
+        if self.password:
+            self.network.send_raw(f"PASS {self.password}")
+        self.network.send_raw(f"NICK {self.nick}")
+        self.network.send_raw(f"USER {self.nick} 0 * :{self.nick}")
+
+    def handle_cap_ls(self, capabilities_str: str):
+        if not self.cap_negotiation_pending:
+            logger.warning("Received CAP LS but negotiation is not pending. Ignoring.")
+            return
+
+        self.supported_caps = set(capabilities_str.split())
+        self.add_message(f"Server supports CAP: {', '.join(self.supported_caps) if self.supported_caps else 'None'}", self.ui.colors["system"], context_name="Status")
+
+        caps_to_request = list(self.desired_caps.intersection(self.supported_caps))
+
+        if caps_to_request:
+            self.requested_caps.update(caps_to_request)
+            self.add_message(f"Requesting CAP: {', '.join(caps_to_request)}", self.ui.colors["system"], context_name="Status")
+            self.network.send_cap_req(caps_to_request)
+            if not self.requested_caps: # If all requested caps were filtered out (e.g. empty intersection)
+                self.add_message("No desired and supported capabilities to request. Ending CAP negotiation.", self.ui.colors["system"], context_name="Status")
+                self.network.send_cap_end()
+                # proceed_with_registration will be called by handle_cap_end_confirmation or 001
+        else:
+            self.add_message("No desired capabilities supported or none to request. Ending CAP negotiation.", self.ui.colors["system"], context_name="Status")
+            self.network.send_cap_end()
+            # proceed_with_registration will be called by handle_cap_end_confirmation or 001
+
+    def handle_cap_ack(self, acked_caps_str: str):
+        if not self.cap_negotiation_pending:
+            logger.warning("Received CAP ACK but negotiation is not pending. Ignoring.")
+            return
+
+        acked_caps_list = acked_caps_str.split()
+        newly_acked = []
+        for cap in acked_caps_list:
+            self.enabled_caps.add(cap)
+            if cap in self.requested_caps:
+                self.requested_caps.remove(cap)
+            newly_acked.append(cap)
+
+        if newly_acked:
+            self.add_message(f"CAP ACK: {', '.join(newly_acked)}", self.ui.colors["system"], context_name="Status")
+
+        if "sasl" in self.enabled_caps and not self.sasl_authentication_initiated:
+            self.sasl_authentication_initiated = True 
+            self.add_message("SASL capability acknowledged. Future step: Initiate SASL authentication...", self.ui.colors["system"], context_name="Status")
+            # Actual SASL logic will be here. For now, we assume it's handled to test CAP END.
+            # If SASL were real, it would have its own flow, and CAP END would be after SASL success/failure.
+
+        if not self.requested_caps: # All *initially* requested caps have been ACKed or NAKed
+            # If SASL is part of the flow and not yet completed, wait for SASL.
+            if not ("sasl" in self.enabled_caps and self.sasl_authentication_initiated and not self.is_sasl_completed()):
+                self.add_message("All requested capabilities processed. Ending CAP negotiation.", self.ui.colors["system"], context_name="Status")
+                self.network.send_cap_end()
+                # proceed_with_registration will be called by handle_cap_end_confirmation or 001
+
+    def handle_cap_nak(self, naked_caps_str: str):
+        if not self.cap_negotiation_pending:
+            logger.warning("Received CAP NAK but negotiation is not pending. Ignoring.")
+            return
+
+        naked_caps_list = naked_caps_str.split()
+        rejected = []
+        for cap in naked_caps_list:
+            if cap in self.requested_caps:
+                self.requested_caps.remove(cap)
+            if cap in self.enabled_caps:
+                self.enabled_caps.remove(cap)
+            rejected.append(cap)
+
+        if rejected:
+            self.add_message(f"CAP NAK (rejected): {', '.join(rejected)}", self.ui.colors["system"], context_name="Status")
+
+        if not self.requested_caps: # All *initially* requested caps have been ACKed or NAKed
+            if not ("sasl" in self.enabled_caps and self.sasl_authentication_initiated and not self.is_sasl_completed()):
+                self.add_message("All requested capabilities processed (some NAKed). Ending CAP negotiation.", self.ui.colors["system"], context_name="Status")
+                self.network.send_cap_end()
+                # proceed_with_registration will be called by handle_cap_end_confirmation or 001
+
+    def handle_cap_end_confirmation(self):
+        """Called when server confirms CAP END or implicitly (e.g. on 001)."""
+        if self.cap_negotiation_pending : # Only if we were actually pending
+            self.add_message("CAP negotiation finalized with server.", self.ui.colors["system"], context_name="Status")
+            self.cap_negotiation_pending = False # Mark as no longer pending
+            # Only proceed with registration if SASL is not enabled/initiated OR if it's completed
+            if not ("sasl" in self.enabled_caps and self.sasl_authentication_initiated and not self.is_sasl_completed()):
+                if not self.cap_negotiation_finished_event.is_set(): # Avoid double registration
+                     self.proceed_with_registration()
+            else:
+                logger.info("CAP END confirmed, but SASL is active and not yet completed. Registration deferred.")
+        elif not self.cap_negotiation_finished_event.is_set():
+            # If CAP wasn't 'pending' but registration hasn't happened, e.g. server sent 001 early
+            logger.info("CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.")
+            self.proceed_with_registration()
+
+    # SASL Authentication Handlers
+    def initiate_sasl_plain_authentication(self):
+        if not self.nickserv_password:
+            self.add_message("SASL: NickServ password not set. Skipping SASL.", self.ui.colors["warning"], context_name="Status")
+            logger.warning("SASL: NickServ password not set. Skipping SASL.")
+            self.sasl_authentication_succeeded = False # Mark as failed to allow CAP END
+            self.sasl_flow_active = False
+            # If CAP END was deferred for SASL, send it now
+            if "sasl" in self.enabled_caps and self.cap_negotiation_pending: # Check if CAP was pending for SASL
+                 self.add_message("SASL skipped. Proceeding to end CAP negotiation.", self.ui.colors["system"], context_name="Status")
+                 self.network.send_cap_end() # Server will confirm, then registration
+            return
+
+        self.add_message("SASL: Initiating PLAIN authentication...", self.ui.colors["system"], context_name="Status")
+        logger.info("SASL: Initiating PLAIN authentication.")
+        self.sasl_flow_active = True
+        self.sasl_authentication_succeeded = None # Reset status
+        payload_str = f"{self.nick}\0{self.nick}\0{self.nickserv_password}"
+        # payload_b64 = base64.b64encode(payload_str.encode('utf-8')).decode('utf-8') # Credentials sent after challenge
+        self.network.send_authenticate("PLAIN") # Inform server we are starting PLAIN, server responds with AUTHENTICATE +
+
+    def handle_sasl_authenticate_challenge(self, challenge: str):
+        if not self.sasl_flow_active:
+            logger.warning("SASL: Received AUTHENTICATE challenge but SASL flow not active. Ignoring.")
+            return
+
+        if challenge == "+": # Standard challenge for PLAIN, expecting credentials
+            logger.info("SASL: Received '+' challenge. Sending PLAIN credentials.")
+            payload_str = f"{self.nick}\0{self.nick}\0{self.nickserv_password}"
+            payload_b64 = base64.b64encode(payload_str.encode('utf-8')).decode('utf-8')
+            
+            masked_payload_str = f"{self.nick}\0{self.nick}\0********"
+            masked_payload_b64 = base64.b64encode(masked_payload_str.encode('utf-8')).decode('utf-8')
+            logger.debug(f"SASL: Sending AUTHENTICATE payload (masked): {masked_payload_b64}")
+            
+            self.network.send_authenticate(payload_b64)
+        else:
+            logger.warning(f"SASL: Received unexpected challenge: {challenge}. Aborting SASL.")
+            self.add_message(f"SASL: Unexpected challenge '{challenge}'. Aborting.", self.ui.colors["error"], context_name="Status")
+            self.handle_sasl_failure(f"Unexpected challenge: {challenge}")
+
+    def handle_sasl_success(self, message: str):
+        if not self.sasl_flow_active:
+            logger.info(f"SASL: Received SASL success ({message}), but flow no longer active. Assuming already handled or connection proceeded.")
+            return
+
+        logger.info(f"SASL: Authentication successful. Message: {message}")
+        self.add_message(f"SASL: Authentication successful. ({message})", self.ui.colors["system"], context_name="Status")
+        self.sasl_authentication_succeeded = True
+        self.sasl_flow_active = False
+        self.sasl_authentication_initiated = True
+
+        if self.cap_negotiation_pending:
+            logger.info("SASL successful. Sending CAP END.")
+            self.add_message("SASL successful. Finalizing CAP negotiation.", self.ui.colors["system"], context_name="Status")
+            self.network.send_cap_end()
+        elif not self.cap_negotiation_finished_event.is_set():
+            logger.info("SASL successful. Proceeding with registration as CAP END was not pending.")
+            self.proceed_with_registration()
+
+    def handle_sasl_failure(self, reason: str):
+        if not self.sasl_flow_active and self.sasl_authentication_succeeded is not None:
+            logger.info(f"SASL: Received SASL failure ({reason}), but flow no longer active and result recorded. Ignoring.")
+            return
+
+        logger.warning(f"SASL: Authentication failed. Reason: {reason}")
+        self.add_message(f"SASL: Authentication FAILED. Reason: {reason}", self.ui.colors["error"], context_name="Status")
+        self.sasl_authentication_succeeded = False
+        self.sasl_flow_active = False
+        self.sasl_authentication_initiated = True
+
+        if self.cap_negotiation_pending:
+            logger.info("SASL failed. Sending CAP END.")
+            self.add_message("SASL failed. Finalizing CAP negotiation.", self.ui.colors["system"], context_name="Status")
+            self.network.send_cap_end()
+        elif not self.cap_negotiation_finished_event.is_set():
+            logger.info("SASL failed. Proceeding with registration as CAP END was not pending.")
+            self.proceed_with_registration()
+
+    def is_cap_negotiation_pending(self) -> bool:
+        return self.cap_negotiation_pending
+
+    def is_sasl_completed(self) -> bool:
+        # SASL is completed if the flow is not active AND there has been a success or failure.
+        if not self.sasl_flow_active and self.sasl_authentication_succeeded is not None:
+            return True
+        # If SASL was never even initiated (e.g. 'sasl' not in enabled_caps or no password)
+        # and we are not actively in a SASL flow, it's also considered 'completed' for registration purposes.
+        if not self.sasl_authentication_initiated and not self.sasl_flow_active:
+            return True
+        return False
 
     def run_main_loop(self):
         logger.info("Starting main client loop.")

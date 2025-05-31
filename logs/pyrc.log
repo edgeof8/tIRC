@@ -1637,3 +1637,1261 @@ Exception: Terminal too small to initialize UI.
 2025-05-31 03:39:30,104 - pyrc.command_handler - INFO - Processing command: /nick with args: 'testing'
 2025-05-31 03:39:30,366 - pyrc.protocol - INFO - Our nick changed from PyTermUser_ to testing.
 2025-05-31 03:39:30,527 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='testing' T=':This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY frytaped <password>'. Raw: :NickServ!NickServ@services.libera.chat NOTICE testing :This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY frytaped <password>
+2025-05-31 03:47:38,092 - pyrc - INFO - Logging initialized.
+2025-05-31 03:47:38,092 - pyrc - INFO - PyRC application started.
+2025-05-31 03:47:38,105 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:47:38,105 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:47:38,106 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:47:38,106 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:47:38,106 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:47:38,107 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:47:38,915 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:47:38,915 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:47:38,915 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:47:39,192 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :platinum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:47:39,192 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :platinum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:47:39,193 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :platinum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:47:45,226 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** No Ident response'. Raw: :platinum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:47:45,628 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :platinum.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 03:47:45,628 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 03:47:46,350 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 03:48:50,785 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 03:49:47,369 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:49:47,369 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:49:47,369 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:49:47,370 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:49:47,370 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:49:47,371 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:49:47,371 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:49:47,372 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:49:47,372 - pyrc - INFO - PyRC exited.
+2025-05-31 03:49:48,991 - pyrc - INFO - Logging initialized.
+2025-05-31 03:49:48,991 - pyrc - INFO - PyRC application started.
+2025-05-31 03:49:49,005 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:49:49,005 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:49:49,006 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:49:49,006 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:49:49,006 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:49:49,006 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:49:49,339 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:49:49,339 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:49:49,340 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:49:49,633 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :platinum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:49:49,633 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :platinum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:49:49,633 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :platinum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:49:55,581 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'platinum.libera.chat': P='*' T=':*** No Ident response'. Raw: :platinum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:49:55,581 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :platinum.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 03:49:55,581 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 03:49:55,738 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 03:49:56,549 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 03:50:02,019 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 03:50:02,104 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 39. Current joined: {'#test'}
+2025-05-31 03:50:45,843 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 03:50:46,172 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 03:50:46,517 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1811. Current joined: {'#libera', '#test'}
+2025-05-31 03:53:36,317 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 03:53:36,317 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 03:53:36,317 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 03:53:36,317 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 03:53:36,318 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 03:53:36,319 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 03:53:36,319 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 03:53:36,319 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 03:53:36,319 - pyrc - INFO - PyRC exited.
+2025-05-31 03:53:38,146 - pyrc - INFO - Logging initialized.
+2025-05-31 03:53:38,146 - pyrc - INFO - PyRC application started.
+2025-05-31 03:53:38,159 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 03:53:38,159 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 03:53:38,159 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 03:53:38,160 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 03:53:38,160 - pyrc.network - INFO - Starting network thread.
+2025-05-31 03:53:38,160 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 03:53:38,655 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 03:53:38,656 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 03:53:38,656 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 03:53:38,806 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'lead.libera.chat': P='*' T=':*** Checking Ident'. Raw: :lead.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 03:53:38,807 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'lead.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :lead.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 03:53:38,807 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'lead.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :lead.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 03:53:44,437 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'lead.libera.chat': P='*' T=':*** No Ident response'. Raw: :lead.libera.chat NOTICE * :*** No Ident response
+2025-05-31 03:53:44,438 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :lead.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 03:53:44,438 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 03:53:44,800 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 03:53:47,904 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 03:53:51,174 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 03:53:51,277 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1810. Current joined: {'#libera'}
+2025-05-31 04:00:25,422 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:00:25,422 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:00:25,422 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:00:25,422 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:00:25,422 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:00:25,424 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:00:25,424 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:00:25,424 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:00:25,424 - pyrc - INFO - PyRC exited.
+2025-05-31 04:00:44,343 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:00:44,343 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:00:44,343 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:00:44,344 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:00:44,344 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:00:44,345 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:00:44,345 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:00:44,345 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:00:44,345 - pyrc - INFO - PyRC exited.
+2025-05-31 04:09:13,987 - pyrc - INFO - Logging initialized.
+2025-05-31 04:09:13,987 - pyrc - INFO - PyRC application started.
+2025-05-31 04:09:14,001 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:09:14,001 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:09:14,002 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:09:14,002 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:09:14,002 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:09:14,003 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:09:14,538 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:09:14,539 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:09:14,539 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:09:14,746 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :iridium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:09:14,746 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :iridium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:09:14,746 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :iridium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:09:20,371 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** No Ident response'. Raw: :iridium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:09:20,371 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :iridium.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:09:20,372 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:09:20,643 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:09:31,866 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 04:09:32,199 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 04:09:32,558 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38. Current joined: {'#test'}
+2025-05-31 04:09:46,334 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:09:46,483 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 04:09:46,605 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1808. Current joined: {'#libera', '#test'}
+2025-05-31 04:10:14,337 - pyrc.command_handler - INFO - Processing command: /uls with args: ''
+2025-05-31 04:10:25,503 - pyrc.command_handler - INFO - Processing command: /uls with args: ' down'
+2025-05-31 04:11:39,935 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:11:39,935 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:11:39,935 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:11:39,936 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:11:39,936 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:11:39,938 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:11:39,938 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:11:39,939 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:11:39,939 - pyrc - INFO - PyRC exited.
+2025-05-31 04:11:41,180 - pyrc - INFO - Logging initialized.
+2025-05-31 04:11:41,181 - pyrc - INFO - PyRC application started.
+2025-05-31 04:11:41,194 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:11:41,194 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:11:41,195 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:11:41,195 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:11:41,195 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:11:41,196 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:11:41,669 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:11:41,670 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:11:41,670 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:11:41,814 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :iridium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:11:41,814 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :iridium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:11:41,815 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :iridium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:11:45,143 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:11:45,144 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:11:45,144 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:11:45,144 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:11:45,144 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:11:45,146 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:11:45,146 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:11:45,146 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:11:45,146 - pyrc - INFO - PyRC exited.
+2025-05-31 04:11:48,162 - pyrc - INFO - Logging initialized.
+2025-05-31 04:11:48,162 - pyrc - INFO - PyRC application started.
+2025-05-31 04:11:48,177 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:11:48,177 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:11:48,177 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:11:48,178 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:11:48,178 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:11:48,179 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:11:48,750 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:11:48,751 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:11:48,751 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:11:48,919 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :iridium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:11:48,919 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :iridium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:11:48,919 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :iridium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:11:54,483 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'iridium.libera.chat': P='*' T=':*** No Ident response'. Raw: :iridium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:11:54,484 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :iridium.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:11:54,484 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:11:55,197 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:11:56,631 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:12:00,356 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 04:12:00,422 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1809. Current joined: {'#libera'}
+2025-05-31 04:12:04,900 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:21:33,333 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:21:33,334 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:21:33,334 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:21:33,334 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:21:33,334 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:21:33,336 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:21:33,336 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:21:33,336 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:21:33,336 - pyrc - INFO - PyRC exited.
+2025-05-31 04:21:42,269 - pyrc - INFO - Logging initialized.
+2025-05-31 04:21:42,269 - pyrc - INFO - PyRC application started.
+2025-05-31 04:21:42,283 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:21:42,283 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:21:42,283 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:21:42,283 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:21:42,283 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:21:42,284 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:21:42,733 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:21:42,734 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:21:42,734 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:21:42,917 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Checking Ident'. Raw: :zinc.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:21:42,917 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :zinc.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:21:42,918 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :zinc.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:21:49,017 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** No Ident response'. Raw: :zinc.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:21:49,166 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :zinc.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:21:49,166 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:21:49,404 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:21:52,433 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:21:52,433 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:21:52,433 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:21:52,434 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:21:52,434 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:21:52,435 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:21:52,435 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:21:52,435 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:21:52,436 - pyrc - INFO - PyRC exited.
+2025-05-31 04:21:54,381 - pyrc - INFO - Logging initialized.
+2025-05-31 04:21:54,381 - pyrc - INFO - PyRC application started.
+2025-05-31 04:21:54,394 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:21:54,394 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:21:54,394 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:21:54,394 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:21:54,394 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:21:54,395 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:21:54,941 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:21:54,942 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:21:54,942 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:21:55,138 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Checking Ident'. Raw: :zinc.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:21:55,139 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :zinc.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:21:55,139 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :zinc.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:22:01,098 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** No Ident response'. Raw: :zinc.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:22:01,098 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :zinc.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:22:01,098 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:22:01,307 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:22:06,572 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:22:08,073 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 04:22:09,195 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1809. Current joined: {'#libera'}
+2025-05-31 04:22:13,005 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:22:14,433 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:22:15,150 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:22:27,963 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:22:27,963 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:22:27,963 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:22:27,963 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:22:27,963 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:22:27,964 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:22:27,964 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:22:27,965 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:22:27,965 - pyrc - INFO - PyRC exited.
+2025-05-31 04:23:12,167 - pyrc - INFO - Logging initialized.
+2025-05-31 04:23:12,167 - pyrc - INFO - PyRC application started.
+2025-05-31 04:23:12,180 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:23:12,180 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:23:12,181 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:23:12,181 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:23:12,181 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:23:12,182 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:23:12,556 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:23:12,557 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:23:12,557 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:23:12,780 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Checking Ident'. Raw: :zinc.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:23:12,781 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :zinc.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:23:12,781 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :zinc.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:23:19,063 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** No Ident response'. Raw: :zinc.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:23:19,282 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :zinc.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:23:19,282 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:23:19,430 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:23:26,867 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:23:27,140 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 04:23:27,426 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1808. Current joined: {'#libera'}
+2025-05-31 04:23:32,594 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:23:32,594 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:23:32,594 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:23:32,594 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:23:32,595 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:23:32,595 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:23:32,595 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:23:32,596 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:23:32,596 - pyrc - INFO - PyRC exited.
+2025-05-31 04:23:34,103 - pyrc - INFO - Logging initialized.
+2025-05-31 04:23:34,103 - pyrc - INFO - PyRC application started.
+2025-05-31 04:23:34,116 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:23:34,117 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:23:34,117 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:23:34,117 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:23:34,117 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:23:34,118 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:23:34,672 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:23:34,672 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:23:34,673 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:23:34,875 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Checking Ident'. Raw: :zinc.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:23:34,876 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :zinc.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:23:34,876 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zinc.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :zinc.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:24:01,981 - pyrc - INFO - Logging initialized.
+2025-05-31 04:24:01,981 - pyrc - INFO - PyRC application started.
+2025-05-31 04:24:01,994 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:24:01,994 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:24:01,995 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:24:01,995 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:24:01,995 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:24:01,995 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:24:02,608 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:24:02,609 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:24:02,609 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:24:02,847 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Checking Ident'. Raw: :silver.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:24:02,847 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :silver.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:24:02,847 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :silver.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:24:08,487 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** No Ident response'. Raw: :silver.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:24:08,487 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :silver.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:24:08,487 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:24:08,880 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:24:11,652 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:24:14,523 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 04:24:14,832 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1807. Current joined: {'#libera'}
+2025-05-31 04:24:17,504 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:24:22,807 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:24:24,438 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:24:25,460 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:24:28,317 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:33:56,067 - pyrc.command_handler - INFO - Processing command: /msg with args: 'alis list #linux'
+2025-05-31 04:33:56,562 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':Returning maximum of 64 channel names matching '#linux''. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :Returning maximum of 64 channel names matching '#linux'
+2025-05-31 04:33:56,972 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#linux                                           2298 :Welcome to #linux! New community Code of Conduct and Staff Application form: https://linux.chat/news -- Forum: https://linux.forum -- Pastebin: https://paste.linux.chat/ -- Mastodon: https://linux.social/invite/zc2Gj5r8 -- Need an op? !ops <reason> or join #linux-ops '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#linux                                           2298 :Welcome to #linux! New community Code of Conduct and Staff Application form: https://linux.chat/news -- Forum: https://linux.forum -- Pastebin: https://paste.linux.chat/ -- Mastodon: https://linux.social/invite/zc2Gj5r8 -- Need an op? !ops <reason> or join #linux-ops
+2025-05-31 04:33:56,973 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':End of output.'. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :End of output.
+2025-05-31 04:34:23,469 - pyrc.command_handler - INFO - Processing command: /j with args: 'linux'
+2025-05-31 04:34:23,809 - pyrc.protocol - INFO - Successfully joined channel: #linux
+2025-05-31 04:34:24,122 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #linux. User count: 2299. Current joined: {'#libera', '#linux'}
+2025-05-31 04:34:33,362 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:34:36,983 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:35:49,867 - pyrc.command_handler - INFO - Processing command: /lookup with args: 'libera'
+2025-05-31 04:35:56,046 - pyrc.command_handler - INFO - Processing command: /whois with args: 'libera'
+2025-05-31 04:36:14,351 - pyrc.command_handler - INFO - Processing command: /whois with args: 'drmanhatten'
+2025-05-31 04:36:24,190 - pyrc.command_handler - INFO - Processing command: /whois with args: 'drmanhattan'
+2025-05-31 04:36:38,974 - pyrc.command_handler - INFO - Processing command: /whois with args: 'ano'
+2025-05-31 04:37:08,490 - pyrc.command_handler - INFO - Processing command: /whoid with args: 'arnold'
+2025-05-31 04:37:34,743 - pyrc.command_handler - INFO - Processing command: /whois with args: 'arisu'
+2025-05-31 04:38:55,578 - pyrc.command_handler - INFO - Processing command: /whois with args: 'ap'
+2025-05-31 04:39:05,972 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:39:09,438 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:39:11,325 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:39:12,801 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:39:13,823 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:44:46,826 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:44:46,826 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:44:46,826 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:44:46,826 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:44:46,826 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:44:46,827 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:44:46,827 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:44:46,827 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:44:46,828 - pyrc - INFO - PyRC exited.
+2025-05-31 04:44:48,385 - pyrc - INFO - Logging initialized.
+2025-05-31 04:44:48,385 - pyrc - INFO - PyRC application started.
+2025-05-31 04:44:48,397 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:44:48,397 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:44:48,398 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:44:48,398 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:44:48,398 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:44:48,399 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:44:48,646 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:44:48,646 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:44:48,646 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:44:48,710 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'mercury.libera.chat': P='*' T=':*** Checking Ident'. Raw: :mercury.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:44:48,711 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'mercury.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :mercury.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:44:48,711 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'mercury.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :mercury.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:44:55,207 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'mercury.libera.chat': P='*' T=':*** No Ident response'. Raw: :mercury.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:44:55,328 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :mercury.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:44:55,328 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:44:55,558 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:44:55,563 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:44:56,983 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:44:58,510 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:45:12,969 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:45:13,128 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 04:45:13,480 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1813. Current joined: {'#libera'}
+2025-05-31 04:45:17,315 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:45:19,098 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:45:20,217 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:45:24,648 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:45:26,736 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:45:27,806 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:50:50,301 - pyrc - INFO - Logging initialized.
+2025-05-31 04:50:50,301 - pyrc - INFO - PyRC application started.
+2025-05-31 04:50:50,315 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:50:50,315 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:50:50,315 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:50:50,315 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:50:50,316 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:50:50,316 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:50:51,098 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:50:51,098 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:50:51,098 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:50:51,321 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :calcium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:50:51,321 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :calcium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:50:52,173 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :calcium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:50:57,182 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** No Ident response'. Raw: :calcium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:50:57,182 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :calcium.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:50:57,182 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:50:57,388 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser_: :calcium.libera.chat 433 * PyTermUser_ :Nickname is already in use.
+2025-05-31 04:51:00,365 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:51:23,127 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:51:23,127 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:51:23,127 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:51:23,128 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:51:23,128 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:51:23,129 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:51:23,129 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:51:23,129 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:51:23,129 - pyrc - INFO - PyRC exited.
+2025-05-31 04:51:25,014 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:51:25,014 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:51:25,014 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:51:25,014 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:51:25,014 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:51:25,015 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:51:25,015 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:51:25,016 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:51:25,016 - pyrc - INFO - PyRC exited.
+2025-05-31 04:51:26,074 - pyrc - INFO - Logging initialized.
+2025-05-31 04:51:26,074 - pyrc - INFO - PyRC application started.
+2025-05-31 04:51:26,086 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:51:26,087 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:51:26,087 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:51:26,087 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:51:26,087 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:51:26,088 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:51:26,785 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:51:26,785 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:51:26,785 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:51:27,287 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :calcium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:51:27,288 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :calcium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:51:27,288 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :calcium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:51:33,118 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** No Ident response'. Raw: :calcium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:51:33,118 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :calcium.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:51:33,119 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:51:33,526 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:51:37,212 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:51:39,146 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:51:43,118 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:51:43,277 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 04:51:43,475 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1812. Current joined: {'#libera'}
+2025-05-31 04:52:41,831 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:52:41,831 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:52:41,831 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:52:41,831 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:52:41,832 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:52:41,833 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:52:41,833 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:52:41,833 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:52:41,833 - pyrc - INFO - PyRC exited.
+2025-05-31 04:53:09,396 - pyrc - INFO - Logging initialized.
+2025-05-31 04:53:09,396 - pyrc - INFO - PyRC application started.
+2025-05-31 04:53:09,409 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 04:53:09,410 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 04:53:09,410 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 04:53:09,410 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 04:53:09,410 - pyrc.network - INFO - Starting network thread.
+2025-05-31 04:53:09,411 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 04:53:11,749 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 04:53:11,749 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 04:53:11,749 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 04:53:12,013 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Checking Ident'. Raw: :copper.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 04:53:12,013 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :copper.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 04:53:14,895 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :copper.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 04:53:15,036 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:53:16,351 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'copper.libera.chat': P='*' T=':*** No Ident response'. Raw: :copper.libera.chat NOTICE * :*** No Ident response
+2025-05-31 04:53:16,658 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :copper.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 04:53:16,658 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 04:53:17,086 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 04:53:18,446 - pyrc.command_handler - INFO - Processing command: /s with args: ''
+2025-05-31 04:53:23,486 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 04:53:25,778 - pyrc.command_handler - INFO - Processing command: /s with args: ''
+2025-05-31 04:53:32,603 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 04:53:37,642 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:53:40,241 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:53:42,980 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 04:53:46,174 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 04:53:46,502 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 04:53:48,673 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1812. Current joined: {'#libera'}
+2025-05-31 04:53:50,416 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:53:52,663 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:53:54,706 - pyrc.command_handler - INFO - Processing command: /u with args: ''
+2025-05-31 04:56:12,362 - pyrc.command_handler - INFO - Processing command: /s with args: ''
+2025-05-31 04:56:14,932 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 04:56:14,932 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 04:56:14,933 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 04:56:14,933 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 04:56:14,933 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 04:56:14,934 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 04:56:14,934 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 04:56:14,934 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 04:56:14,934 - pyrc - INFO - PyRC exited.
+2025-05-31 05:43:10,399 - pyrc - INFO - Logging initialized.
+2025-05-31 05:43:10,399 - pyrc - INFO - PyRC application started.
+2025-05-31 05:43:10,411 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 05:43:10,411 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 05:43:10,412 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 05:43:10,412 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 05:43:10,412 - pyrc.network - INFO - Starting network thread.
+2025-05-31 05:43:10,412 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 05:43:10,830 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 05:43:10,830 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 05:43:10,831 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 05:43:10,910 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'lithium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :lithium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 05:43:10,910 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'lithium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :lithium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 05:43:11,012 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'lithium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :lithium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 05:43:16,727 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'lithium.libera.chat': P='*' T=':*** No Ident response'. Raw: :lithium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 05:43:16,727 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :lithium.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 05:43:16,727 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 05:43:16,803 - pyrc.protocol - INFO - MODE received: By: PyTermUser_, Target: PyTermUser_, Changes: :+Ziw
+2025-05-31 05:43:19,921 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 05:43:22,607 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 05:43:22,655 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1807. Current joined: {'#libera'}
+2025-05-31 05:58:11,080 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 05:58:11,165 - pyrc.protocol - INFO - Successfully joined channel: #test
+2025-05-31 05:58:11,245 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #test. User count: 38. Current joined: {'#test', '#libera'}
+2025-05-31 05:58:24,863 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 05:58:27,497 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 05:58:36,860 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 06:07:49,629 - pyrc.command_handler - INFO - Processing command: /alis with args: 'list'
+2025-05-31 06:08:00,156 - pyrc.command_handler - INFO - Processing command: /msg with args: 'alis list'
+2025-05-31 06:08:00,212 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':Returning maximum of 64 channel names matching '*''. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :Returning maximum of 64 channel names matching '*'
+2025-05-31 06:08:00,213 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#                                                  87 :#, because who needs a channel with any name? #-offtopic for messages with content. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#                                                  87 :#, because who needs a channel with any name? #-offtopic for messages with content.
+2025-05-31 06:08:00,213 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!/bin/bash                                         2 :sudo !! '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!/bin/bash                                         2 :sudo !!
+2025-05-31 06:08:00,213 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!/bin/mksh                                         9 :The MirBSD Korn Shell | http://www.mirbsd.org/mksh.htm R59c (2020-10-31) | mksh/Win32 Beta 14 || dev version: $ CVS_RSH=ssh cvs -d _anoncvs@anoncvs.mirbsd.org:/cvs co -PA mksh | see website for docs || we’re on OFTC for now || https://paypal.me/mirabilos to support my work '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!/bin/mksh                                         9 :The MirBSD Korn Shell | http://www.mirbsd.org/mksh.htm R59c (2020-10-31) | mksh/Win32 Beta 14 || dev version: $ CVS_RSH=ssh cvs -d _anoncvs@anoncvs.mirbsd.org:/cvs co -PA mksh | see website for docs || we’re on OFTC for now || https://paypal.me/mirabilos to support my work
+2025-05-31 06:08:00,213 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!/bin/sh                                          14 :sh — shell, the standard command language interpreter. Can you even su?! (consider using #!/bin/zsh - it's so much fun - Oh My ZSH!) '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!/bin/sh                                          14 :sh — shell, the standard command language interpreter. Can you even su?! (consider using #!/bin/zsh - it's so much fun - Oh My ZSH!)
+2025-05-31 06:08:00,213 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!/bin/zsh                                          7 :There is no SH like ZSH '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!/bin/zsh                                          7 :There is no SH like ZSH
+2025-05-31 06:08:00,214 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!stuff                                             2 :"You're worth 5 fake diamond earrings, 21 scratched AOL CD's, 1 gallon of Love Potion Number 7, and a spare bicycle wheel (no tire)" | No idea '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!stuff                                             2 :"You're worth 5 fake diamond earrings, 21 scratched AOL CD's, 1 gallon of Love Potion Number 7, and a spare bicycle wheel (no tire)" | No idea
+2025-05-31 06:08:00,214 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!sXe                                               3 :_\|/_ Welcome to #!sXe _\|/_ http://hasthelargehadroncolliderdestroyedtheworldyet.com _\|/_ '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!sXe                                               3 :_\|/_ Welcome to #!sXe _\|/_ http://hasthelargehadroncolliderdestroyedtheworldyet.com _\|/_
+2025-05-31 06:08:00,214 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##                                                151 :[🐁] Welcome to ##, the small channel with a BIG heart! ## <+fotato> WHERE'S THE SHEET SITER GRURING THPISSTIG SPEND '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##                                                151 :[🐁] Welcome to ##, the small channel with a BIG heart! ## <+fotato> WHERE'S THE SHEET SITER GRURING THPISSTIG SPEND
+2025-05-31 06:08:00,214 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###                                                 6 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###                                                 6
+2025-05-31 06:08:00,214 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':####                                                6 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :####                                                6
+2025-05-31 06:08:00,214 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':######                                              1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :######                                              1
+2025-05-31 06:08:00,215 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':########                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :########                                            2
+2025-05-31 06:08:00,215 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#########                                           2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#########                                           2
+2025-05-31 06:08:00,215 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#############                                       2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#############                                       2
+2025-05-31 06:08:00,215 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##################################################    8 :You did it! Fifty hashtags. Welcome to ################################################## - the bonus level. Grab some popcorn and enjoy the drama board monitor room '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##################################################    8 :You did it! Fifty hashtags. Welcome to ################################################## - the bonus level. Grab some popcorn and enjoy the drama board monitor room
+2025-05-31 06:08:00,215 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':########t                                           2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :########t                                           2
+2025-05-31 06:08:00,215 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#####freenode                                       1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#####freenode                                       1
+2025-05-31 06:08:00,216 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':####music                                          16 :🎼🎵🎶🍺🍄🌿 music is your only friend until the end '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :####music                                          16 :🎼🎵🎶🍺🍄🌿 music is your only friend until the end
+2025-05-31 06:08:00,216 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':####perl                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :####perl                                            2
+2025-05-31 06:08:00,216 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':####truth                                           2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :####truth                                           2
+2025-05-31 06:08:00,216 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###among-us                                         2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###among-us                                         2
+2025-05-31 06:08:00,216 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###Atari                                            3 :Official -Fuck Joe Biden- friendly Atari Channel '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###Atari                                            3 :Official -Fuck Joe Biden- friendly Atari Channel
+2025-05-31 06:08:00,216 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###biology                                          1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###biology                                          1
+2025-05-31 06:08:00,216 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###bots                                             4 :about bots '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###bots                                             4 :about bots
+2025-05-31 06:08:00,217 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###capitalism                                      10 :### CAPITALISM ### '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###capitalism                                      10 :### CAPITALISM ###
+2025-05-31 06:08:00,217 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###chunt                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###chunt                                            2
+2025-05-31 06:08:00,217 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###freenode                                         2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###freenode                                         2
+2025-05-31 06:08:00,217 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###hackers                                          3 :https://google.com.au If you've joined, please idle! Free ZnC ;) All your Favorite, Chatters, Topics & IRCBots ;) Have Fun! Welcome to ###Hackers!!! :) '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###hackers                                          3 :https://google.com.au If you've joined, please idle! Free ZnC ;) All your Favorite, Chatters, Topics & IRCBots ;) Have Fun! Welcome to ###Hackers!!! :)
+2025-05-31 06:08:00,217 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###kline                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###kline                                            2
+2025-05-31 06:08:00,217 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###libera                                           2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###libera                                           2
+2025-05-31 06:08:00,218 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###mariven                                          2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###mariven                                          2
+2025-05-31 06:08:00,218 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###music                                            1 :Automatic Music - Musid for Defense https://worldradiohistory.com/hd2/IDX-Business/Music/Billboard-Index/IDX/1941/BB-1941-08-16-OCR-Page-0066.pdf | Bespoke Synth! Get yours here: https://www.bespokesynth.com/ '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###music                                            1 :Automatic Music - Musid for Defense https://worldradiohistory.com/hd2/IDX-Business/Music/Billboard-Index/IDX/1941/BB-1941-08-16-OCR-Page-0066.pdf | Bespoke Synth! Get yours here: https://www.bespokesynth.com/
+2025-05-31 06:08:00,218 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###palemoon                                         2 :Welcome to crazy. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###palemoon                                         2 :Welcome to crazy.
+2025-05-31 06:08:00,218 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###perl                                             2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###perl                                             2
+2025-05-31 06:08:00,218 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###politics                                         1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###politics                                         1
+2025-05-31 06:08:00,218 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###regex                                            1 :Because why not? :) '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###regex                                            1 :Because why not? :)
+2025-05-31 06:08:00,219 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###research                                         2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###research                                         2
+2025-05-31 06:08:00,219 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###tejr                                             2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###tejr                                             2
+2025-05-31 06:08:00,219 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###test                                             5 :Test Channel. Feel free to test stuff. Use Chanserv to get op/voice '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###test                                             5 :Test Channel. Feel free to test stuff. Use Chanserv to get op/voice
+2025-05-31 06:08:00,219 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###truth                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###truth                                            2
+2025-05-31 06:08:00,219 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###virology                                         2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###virology                                         2
+2025-05-31 06:08:00,219 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###worldchat                                        3 :Welcome to our worldchat, here all conversations are accepted. Sexchat will not be accepted here and will be banned from the channel. Accepted languages: English, Portuguese, Spanish, Italian and Esperanto. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###worldchat                                        3 :Welcome to our worldchat, here all conversations are accepted. Sexchat will not be accepted here and will be banned from the channel. Accepted languages: English, Portuguese, Spanish, Italian and Esperanto.
+2025-05-31 06:08:00,219 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##*                                                 2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##*                                                 2
+2025-05-31 06:08:00,220 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##-##                                               1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##-##                                               1
+2025-05-31 06:08:00,220 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##.                                                 1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##.                                                 1
+2025-05-31 06:08:00,220 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##/dev/arandom                                      2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##/dev/arandom                                      2
+2025-05-31 06:08:00,220 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##/dev/random                                       1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##/dev/random                                       1
+2025-05-31 06:08:00,220 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##0                                                 2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##0                                                 2
+2025-05-31 06:08:00,220 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##0dev                                              1 :[ 0day (xc) Our ] WhiteHat Hacker ... . OFFICIAL CHANNEL ... . WELCOME https://x.com/skraito3 ... . '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##0dev                                              1 :[ 0day (xc) Our ] WhiteHat Hacker ... . OFFICIAL CHANNEL ... . WELCOME https://x.com/skraito3 ... .
+2025-05-31 06:08:00,221 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##0xdeadbeef                                       12 :☃ The deadbeef(デッドビーフ) SaaS - Saufen as a Service — where SCHEISSE matters — PI=42/13.37 — 1/0=Ξ — YOU SHOULD DROP PANTS! — Paronomasia factory, watch out! — FREENODE FLÜCHTLINGE! — Happy జ్ఞ‌ా! — MITTWOCH!!!!1 — certified scenepoints partner — http://ircz.de/p/1107026 — ／人◕﻿ ‿‿ ◕人＼ — <EvilBot> Keks ist Fortschritt! 🐸 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##0xdeadbeef                                       12 :☃ The deadbeef(デッドビーフ) SaaS - Saufen as a Service — where SCHEISSE matters — PI=42/13.37 — 1/0=Ξ — YOU SHOULD DROP PANTS! — Paronomasia factory, watch out! — FREENODE FLÜCHTLINGE! — Happy జ్ఞ‌ా! — MITTWOCH!!!!1 — certified scenepoints partner — http://ircz.de/p/1107026 — ／人◕﻿ ‿‿ ◕人＼ — <EvilBot> Keks ist Fortschritt! 🐸
+2025-05-31 06:08:00,221 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##1911techtalk                                      2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##1911techtalk                                      2
+2025-05-31 06:08:00,221 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##1char                                             4 :A channel for people with short nicks. Users with short nicks are auto-voiced. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##1char                                             4 :A channel for people with short nicks. Users with short nicks are auto-voiced.
+2025-05-31 06:08:00,221 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##2000                                              1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##2000                                              1
+2025-05-31 06:08:00,221 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##2afreedom                                         5 :PRO-GUN and PRO-FREEDOM 24/7 - SHALL NOT BE INFRINGED - FOSS GUN COMMUNITY || ...:::|||>>>Join us on OuchNet! irc.ouch.chat be there!<<<|||:::... '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##2afreedom                                         5 :PRO-GUN and PRO-FREEDOM 24/7 - SHALL NOT BE INFRINGED - FOSS GUN COMMUNITY || ...:::|||>>>Join us on OuchNet! irc.ouch.chat be there!<<<|||:::...
+2025-05-31 06:08:00,221 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##2chars                                           12 :2 character nicks, or get out of this channel | At one point your nick may be banned if you continue joining with a really long nick | Bots (some bots died): py (BitBot, owner: id), |^ (owner: dg, died), gh (https://github.com/BradleyShaw/IssueBot, owner: bs, died), hb (modified hackbot, owner: cd, died) | We like 2 character nicks. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##2chars                                           12 :2 character nicks, or get out of this channel | At one point your nick may be banned if you continue joining with a really long nick | Bots (some bots died): py (BitBot, owner: id), |^ (owner: dg, died), gh (https://github.com/BradleyShaw/IssueBot, owner: bs, died), hb (modified hackbot, owner: cd, died) | We like 2 character nicks.
+2025-05-31 06:08:00,222 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##333                                               1 :i remember '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##333                                               1 :i remember
+2025-05-31 06:08:00,241 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##37726                                             2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##37726                                             2
+2025-05-31 06:08:00,241 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##3cx                                               7 :Unofficial 3CX Channel | Admin Guide: https://3cx.com/docs/manual | User Guide: https://3cx.com/user-manual | Other Guides: https://www.3cx.com/docs | Discord: https://discord.gg/xBZE8MwNWP | 3CX likes to censor people (via their forums, reddit, etc...), but luckily we're not 3CX :) | If running on Windows still (WhY!?) try our sister channel... ##windowsnorules '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##3cx                                               7 :Unofficial 3CX Channel | Admin Guide: https://3cx.com/docs/manual | User Guide: https://3cx.com/user-manual | Other Guides: https://www.3cx.com/docs | Discord: https://discord.gg/xBZE8MwNWP | 3CX likes to censor people (via their forums, reddit, etc...), but luckily we're not 3CX :) | If running on Windows still (WhY!?) try our sister channel... ##windowsnorules
+2025-05-31 06:08:00,241 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##3dprinting                                        1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##3dprinting                                        1
+2025-05-31 06:08:00,241 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##420                                               1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##420                                               1
+2025-05-31 06:08:00,242 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##69                                                2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##69                                                2
+2025-05-31 06:08:00,242 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##9fans                                            10 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##9fans                                            10
+2025-05-31 06:08:00,242 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##9p                                                2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##9p                                                2
+2025-05-31 06:08:00,242 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##:                                                 2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##:                                                 2
+2025-05-31 06:08:00,242 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':Maximum channel output reached'. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :Maximum channel output reached
+2025-05-31 06:08:00,242 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':End of output.'. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :End of output.
+2025-05-31 06:08:21,194 - pyrc.command_handler - INFO - Processing command: /msg with args: 'alis list *'
+2025-05-31 06:08:21,291 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':Returning maximum of 64 channel names matching '*''. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :Returning maximum of 64 channel names matching '*'
+2025-05-31 06:08:21,291 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#                                                  87 :#, because who needs a channel with any name? #-offtopic for messages with content. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#                                                  87 :#, because who needs a channel with any name? #-offtopic for messages with content.
+2025-05-31 06:08:21,291 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!/bin/bash                                         2 :sudo !! '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!/bin/bash                                         2 :sudo !!
+2025-05-31 06:08:21,300 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!/bin/mksh                                         9 :The MirBSD Korn Shell | http://www.mirbsd.org/mksh.htm R59c (2020-10-31) | mksh/Win32 Beta 14 || dev version: $ CVS_RSH=ssh cvs -d _anoncvs@anoncvs.mirbsd.org:/cvs co -PA mksh | see website for docs || we’re on OFTC for now || https://paypal.me/mirabilos to support my work '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!/bin/mksh                                         9 :The MirBSD Korn Shell | http://www.mirbsd.org/mksh.htm R59c (2020-10-31) | mksh/Win32 Beta 14 || dev version: $ CVS_RSH=ssh cvs -d _anoncvs@anoncvs.mirbsd.org:/cvs co -PA mksh | see website for docs || we’re on OFTC for now || https://paypal.me/mirabilos to support my work
+2025-05-31 06:08:21,301 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!/bin/sh                                          14 :sh — shell, the standard command language interpreter. Can you even su?! (consider using #!/bin/zsh - it's so much fun - Oh My ZSH!) '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!/bin/sh                                          14 :sh — shell, the standard command language interpreter. Can you even su?! (consider using #!/bin/zsh - it's so much fun - Oh My ZSH!)
+2025-05-31 06:08:21,301 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!/bin/zsh                                          7 :There is no SH like ZSH '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!/bin/zsh                                          7 :There is no SH like ZSH
+2025-05-31 06:08:21,301 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!stuff                                             2 :"You're worth 5 fake diamond earrings, 21 scratched AOL CD's, 1 gallon of Love Potion Number 7, and a spare bicycle wheel (no tire)" | No idea '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!stuff                                             2 :"You're worth 5 fake diamond earrings, 21 scratched AOL CD's, 1 gallon of Love Potion Number 7, and a spare bicycle wheel (no tire)" | No idea
+2025-05-31 06:08:21,301 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#!sXe                                               3 :_\|/_ Welcome to #!sXe _\|/_ http://hasthelargehadroncolliderdestroyedtheworldyet.com _\|/_ '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#!sXe                                               3 :_\|/_ Welcome to #!sXe _\|/_ http://hasthelargehadroncolliderdestroyedtheworldyet.com _\|/_
+2025-05-31 06:08:21,301 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##                                                151 :[🐁] Welcome to ##, the small channel with a BIG heart! ## <+fotato> WHERE'S THE SHEET SITER GRURING THPISSTIG SPEND '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##                                                151 :[🐁] Welcome to ##, the small channel with a BIG heart! ## <+fotato> WHERE'S THE SHEET SITER GRURING THPISSTIG SPEND
+2025-05-31 06:08:21,302 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###                                                 6 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###                                                 6
+2025-05-31 06:08:21,302 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':####                                                6 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :####                                                6
+2025-05-31 06:08:21,302 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':######                                              1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :######                                              1
+2025-05-31 06:08:21,302 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':########                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :########                                            2
+2025-05-31 06:08:21,302 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#########                                           2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#########                                           2
+2025-05-31 06:08:21,302 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#############                                       2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#############                                       2
+2025-05-31 06:08:21,304 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##################################################    8 :You did it! Fifty hashtags. Welcome to ################################################## - the bonus level. Grab some popcorn and enjoy the drama board monitor room '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##################################################    8 :You did it! Fifty hashtags. Welcome to ################################################## - the bonus level. Grab some popcorn and enjoy the drama board monitor room
+2025-05-31 06:08:21,304 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':########t                                           2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :########t                                           2
+2025-05-31 06:08:21,304 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':#####freenode                                       1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :#####freenode                                       1
+2025-05-31 06:08:21,304 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':####music                                          16 :🎼🎵🎶🍺🍄🌿 music is your only friend until the end '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :####music                                          16 :🎼🎵🎶🍺🍄🌿 music is your only friend until the end
+2025-05-31 06:08:21,304 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':####perl                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :####perl                                            2
+2025-05-31 06:08:21,304 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':####truth                                           2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :####truth                                           2
+2025-05-31 06:08:21,305 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###among-us                                         2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###among-us                                         2
+2025-05-31 06:08:21,305 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###Atari                                            3 :Official -Fuck Joe Biden- friendly Atari Channel '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###Atari                                            3 :Official -Fuck Joe Biden- friendly Atari Channel
+2025-05-31 06:08:21,305 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###biology                                          1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###biology                                          1
+2025-05-31 06:08:21,305 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###bots                                             4 :about bots '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###bots                                             4 :about bots
+2025-05-31 06:08:21,305 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###capitalism                                      10 :### CAPITALISM ### '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###capitalism                                      10 :### CAPITALISM ###
+2025-05-31 06:08:21,330 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###chunt                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###chunt                                            2
+2025-05-31 06:08:21,330 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###freenode                                         2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###freenode                                         2
+2025-05-31 06:08:21,330 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###hackers                                          3 :https://google.com.au If you've joined, please idle! Free ZnC ;) All your Favorite, Chatters, Topics & IRCBots ;) Have Fun! Welcome to ###Hackers!!! :) '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###hackers                                          3 :https://google.com.au If you've joined, please idle! Free ZnC ;) All your Favorite, Chatters, Topics & IRCBots ;) Have Fun! Welcome to ###Hackers!!! :)
+2025-05-31 06:08:21,330 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###kline                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###kline                                            2
+2025-05-31 06:08:21,330 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###libera                                           2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###libera                                           2
+2025-05-31 06:08:21,335 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###mariven                                          2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###mariven                                          2
+2025-05-31 06:08:21,335 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###music                                            1 :Automatic Music - Musid for Defense https://worldradiohistory.com/hd2/IDX-Business/Music/Billboard-Index/IDX/1941/BB-1941-08-16-OCR-Page-0066.pdf | Bespoke Synth! Get yours here: https://www.bespokesynth.com/ '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###music                                            1 :Automatic Music - Musid for Defense https://worldradiohistory.com/hd2/IDX-Business/Music/Billboard-Index/IDX/1941/BB-1941-08-16-OCR-Page-0066.pdf | Bespoke Synth! Get yours here: https://www.bespokesynth.com/
+2025-05-31 06:08:21,335 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###palemoon                                         2 :Welcome to crazy. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###palemoon                                         2 :Welcome to crazy.
+2025-05-31 06:08:21,335 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###perl                                             2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###perl                                             2
+2025-05-31 06:08:21,336 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###politics                                         1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###politics                                         1
+2025-05-31 06:08:21,336 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###regex                                            1 :Because why not? :) '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###regex                                            1 :Because why not? :)
+2025-05-31 06:08:21,336 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###research                                         2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###research                                         2
+2025-05-31 06:08:21,336 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###tejr                                             2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###tejr                                             2
+2025-05-31 06:08:21,336 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###test                                             5 :Test Channel. Feel free to test stuff. Use Chanserv to get op/voice '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###test                                             5 :Test Channel. Feel free to test stuff. Use Chanserv to get op/voice
+2025-05-31 06:08:21,336 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###truth                                            2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###truth                                            2
+2025-05-31 06:08:21,337 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###virology                                         2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###virology                                         2
+2025-05-31 06:08:21,337 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':###worldchat                                        3 :Welcome to our worldchat, here all conversations are accepted. Sexchat will not be accepted here and will be banned from the channel. Accepted languages: English, Portuguese, Spanish, Italian and Esperanto. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :###worldchat                                        3 :Welcome to our worldchat, here all conversations are accepted. Sexchat will not be accepted here and will be banned from the channel. Accepted languages: English, Portuguese, Spanish, Italian and Esperanto.
+2025-05-31 06:08:21,337 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##*                                                 2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##*                                                 2
+2025-05-31 06:08:21,337 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##-##                                               1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##-##                                               1
+2025-05-31 06:08:21,337 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##.                                                 1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##.                                                 1
+2025-05-31 06:08:21,338 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##/dev/arandom                                      2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##/dev/arandom                                      2
+2025-05-31 06:08:21,338 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##/dev/random                                       1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##/dev/random                                       1
+2025-05-31 06:08:21,338 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##0                                                 2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##0                                                 2
+2025-05-31 06:08:21,338 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##0dev                                              1 :[ 0day (xc) Our ] WhiteHat Hacker ... . OFFICIAL CHANNEL ... . WELCOME https://x.com/skraito3 ... . '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##0dev                                              1 :[ 0day (xc) Our ] WhiteHat Hacker ... . OFFICIAL CHANNEL ... . WELCOME https://x.com/skraito3 ... .
+2025-05-31 06:08:21,338 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##0xdeadbeef                                       12 :☃ The deadbeef(デッドビーフ) SaaS - Saufen as a Service — where SCHEISSE matters — PI=42/13.37 — 1/0=Ξ — YOU SHOULD DROP PANTS! — Paronomasia factory, watch out! — FREENODE FLÜCHTLINGE! — Happy జ్ఞ‌ా! — MITTWOCH!!!!1 — certified scenepoints partner — http://ircz.de/p/1107026 — ／人◕﻿ ‿‿ ◕人＼ — <EvilBot> Keks ist Fortschritt! 🐸 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##0xdeadbeef                                       12 :☃ The deadbeef(デッドビーフ) SaaS - Saufen as a Service — where SCHEISSE matters — PI=42/13.37 — 1/0=Ξ — YOU SHOULD DROP PANTS! — Paronomasia factory, watch out! — FREENODE FLÜCHTLINGE! — Happy జ్ఞ‌ా! — MITTWOCH!!!!1 — certified scenepoints partner — http://ircz.de/p/1107026 — ／人◕﻿ ‿‿ ◕人＼ — <EvilBot> Keks ist Fortschritt! 🐸
+2025-05-31 06:08:21,339 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##1911techtalk                                      2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##1911techtalk                                      2
+2025-05-31 06:08:21,339 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##1char                                             4 :A channel for people with short nicks. Users with short nicks are auto-voiced. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##1char                                             4 :A channel for people with short nicks. Users with short nicks are auto-voiced.
+2025-05-31 06:08:21,339 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##2000                                              1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##2000                                              1
+2025-05-31 06:08:21,339 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##2afreedom                                         5 :PRO-GUN and PRO-FREEDOM 24/7 - SHALL NOT BE INFRINGED - FOSS GUN COMMUNITY || ...:::|||>>>Join us on OuchNet! irc.ouch.chat be there!<<<|||:::... '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##2afreedom                                         5 :PRO-GUN and PRO-FREEDOM 24/7 - SHALL NOT BE INFRINGED - FOSS GUN COMMUNITY || ...:::|||>>>Join us on OuchNet! irc.ouch.chat be there!<<<|||:::...
+2025-05-31 06:08:21,339 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##2chars                                           12 :2 character nicks, or get out of this channel | At one point your nick may be banned if you continue joining with a really long nick | Bots (some bots died): py (BitBot, owner: id), |^ (owner: dg, died), gh (https://github.com/BradleyShaw/IssueBot, owner: bs, died), hb (modified hackbot, owner: cd, died) | We like 2 character nicks. '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##2chars                                           12 :2 character nicks, or get out of this channel | At one point your nick may be banned if you continue joining with a really long nick | Bots (some bots died): py (BitBot, owner: id), |^ (owner: dg, died), gh (https://github.com/BradleyShaw/IssueBot, owner: bs, died), hb (modified hackbot, owner: cd, died) | We like 2 character nicks.
+2025-05-31 06:08:21,339 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##333                                               1 :i remember '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##333                                               1 :i remember
+2025-05-31 06:08:21,340 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##37726                                             2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##37726                                             2
+2025-05-31 06:08:21,367 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##3cx                                               7 :Unofficial 3CX Channel | Admin Guide: https://3cx.com/docs/manual | User Guide: https://3cx.com/user-manual | Other Guides: https://www.3cx.com/docs | Discord: https://discord.gg/xBZE8MwNWP | 3CX likes to censor people (via their forums, reddit, etc...), but luckily we're not 3CX :) | If running on Windows still (WhY!?) try our sister channel... ##windowsnorules '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##3cx                                               7 :Unofficial 3CX Channel | Admin Guide: https://3cx.com/docs/manual | User Guide: https://3cx.com/user-manual | Other Guides: https://www.3cx.com/docs | Discord: https://discord.gg/xBZE8MwNWP | 3CX likes to censor people (via their forums, reddit, etc...), but luckily we're not 3CX :) | If running on Windows still (WhY!?) try our sister channel... ##windowsnorules
+2025-05-31 06:08:21,368 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##3dprinting                                        1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##3dprinting                                        1
+2025-05-31 06:08:21,368 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##420                                               1 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##420                                               1
+2025-05-31 06:08:21,368 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##69                                                2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##69                                                2
+2025-05-31 06:08:21,368 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##9fans                                            10 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##9fans                                            10
+2025-05-31 06:08:21,368 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##9p                                                2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##9p                                                2
+2025-05-31 06:08:21,368 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':##:                                                 2 '. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :##:                                                 2
+2025-05-31 06:08:21,368 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':Maximum channel output reached'. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :Maximum channel output reached
+2025-05-31 06:08:21,369 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'alis': P='PyTermUser_' T=':End of output.'. Raw: :alis!alis@services.libera.chat NOTICE PyTermUser_ :End of output.
+2025-05-31 06:08:26,083 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:08:26,083 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:08:26,083 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 06:08:26,083 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:08:26,083 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 06:08:26,084 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:08:26,084 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 06:08:26,085 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:08:26,085 - pyrc - INFO - PyRC exited.
+2025-05-31 06:08:28,708 - pyrc - INFO - Logging initialized.
+2025-05-31 06:08:28,708 - pyrc - INFO - PyRC application started.
+2025-05-31 06:08:28,723 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:08:28,723 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:08:28,723 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 06:08:28,723 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:08:28,723 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:08:28,724 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:08:29,096 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:08:29,096 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:08:29,096 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:08:29,257 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zirconium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :zirconium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:08:29,258 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zirconium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :zirconium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:08:29,258 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zirconium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :zirconium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:08:32,936 - pyrc.command_handler - INFO - Processing command: /cc with args: ''
+2025-05-31 06:08:35,462 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zirconium.libera.chat': P='*' T=':*** No Ident response'. Raw: :zirconium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:08:35,677 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :zirconium.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 06:08:35,677 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 06:08:35,754 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as PyTermUser_.
+2025-05-31 06:08:35,754 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:08:35,754 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:08:35,754 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:08:35,754 - pyrc.network - CRITICAL - Unexpected critical error in network loop: 'CommandHandler' object has no attribute 'handle_command'
+Traceback (most recent call last):
+  File "C:\Users\Administrator\ideas\pyrc\network_handler.py", line 329, in _network_loop
+    self.client.on_server_message(decoded_line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_client_logic.py", line 206, in on_server_message
+    irc_protocol.handle_server_message(self, line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_protocol.py", line 492, in handle_server_message
+    client.command_handler.handle_command(f"/join {channel}")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CommandHandler' object has no attribute 'handle_command'
+2025-05-31 06:08:35,763 - pyrc.network - INFO - Breaking network loop due to critical error.
+2025-05-31 06:08:35,763 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:08:35,764 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:08:35,764 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:08:35,764 - pyrc.network - INFO - Network thread officially stopped (client not globally quitting).
+2025-05-31 06:08:38,504 - pyrc.command_handler - INFO - Processing command: /j with args: 'linux'
+2025-05-31 06:08:38,504 - pyrc.network - WARNING - Attempted to send data while not connected: JOIN #linux
+2025-05-31 06:08:48,314 - pyrc.command_handler - INFO - Processing command: /j with args: 'test'
+2025-05-31 06:08:48,315 - pyrc.network - WARNING - Attempted to send data while not connected: JOIN #test
+2025-05-31 06:08:57,831 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:09:01,505 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:09:01,505 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:09:01,505 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:09:01,505 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:09:01,505 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:09:01,505 - pyrc - INFO - PyRC exited.
+2025-05-31 06:09:02,963 - pyrc - INFO - Logging initialized.
+2025-05-31 06:09:02,963 - pyrc - INFO - PyRC application started.
+2025-05-31 06:09:02,976 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:09:02,977 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:09:02,977 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 06:09:02,977 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:09:02,977 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:09:02,978 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:09:03,175 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:09:03,176 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:09:03,176 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:09:03,289 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zirconium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :zirconium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:09:03,290 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zirconium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :zirconium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:09:03,290 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zirconium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :zirconium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:09:07,995 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:09:10,040 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'zirconium.libera.chat': P='*' T=':*** No Ident response'. Raw: :zirconium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:09:10,040 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :zirconium.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 06:09:10,040 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 06:09:10,115 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as PyTermUser_.
+2025-05-31 06:09:10,115 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:09:10,115 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:09:10,116 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:09:10,116 - pyrc.network - CRITICAL - Unexpected critical error in network loop: 'CommandHandler' object has no attribute 'handle_command'
+Traceback (most recent call last):
+  File "C:\Users\Administrator\ideas\pyrc\network_handler.py", line 329, in _network_loop
+    self.client.on_server_message(decoded_line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_client_logic.py", line 206, in on_server_message
+    irc_protocol.handle_server_message(self, line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_protocol.py", line 492, in handle_server_message
+    )
+    
+AttributeError: 'CommandHandler' object has no attribute 'handle_command'
+2025-05-31 06:09:10,129 - pyrc.network - INFO - Breaking network loop due to critical error.
+2025-05-31 06:09:10,129 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:09:10,129 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:09:10,129 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:09:10,129 - pyrc.network - INFO - Network thread officially stopped (client not globally quitting).
+2025-05-31 06:09:16,552 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:09:16,552 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:09:16,553 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:09:16,553 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:09:16,553 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:09:16,553 - pyrc - INFO - PyRC exited.
+2025-05-31 06:23:14,741 - pyrc - INFO - Logging initialized.
+2025-05-31 06:23:14,741 - pyrc - INFO - PyRC application started.
+2025-05-31 06:23:14,754 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:23:14,754 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:23:14,754 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 06:23:14,755 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:23:14,755 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:23:14,755 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:23:14,988 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:23:14,988 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:23:14,988 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:23:15,098 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :tantalum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:23:15,099 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :tantalum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:23:15,099 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :tantalum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:23:21,636 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** No Ident response'. Raw: :tantalum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:23:21,717 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :tantalum.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 06:23:21,717 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 06:23:21,769 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as PyTermUser_.
+2025-05-31 06:23:21,770 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:23:21,770 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:23:21,770 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:23:21,770 - pyrc.network - CRITICAL - Unexpected critical error in network loop: 'CommandHandler' object has no attribute 'handle_command'
+Traceback (most recent call last):
+  File "C:\Users\Administrator\ideas\pyrc\network_handler.py", line 329, in _network_loop
+    self.client.on_server_message(decoded_line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_client_logic.py", line 209, in on_server_message
+    irc_protocol.handle_server_message(self, line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_protocol.py", line 513, in handle_server_message
+    client.command_handler.handle_command(f"/join {channel}")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CommandHandler' object has no attribute 'handle_command'
+2025-05-31 06:23:21,780 - pyrc.network - INFO - Breaking network loop due to critical error.
+2025-05-31 06:23:21,780 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:23:21,780 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:23:21,780 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:23:21,780 - pyrc.network - INFO - Network thread officially stopped (client not globally quitting).
+2025-05-31 06:23:23,416 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:23:34,096 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:23:34,096 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:23:34,096 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:23:34,096 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:23:34,096 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:23:34,096 - pyrc - INFO - PyRC exited.
+2025-05-31 06:24:58,271 - pyrc - INFO - Logging initialized.
+2025-05-31 06:24:58,271 - pyrc - INFO - PyRC application started.
+2025-05-31 06:24:58,283 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:24:58,283 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:24:58,284 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 06:24:58,284 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:24:58,284 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:24:58,285 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:24:58,435 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:24:58,436 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:24:58,436 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:24:58,520 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :tantalum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:24:58,520 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :tantalum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:24:58,520 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :tantalum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:25:03,328 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:25:04,121 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** No Ident response'. Raw: :tantalum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:25:04,206 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for PyTermUser: :tantalum.libera.chat 433 * PyTermUser :Nickname is already in use.
+2025-05-31 06:25:04,206 - pyrc.protocol - INFO - Nickname PyTermUser (initial) in use, trying PyTermUser_.
+2025-05-31 06:25:04,249 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as PyTermUser_.
+2025-05-31 06:25:04,249 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:25:04,249 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:25:04,249 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:25:04,249 - pyrc.network - CRITICAL - Unexpected critical error in network loop: 'CommandHandler' object has no attribute 'handle_command'
+Traceback (most recent call last):
+  File "C:\Users\Administrator\ideas\pyrc\network_handler.py", line 329, in _network_loop
+    self.client.on_server_message(decoded_line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_client_logic.py", line 209, in on_server_message
+    irc_protocol.handle_server_message(self, line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_protocol.py", line 513, in handle_server_message
+    client.command_handler.handle_command(f"/join {channel}")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CommandHandler' object has no attribute 'handle_command'
+2025-05-31 06:25:04,261 - pyrc.network - INFO - Breaking network loop due to critical error.
+2025-05-31 06:25:04,261 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:25:04,261 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:25:04,261 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:25:04,261 - pyrc.network - INFO - Network thread officially stopped (client not globally quitting).
+2025-05-31 06:25:09,206 - pyrc.command_handler - INFO - Processing command: /nick with args: 'newname'
+2025-05-31 06:25:09,206 - pyrc.network - WARNING - Attempted to send data while not connected: NICK newname
+2025-05-31 06:25:17,378 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:25:17,378 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:25:17,378 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:25:17,378 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:25:17,378 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:25:17,378 - pyrc - INFO - PyRC exited.
+2025-05-31 06:25:31,754 - pyrc - INFO - Logging initialized.
+2025-05-31 06:25:31,754 - pyrc - INFO - PyRC application started.
+2025-05-31 06:25:31,767 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:25:31,767 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:25:31,768 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:25:31,768 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:25:31,768 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:25:31,769 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:25:32,325 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:25:32,325 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:25:32,326 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:25:32,554 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Checking Ident'. Raw: :calcium.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:25:32,555 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :calcium.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:25:32,555 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :calcium.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:25:38,948 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'calcium.libera.chat': P='*' T=':*** No Ident response'. Raw: :calcium.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:25:38,948 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as tester.
+2025-05-31 06:25:38,948 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:25:38,948 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:25:38,949 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:25:38,949 - pyrc.network - CRITICAL - Unexpected critical error in network loop: 'CommandHandler' object has no attribute 'handle_command'
+Traceback (most recent call last):
+  File "C:\Users\Administrator\ideas\pyrc\network_handler.py", line 329, in _network_loop
+    self.client.on_server_message(decoded_line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_client_logic.py", line 209, in on_server_message
+    irc_protocol.handle_server_message(self, line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_protocol.py", line 513, in handle_server_message
+    client.command_handler.handle_command(f"/join {channel}")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CommandHandler' object has no attribute 'handle_command'
+2025-05-31 06:25:38,962 - pyrc.network - INFO - Breaking network loop due to critical error.
+2025-05-31 06:25:38,962 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:25:38,962 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:25:38,962 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:25:38,962 - pyrc.network - INFO - Network thread officially stopped (client not globally quitting).
+2025-05-31 06:25:40,448 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:25:51,761 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:25:51,761 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:25:51,761 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:25:51,761 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:25:51,761 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:25:51,761 - pyrc - INFO - PyRC exited.
+2025-05-31 06:27:54,248 - pyrc - INFO - Logging initialized.
+2025-05-31 06:27:54,248 - pyrc - INFO - PyRC application started.
+2025-05-31 06:27:54,261 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:27:54,261 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:27:54,261 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:27:54,262 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:27:54,262 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:27:54,262 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:27:54,597 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:27:54,598 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:27:54,598 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:27:54,678 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :tantalum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:27:54,679 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :tantalum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:27:54,679 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :tantalum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:27:57,714 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:28:00,620 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** No Ident response'. Raw: :tantalum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:28:00,620 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as tester.
+2025-05-31 06:28:00,620 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:28:00,621 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:28:00,621 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:28:00,622 - pyrc.network - CRITICAL - Unexpected critical error in network loop: 'CommandHandler' object has no attribute 'handle_command'
+Traceback (most recent call last):
+  File "C:\Users\Administrator\ideas\pyrc\network_handler.py", line 329, in _network_loop
+    self.client.on_server_message(decoded_line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_client_logic.py", line 209, in on_server_message
+    irc_protocol.handle_server_message(self, line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_protocol.py", line 513, in handle_server_message
+    client.command_handler.handle_command(f"/join {channel}")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CommandHandler' object has no attribute 'handle_command'
+2025-05-31 06:28:00,634 - pyrc.network - INFO - Breaking network loop due to critical error.
+2025-05-31 06:28:00,634 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:28:00,634 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:28:00,634 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:28:00,634 - pyrc.network - INFO - Network thread officially stopped (client not globally quitting).
+2025-05-31 06:28:11,367 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:28:11,367 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:28:11,367 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:28:11,367 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:28:11,367 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:28:11,367 - pyrc - INFO - PyRC exited.
+2025-05-31 06:28:56,496 - pyrc - INFO - Logging initialized.
+2025-05-31 06:28:56,496 - pyrc - INFO - PyRC application started.
+2025-05-31 06:28:56,510 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:28:56,510 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:28:56,510 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:28:56,511 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:28:56,511 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:28:56,511 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:28:56,693 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:28:56,693 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:28:56,693 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:28:56,772 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :tantalum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:28:56,773 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :tantalum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:28:56,773 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :tantalum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:29:02,485 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:29:02,540 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** No Ident response'. Raw: :tantalum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:29:02,548 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as tester.
+2025-05-31 06:29:02,548 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:29:02,548 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:29:02,549 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:29:02,549 - pyrc.network - CRITICAL - Unexpected critical error in network loop: 'CommandHandler' object has no attribute 'handle_command'
+Traceback (most recent call last):
+  File "C:\Users\Administrator\ideas\pyrc\network_handler.py", line 329, in _network_loop
+    self.client.on_server_message(decoded_line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_client_logic.py", line 209, in on_server_message
+    irc_protocol.handle_server_message(self, line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Administrator\ideas\pyrc\irc_protocol.py", line 513, in handle_server_message
+    client.command_handler.handle_command(f"/join {channel}")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CommandHandler' object has no attribute 'handle_command'
+2025-05-31 06:29:02,563 - pyrc.network - INFO - Breaking network loop due to critical error.
+2025-05-31 06:29:02,563 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:29:02,563 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:29:02,564 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:29:02,564 - pyrc.network - INFO - Network thread officially stopped (client not globally quitting).
+2025-05-31 06:29:11,614 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:29:11,614 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:29:11,614 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:29:11,614 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:29:11,614 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:29:11,615 - pyrc - INFO - PyRC exited.
+2025-05-31 06:29:14,028 - pyrc - INFO - Logging initialized.
+2025-05-31 06:29:14,028 - pyrc - INFO - PyRC application started.
+2025-05-31 06:29:14,041 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:29:14,041 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:29:14,041 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:29:14,042 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:29:14,042 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:29:14,042 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:29:14,324 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:29:14,325 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:29:14,325 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:29:14,403 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :tantalum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:29:14,403 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :tantalum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:29:14,404 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :tantalum.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:29:16,832 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:29:20,552 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'tantalum.libera.chat': P='*' T=':*** No Ident response'. Raw: :tantalum.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:29:20,552 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as tester.
+2025-05-31 06:29:20,552 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:29:20,553 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:29:20,553 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:29:20,553 - pyrc.command_handler - INFO - Processing command: /join with args: '#python'
+2025-05-31 06:29:20,554 - pyrc.command_handler - INFO - Processing command: /join with args: '#testchannel'
+2025-05-31 06:29:20,559 - pyrc.protocol - INFO - MODE received: By: tester, Target: tester, Changes: :+Ziw
+2025-05-31 06:29:20,607 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY tester <password>'. Raw: :NickServ!NickServ@services.libera.chat NOTICE tester :This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY tester <password>
+2025-05-31 06:29:26,389 - pyrc.protocol - INFO - Successfully joined channel: #python
+2025-05-31 06:29:26,432 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #python. User count: 1555. Current joined: {'#python'}
+2025-05-31 06:29:26,432 - pyrc.protocol - INFO - Successfully joined channel: #testchannel
+2025-05-31 06:29:26,432 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #testchannel. User count: 4. Current joined: {'#python', '#testchannel'}
+2025-05-31 06:29:36,172 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:29:43,378 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:29:43,378 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:29:43,378 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 06:29:43,378 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:29:43,379 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 06:29:43,379 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:29:43,380 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 06:29:43,380 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:29:43,380 - pyrc - INFO - PyRC exited.
+2025-05-31 06:29:57,520 - pyrc - INFO - Logging initialized.
+2025-05-31 06:29:57,520 - pyrc - INFO - PyRC application started.
+2025-05-31 06:29:57,533 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:29:57,533 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:29:57,533 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:29:57,533 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:29:57,533 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:29:57,534 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:29:58,420 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:29:58,420 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:29:58,420 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:29:58,730 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Checking Ident'. Raw: :silver.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:29:58,730 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :silver.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:29:58,731 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :silver.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:30:04,387 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** No Ident response'. Raw: :silver.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:30:04,387 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as tester.
+2025-05-31 06:30:04,388 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:30:04,388 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:30:04,388 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:30:04,388 - pyrc.command_handler - INFO - Processing command: /join with args: '#python'
+2025-05-31 06:30:04,388 - pyrc.command_handler - INFO - Processing command: /join with args: '#testchannel'
+2025-05-31 06:30:04,539 - pyrc.protocol - INFO - MODE received: By: tester, Target: tester, Changes: :+Ziw
+2025-05-31 06:30:04,648 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY tester <password>'. Raw: :NickServ!NickServ@services.libera.chat NOTICE tester :This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY tester <password>
+2025-05-31 06:30:10,278 - pyrc.protocol - INFO - Successfully joined channel: #python
+2025-05-31 06:30:10,391 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #python. User count: 1554. Current joined: {'#python'}
+2025-05-31 06:30:10,391 - pyrc.protocol - INFO - Successfully joined channel: #testchannel
+2025-05-31 06:30:10,392 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #testchannel. User count: 4. Current joined: {'#python', '#testchannel'}
+2025-05-31 06:30:12,084 - pyrc.command_handler - INFO - Processing command: /j with args: 'libera'
+2025-05-31 06:30:12,281 - pyrc.protocol - INFO - Successfully joined channel: #libera
+2025-05-31 06:30:12,387 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #libera. User count: 1806. Current joined: {'#python', '#testchannel', '#libera'}
+2025-05-31 06:30:19,396 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:30:19,397 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:30:19,397 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 06:30:19,397 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:30:19,397 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 06:30:19,398 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:30:19,398 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 06:30:19,399 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:30:19,399 - pyrc - INFO - PyRC exited.
+2025-05-31 06:30:22,115 - pyrc - INFO - Logging initialized.
+2025-05-31 06:30:22,115 - pyrc - INFO - PyRC application started.
+2025-05-31 06:30:22,131 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:30:22,131 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:30:22,132 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:30:22,132 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:30:22,132 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:30:22,133 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 06:30:22,575 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 06:30:22,575 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:30:22,575 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:30:22,913 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Checking Ident'. Raw: :silver.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 06:30:22,913 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :silver.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 06:30:22,914 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :silver.libera.chat NOTICE * :*** Couldn't look up your hostname
+2025-05-31 06:30:28,482 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'silver.libera.chat': P='*' T=':*** No Ident response'. Raw: :silver.libera.chat NOTICE * :*** No Ident response
+2025-05-31 06:30:28,482 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as tester.
+2025-05-31 06:30:28,482 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:30:28,482 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:30:28,483 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:30:28,483 - pyrc.command_handler - INFO - Processing command: /join with args: '#python'
+2025-05-31 06:30:28,483 - pyrc.command_handler - INFO - Processing command: /join with args: '#testchannel'
+2025-05-31 06:30:28,647 - pyrc.protocol - INFO - MODE received: By: tester, Target: tester, Changes: :+Ziw
+2025-05-31 06:30:28,648 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY tester <password>'. Raw: :NickServ!NickServ@services.libera.chat NOTICE tester :This nickname is registered. Please choose a different nickname, or identify via /msg NickServ IDENTIFY tester <password>
+2025-05-31 06:30:34,382 - pyrc.protocol - INFO - Successfully joined channel: #python
+2025-05-31 06:30:34,626 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #python. User count: 1554. Current joined: {'#python'}
+2025-05-31 06:30:34,626 - pyrc.protocol - INFO - Successfully joined channel: #testchannel
+2025-05-31 06:30:34,627 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #testchannel. User count: 4. Current joined: {'#testchannel', '#python'}
+2025-05-31 06:30:58,934 - pyrc.command_handler - INFO - Processing command: /j with args: 'politics'
+2025-05-31 06:31:07,028 - pyrc.command_handler - INFO - Processing command: /s with args: ''
+2025-05-31 06:31:10,322 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:31:15,677 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:31:15,678 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:31:15,678 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 06:31:15,678 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:31:15,678 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 06:31:15,680 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:31:15,680 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 06:31:15,681 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:31:15,681 - pyrc - INFO - PyRC exited.
+2025-05-31 06:32:05,893 - pyrc - INFO - Logging initialized.
+2025-05-31 06:32:05,893 - pyrc - INFO - PyRC application started.
+2025-05-31 06:32:05,906 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:32:05,906 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:32:05,907 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.quakenet.org:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:32:05,907 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:32:05,907 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:32:05,908 - pyrc.network - INFO - Attempting socket connection to irc.quakenet.org:6697 (SSL: True)
+2025-05-31 06:32:13,809 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:32:26,742 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:32:26,742 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:32:26,743 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:32:26,743 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:32:28,756 - pyrc.logic - WARNING - Network thread did not join in time.
+2025-05-31 06:32:28,756 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:32:29,758 - pyrc - INFO - PyRC exited.
+2025-05-31 06:32:36,086 - pyrc - INFO - Logging initialized.
+2025-05-31 06:32:36,086 - pyrc - INFO - PyRC application started.
+2025-05-31 06:32:36,098 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:32:36,099 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:32:36,099 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.quake.net:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:32:36,099 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:32:36,099 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:32:36,100 - pyrc.network - INFO - Attempting socket connection to irc.quake.net:6697 (SSL: True)
+2025-05-31 06:32:36,163 - pyrc.network - ERROR - Hostname irc.quake.net could not be resolved: [Errno 11001] getaddrinfo failed
+2025-05-31 06:32:36,163 - pyrc.network - WARNING - Connection attempt failed in loop.
+2025-05-31 06:32:41,178 - pyrc.network - INFO - Attempting socket connection to irc.quake.net:6697 (SSL: True)
+2025-05-31 06:32:41,183 - pyrc.network - ERROR - Hostname irc.quake.net could not be resolved: [Errno 11001] getaddrinfo failed
+2025-05-31 06:32:41,183 - pyrc.network - WARNING - Connection attempt failed in loop.
+2025-05-31 06:32:42,027 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:32:44,349 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:32:44,349 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:32:44,349 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:32:44,349 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:32:44,349 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:32:44,349 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 06:32:44,350 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:32:44,350 - pyrc - INFO - PyRC exited.
+2025-05-31 06:33:46,081 - pyrc - INFO - Logging initialized.
+2025-05-31 06:33:46,081 - pyrc - INFO - PyRC application started.
+2025-05-31 06:33:46,094 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:33:46,094 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:33:46,094 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.dal.ne:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:33:46,094 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:33:46,094 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:33:46,095 - pyrc.network - INFO - Attempting socket connection to irc.dal.ne:6697 (SSL: True)
+2025-05-31 06:33:46,433 - pyrc.network - ERROR - Hostname irc.dal.ne could not be resolved: [Errno 11001] getaddrinfo failed
+2025-05-31 06:33:46,433 - pyrc.network - WARNING - Connection attempt failed in loop.
+2025-05-31 06:33:51,434 - pyrc.network - INFO - Attempting socket connection to irc.dal.ne:6697 (SSL: True)
+2025-05-31 06:33:51,437 - pyrc.network - ERROR - Hostname irc.dal.ne could not be resolved: [Errno 11001] getaddrinfo failed
+2025-05-31 06:33:51,438 - pyrc.network - WARNING - Connection attempt failed in loop.
+2025-05-31 06:34:01,451 - pyrc.network - INFO - Attempting socket connection to irc.dal.ne:6697 (SSL: True)
+2025-05-31 06:34:01,455 - pyrc.network - ERROR - Hostname irc.dal.ne could not be resolved: [Errno 11001] getaddrinfo failed
+2025-05-31 06:34:01,455 - pyrc.network - WARNING - Connection attempt failed in loop.
+2025-05-31 06:34:21,456 - pyrc.network - INFO - Attempting socket connection to irc.dal.ne:6697 (SSL: True)
+2025-05-31 06:34:21,459 - pyrc.network - ERROR - Hostname irc.dal.ne could not be resolved: [Errno 11001] getaddrinfo failed
+2025-05-31 06:34:21,460 - pyrc.network - WARNING - Connection attempt failed in loop.
+2025-05-31 06:34:38,789 - pyrc.command_handler - INFO - Processing command: /j with args: '#chicago'
+2025-05-31 06:34:38,789 - pyrc.network - WARNING - Attempted to send data while not connected: JOIN #chicago
+2025-05-31 06:34:44,925 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:34:48,479 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:34:48,480 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:34:48,480 - pyrc.network - INFO - Stopping network thread. Send QUIT: False
+2025-05-31 06:34:48,480 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:34:48,480 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:34:48,480 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 06:34:48,480 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:34:48,480 - pyrc - INFO - PyRC exited.
+2025-05-31 06:34:55,137 - pyrc - INFO - Logging initialized.
+2025-05-31 06:34:55,137 - pyrc - INFO - PyRC application started.
+2025-05-31 06:34:55,150 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:34:55,150 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:34:55,150 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.dal.net:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:34:55,150 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:34:55,150 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:34:55,151 - pyrc.network - INFO - Attempting socket connection to irc.dal.net:6697 (SSL: True)
+2025-05-31 06:34:55,383 - pyrc.network - INFO - Successfully connected to irc.dal.net:6697. SSL: True
+2025-05-31 06:34:55,383 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:34:55,383 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:34:55,459 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'bitcoin.uk.eu.dal.net': P='AUTH' T=':*** Looking up your hostname...'. Raw: :bitcoin.uk.eu.dal.net NOTICE AUTH :*** Looking up your hostname...
+2025-05-31 06:34:55,460 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'bitcoin.uk.eu.dal.net': P='AUTH' T=':*** Found your hostname'. Raw: :bitcoin.uk.eu.dal.net NOTICE AUTH :*** Found your hostname
+2025-05-31 06:34:55,461 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as tester.
+2025-05-31 06:34:55,461 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:34:55,461 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:34:55,461 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:34:55,462 - pyrc.command_handler - INFO - Processing command: /join with args: '#python'
+2025-05-31 06:34:55,462 - pyrc.command_handler - INFO - Processing command: /join with args: '#testchannel'
+2025-05-31 06:34:55,463 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'bitcoin.uk.eu.dal.net': P='tester' T=':*** Notice -- motd was last changed at 9/11/2017 12:51'. Raw: :bitcoin.uk.eu.dal.net NOTICE tester :*** Notice -- motd was last changed at 9/11/2017 12:51
+2025-05-31 06:34:55,495 - pyrc.protocol - INFO - MODE received: By: tester, Target: tester, Changes: :+iHS
+2025-05-31 06:34:55,526 - pyrc.protocol - INFO - Successfully joined channel: #python
+2025-05-31 06:34:55,527 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #python. User count: 3. Current joined: {'#python'}
+2025-05-31 06:34:55,639 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':This nick is owned by someone else. Please choose another.'. Raw: :NickServ!service@dal.net NOTICE tester :This nick is owned by someone else. Please choose another.
+2025-05-31 06:34:55,639 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':If this is your nick, type: /msg NickServ@services.dal.net IDENTIFY <password>'. Raw: :NickServ!service@dal.net NOTICE tester :If this is your nick, type: /msg NickServ@services.dal.net IDENTIFY <password>
+2025-05-31 06:34:55,722 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':Your nick will be changed in 60 seconds if you do not comply.'. Raw: :NickServ!service@dal.net NOTICE tester :Your nick will be changed in 60 seconds if you do not comply.
+2025-05-31 06:34:55,983 - pyrc.protocol - INFO - Successfully joined channel: #testchannel
+2025-05-31 06:34:55,984 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #testchannel. User count: 1. Current joined: {'#python', '#testchannel'}
+2025-05-31 06:35:01,011 - pyrc.command_handler - INFO - Processing command: /j with args: '#chicago'
+2025-05-31 06:35:05,924 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:35:05,970 - pyrc.protocol - INFO - Successfully joined channel: #chicago
+2025-05-31 06:35:06,012 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #chicago. User count: 305. Current joined: {'#python', '#chicago', '#testchannel'}
+2025-05-31 06:35:06,199 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'RG': P='tester' T=':Welcome to RG's channel. Scramble game is currently off. Please type /MSG RG ? if you need help. Enjoy your stay! :-)'. Raw: :RG!maz@29a-a92b-6948-acf-537a.20.6400.2605.ip NOTICE tester :Welcome to RG's channel. Scramble game is currently off. Please type /MSG RG ? if you need help. Enjoy your stay! :-)
+2025-05-31 06:35:16,216 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':You now have 40 seconds to change your nick. The nick you are'. Raw: :NickServ!service@dal.net NOTICE tester :You now have 40 seconds to change your nick. The nick you are
+2025-05-31 06:35:16,217 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':currently using is registered to another user.'. Raw: :NickServ!service@dal.net NOTICE tester :currently using is registered to another user.
+2025-05-31 06:35:37,203 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':You now have 20 seconds to change your nick. If you do not'. Raw: :NickServ!service@dal.net NOTICE tester :You now have 20 seconds to change your nick. If you do not
+2025-05-31 06:35:37,204 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':comply, I will change your nick for you. This is your final warning.'. Raw: :NickServ!service@dal.net NOTICE tester :comply, I will change your nick for you. This is your final warning.
+2025-05-31 06:35:37,288 - pyrc.protocol - WARNING - ERR_NICKNAMEINUSE (433) for tester: :services.dal.net 433 tester tester :Nickname is registered to someone else.
+2025-05-31 06:35:37,288 - pyrc.protocol - INFO - Nickname tester (initial) in use, trying tester_.
+2025-05-31 06:35:37,325 - pyrc.protocol - INFO - Our nick changed from tester to tester_.
+2025-05-31 06:36:35,627 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:36:35,627 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:36:35,627 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 06:36:35,627 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:36:35,627 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 06:36:35,628 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:36:35,628 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 06:36:35,628 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:36:35,629 - pyrc - INFO - PyRC exited.
+2025-05-31 06:37:07,940 - pyrc - INFO - Logging initialized.
+2025-05-31 06:37:07,940 - pyrc - INFO - PyRC application started.
+2025-05-31 06:37:07,953 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 06:37:07,953 - pyrc.context - INFO - ContextManager initialized with max_history=500
+2025-05-31 06:37:07,953 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.dal.net:6697 as tester. Channels: #python, #testchannel
+2025-05-31 06:37:07,954 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 06:37:07,954 - pyrc.network - INFO - Starting network thread.
+2025-05-31 06:37:07,954 - pyrc.network - INFO - Attempting socket connection to irc.dal.net:6697 (SSL: True)
+2025-05-31 06:37:08,139 - pyrc.network - INFO - Successfully connected to irc.dal.net:6697. SSL: True
+2025-05-31 06:37:08,140 - pyrc.network - INFO - No channels specified to auto-join on connect.
+2025-05-31 06:37:08,140 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 06:37:08,202 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'bitcoin.uk.eu.dal.net': P='AUTH' T=':*** Looking up your hostname...'. Raw: :bitcoin.uk.eu.dal.net NOTICE AUTH :*** Looking up your hostname...
+2025-05-31 06:37:08,203 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'bitcoin.uk.eu.dal.net': P='AUTH' T=':*** Found your hostname'. Raw: :bitcoin.uk.eu.dal.net NOTICE AUTH :*** Found your hostname
+2025-05-31 06:37:08,205 - pyrc.protocol - INFO - Received RPL_WELCOME (001). Nick confirmed as tester.
+2025-05-31 06:37:08,205 - pyrc.logic - INFO - CAP END confirmation received, but CAP was not marked pending. Ensuring registration proceeds if not already done.
+2025-05-31 06:37:08,205 - pyrc.logic - INFO - CAP negotiation concluded. Proceeding with NICK/USER registration.
+2025-05-31 06:37:08,205 - pyrc.protocol - INFO - CAP negotiation finished event set, proceeding with post-001 actions.
+2025-05-31 06:37:08,205 - pyrc.command_handler - INFO - Processing command: /join with args: '#python'
+2025-05-31 06:37:08,206 - pyrc.command_handler - INFO - Processing command: /join with args: '#testchannel'
+2025-05-31 06:37:08,206 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'bitcoin.uk.eu.dal.net': P='tester' T=':*** Notice -- motd was last changed at 9/11/2017 12:51'. Raw: :bitcoin.uk.eu.dal.net NOTICE tester :*** Notice -- motd was last changed at 9/11/2017 12:51
+2025-05-31 06:37:08,314 - pyrc.protocol - INFO - MODE received: By: tester, Target: tester, Changes: :+iHS
+2025-05-31 06:37:08,502 - pyrc.protocol - INFO - Successfully joined channel: #python
+2025-05-31 06:37:08,502 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #python. User count: 3. Current joined: {'#python'}
+2025-05-31 06:37:08,503 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':This nick is owned by someone else. Please choose another.'. Raw: :NickServ!service@dal.net NOTICE tester :This nick is owned by someone else. Please choose another.
+2025-05-31 06:37:08,503 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':If this is your nick, type: /msg NickServ@services.dal.net IDENTIFY <password>'. Raw: :NickServ!service@dal.net NOTICE tester :If this is your nick, type: /msg NickServ@services.dal.net IDENTIFY <password>
+2025-05-31 06:37:08,503 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':Your nick will be changed in 60 seconds if you do not comply.'. Raw: :NickServ!service@dal.net NOTICE tester :Your nick will be changed in 60 seconds if you do not comply.
+2025-05-31 06:37:09,038 - pyrc.protocol - INFO - Successfully joined channel: #testchannel
+2025-05-31 06:37:09,039 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #testchannel. User count: 1. Current joined: {'#testchannel', '#python'}
+2025-05-31 06:37:10,446 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:37:24,946 - pyrc.command_handler - INFO - Processing command: /j with args: '#chicago'
+2025-05-31 06:37:25,061 - pyrc.protocol - INFO - Successfully joined channel: #chicago
+2025-05-31 06:37:25,092 - pyrc.protocol - INFO - RPL_ENDOFNAMES for #chicago. User count: 305. Current joined: {'#chicago', '#testchannel', '#python'}
+2025-05-31 06:37:25,271 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'RG': P='tester' T=':Welcome to RG's channel. Scramble game is currently off. Please type /MSG RG ? if you need help. Enjoy your stay! :-)'. Raw: :RG!maz@29a-a92b-6948-acf-537a.20.6400.2605.ip NOTICE tester :Welcome to RG's channel. Scramble game is currently off. Please type /MSG RG ? if you need help. Enjoy your stay! :-)
+2025-05-31 06:37:31,356 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':You now have 40 seconds to change your nick. The nick you are'. Raw: :NickServ!service@dal.net NOTICE tester :You now have 40 seconds to change your nick. The nick you are
+2025-05-31 06:37:31,471 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'NickServ': P='tester' T=':currently using is registered to another user.'. Raw: :NickServ!service@dal.net NOTICE tester :currently using is registered to another user.
+2025-05-31 06:37:31,648 - pyrc.command_handler - INFO - Processing command: /status with args: ''
+2025-05-31 06:37:38,801 - pyrc.logic - INFO - KeyboardInterrupt received. Initiating quit.
+2025-05-31 06:37:38,801 - pyrc.logic - INFO - Main client loop ended.
+2025-05-31 06:37:38,801 - pyrc.network - INFO - Stopping network thread. Send QUIT: True
+2025-05-31 06:37:38,801 - pyrc.network - INFO - Network thread stop sequence complete.
+2025-05-31 06:37:38,802 - pyrc.network - INFO - Network error during shutdown: [WinError 10038] An operation was attempted on something that is not a socket
+2025-05-31 06:37:38,803 - pyrc.network - INFO - Network loop has exited.
+2025-05-31 06:37:38,803 - pyrc.network - INFO - Network thread stopped (client is globally quitting).
+2025-05-31 06:37:38,804 - pyrc - INFO - Shutting down PyRC.
+2025-05-31 06:37:38,804 - pyrc - INFO - PyRC exited.

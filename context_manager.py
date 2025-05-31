@@ -1,7 +1,7 @@
 # context_manager.py
 import logging
 from collections import deque
-from typing import Optional, Any, Set, Deque, Tuple, Dict, List # Dict added
+from typing import Optional, Any, Deque, Tuple, Dict, List # Set removed, Dict was already present
 
 from config import MAX_HISTORY
 
@@ -21,18 +21,18 @@ class Context:
         self.name: str = name
         self.type: str = context_type
         self.messages: Deque[Tuple[str, Any]] = deque(maxlen=max_history)
-        # Changed users from Set[str] to Dict[str, str] to store prefixes
-        self.users: Dict[str, str] = {}  # {'nickname': '<prefix_chars>'} e.g. {'ChanOp': '@'}
+        self.users: Dict[str, str] = {}  # {'nickname': '<prefix_char>'} e.g. {'ChanOp': '@', 'User': ''}
         self.topic: Optional[str] = topic
         self.unread_count: int = 0
         self.scrollback_offset: int = 0
+        self.user_list_scroll_offset: int = 0
 
     def add_message(self, text: str, color_attr: Any):
         self.messages.append((text, color_attr))
 
     def __repr__(self):
         user_count = len(self.users)
-        return f"<Context name='{self.name}' type='{self.type}' users={user_count} unread={self.unread_count} scroll_offset={self.scrollback_offset}>"
+        return f"<Context name='{self.name}' type='{self.type}' users={user_count} unread={self.unread_count} scroll_offset={self.scrollback_offset} user_scroll_offset={self.user_list_scroll_offset}>"
 
 
 class ContextManager:

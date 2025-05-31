@@ -42,7 +42,7 @@ class CommandHandler:
             "/quote",
             "/connect",
             "/server",
-            "/s",
+            "/s", # Alias for /connect or /server
             "/disconnect",
             "/clear",
             "/next", "/nextwindow",
@@ -51,6 +51,9 @@ class CommandHandler:
             "/close", "/wc", "/partchannel",
             "/cyclechannel", "/cc", # Added
             "/prevchannel", "/pc",   # Added
+            "/userlistscroll", # Added
+            "/u",            # Alias for /userlistscroll
+            "/status",         # Added
         ]
 
     def _handle_topic_command(self, args_str: str):
@@ -495,7 +498,7 @@ class CommandHandler:
                         self.client.ui.colors["error"],
                         context_name="Status",
                     )
-            elif command in ["/connect", "/server", "/s"]:
+            elif command in ["/connect", "/server", "/s"]: # Ensure /s is for connect/server
                 self._handle_connect_command(args)
             elif command == "/disconnect":
                 if self.client.network.connected:
@@ -521,6 +524,8 @@ class CommandHandler:
                 self.client.switch_active_channel("next")
             elif command in ["/prevchannel", "/pc"]:   # New command
                 self.client.switch_active_channel("prev")
+            elif command == "/status": # Only /status, /s is for server/connect
+                self.client.switch_active_context("Status")
             elif command in [
                 "/win",
                 "/window",
@@ -649,6 +654,71 @@ class CommandHandler:
                                 else "Status"
                             ),
                         )
+            elif command in ["/userlistscroll", "/u"]:
+                active_ctx_for_msg = self.client.context_manager.active_context_name or "Status"
+
+                direction_arg = ""
+                lines_value_arg_str = None
+                lines_value_arg_int = None
+
+                if command == "/u" and not args:
+                    direction_arg = "pagedown" # Default for /u without args
+                else:
+                    parts = args.split(maxsplit=1)
+                    direction_arg = parts[0].lower() if parts else ""
+                    lines_value_arg_str = parts[1] if len(parts) > 1 else None
+
+                valid_directions = ["up", "down", "pageup", "pagedown", "top", "bottom"]
+
+                usage_msg = f"Usage: {command} <up|down|pageup|pagedown|top|bottom> [lines]"
+                if command == "/u":
+                    usage_msg = f"Usage: /u [up|down|pageup|pagedown|top|bottom] [lines] (Defaults to pagedown if no args)"
+
+
+                if not direction_arg or direction_arg not in valid_directions:
+                    self.client.add_message(
+                        usage_msg,
+                        self.client.ui.colors["error"],
+                        context_name=active_ctx_for_msg,
+                    )
+                else:
+                    if lines_value_arg_str:
+                        try:
+                            lines_value_arg_int = int(lines_value_arg_str)
+                            if lines_value_arg_int <= 0:
+                                self.client.add_message(
+                                    "Scroll line count must be a positive number.",
+                                    self.client.ui.colors["error"],
+                                    context_name=active_ctx_for_msg,
+                                )
+                                lines_value_arg_int = None # Invalidate
+                            elif direction_arg not in ["up", "down"]:
+                                self.client.add_message(
+                                    f"Line count argument is only valid for 'up' or 'down' directions.",
+                                    self.client.ui.colors["error"],
+                                    context_name=active_ctx_for_msg,
+                                )
+                                lines_value_arg_int = None # Invalidate
+                        except ValueError:
+                            self.client.add_message(
+                                "Invalid line count for scroll.",
+                                self.client.ui.colors["error"],
+                                context_name=active_ctx_for_msg,
+                            )
+                            lines_value_arg_int = None # Invalidate
+
+                    # Proceed if lines_value_arg_int is valid or None (for directions not requiring it)
+                    if lines_value_arg_int is not None or lines_value_arg_str is None:
+                        if hasattr(self.client.ui, 'scroll_user_list'):
+                             self.client.ui.scroll_user_list(direction_arg, lines_value_arg_int)
+                        else:
+                            logger.error("scroll_user_list method not found on UIManager")
+                            self.client.add_message(
+                                "Error: User list scrolling feature not fully implemented (UI component missing).",
+                                self.client.ui.colors["error"],
+                                context_name=active_ctx_for_msg,
+                             )
+
             else:
                 self.client.add_message(
                     f"Unknown command: {command}",

@@ -2,6 +2,7 @@
 import curses
 import time
 import logging
+from typing import Optional, TYPE_CHECKING, List, Tuple, Any, Deque, Dict
 from config import (
     COLOR_ID_DEFAULT,
     COLOR_ID_SYSTEM,
@@ -140,6 +141,45 @@ class UIManager:
                 window.addstr(0, 1, title[: win_w - 2], curses.A_BOLD)
             except curses.error: pass
 
+    def _calculate_available_lines_for_user_list(self) -> int:
+        """
+        Calculates the approximate number of lines available purely for listing user nicks
+        in the sidebar, after accounting for headers and other elements.
+        """
+        if not self.sidebar_win:
+            return 0
+        try:
+            max_y, _ = self.sidebar_win.getmaxyx()
+        except curses.error: # If window not yet fully initialized or too small
+            return 0
+
+        if max_y <= 0:
+            return 0
+
+        lines_for_windows_header = 1
+        try:
+            # This might be called before client.context_manager is fully ready during init
+            all_contexts_count = len(self.client.context_manager.get_all_context_names()) if self.client and self.client.context_manager else 0
+        except Exception: # Catchall if context_manager or get_all_context_names is problematic early on
+            all_contexts_count = 0
+
+        # Approximation for lines taken by:
+        # 1. "Windows:" header
+        # 2. Each window name
+        # 3. Potential blank line/gap after window list
+        # 4. Separator hline before user list
+        # 5. "Users in {channel} ({count})" header
+        # This is an estimate. A more precise calculation would track line_num in draw_sidebar.
+        # For the plan: 1 (win_header) + N_windows + 1 (gap) + 1 (hline) + 1 (user_header) = 4 + N_windows
+        lines_used_by_other_elements = (
+            lines_for_windows_header +
+            all_contexts_count +
+            3  # For gap, hline, and user list header
+        )
+
+        available_for_nicks = max_y - lines_used_by_other_elements
+        return max(0, available_for_nicks)
+
     def draw_messages(self, current_active_ctx_obj, current_active_ctx_name_str):
         if not self.msg_win: return
         self._draw_window_border_and_bkgd(self.msg_win, self.colors.get("default",0))
@@ -184,8 +224,16 @@ class UIManager:
             line_num += 1
         except curses.error: pass
 
-        all_contexts = self.client.context_manager.get_all_context_names()
-        all_contexts.sort()
+        all_context_names_unsorted = self.client.context_manager.get_all_context_names()
+
+        # Separate "Status" context, sort others, then append "Status"
+        status_context_name = "Status"
+        other_contexts = [name for name in all_context_names_unsorted if name != status_context_name]
+        other_contexts.sort(key=lambda x: x.lower()) # Sort case-insensitively
+
+        all_contexts = other_contexts
+        if status_context_name in all_context_names_unsorted:
+            all_contexts.append(status_context_name)
 
         active_context_name_for_list_highlight = current_active_ctx_name_str
 
@@ -230,6 +278,7 @@ class UIManager:
                 user_count = len(channel_users_dict)
                 user_header_full = f"Users in {current_active_ctx_name_for_user_header} ({user_count})"
                 user_header_truncated = user_header_full[:max_x-1]
+
                 try:
                     if line_num < max_y:
                         self.sidebar_win.addstr(
@@ -240,21 +289,70 @@ class UIManager:
                     logger.debug(f"Curses error drawing sidebar user header '{user_header_truncated}': {e}")
                     pass
 
-                sorted_user_items = sorted(channel_users_dict.items(), key=lambda item: item[0].lower())
+                # User list scrolling additions
+                current_user_scroll_offset = active_ctx_obj_for_users.user_list_scroll_offset
 
-                for nick, prefix in sorted_user_items:
-                    if line_num >= max_y:
-                        break
-                    display_user = (prefix + nick)
-                    user_display_truncated = (" " + display_user)[:max_x-1]
+                # Calculate how many lines are truly available for nicks, considering indicators
+                # The _calculate_available_lines_for_user_list() gives total space for the nick list section
+                # We then fit indicators + nicks into this space.
+                # A simpler approach: use max_y - line_num as available space from this point.
+                available_lines_for_user_section = max_y - line_num
+
+                lines_for_nicks = available_lines_for_user_section
+                up_indicator_text = None
+                down_indicator_text = None
+
+                if current_user_scroll_offset > 0:
+                    if lines_for_nicks > 0:
+                        up_indicator_text = ("^ More"[:max_x-1])
+                        lines_for_nicks -= 1
+
+                # Check if a down indicator is needed
+                # Need to know how many nicks will be displayed to see if there are more *after* them
+                # This is tricky. Let's use total_users vs offset + displayable nicks.
+
+                # Recalculate sorted_user_items here if it wasn't already
+                sorted_user_items = sorted(channel_users_dict.items(), key=lambda item: item[0].lower())
+                total_users = len(sorted_user_items)
+
+                if current_user_scroll_offset + lines_for_nicks < total_users:
+                    if lines_for_nicks > 0: # Check if there's space left for the down indicator
+                        down_indicator_text = ("v More"[:max_x-1])
+                        lines_for_nicks -= 1
+
+                lines_for_nicks = max(0, lines_for_nicks) # Ensure it's not negative
+
+                if up_indicator_text and line_num < max_y:
                     try:
-                        self.sidebar_win.addstr(
-                            line_num, 0, user_display_truncated, self.colors.get("sidebar_item",0)
-                        )
+                        self.sidebar_win.addstr(line_num, 1, up_indicator_text, self.colors.get("sidebar_item", 0) | curses.A_DIM)
+                        line_num += 1
+                    except curses.error: pass
+
+                start_idx = current_user_scroll_offset
+                end_idx = current_user_scroll_offset + lines_for_nicks
+
+                visible_users_page = sorted_user_items[start_idx:end_idx]
+
+                for nick, prefix_str in visible_users_page:
+                    if line_num >= max_y: # Should be max_y - (1 if down_indicator_text else 0)
+                        break
+                    display_user_with_prefix = f"{prefix_str}{nick}"
+                    user_display_truncated = (" " + display_user_with_prefix)[:max_x-1]
+                    user_color = self.colors.get("sidebar_item", 0)
+                    if prefix_str == "@": user_color = self.colors.get("user_prefix", user_color)
+
+                    try:
+                        self.sidebar_win.addstr(line_num, 0, user_display_truncated, user_color)
                     except curses.error as e:
                         logger.debug(f"Curses error drawing sidebar user '{user_display_truncated}': {e}")
-                        pass
                     line_num += 1
+
+                if down_indicator_text and line_num < max_y:
+                    try:
+                        self.sidebar_win.addstr(line_num, 1, down_indicator_text, self.colors.get("sidebar_item", 0) | curses.A_DIM)
+                        line_num += 1
+                    except curses.error: pass
+
         self.sidebar_win.noutrefresh()
 
     def draw_status_bar(self, current_active_ctx_obj, current_active_ctx_name_str):
@@ -398,3 +496,61 @@ class UIManager:
         if new_offset != current_offset:
             active_ctx_obj.scrollback_offset = new_offset
             self.client.ui_needs_update.set()
+
+    def scroll_user_list(self, direction: str, lines_arg: Optional[int] = None):
+        """Scrolls the user list in the sidebar for the active channel context."""
+        if not self.sidebar_win: return # Or if not visible
+
+        active_ctx = self.client.context_manager.get_active_context()
+        if not active_ctx or active_ctx.type != "channel" or not active_ctx.users:
+            logger.debug("User list scroll: No active channel context or no users.")
+            return
+
+        # Use the helper to estimate viewable lines for nicks,
+        # this is for pageup/pagedown calculations primarily.
+        # The actual number of nicks displayed in draw_sidebar might slightly differ
+        # due to indicator space.
+        # For scroll amount, viewable_user_lines should be the number of nicks that *can* be shown.
+        # Let's use _calculate_available_lines_for_user_list() as the basis for page size.
+        viewable_nick_lines = self._calculate_available_lines_for_user_list()
+        if viewable_nick_lines <= 0: # No space to display users
+            logger.debug("User list scroll: No viewable lines for nicks.")
+            return
+
+        total_users = len(active_ctx.users)
+        current_offset = active_ctx.user_list_scroll_offset
+
+        # Max offset is total users minus the number that can fit on one page
+        max_scroll_offset = max(0, total_users - viewable_nick_lines)
+        new_offset = current_offset
+        scroll_amount = 0
+
+        if direction == "up":
+            scroll_amount = lines_arg if lines_arg is not None else max(1, viewable_nick_lines // 2)
+            new_offset = max(0, current_offset - scroll_amount)
+        elif direction == "down":
+            scroll_amount = lines_arg if lines_arg is not None else max(1, viewable_nick_lines // 2)
+            new_offset = min(max_scroll_offset, current_offset + scroll_amount)
+        elif direction == "pageup":
+            scroll_amount = viewable_nick_lines
+            new_offset = max(0, current_offset - scroll_amount)
+        elif direction == "pagedown":
+            scroll_amount = viewable_nick_lines
+            new_offset = min(max_scroll_offset, current_offset + scroll_amount)
+        elif direction == "top":
+            new_offset = 0
+        elif direction == "bottom":
+            new_offset = max_scroll_offset
+        else:
+            logger.warning(f"Unknown user scroll direction: {direction}")
+            return
+
+        # Ensure new_offset is within valid bounds again, especially if viewable_nick_lines was small
+        new_offset = max(0, min(new_offset, max_scroll_offset))
+
+        if new_offset != current_offset:
+            active_ctx.user_list_scroll_offset = new_offset
+            logger.debug(f"User list scrolled to offset {new_offset} for context {active_ctx.name}")
+            self.client.ui_needs_update.set()
+        else:
+            logger.debug(f"User list scroll: no change in offset ({current_offset}) for {active_ctx.name}")
