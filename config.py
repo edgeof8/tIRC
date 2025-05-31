@@ -14,6 +14,7 @@ DEFAULT_SSL = False
 DEFAULT_PASSWORD = None
 DEFAULT_NICKSERV_PASSWORD = None
 DEFAULT_AUTO_RECONNECT = True
+DEFAULT_VERIFY_SSL_CERT = True # Added for SSL certificate verification
 
 # --- Default Logging Settings ---
 DEFAULT_LOG_ENABLED = True
@@ -94,6 +95,9 @@ NICKSERV_PASSWORD = (
 
 AUTO_RECONNECT = get_config_value(
     "Connection", "auto_reconnect", DEFAULT_AUTO_RECONNECT, bool
+)
+VERIFY_SSL_CERT = get_config_value(
+    "Connection", "verify_ssl_cert", DEFAULT_VERIFY_SSL_CERT, bool
 )
 
 
