@@ -1,0 +1,12 @@
+2025-05-31 01:09:07,384 - pyrc - INFO - Logging initialized.
+2025-05-31 01:09:07,384 - pyrc - INFO - PyRC application started.
+2025-05-31 01:09:07,397 - pyrc - INFO - Starting PyRC curses wrapper.
+2025-05-31 01:09:07,398 - pyrc.logic - INFO - IRCClient_Logic initialized for irc.libera.chat:6697 as PyTermUser. Channels: #python, #testchannel
+2025-05-31 01:09:07,398 - pyrc.logic - INFO - Starting main client loop.
+2025-05-31 01:09:07,398 - pyrc.network - INFO - Starting network thread.
+2025-05-31 01:09:07,398 - pyrc.network - INFO - Attempting socket connection to irc.libera.chat:6697 (SSL: True)
+2025-05-31 01:09:07,774 - pyrc.network - INFO - Successfully connected to irc.libera.chat:6697. SSL: True
+2025-05-31 01:09:07,775 - pyrc.network - INFO - Connection successful in loop.
+2025-05-31 01:09:07,974 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'molybdenum.libera.chat': P='*' T=':*** Checking Ident'. Raw: :molybdenum.libera.chat NOTICE * :*** Checking Ident
+2025-05-31 01:09:07,975 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'molybdenum.libera.chat': P='*' T=':*** Looking up your hostname...'. Raw: :molybdenum.libera.chat NOTICE * :*** Looking up your hostname...
+2025-05-31 01:09:07,975 - pyrc.protocol - WARNING - Unhandled command 'NOTICE' from 'molybdenum.libera.chat': P='*' T=':*** Couldn't look up your hostname'. Raw: :molybdenum.libera.chat NOTICE * :*** Couldn't look up your hostname
