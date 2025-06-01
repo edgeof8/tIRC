@@ -121,15 +121,11 @@ class NetworkHandler:
             logger.debug(
                 "Network thread is alive. Setting connected=False to force re-evaluation in loop."
             )
-            # Ensure CAP negotiation state is reset for the new connection attempt triggered by the loop
-            self.client.cap_negotiation_pending = False
-            self.client.cap_negotiation_finished_event.clear()
-            self.client.sasl_authentication_initiated = False
-            self.client.sasl_flow_active = False
-            self.client.sasl_authentication_succeeded = None
-            self.client.enabled_caps.clear()
-            self.client.supported_caps.clear()
-            self.client.requested_caps.clear()
+            # Ensure CAP/SASL/Registration negotiation state is reset for the new connection attempt
+            if hasattr(self.client, 'cap_negotiator') and self.client.cap_negotiator:
+                self.client.cap_negotiator.reset_negotiation_state() # This also resets SASL
+            if hasattr(self.client, 'registration_handler') and self.client.registration_handler:
+                self.client.registration_handler.reset_registration_state()
 
             self.connected = False # This will trigger _connect_socket in the loop
             # The loop will pick this up. If it's sleeping, it will eventually wake.
@@ -170,16 +166,13 @@ class NetworkHandler:
                 logger.error(f"Error closing socket during reset: {e_close}")
             self.sock = None
         self.connected = False
-        # Reset CAP/SASL state for the client logic as well, as connection is lost
+        # Reset CAP/SASL/Registration state for the client logic as well, as connection is lost
         if self.client: # Guard against client being None during shutdown
-            self.client.cap_negotiation_pending = False
-            self.client.cap_negotiation_finished_event.clear() # Important for re-connection
-            self.client.sasl_authentication_initiated = False
-            self.client.sasl_flow_active = False
-            self.client.sasl_authentication_succeeded = None
-            self.client.enabled_caps.clear()
-            self.client.supported_caps.clear()
-            self.client.requested_caps.clear()
+            if hasattr(self.client, 'cap_negotiator') and self.client.cap_negotiator:
+                self.client.cap_negotiator.reset_negotiation_state() # Also resets SASL
+            if hasattr(self.client, 'registration_handler') and self.client.registration_handler:
+                self.client.registration_handler.reset_registration_state()
+            # The old direct attribute resets are removed as they are handled by the new classes.
 
 
     def _connect_socket(self):
@@ -228,12 +221,16 @@ class NetworkHandler:
                 context_name="Status",
             )
 
-            # Initiate CAP negotiation (moved from IRCClient_Logic.__init__ effectively)
-            # This will send CAP LS. NICK/USER will be sent after CAP negotiation concludes.
-            self.client.initiate_cap_negotiation()
+            # Initiate CAP negotiation via the CapNegotiator
+            if hasattr(self.client, 'cap_negotiator') and self.client.cap_negotiator:
+                self.client.cap_negotiator.start_negotiation()
+            else:
+                logger.error("NetworkHandler: cap_negotiator not found on client object during _connect_socket.")
+                self.client.add_message("Error: CAP negotiator not initialized.", self.client.ui.colors["error"], "Status")
+                # Potentially treat as connection failure or proceed without CAP if design allows
+
             # Note: NICK/USER are no longer sent here directly.
-            # They are sent by client.proceed_with_registration() which is called
-            # after CAP LS/ACK/NAK/END sequence, or by 001 if CAP negotiation is skipped/fails early.
+            # They are handled by RegistrationHandler, triggered by CapNegotiator events or RPL_WELCOME (001).
 
             # --- REMOVED CHANNEL JOIN LOGIC FROM HERE ---
             # if self.channels_to_join_on_connect:

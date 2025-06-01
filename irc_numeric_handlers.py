@@ -18,12 +18,16 @@ logger = logging.getLogger("pyrc.protocol") # Using the same logger as irc_proto
 def _handle_rpl_welcome(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles RPL_WELCOME (001)."""
     params = parsed_msg.params # Use original params for nick confirmation
-    confirmed_nick = params[0] if params else client.nick
+    confirmed_nick = params[0] if params else client.nick # Default to current client.nick if 001 has no target
+
+    # Update client's main nick attribute
     if client.nick != confirmed_nick:
-        logger.info(f"RPL_WELCOME: Nick confirmed by server as '{confirmed_nick}', was '{client.nick}'. Updating.")
+        logger.info(f"RPL_WELCOME: Nick confirmed by server as '{confirmed_nick}', was '{client.nick}'. Updating client.nick.")
         client.nick = confirmed_nick
-    else:
-        client.nick = confirmed_nick # Ensure client.nick is set even if it matched
+    # Ensure client.nick is set even if it matched or was defaulted
+    elif not client.nick and confirmed_nick:
+        client.nick = confirmed_nick
+
 
     client.add_message(
         f"Welcome to {client.server}: {trailing if trailing else ''}",
@@ -31,58 +35,17 @@ def _handle_rpl_welcome(client, parsed_msg: IRCMessage, raw_line: str, display_p
         context_name="Status",
     )
     logger.info(f"Received RPL_WELCOME (001). Nick confirmed as {client.nick}.")
-    client.handle_cap_end_confirmation()
 
-    if client.cap_negotiation_finished_event.wait(timeout=5.0):
-        logger.info("CAP negotiation finished event is set. Proceeding with post-001 actions.")
-
-        channels_to_join_now = client.network.channels_to_join_on_connect[:] # Operate on a copy
-        if channels_to_join_now:
-            logger.info(f"Post-001: Processing auto-join for channels: {', '.join(channels_to_join_now)}")
-            for channel_name in channels_to_join_now:
-                ctx = client.context_manager.get_context(channel_name)
-                if not ctx:
-                    client.context_manager.create_context(
-                        channel_name,
-                        context_type="channel",
-                        initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN
-                    )
-                    ctx = client.context_manager.get_context(channel_name)
-
-                if ctx and ctx.type == "channel":
-                    ctx.join_status = ChannelJoinStatus.PENDING_INITIAL_JOIN
-                    logger.debug(f"Set join_status to PENDING_INITIAL_JOIN for auto-join channel {channel_name}")
-
-                client.command_handler.process_user_command(f"/join {channel_name}")
-            client.network.channels_to_join_on_connect.clear()
-        else:
-            logger.info("No channels queued for auto-join post-001.")
-
-        if client.nickserv_password and not ("sasl" in client.enabled_caps and client.sasl_authentication_succeeded is True):
-            logger.info("Identifying with NickServ.")
-            client.command_handler.process_user_command(f"/msg NickServ IDENTIFY {client.nickserv_password}")
-        elif "sasl" in client.enabled_caps and client.sasl_authentication_succeeded is True:
-            logger.info("SASL auth successful, no NickServ IDENTIFY needed.")
-        elif client.nickserv_password:
-             logger.info("SASL not enabled, NickServ password exists. Sending IDENTIFY.")
-             client.command_handler.process_user_command(f"/msg NickServ IDENTIFY {client.nickserv_password}")
+    # Notify RegistrationHandler about RPL_WELCOME
+    if hasattr(client, 'registration_handler') and client.registration_handler:
+        client.registration_handler.on_welcome_received(confirmed_nick)
     else:
-        logger.warning("Timed out waiting for CAP negotiation after 001. Joins/NickServ might be delayed/fail.")
-        client.add_message("Warning: CAP negotiation timed out. Features might be delayed.", client.ui.colors["error"], "Status")
-        if client.initial_channels_list and not client.network.channels_to_join_on_connect:
-            logger.warning("CAP timeout fallback: joining initial_channels_list.")
-            for channel_name in client.initial_channels_list: # Fallback
-                ctx = client.context_manager.get_context(channel_name)
-                if not ctx:
-                    client.context_manager.create_context(
-                        channel_name,
-                        context_type="channel",
-                        initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN
-                    )
-                    ctx = client.context_manager.get_context(channel_name)
-                if ctx and ctx.type == "channel":
-                    ctx.join_status = ChannelJoinStatus.PENDING_INITIAL_JOIN
-                client.command_handler.process_user_command(f"/join {channel_name}")
+        logger.error("RPL_WELCOME received, but client.registration_handler is not initialized.")
+        client.add_message("Error: Registration handler not ready for RPL_WELCOME.", client.ui.colors["error"], "Status")
+
+    # The old logic for CAP confirmation, channel joins, and NickServ IDENTIFY
+    # is now managed by RegistrationHandler.on_welcome_received() and its interaction
+    # with CapNegotiator.
 
 def _handle_rpl_notopic(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles RPL_NOTOPIC (331)."""
@@ -198,22 +161,43 @@ def _handle_err_nicknameinuse(client, parsed_msg: IRCMessage, raw_line: str, dis
     logger.warning(f"ERR_NICKNAMEINUSE (433) for {failed_nick}: {raw_line.strip()}")
     client.add_message(f"Nickname {failed_nick} is already in use.", client.ui.colors["error"], "Status")
 
-    if client.nick and client.nick.lower() == failed_nick.lower() and \
-       not client.network.is_handling_nick_collision and \
-       client.cap_negotiation_finished_event.is_set():
+    # Nick collision logic needs to be coordinated with RegistrationHandler
+    # as it manages the NICK/USER sequence.
+    is_our_nick_colliding = client.nick and client.nick.lower() == failed_nick.lower()
 
-        if client.nick.lower() == client.initial_nick.lower():
-             new_try_nick = f"{client.initial_nick}_"
+    # Only attempt auto-nick change if it's our current nick that collided,
+    # and we are not already in a nick collision handling loop initiated by NetworkHandler,
+    # and CAP negotiation (which might include initial NICK/USER) is considered complete or underway.
+    # The `cap_negotiator.initial_cap_flow_complete_event.is_set()` or
+    # `registration_handler.nick_user_sent` might be better checks.
+    # For simplicity, we rely on `NetworkHandler.is_handling_nick_collision`
+    # and if the registration handler exists to potentially update the nick it will use.
+
+    if is_our_nick_colliding and not client.network.is_handling_nick_collision:
+        if hasattr(client, 'registration_handler') and client.registration_handler:
+            # Determine new nick based on client's initial_nick and current_nick
+            # This logic might be better placed within RegistrationHandler or a shared utility
+            current_nick_for_logic = client.nick # The nick that just failed
+            initial_nick_for_logic = client.initial_nick # The original configured nick
+
+            if current_nick_for_logic.lower() == initial_nick_for_logic.lower():
+                new_try_nick = f"{initial_nick_for_logic}_"
+            else:
+                if current_nick_for_logic.endswith("_"): new_try_nick = f"{current_nick_for_logic[:-1]}1"
+                elif current_nick_for_logic[-1].isdigit(): new_try_nick = f"{current_nick_for_logic[:-1]}{int(current_nick_for_logic[-1])+1}"
+                else: new_try_nick = f"{current_nick_for_logic}_"
+
+            logger.info(f"Nickname {failed_nick} in use, trying {new_try_nick}.")
+            client.add_message(f"Trying {new_try_nick} instead.", client.ui.colors["system"], "Status")
+
+            client.network.is_handling_nick_collision = True # Prevent immediate re-loops from NetworkHandler
+            client.network.send_raw(f"NICK {new_try_nick}")
+            client.nick = new_try_nick # Update client's current nick
+            client.registration_handler.update_nick_for_registration(new_try_nick) # Inform reg handler
         else:
-             if client.nick.endswith("_"): new_try_nick = f"{client.nick[:-1]}1"
-             elif client.nick[-1].isdigit(): new_try_nick = f"{client.nick[:-1]}{int(client.nick[-1])+1}"
-             else: new_try_nick = f"{client.nick}_"
-
-        logger.info(f"Nickname {failed_nick} in use, trying {new_try_nick}.")
-        client.add_message(f"Trying {new_try_nick} instead.", client.ui.colors["system"], "Status")
-        client.network.is_handling_nick_collision = True
-        client.network.send_raw(f"NICK {new_try_nick}")
-        client.nick = new_try_nick
+            logger.warning("ERR_NICKNAMEINUSE for our nick, but no registration_handler to manage retry.")
+    elif is_our_nick_colliding and client.network.is_handling_nick_collision:
+        logger.info(f"ERR_NICKNAMEINUSE for {failed_nick}, but already handling a nick collision. Manual /NICK needed if this fails.")
 
 def _handle_sasl_loggedin_success(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles RPL_LOGGEDIN (900) and RPL_SASLSUCCESS (903)."""
@@ -225,9 +209,14 @@ def _handle_sasl_loggedin_success(client, parsed_msg: IRCMessage, raw_line: str,
 
     success_msg = f"Successfully logged in as {account_name} ({code})." if code == 900 else f"SASL authentication successful ({code})."
 
-    logger.info(f"SASL: {success_msg} Raw: {raw_line.strip()}")
-    client.add_message(f"SASL: {success_msg}", client.ui.colors["system"], "Status")
-    client.handle_sasl_success(success_msg)
+    # Messages are now handled by SaslAuthenticator
+    # client.add_message(f"SASL: {success_msg}", client.ui.colors["system"], "Status")
+    if hasattr(client, 'sasl_authenticator') and client.sasl_authenticator:
+        client.sasl_authenticator.on_sasl_result_received(True, success_msg)
+    else:
+        logger.error(f"SASL Success ({code}), but no sasl_authenticator on client.")
+        client.add_message(f"SASL Success ({code}), but authenticator missing.", client.ui.colors["error"], "Status")
+
 
 def _handle_sasl_mechanisms(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles RPL_SASLMECHS (902) or ERR_SASLMECHS (908)."""
@@ -245,18 +234,25 @@ def _handle_sasl_fail_errors(client, parsed_msg: IRCMessage, raw_line: str, disp
         906: "SASL authentication aborted by server or client",
     }
     reason = trailing if trailing else default_reasons.get(code, f"SASL error ({code})")
-    logger.warning(f"SASL: Authentication failed ({code}). Reason: {reason}. Raw: {raw_line.strip()}")
-    client.add_message(f"SASL Error: {reason}", client.ui.colors["error"], "Status")
-    client.handle_sasl_failure(reason)
+    # Messages are now handled by SaslAuthenticator
+    # client.add_message(f"SASL Error: {reason}", client.ui.colors["error"], "Status")
+    if hasattr(client, 'sasl_authenticator') and client.sasl_authenticator:
+        client.sasl_authenticator.on_sasl_result_received(False, reason)
+    else:
+        logger.error(f"SASL Failure ({code}), but no sasl_authenticator on client.")
+        client.add_message(f"SASL Error ({code}): {reason}, but authenticator missing.", client.ui.colors["error"], "Status")
 
 def _handle_err_saslalready(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles ERR_SASLALREADY (907)."""
     reason = trailing if trailing else "You have already authenticated (907)"
-    logger.warning(f"SASL: Already authenticated (907). Reason: {reason}. Raw: {raw_line.strip()}")
-    client.add_message(f"SASL Warning: {reason}", client.ui.colors["warning"], "Status")
-    if not client.is_sasl_completed() or client.sasl_authentication_succeeded is not True:
-        logger.error("SASL: Server says already authenticated, but client state disagrees. Forcing success state.")
-        client.handle_sasl_success(reason)
+    # Messages are now handled by SaslAuthenticator
+    # client.add_message(f"SASL Warning: {reason}", client.ui.colors["warning"], "Status")
+    if hasattr(client, 'sasl_authenticator') and client.sasl_authenticator:
+        # If server says already authenticated, treat it as a success for our flow.
+        client.sasl_authenticator.on_sasl_result_received(True, reason)
+    else:
+        logger.error("ERR_SASLALREADY (907), but no sasl_authenticator on client.")
+        client.add_message(f"SASL Warning (907): {reason}, but authenticator missing.", client.ui.colors["warning"], "Status")
 
 def _handle_rpl_whoisuser(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles RPL_WHOISUSER (311)."""

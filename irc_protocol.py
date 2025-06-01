@@ -132,34 +132,24 @@ def _handle_cap_message(client, parsed_msg: IRCMessage, raw_line: str):
         f"Received CAP {cap_subcommand} with capabilities: '{capabilities_str}'"
     )
 
+    # Ensure client has cap_negotiator attribute
+    if not hasattr(client, 'cap_negotiator') or not client.cap_negotiator:
+        logger.error("CAP message received, but client.cap_negotiator is not initialized.")
+        client.add_message(f"[CAP Error] Negotiator not ready for {cap_subcommand}", client.ui.colors["error"], "Status")
+        return
+
     if cap_subcommand == "LS":
-        client.handle_cap_ls(capabilities_str)
+        client.cap_negotiator.on_cap_ls_received(capabilities_str)
     elif cap_subcommand == "ACK":
-        client.handle_cap_ack(capabilities_str)
+        client.cap_negotiator.on_cap_ack_received(capabilities_str)
     elif cap_subcommand == "NAK":
-        client.handle_cap_nak(capabilities_str)
+        client.cap_negotiator.on_cap_nak_received(capabilities_str)
     elif cap_subcommand == "NEW":
-        new_caps = set(capabilities_str.split())
-        client.supported_caps.update(new_caps)
-        # Auto-enable newly supported caps if they are in our desired list and not already enabled
-        auto_enabled_now = new_caps.intersection(client.desired_caps) - client.enabled_caps
-        client.enabled_caps.update(auto_enabled_now)
-
-        msg = f"CAP NEW: Server now supports {', '.join(new_caps)}."
-        if auto_enabled_now:
-            msg += f" Auto-enabled: {', '.join(auto_enabled_now)}."
-        client.add_message(msg, client.ui.colors["system"], context_name="Status")
-
+        client.cap_negotiator.on_cap_new_received(capabilities_str)
+        # Messages are now handled within CapNegotiator
     elif cap_subcommand == "DEL":
-        deleted_caps = set(capabilities_str.split())
-        disabled_now = client.enabled_caps.intersection(deleted_caps) # Which of our enabled caps were deleted
-        client.supported_caps.difference_update(deleted_caps)
-        client.enabled_caps.difference_update(deleted_caps)
-
-        msg = f"CAP DEL: Server no longer supports {', '.join(deleted_caps)}."
-        if disabled_now:
-            msg += f" Disabled: {', '.join(disabled_now)}."
-        client.add_message(msg, client.ui.colors["system"], context_name="Status")
+        client.cap_negotiator.on_cap_del_received(capabilities_str)
+        # Messages are now handled within CapNegotiator
     else:
         client.add_message(
             f"[CAP] Unknown subcommand: {cap_subcommand} {capabilities_str}",
@@ -556,11 +546,20 @@ def handle_server_message(client, line: str): # raw_line is 'line' here
         logger.debug(f"Responded to PING with PONG {ping_param}")
     elif cmd == "AUTHENTICATE":
         payload = parsed_msg.params[0] if parsed_msg.params else ""
+        if not hasattr(client, 'sasl_authenticator') or not client.sasl_authenticator:
+            logger.error("AUTHENTICATE received, but client.sasl_authenticator is not initialized.")
+            client.add_message(f"[SASL Error] Authenticator not ready for AUTHENTICATE {payload}", client.ui.colors["error"], "Status")
+            return
+
         if payload == "+":
             logger.info(f"SASL: Received AUTHENTICATE + challenge. Raw: {line.strip()}")
-            client.handle_sasl_authenticate_challenge(payload)
+            client.sasl_authenticator.on_authenticate_challenge_received(payload)
         else:
-            logger.warning(f"SASL: Received AUTHENTICATE with unexpected payload: '{payload}'. Raw: {line.strip()}")
+            # According to RFC 4616, any other payload for AUTHENTICATE after initial PLAIN is an error or unexpected.
+            # It could be the server sending an empty AUTHENTICATE on failure, or something else.
+            # The SASL numerics (903, 904, etc.) are the primary way to signal success/failure after payload.
+            logger.warning(f"SASL: Received AUTHENTICATE with payload other than '+': '{payload}'. This is unusual. Relying on numerics for outcome. Raw: {line.strip()}")
+            # client.sasl_authenticator.handle_sasl_failure(f"Unexpected AUTHENTICATE payload: {payload}") # Or just log and wait for numeric
     elif cmd == "PRIVMSG":
         protocol_handler_instance._handle_privmsg(client, parsed_msg, line)
     elif cmd in ["JOIN", "PART", "QUIT", "KICK"]:
