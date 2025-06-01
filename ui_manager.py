@@ -3,6 +3,7 @@ import curses
 import time
 import logging
 from typing import Optional, TYPE_CHECKING, List, Tuple, Any, Deque, Dict
+from context_manager import ChannelJoinStatus # Added import
 from config import (
     COLOR_ID_DEFAULT,
     COLOR_ID_SYSTEM,
@@ -163,14 +164,6 @@ class UIManager:
         except Exception: # Catchall if context_manager or get_all_context_names is problematic early on
             all_contexts_count = 0
 
-        # Approximation for lines taken by:
-        # 1. "Windows:" header
-        # 2. Each window name
-        # 3. Potential blank line/gap after window list
-        # 4. Separator hline before user list
-        # 5. "Users in {channel} ({count})" header
-        # This is an estimate. A more precise calculation would track line_num in draw_sidebar.
-        # For the plan: 1 (win_header) + N_windows + 1 (gap) + 1 (hline) + 1 (user_header) = 4 + N_windows
         lines_used_by_other_elements = (
             lines_for_windows_header +
             all_contexts_count +
@@ -210,27 +203,20 @@ class UIManager:
                 except: pass
         self.msg_win.noutrefresh()
 
-    def draw_sidebar(self, current_active_ctx_obj, current_active_ctx_name_str):
+    def _draw_sidebar_context_list(self, max_y: int, max_x: int, current_active_ctx_name_str: str) -> int:
+        """Draws the list of contexts (windows) in the sidebar. Returns the next line_num."""
         if not self.sidebar_win:
-            return
-        self._draw_window_border_and_bkgd(self.sidebar_win, self.colors.get("sidebar_item", 0))
-        max_y, max_x = self.sidebar_win.getmaxyx()
-        if max_y <= 0 or max_x <= 0: return
-
+            return 0
         line_num = 0
-
         try:
             self.sidebar_win.addstr(line_num, 0, "Windows:", self.colors.get("sidebar_header", 0))
             line_num += 1
         except curses.error: pass
 
         all_context_names_unsorted = self.client.context_manager.get_all_context_names()
-
-        # Separate "Status" context, sort others, then append "Status"
         status_context_name = "Status"
         other_contexts = [name for name in all_context_names_unsorted if name != status_context_name]
-        other_contexts.sort(key=lambda x: x.lower()) # Sort case-insensitively
-
+        other_contexts.sort(key=lambda x: x.lower())
         all_contexts = other_contexts
         if status_context_name in all_context_names_unsorted:
             all_contexts.append(status_context_name)
@@ -241,21 +227,38 @@ class UIManager:
             if line_num >= max_y -1 :
                 break
 
-            display_name = ctx_name[:max_x - 2]
+            display_name_base = ctx_name[:max_x - 4]
             attr = self.colors.get("sidebar_item", 0)
+            ctx_obj = self.client.context_manager.get_context(ctx_name)
             unread_count = self.client.context_manager.get_unread_count(ctx_name)
+            prefix = " "
+            status_suffix = ""
+
+            if ctx_obj and ctx_obj.type == "channel" and hasattr(ctx_obj, 'join_status'):
+                if ctx_obj.join_status == ChannelJoinStatus.PENDING_INITIAL_JOIN or \
+                   ctx_obj.join_status == ChannelJoinStatus.JOIN_COMMAND_SENT:
+                    status_suffix = " (joining...)"
+                    attr = self.colors.get("sidebar_item", 0) | curses.A_DIM
+                elif ctx_obj.join_status == ChannelJoinStatus.SELF_JOIN_RECEIVED:
+                    status_suffix = " (users...)"
+                    attr = self.colors.get("sidebar_item", 0) | curses.A_DIM
+                elif ctx_obj.join_status == ChannelJoinStatus.JOIN_FAILED:
+                    status_suffix = " (failed!)"
+                    attr = self.colors.get("error", 0)
 
             if ctx_name == active_context_name_for_list_highlight:
                 attr = self.colors.get("highlight", 0)
-                display_name = f">{display_name}"
+                prefix = ">"
             elif unread_count > 0:
                 attr = self.colors.get("highlight", 0)
-                display_name = f"*{display_name} ({unread_count})"
-            else:
-                display_name = f" {display_name}"
+                prefix = "*"
+
+            display_name_final = f"{prefix}{display_name_base}{status_suffix}"
+            if unread_count > 0 and ctx_name != active_context_name_for_list_highlight:
+                 display_name_final += f" ({unread_count})"
 
             try:
-                self.sidebar_win.addstr(line_num, 0, display_name[:max_x-1], attr)
+                self.sidebar_win.addstr(line_num, 0, display_name_final[:max_x-1], attr)
                 line_num += 1
             except curses.error: pass
 
@@ -263,95 +266,113 @@ class UIManager:
             try:
                 line_num += 1
             except curses.error: pass
+        return line_num
+
+    def _draw_sidebar_user_list_header(self, line_num: int, max_y: int, max_x: int, active_ctx_obj_for_users, current_active_ctx_name_for_user_header: str) -> int:
+        """Draws the user list header in the sidebar. Returns the next line_num."""
+        if not self.sidebar_win or not active_ctx_obj_for_users:
+            return line_num
+
+        if line_num > 0 and line_num < max_y :
+            try:
+                self.sidebar_win.hline(line_num -1 , 0, curses.ACS_HLINE, max_x)
+            except curses.error: pass
+
+        channel_users_dict = active_ctx_obj_for_users.users
+        user_count = len(channel_users_dict)
+        user_header_full = f"Users in {current_active_ctx_name_for_user_header} ({user_count})"
+        user_header_truncated = user_header_full[:max_x-1]
+
+        if line_num < max_y:
+            try:
+                self.sidebar_win.addstr(
+                    line_num, 0, user_header_truncated, self.colors.get("sidebar_header",0)
+                )
+                line_num += 1
+            except curses.error as e:
+                logger.debug(f"Curses error drawing sidebar user header '{user_header_truncated}': {e}")
+        return line_num
+
+    def _draw_sidebar_user_list_items_and_indicators(self, line_num: int, max_y: int, max_x: int, active_ctx_obj_for_users) -> int:
+        """Draws the user list items and scroll indicators in the sidebar. Returns the next line_num."""
+        if not self.sidebar_win or not active_ctx_obj_for_users or not hasattr(active_ctx_obj_for_users, 'users') or not active_ctx_obj_for_users.users:
+            return line_num
+
+        current_user_scroll_offset = active_ctx_obj_for_users.user_list_scroll_offset
+        channel_users_dict = active_ctx_obj_for_users.users
+        sorted_user_items = sorted(channel_users_dict.items(), key=lambda item: item[0].lower())
+        total_users = len(sorted_user_items)
+
+        available_lines_for_user_section = max_y - line_num
+        lines_for_nicks = available_lines_for_user_section
+        up_indicator_text = None
+        down_indicator_text = None
+
+        if current_user_scroll_offset > 0:
+            if lines_for_nicks > 0:
+                up_indicator_text = ("^ More"[:max_x-1])
+                lines_for_nicks -= 1
+
+        if current_user_scroll_offset + lines_for_nicks < total_users:
+            if lines_for_nicks > 0:
+                down_indicator_text = ("v More"[:max_x-1])
+                lines_for_nicks -= 1
+
+        lines_for_nicks = max(0, lines_for_nicks)
+
+        if up_indicator_text and line_num < max_y:
+            try:
+                self.sidebar_win.addstr(line_num, 1, up_indicator_text, self.colors.get("sidebar_item", 0) | curses.A_DIM)
+                line_num += 1
+            except curses.error: pass
+
+        start_idx = current_user_scroll_offset
+        end_idx = current_user_scroll_offset + lines_for_nicks
+        visible_users_page = sorted_user_items[start_idx:end_idx]
+
+        for nick, prefix_str in visible_users_page:
+            if line_num >= max_y:
+                break
+            display_user_with_prefix = f"{prefix_str}{nick}"
+            user_display_truncated = (" " + display_user_with_prefix)[:max_x-1]
+            user_color = self.colors.get("sidebar_item", 0)
+            if prefix_str == "@": user_color = self.colors.get("user_prefix", user_color)
+
+            try:
+                self.sidebar_win.addstr(line_num, 0, user_display_truncated, user_color)
+            except curses.error as e:
+                logger.debug(f"Curses error drawing sidebar user '{user_display_truncated}': {e}")
+            line_num += 1
+
+        if down_indicator_text and line_num < max_y:
+            try:
+                self.sidebar_win.addstr(line_num, 1, down_indicator_text, self.colors.get("sidebar_item", 0) | curses.A_DIM)
+                line_num += 1
+            except curses.error: pass
+
+        return line_num
+
+    def draw_sidebar(self, current_active_ctx_obj, current_active_ctx_name_str):
+        if not self.sidebar_win:
+            return
+        self._draw_window_border_and_bkgd(self.sidebar_win, self.colors.get("sidebar_item", 0))
+        max_y, max_x = self.sidebar_win.getmaxyx()
+        if max_y <= 0 or max_x <= 0: return
+
+        line_num = self._draw_sidebar_context_list(max_y, max_x, current_active_ctx_name_str)
 
         active_ctx_obj_for_users = current_active_ctx_obj
-        current_active_ctx_name_for_user_header = current_active_ctx_name_str
 
-        if active_ctx_obj_for_users and active_ctx_obj_for_users.type == "channel":
-            if line_num < max_y - 2:
-                try:
-                    if line_num > 0 :
-                         self.sidebar_win.hline(line_num -1 , 0, curses.ACS_HLINE, max_x)
-                except curses.error: pass
+        should_show_user_list = False
+        if active_ctx_obj_for_users and active_ctx_obj_for_users.type == "channel" and hasattr(active_ctx_obj_for_users, 'join_status'):
+            if active_ctx_obj_for_users.join_status in [ChannelJoinStatus.SELF_JOIN_RECEIVED, ChannelJoinStatus.FULLY_JOINED]:
+                should_show_user_list = True
 
-                channel_users_dict = active_ctx_obj_for_users.users
-                user_count = len(channel_users_dict)
-                user_header_full = f"Users in {current_active_ctx_name_for_user_header} ({user_count})"
-                user_header_truncated = user_header_full[:max_x-1]
-
-                try:
-                    if line_num < max_y:
-                        self.sidebar_win.addstr(
-                            line_num, 0, user_header_truncated, self.colors.get("sidebar_header",0)
-                        )
-                        line_num += 1
-                except curses.error as e:
-                    logger.debug(f"Curses error drawing sidebar user header '{user_header_truncated}': {e}")
-                    pass
-
-                # User list scrolling additions
-                current_user_scroll_offset = active_ctx_obj_for_users.user_list_scroll_offset
-
-                # Calculate how many lines are truly available for nicks, considering indicators
-                # The _calculate_available_lines_for_user_list() gives total space for the nick list section
-                # We then fit indicators + nicks into this space.
-                # A simpler approach: use max_y - line_num as available space from this point.
-                available_lines_for_user_section = max_y - line_num
-
-                lines_for_nicks = available_lines_for_user_section
-                up_indicator_text = None
-                down_indicator_text = None
-
-                if current_user_scroll_offset > 0:
-                    if lines_for_nicks > 0:
-                        up_indicator_text = ("^ More"[:max_x-1])
-                        lines_for_nicks -= 1
-
-                # Check if a down indicator is needed
-                # Need to know how many nicks will be displayed to see if there are more *after* them
-                # This is tricky. Let's use total_users vs offset + displayable nicks.
-
-                # Recalculate sorted_user_items here if it wasn't already
-                sorted_user_items = sorted(channel_users_dict.items(), key=lambda item: item[0].lower())
-                total_users = len(sorted_user_items)
-
-                if current_user_scroll_offset + lines_for_nicks < total_users:
-                    if lines_for_nicks > 0: # Check if there's space left for the down indicator
-                        down_indicator_text = ("v More"[:max_x-1])
-                        lines_for_nicks -= 1
-
-                lines_for_nicks = max(0, lines_for_nicks) # Ensure it's not negative
-
-                if up_indicator_text and line_num < max_y:
-                    try:
-                        self.sidebar_win.addstr(line_num, 1, up_indicator_text, self.colors.get("sidebar_item", 0) | curses.A_DIM)
-                        line_num += 1
-                    except curses.error: pass
-
-                start_idx = current_user_scroll_offset
-                end_idx = current_user_scroll_offset + lines_for_nicks
-
-                visible_users_page = sorted_user_items[start_idx:end_idx]
-
-                for nick, prefix_str in visible_users_page:
-                    if line_num >= max_y: # Should be max_y - (1 if down_indicator_text else 0)
-                        break
-                    display_user_with_prefix = f"{prefix_str}{nick}"
-                    user_display_truncated = (" " + display_user_with_prefix)[:max_x-1]
-                    user_color = self.colors.get("sidebar_item", 0)
-                    if prefix_str == "@": user_color = self.colors.get("user_prefix", user_color)
-
-                    try:
-                        self.sidebar_win.addstr(line_num, 0, user_display_truncated, user_color)
-                    except curses.error as e:
-                        logger.debug(f"Curses error drawing sidebar user '{user_display_truncated}': {e}")
-                    line_num += 1
-
-                if down_indicator_text and line_num < max_y:
-                    try:
-                        self.sidebar_win.addstr(line_num, 1, down_indicator_text, self.colors.get("sidebar_item", 0) | curses.A_DIM)
-                        line_num += 1
-                    except curses.error: pass
+        if should_show_user_list:
+            if line_num < max_y -1 :
+                line_num = self._draw_sidebar_user_list_header(line_num, max_y, max_x, active_ctx_obj_for_users, current_active_ctx_name_str)
+                if line_num < max_y: # Check if space remains after header
+                    line_num = self._draw_sidebar_user_list_items_and_indicators(line_num, max_y, max_x, active_ctx_obj_for_users)
 
         self.sidebar_win.noutrefresh()
 
@@ -371,7 +392,13 @@ class UIManager:
             topic_display = f"Topic: {topic_str[:max_topic_len-7]}"
             if len(topic_str) > max_topic_len-7 : topic_display += "..."
 
-        status_left = f" {self.client.nick}@{self.client.server}:{self.client.port} [{active_ctx_name}]"
+        channel_join_status_info = ""
+        if active_ctx_obj and active_ctx_obj.type == "channel" and hasattr(active_ctx_obj, 'join_status'):
+            if active_ctx_obj.join_status not in [ChannelJoinStatus.FULLY_JOINED, ChannelJoinStatus.NOT_JOINED, None]: # Don't show for fully joined or not applicable
+                channel_join_status_info = f" ({active_ctx_obj.join_status.name})"
+
+
+        status_left = f" {self.client.nick}@{self.client.server}:{self.client.port} [{active_ctx_name}{channel_join_status_info}]"
         if self.client.use_ssl: status_left += " SSL"
 
         status_right = "CONNECTED" if self.client.network.connected else "DISCONNECTED"

@@ -20,6 +20,7 @@ from config import (
     # Logging config
     LOG_ENABLED,
     LOG_FILE,
+    LOG_LEVEL_STR, # Added for diagnostic print
     LOG_LEVEL,
     LOG_MAX_BYTES,
     LOG_BACKUP_COUNT,
@@ -36,43 +37,56 @@ def setup_logging():
         logging.disable(logging.CRITICAL + 1)  # Disable all logging
         return
 
-    logger.setLevel(LOG_LEVEL)
+    # Get the root logger
+    # --- Removed diagnostic print statement ---
+
+    root_logger = logging.getLogger()
+    # --- Force DEBUG level for diagnostics ---
+    root_logger.setLevel(logging.DEBUG)
+    # ---
+
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     # Ensure log directory exists
-    log_dir = os.path.join(BASE_DIR, "logs")  # Use BASE_DIR from config
+    log_dir = os.path.join(BASE_DIR, "logs")
+    log_file_path = "" # Initialize to ensure it's defined
     if not os.path.exists(log_dir):
         try:
             os.makedirs(log_dir)
+            log_file_path = os.path.join(log_dir, LOG_FILE)
         except OSError as e:
             print(f"Error creating log directory {log_dir}: {e}")
-            # Fallback to current directory if logs subdir creation fails
-            log_file_path = os.path.join(BASE_DIR, LOG_FILE)
-        else:
-            log_file_path = os.path.join(log_dir, LOG_FILE)
+            log_file_path = os.path.join(BASE_DIR, LOG_FILE) # Fallback
     else:
         log_file_path = os.path.join(log_dir, LOG_FILE)
 
     # Use RotatingFileHandler
     try:
-        handler = logging.handlers.RotatingFileHandler(
+        file_handler = logging.handlers.RotatingFileHandler(
             log_file_path,
-            maxBytes=LOG_MAX_BYTES,
-            backupCount=LOG_BACKUP_COUNT,
-            encoding="utf-8",  # Good practice
+            maxBytes=LOG_MAX_BYTES, # Assuming LOG_MAX_BYTES is from config import
+            backupCount=LOG_BACKUP_COUNT, # Assuming LOG_BACKUP_COUNT is from config import
+            encoding="utf-8",
         )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        logger.info("Logging initialized.")
+        file_handler.setFormatter(formatter)
+        # --- Force DEBUG level for handler ---
+        file_handler.setLevel(logging.DEBUG)
+        # ---
+        root_logger.addHandler(file_handler)
+
+        # Use the 'pyrc' specific logger for this message, it will propagate to root.
+        logging.getLogger("pyrc").info("Logging initialized.")
     except Exception as e:
         print(f"Failed to initialize file logging: {e}")
-        # Optionally, add a StreamHandler as a fallback if file logging fails
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
-        logger.error(f"File logging setup failed. Using console logging. Error: {e}")
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        # --- Force DEBUG level for console fallback ---
+        console_handler.setLevel(logging.DEBUG)
+        # ---
+        root_logger.addHandler(console_handler)
+        logging.getLogger("pyrc").error(f"File logging setup failed. Using console logging. Error: {e}")
 
 
 def main_curses_wrapper(stdscr, args):

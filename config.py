@@ -70,6 +70,54 @@ def get_config_value(
     return fallback
 
 
+# Helper function to set config values and save to INI
+def set_config_value(section: str, key: str, value: str) -> bool:
+    """
+    Sets a configuration value in the specified section and key,
+    then writes the entire configuration back to the INI file.
+
+    Args:
+        section: The section name.
+        key: The key name.
+        value: The value to set (will be stored as a string).
+
+    Returns:
+        True if the value was set and saved successfully, False otherwise.
+    """
+    global config, CONFIG_FILE_PATH
+    try:
+        if not config.has_section(section):
+            config.add_section(section)
+        config.set(section, key, value)
+        with open(CONFIG_FILE_PATH, "w") as configfile:
+            config.write(configfile)
+        # Optionally, re-read global variables that depend on this setting
+        # or notify parts of the application. For now, just save.
+        logging.info(f"Configuration updated: [{section}] {key} = {value}")
+        return True
+    except Exception as e:
+        logging.error(f"Error writing to config file '{CONFIG_FILE_PATH}': {e}")
+        return False
+
+
+# Helper function to get all settings
+def get_all_settings() -> dict:
+    """
+    Retrieves all settings from the configuration.
+
+    Returns:
+        A dictionary where keys are section names and values are
+        dictionaries of key-value pairs within that section.
+    """
+    global config
+    all_settings = {}
+    for section in config.sections():
+        all_settings[section] = {}
+        for key in config.options(section):
+            all_settings[section][key] = config.get(section, key)
+    return all_settings
+
+
 # --- Connection Settings (from INI or defaults) ---
 IRC_SERVER = get_config_value("Connection", "default_server", DEFAULT_SERVER, str)
 IRC_SSL = get_config_value("Connection", "default_ssl", DEFAULT_SSL, bool)
@@ -153,4 +201,4 @@ LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO)
 # Original:
 # IRC_MSG_REGEX_PATTERN = r"^(?:[:@]([^ !\r\n]+) )?([^ \r\n]+)(?: ([^:\r\n]*))?(?: ?:([^\r\n]*))?$"
 # Corrected:
-IRC_MSG_REGEX_PATTERN = r"^(?:[:@]([^ ]+) )?([^ ]+)(?: ([^:\r\n]*))?(?: ?:([^\r\n]*))?$"
+IRC_MSG_REGEX_PATTERN = r"^(?:@(?:[^ ]+) )?(?:[:]([^ ]+) )?([A-Z0-9]+|\d{3})(?: ([^:\r\n]*))?(?: ?:([^\r\n]*))?$"

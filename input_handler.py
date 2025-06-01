@@ -18,10 +18,6 @@ class InputHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client_logic = client_logic
         self.input_buffer: str = ""
-        self.command_history: deque[str] = deque(maxlen=20)  # Renamed
-        self.history_idx: int = -1  # Renamed, signifies current input line
-        self.current_input_snapshot: str = ""  # Stores input before browsing history
-
         # For enhanced nick tab-completion
         self.tab_completion_candidates: List[str] = []
         self.tab_completion_index: int = -1
@@ -60,45 +56,19 @@ class InputHandler:
             if self.input_buffer:
                 command_to_process = self.input_buffer
                 command_handler.process_user_command(command_to_process)
-                # Add to history if it's not empty and not a duplicate of the last entry
-                if command_to_process and (
-                    not self.command_history
-                    or self.command_history[-1] != command_to_process
-                ):
-                    self.command_history.append(command_to_process)
+                # Add to history (if it were still implemented)
+                # if command_to_process and (
+                #     not self.command_history
+                #     or self.command_history[-1] != command_to_process
+                # ):
+                #     self.command_history.append(command_to_process)
                 self.input_buffer = ""
-                self.history_idx = -1  # Reset to current input line
-                self.current_input_snapshot = ""  # Clear snapshot
-        elif key_code == curses.KEY_UP:
-            if not self.command_history:
-                return  # No history, do nothing
-
-            if self.history_idx == -1:  # If on the current input line
-                self.current_input_snapshot = self.input_buffer  # Save current input
-                # Check command_history again because it might be empty initially
-                if self.command_history:
-                    self.history_idx = len(self.command_history) - 1  # Move to newest
-                    self.input_buffer = self.command_history[self.history_idx]
-            elif self.history_idx > 0:  # If in history and not at the oldest
-                self.history_idx -= 1
-                self.input_buffer = self.command_history[self.history_idx]
-            # If self.history_idx is 0 (oldest), do nothing more on UP
-
-        elif key_code == curses.KEY_DOWN:
-            if self.history_idx == -1:
-                return  # On current input line, do nothing
-
-            # This implies self.command_history is not empty if history_idx is not -1
-            if (
-                self.history_idx < len(self.command_history) - 1
-            ):  # If in history and not at the newest
-                self.history_idx += 1
-                self.input_buffer = self.command_history[self.history_idx]
-            elif (
-                self.history_idx == len(self.command_history) - 1
-            ):  # If at the newest history item
-                self.history_idx = -1  # Move to current input line
-                self.input_buffer = self.current_input_snapshot  # Restore snapshot
+                # self.history_idx = -1  # Reset to current input line
+                # self.current_input_snapshot = ""  # Clear snapshot
+        # elif key_code == curses.KEY_UP: # Command history removed
+            # pass
+        # elif key_code == curses.KEY_DOWN: # Command history removed
+            # pass
         elif key_code == curses.KEY_PPAGE:  # Page Up
             ui.scroll_messages("up")
         elif key_code == curses.KEY_NPAGE:  # Page Down

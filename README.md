@@ -10,12 +10,17 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 - **IRCv3 Support:** Robust CAP negotiation and SASL PLAIN authentication for secure login.
 - **Improved Command Handling:**
   - `/part` command now reliably updates UI, clears user lists, and closes the channel window.
-  - Enhanced command history navigation using up/down arrow keys.
 - **Configuration File:** Easy setup via `pyterm_irc_config.ini`.
 - **Logging:** Comprehensive logging for debugging and session history.
 - **Tab Completion:** For commands and nicks.
 - **SSL/TLS Encryption:** Secure connections to IRC servers, with an option (`verify_ssl_cert` in config) to allow connections to servers with self-signed certificates.
-- **Code Modularity:** Recent refactoring has improved the structure and maintainability of core components like network handling, protocol parsing, and command processing.
+- **Dynamic Configuration:** View and modify client settings on-the-fly using the `/set` command. Changes are saved to `pyterm_irc_config.ini` and some may apply immediately while others might require a restart.
+- **Code Modularity:** Recent refactoring has significantly improved the structure and maintainability of core components:
+  - **IRC Protocol Parsing:** The `irc_protocol.py` module has been refactored. The `IRCMessage` class is now in `irc_message.py`, and all numeric reply handlers (e.g., for RPL_WELCOME, ERR_NOSUCHNICK) are in `irc_numeric_handlers.py`.
+  - **Command Handling:** The `command_handler.py` module has been modularized. Specific command groups are now handled by dedicated classes:
+    - `FunCommandsHandler` (`fun_commands_handler.py`) for commands like `/slap`, `/8ball`.
+    - `ChannelCommandsHandler` (`channel_commands_handler.py`) for commands like `/join`, `/part`, `/topic`.
+    - `ServerCommandsHandler` (`server_commands_handler.py`) for commands like `/connect`, `/quit`.
 - **Multiple Server Connections:** (Planned)
 - **Color Themes:** (Basic support, planned for expansion)
 
@@ -64,6 +69,7 @@ PyRC uses a configuration file named `pyterm_irc_config.ini` located in the root
     ```
 
     If no example exists, PyRC might create a default one on first run, or you may need to create it manually based on the structure below.
+    You can also view and modify many of these settings directly within the client using the `/set` command (see Basic Commands section).
 
 2.  **Edit `pyterm_irc_config.ini`:**
     Open the file in a text editor and customize the settings. Key settings include:
@@ -113,10 +119,14 @@ PyRC supports a variety of commands, most of which are standard IRC commands. Ty
 - `/server <server_alias_or_host>`: Switches to a different server connection (if multiple active - planned feature).
 - `/wc` or `/close`: Closes the current query window or parts the current channel.
 - `/clear`: Clears the current window's messages.
+- `/set`: Lists all current configuration settings.
+- `/set <key>`: Displays the value of a specific setting (e.g., `/set default_nick`).
+- `/set <section.key>`: Displays the value of a specific setting within a section (e.g., `/set Connection.default_nick`).
+- `/set <section.key> <value>`: Modifies a setting and saves it to `pyterm_irc_config.ini` (e.g., `/set Connection.default_nick MyNewNick`).
 - `/help [command]`: Displays general help or help for a specific command.
 - `PageUp`/`PageDown`: Scroll through the message buffer in the current window.
 - `Ctrl+N`/`Ctrl+P` (or `/nextwindow`, `/prevwindow`): Switch to the next/previous active context (channel/query/status window).
-- `Up Arrow`/`Down Arrow`: Navigate through command input history.
+- `Ctrl+U` (or `/u`, `/userlistscroll [offset]`): Scroll the user list in a channel window.
 
 ## Contributing
 
