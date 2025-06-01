@@ -1,0 +1,9 @@
+# Log files
+*.log
+logs/
+
+# Python cache
+__pycache__/
+
+# VSCode specific
+.vscode/
