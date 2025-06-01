@@ -42,14 +42,16 @@ class NetworkHandler:
         self.network_thread.start()
         logger.debug("Network thread object created and started.")
 
-    def stop(self, send_quit=True, quit_message="Client shutting down"):
-        logger.info(f"Stopping network thread. Send QUIT: {send_quit}")
+    def stop(self, send_quit=True, quit_message: Optional[str] = "Client shutting down"): # Added type hint and default
+        logger.info(f"Stopping network thread. Send QUIT: {send_quit}, Message: '{quit_message}'")
         self._should_thread_stop.set()
         if self.sock:
             if self.connected and send_quit:
                 try:
-                    logger.debug(f"Sending QUIT: {quit_message}")
-                    self.send_raw(f"QUIT :{quit_message}")
+                    # Use the provided quit_message, or a default if None/empty
+                    effective_quit_message = quit_message if quit_message and quit_message.strip() else "Client shutting down"
+                    logger.debug(f"Sending QUIT: {effective_quit_message}")
+                    self.send_raw(f"QUIT :{effective_quit_message}")
                 except Exception as e:
                     logger.error(f"Error sending QUIT during stop: {e}")
             try:
