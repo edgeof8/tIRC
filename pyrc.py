@@ -25,6 +25,8 @@ from config import (
     LOG_MAX_BYTES,
     LOG_BACKUP_COUNT,
     BASE_DIR,  # For creating log directory if needed
+    CHANNEL_LOG_ENABLED, # Added for per-channel logging
+    # CHANNEL_LOG_DIR,     # Removed as per user feedback
 )
 from irc_client_logic import IRCClient_Logic
 
@@ -88,9 +90,18 @@ def setup_logging():
         root_logger.addHandler(console_handler)
         logging.getLogger("pyrc").error(f"File logging setup failed. Using console logging. Error: {e}")
 
+    # Channel logs will go directly into the 'log_dir' (e.g., "logs/")
+    # The 'log_dir' is already created above if LOG_ENABLED.
+    # No separate subdirectory for channel logs is needed as per user feedback.
+    if LOG_ENABLED and CHANNEL_LOG_ENABLED:
+        logger.info(f"Per-channel logging is enabled. Channel logs will be placed in: {log_dir}")
 
 def main_curses_wrapper(stdscr, args):
     logger.info("Starting PyRC curses wrapper.")
+    h, w = stdscr.getmaxyx()
+    curses.resize_term(h, w)
+    stdscr.clear()
+    stdscr.refresh()
     # Ensure args.channel is a list, as expected by IRCClient_Logic
     channels_to_join = args.channel
     if isinstance(channels_to_join, str):
