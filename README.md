@@ -23,7 +23,7 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
     - `ServerCommandsHandler` (`server_commands_handler.py`) for commands like `/connect`, `/quit`.
   - **Connection & Registration Logic:** The `irc_client_logic.py` module has been refactored to delegate core connection, capability negotiation (CAP), SASL authentication, and post-registration tasks to specialized handlers:
     - `CapNegotiator` (`cap_negotiator.py`): Manages the CAP negotiation lifecycle.
-    - `SaslAuthenticator` (`sasl_authenticator.py`): Handles SASL PLAIN authentication.
+    - `SaslAuthenticator` (`sasl_authenticator.py`): Handles SASL PLAIN authentication. It has been refactored to dynamically fetch the client's current nickname from `IRCClient_Logic` at the time of authentication, ensuring the most up-to-date nick is used even if changes occurred shortly before SASL credential transmission.
     - `RegistrationHandler` (`registration_handler.py`): Orchestrates NICK/USER registration, auto-channel joins, and NickServ identification.
 - **Multiple Server Connections:** (Planned)
 - **Color Themes:** (Basic support, planned for expansion)

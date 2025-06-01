@@ -7,3 +7,6 @@ __pycache__/
 
 # VSCode specific
 .vscode/
+
+# Old RooCode plans
+old plans/

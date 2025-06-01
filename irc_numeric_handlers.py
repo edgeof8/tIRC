@@ -1,30 +1,19 @@
-# irc_numeric_handlers.py
 import logging
 from typing import Optional
 
-# Assuming IRCMessage will be passed and its structure is known.
-# For explicit type hinting, you might add:
-# from irc_message import IRCMessage
-# However, to keep this module focused on handlers and avoid circular dependency
-# if irc_message might ever need something from here (unlikely for this structure),
-# we'll rely on the client object passing a correctly structured parsed_msg.
-# For now, we will add it as it's good practice and the dependency is one-way.
 from irc_message import IRCMessage
 from context_manager import ChannelJoinStatus
 
-logger = logging.getLogger("pyrc.protocol") # Using the same logger as irc_protocol for now
+logger = logging.getLogger("pyrc.protocol")
 
-# --- Individual Numeric Handlers ---
 def _handle_rpl_welcome(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles RPL_WELCOME (001)."""
-    params = parsed_msg.params # Use original params for nick confirmation
-    confirmed_nick = params[0] if params else client.nick # Default to current client.nick if 001 has no target
+    params = parsed_msg.params
+    confirmed_nick = params[0] if params else client.nick
 
-    # Update client's main nick attribute
     if client.nick != confirmed_nick:
         logger.info(f"RPL_WELCOME: Nick confirmed by server as '{confirmed_nick}', was '{client.nick}'. Updating client.nick.")
         client.nick = confirmed_nick
-    # Ensure client.nick is set even if it matched or was defaulted
     elif not client.nick and confirmed_nick:
         client.nick = confirmed_nick
 
@@ -36,16 +25,11 @@ def _handle_rpl_welcome(client, parsed_msg: IRCMessage, raw_line: str, display_p
     )
     logger.info(f"Received RPL_WELCOME (001). Nick confirmed as {client.nick}.")
 
-    # Notify RegistrationHandler about RPL_WELCOME
     if hasattr(client, 'registration_handler') and client.registration_handler:
         client.registration_handler.on_welcome_received(confirmed_nick)
     else:
         logger.error("RPL_WELCOME received, but client.registration_handler is not initialized.")
         client.add_message("Error: Registration handler not ready for RPL_WELCOME.", client.ui.colors["error"], "Status")
-
-    # The old logic for CAP confirmation, channel joins, and NickServ IDENTIFY
-    # is now managed by RegistrationHandler.on_welcome_received() and its interaction
-    # with CapNegotiator.
 
 def _handle_rpl_notopic(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles RPL_NOTOPIC (331)."""
@@ -161,24 +145,12 @@ def _handle_err_nicknameinuse(client, parsed_msg: IRCMessage, raw_line: str, dis
     logger.warning(f"ERR_NICKNAMEINUSE (433) for {failed_nick}: {raw_line.strip()}")
     client.add_message(f"Nickname {failed_nick} is already in use.", client.ui.colors["error"], "Status")
 
-    # Nick collision logic needs to be coordinated with RegistrationHandler
-    # as it manages the NICK/USER sequence.
     is_our_nick_colliding = client.nick and client.nick.lower() == failed_nick.lower()
-
-    # Only attempt auto-nick change if it's our current nick that collided,
-    # and we are not already in a nick collision handling loop initiated by NetworkHandler,
-    # and CAP negotiation (which might include initial NICK/USER) is considered complete or underway.
-    # The `cap_negotiator.initial_cap_flow_complete_event.is_set()` or
-    # `registration_handler.nick_user_sent` might be better checks.
-    # For simplicity, we rely on `NetworkHandler.is_handling_nick_collision`
-    # and if the registration handler exists to potentially update the nick it will use.
 
     if is_our_nick_colliding and not client.network.is_handling_nick_collision:
         if hasattr(client, 'registration_handler') and client.registration_handler:
-            # Determine new nick based on client's initial_nick and current_nick
-            # This logic might be better placed within RegistrationHandler or a shared utility
-            current_nick_for_logic = client.nick # The nick that just failed
-            initial_nick_for_logic = client.initial_nick # The original configured nick
+            current_nick_for_logic = client.nick
+            initial_nick_for_logic = client.initial_nick
 
             if current_nick_for_logic.lower() == initial_nick_for_logic.lower():
                 new_try_nick = f"{initial_nick_for_logic}_"
@@ -190,10 +162,10 @@ def _handle_err_nicknameinuse(client, parsed_msg: IRCMessage, raw_line: str, dis
             logger.info(f"Nickname {failed_nick} in use, trying {new_try_nick}.")
             client.add_message(f"Trying {new_try_nick} instead.", client.ui.colors["system"], "Status")
 
-            client.network.is_handling_nick_collision = True # Prevent immediate re-loops from NetworkHandler
+            client.network.is_handling_nick_collision = True
             client.network.send_raw(f"NICK {new_try_nick}")
-            client.nick = new_try_nick # Update client's current nick
-            client.registration_handler.update_nick_for_registration(new_try_nick) # Inform reg handler
+            client.nick = new_try_nick
+            client.registration_handler.update_nick_for_registration(new_try_nick)
         else:
             logger.warning("ERR_NICKNAMEINUSE for our nick, but no registration_handler to manage retry.")
     elif is_our_nick_colliding and client.network.is_handling_nick_collision:
@@ -209,8 +181,6 @@ def _handle_sasl_loggedin_success(client, parsed_msg: IRCMessage, raw_line: str,
 
     success_msg = f"Successfully logged in as {account_name} ({code})." if code == 900 else f"SASL authentication successful ({code})."
 
-    # Messages are now handled by SaslAuthenticator
-    # client.add_message(f"SASL: {success_msg}", client.ui.colors["system"], "Status")
     if hasattr(client, 'sasl_authenticator') and client.sasl_authenticator:
         client.sasl_authenticator.on_sasl_result_received(True, success_msg)
     else:
@@ -234,8 +204,6 @@ def _handle_sasl_fail_errors(client, parsed_msg: IRCMessage, raw_line: str, disp
         906: "SASL authentication aborted by server or client",
     }
     reason = trailing if trailing else default_reasons.get(code, f"SASL error ({code})")
-    # Messages are now handled by SaslAuthenticator
-    # client.add_message(f"SASL Error: {reason}", client.ui.colors["error"], "Status")
     if hasattr(client, 'sasl_authenticator') and client.sasl_authenticator:
         client.sasl_authenticator.on_sasl_result_received(False, reason)
     else:
@@ -245,10 +213,7 @@ def _handle_sasl_fail_errors(client, parsed_msg: IRCMessage, raw_line: str, disp
 def _handle_err_saslalready(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles ERR_SASLALREADY (907)."""
     reason = trailing if trailing else "You have already authenticated (907)"
-    # Messages are now handled by SaslAuthenticator
-    # client.add_message(f"SASL Warning: {reason}", client.ui.colors["warning"], "Status")
     if hasattr(client, 'sasl_authenticator') and client.sasl_authenticator:
-        # If server says already authenticated, treat it as a success for our flow.
         client.sasl_authenticator.on_sasl_result_received(True, reason)
     else:
         logger.error("ERR_SASLALREADY (907), but no sasl_authenticator on client.")
@@ -275,56 +240,53 @@ def _handle_motd_and_server_info(client, parsed_msg: IRCMessage, raw_line: str, 
     client.add_message(f"[{parsed_msg.command}] {generic_numeric_msg}", client.ui.colors["system"], "Status")
 
 
-# --- Dispatcher for Numeric Handlers ---
 NUMERIC_HANDLERS = {
     1: _handle_rpl_welcome,
-    251: _handle_motd_and_server_info, # RPL_LUSERCLIENT
-    252: _handle_motd_and_server_info, # RPL_LUSEROP
-    253: _handle_motd_and_server_info, # RPL_LUSERUNKNOWN
-    254: _handle_motd_and_server_info, # RPL_LUSERCHANNELS
-    255: _handle_motd_and_server_info, # RPL_LUSERME
-    265: _handle_motd_and_server_info, # RPL_LOCALUSERS
-    266: _handle_motd_and_server_info, # RPL_GLOBALUSERS
+    251: _handle_motd_and_server_info,
+    252: _handle_motd_and_server_info,
+    253: _handle_motd_and_server_info,
+    254: _handle_motd_and_server_info,
+    255: _handle_motd_and_server_info,
+    265: _handle_motd_and_server_info,
+    266: _handle_motd_and_server_info,
     311: _handle_rpl_whoisuser,
     318: _handle_rpl_endofwhois,
     331: _handle_rpl_notopic,
     332: _handle_rpl_topic,
     353: _handle_rpl_namreply,
     366: _handle_rpl_endofnames,
-    372: _handle_motd_and_server_info, # RPL_MOTD
-    375: _handle_motd_and_server_info, # RPL_MOTDSTART
-    376: _handle_motd_and_server_info, # RPL_ENDOFMOTD
+    372: _handle_motd_and_server_info,
+    375: _handle_motd_and_server_info,
+    376: _handle_motd_and_server_info,
     401: _handle_err_nosuchnick,
     403: _handle_err_nosuchchannel,
     433: _handle_err_nicknameinuse,
-    471: _handle_err_channel_join_group, # ERR_CHANNELISFULL
-    473: _handle_err_channel_join_group, # ERR_INVITEONLYCHAN
-    474: _handle_err_channel_join_group, # ERR_BANNEDFROMCHAN
-    475: _handle_err_channel_join_group, # ERR_BADCHANNELKEY
-    900: _handle_sasl_loggedin_success,  # RPL_LOGGEDIN
-    902: _handle_sasl_mechanisms,        # RPL_SASLMECHS
-    903: _handle_sasl_loggedin_success,  # RPL_SASLSUCCESS
-    904: _handle_sasl_fail_errors,       # ERR_SASLFAIL
-    905: _handle_sasl_fail_errors,       # ERR_SASLTOOLONG
-    906: _handle_sasl_fail_errors,       # ERR_SASLABORTED
-    907: _handle_err_saslalready,        # ERR_SASLALREADY
-    908: _handle_sasl_mechanisms,        # ERR_SASLMECHS (deprecated by CAP LS)
+    471: _handle_err_channel_join_group,
+    473: _handle_err_channel_join_group,
+    474: _handle_err_channel_join_group,
+    475: _handle_err_channel_join_group,
+    900: _handle_sasl_loggedin_success,
+    902: _handle_sasl_mechanisms,
+    903: _handle_sasl_loggedin_success,
+    904: _handle_sasl_fail_errors,
+    905: _handle_sasl_fail_errors,
+    906: _handle_sasl_fail_errors,
+    907: _handle_err_saslalready,
+    908: _handle_sasl_mechanisms,
 }
 
 
 def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
     """Handles numeric IRC replies by dispatching to specific handlers."""
     code = int(parsed_msg.command)
-    params = parsed_msg.params # Original params
+    params = parsed_msg.params
     trailing = parsed_msg.trailing
     client_nick_lower = client.nick.lower() if client.nick else ""
 
-    # display_params are params excluding the client's own nick if it's the first one
-    display_params = list(params) # Make a mutable copy
+    display_params = list(params)
     if params and params[0].lower() == client_nick_lower:
         display_params = params[1:]
 
-    # generic_numeric_msg is for logging or fallback display
     generic_numeric_msg_parts = []
     if display_params: generic_numeric_msg_parts.extend(display_params)
     if trailing: generic_numeric_msg_parts.append(f":{trailing}")
@@ -332,11 +294,9 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
 
     handler = NUMERIC_HANDLERS.get(code)
     if handler:
-        # Pass generic_numeric_msg only to handlers that expect it (MOTD and fallback)
         if handler in [_handle_motd_and_server_info, _handle_generic_numeric]:
              handler(client, parsed_msg, raw_line, display_params, trailing, generic_numeric_msg)
         else:
             handler(client, parsed_msg, raw_line, display_params, trailing)
     else:
-        # Fallback to generic handler if no specific handler is found in the dispatcher
         _handle_generic_numeric(client, parsed_msg, raw_line, display_params, trailing, generic_numeric_msg)

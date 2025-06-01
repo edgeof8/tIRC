@@ -1,4 +1,3 @@
-# channel_commands_handler.py
 import logging
 from typing import TYPE_CHECKING, Optional, List
 

@@ -1,10 +1,9 @@
-# irc_protocol.py
 import re
 import logging
 from collections import deque
-from typing import Optional # Added Optional
+from typing import Optional
 import time
-from context_manager import ChannelJoinStatus # Added import
+from context_manager import ChannelJoinStatus
 from irc_message import IRCMessage
 from irc_numeric_handlers import _handle_numeric_command
 
@@ -14,10 +13,9 @@ logger = logging.getLogger("pyrc.protocol")
 class IRCProtocolHandler:
     def _handle_privmsg(self, client, parsed_msg: IRCMessage, raw_line: str):
         nick = parsed_msg.source_nick
-        # parsed_msg.prefix should be the full nick!user@host
         source_full_ident = parsed_msg.prefix
 
-        if not nick or not source_full_ident: # Should not happen for valid PRIVMSG
+        if not nick or not source_full_ident:
             logger.warning(f"PRIVMSG without valid source: {raw_line.strip()}")
             return
 
@@ -28,7 +26,6 @@ class IRCProtocolHandler:
             logger.warning(f"PRIVMSG without target: {raw_line.strip()}")
             return
 
-        # Determine context and color
         is_channel_msg = target.startswith(("#", "&", "!", "+"))
         is_private_msg_to_me = not is_channel_msg and target.lower() == client.nick.lower()
 
@@ -37,18 +34,15 @@ class IRCProtocolHandler:
         color = client.ui.colors["other_message"]
 
         if is_private_msg_to_me:
-            target_context_name = nick # Context for PM is the sender's nick
+            target_context_name = nick
             client.context_manager.create_context(target_context_name, context_type="query")
-            display_nick = f"*{nick}*" # Indicate PM
+            display_nick = f"*{nick}*"
             color = client.ui.colors["pm"]
-        elif nick.lower() == client.nick.lower() and is_channel_msg: # My message to a channel
+        elif nick.lower() == client.nick.lower() and is_channel_msg:
             color = client.ui.colors["my_message"]
-            # display_nick = f"<{client.nick}>" # Already handled by nick variable
 
-        # Highlight check
         if client.nick and client.nick.lower() in message_body.lower() and not (nick.lower() == client.nick.lower()):
             color = client.ui.colors["highlight"]
-            # Potentially add a notification sound/visual cue here in the future
 
         formatted_msg = f"{display_nick} {message_body}"
 
@@ -56,10 +50,9 @@ class IRCProtocolHandler:
             formatted_msg,
             color,
             context_name=target_context_name,
-            source_full_ident=source_full_ident, # Pass the full ident
-            is_privmsg_or_notice=True           # Mark as a user message
+            source_full_ident=source_full_ident,
+            is_privmsg_or_notice=True
         )
-        # ... (trigger processing for TEXT event)
         client.process_trigger_event("TEXT", {
             "nick": nick, "userhost": source_full_ident, "target": target, "channel": target if is_channel_msg else "",
             "message": message_body, "message_words": message_body.split(), "client_nick": client.nick,
@@ -67,8 +60,8 @@ class IRCProtocolHandler:
         })
 
     def _handle_notice(self, client, parsed_msg: IRCMessage, raw_line: str):
-        nick = parsed_msg.source_nick # Could be server name or user nick
-        source_full_ident = parsed_msg.prefix # nick!user@host or servername
+        nick = parsed_msg.source_nick
+        source_full_ident = parsed_msg.prefix
 
         target = parsed_msg.params[0] if parsed_msg.params else None
         message_body = parsed_msg.trailing if parsed_msg.trailing else ""
@@ -81,25 +74,25 @@ class IRCProtocolHandler:
         display_source = nick if nick else (source_full_ident if source_full_ident and '!' not in source_full_ident else "Server")
 
         notice_prefix = f"-{display_source}-"
-        target_context_name = "Status" # Default for notices unless they are to a channel/me
+        target_context_name = "Status"
 
         if is_channel_notice:
             target_context_name = target
-        elif target.lower() == (client.nick.lower() if client.nick else ""): # Notice to me
-            if nick and source_full_ident and '!' in source_full_ident: # If from a user
+        elif target.lower() == (client.nick.lower() if client.nick else ""):
+            if nick and source_full_ident and '!' in source_full_ident:
                 target_context_name = nick
                 client.context_manager.create_context(target_context_name, context_type="query")
-            else: # Notice from server to me, keep in Status
+            else:
                 target_context_name = "Status"
 
         formatted_msg = f"{notice_prefix} {message_body}"
 
         client.add_message(
             formatted_msg,
-            client.ui.colors["system"], # Or a dedicated notice color
+            client.ui.colors["system"],
             context_name=target_context_name,
             source_full_ident=source_full_ident,
-            is_privmsg_or_notice=True # Mark as a message type that can be ignored
+            is_privmsg_or_notice=True
         )
         client.process_trigger_event("NOTICE", {
             "nick": nick if nick else "", "userhost": source_full_ident if source_full_ident else "", "target": target,
@@ -132,7 +125,6 @@ def _handle_cap_message(client, parsed_msg: IRCMessage, raw_line: str):
         f"Received CAP {cap_subcommand} with capabilities: '{capabilities_str}'"
     )
 
-    # Ensure client has cap_negotiator attribute
     if not hasattr(client, 'cap_negotiator') or not client.cap_negotiator:
         logger.error("CAP message received, but client.cap_negotiator is not initialized.")
         client.add_message(f"[CAP Error] Negotiator not ready for {cap_subcommand}", client.ui.colors["error"], "Status")
@@ -146,10 +138,8 @@ def _handle_cap_message(client, parsed_msg: IRCMessage, raw_line: str):
         client.cap_negotiator.on_cap_nak_received(capabilities_str)
     elif cap_subcommand == "NEW":
         client.cap_negotiator.on_cap_new_received(capabilities_str)
-        # Messages are now handled within CapNegotiator
     elif cap_subcommand == "DEL":
         client.cap_negotiator.on_cap_del_received(capabilities_str)
-        # Messages are now handled within CapNegotiator
     else:
         client.add_message(
             f"[CAP] Unknown subcommand: {cap_subcommand} {capabilities_str}",
@@ -157,15 +147,12 @@ def _handle_cap_message(client, parsed_msg: IRCMessage, raw_line: str):
             context_name="Status",
         )
 
-# Removed old _handle_privmsg function
-
 def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
     """Handles NICK messages."""
-    src_nick = parsed_msg.source_nick # This is the *old* nick
+    src_nick = parsed_msg.source_nick
     params = parsed_msg.params
     trailing = parsed_msg.trailing
 
-    # The new nick is in the trailing part or the first parameter if no trailing.
     new_nick = trailing if trailing else (params[0] if params else None)
 
     if not new_nick or not src_nick:
@@ -179,65 +166,57 @@ def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
 
     nick_change_message = f"{src_nick} is now known as {new_nick}"
     active_context_before_nick_change = client.context_manager.active_context_name
-    renamed_query_context_new_name = None # If active query window is renamed
+    renamed_query_context_new_name = None
 
-    # Iterate over a copy of keys if modifying the dictionary (contexts)
     for ctx_name in list(client.context_manager.contexts.keys()):
         ctx_obj = client.context_manager.get_context(ctx_name)
         if not ctx_obj: continue
 
         if ctx_obj.type == "channel":
-            if src_nick in ctx_obj.users: # Check if old nick was in this channel's user list
-                # Update user list: remove old, add new (preserving prefix if possible, though NICK doesn't carry prefix)
-                prefix = ctx_obj.users.get(src_nick, "") # Get old prefix
+            if src_nick in ctx_obj.users:
+                prefix = ctx_obj.users.get(src_nick, "")
                 client.context_manager.remove_user(ctx_name, src_nick)
-                client.context_manager.add_user(ctx_name, new_nick, prefix) # Add new nick with old prefix
+                client.context_manager.add_user(ctx_name, new_nick, prefix)
                 client.add_message(
                     nick_change_message,
                     client.ui.colors["nick_change"],
                     context_name=ctx_name,
                 )
         elif ctx_obj.type == "query" and ctx_name == f"Query:{src_nick}":
-            # Rename the query context
             new_query_ctx_name = f"Query:{new_nick}"
             logger.info(f"Renaming query context from {ctx_name} to {new_query_ctx_name} for NICK change.")
 
-            # Create new context, copy messages, users, topic, scroll etc.
             if client.context_manager.create_context(new_query_ctx_name, context_type="query", topic=ctx_obj.topic):
                 new_query_ctx_obj = client.context_manager.get_context(new_query_ctx_name)
                 if new_query_ctx_obj:
-                    # Copy messages
                     new_query_ctx_obj.messages = deque(list(ctx_obj.messages), maxlen=client.context_manager.max_history)
-                    # Copy users (though query windows usually just have the target user implicitly)
-                    new_query_ctx_obj.users = ctx_obj.users.copy() # Should be empty or just the target
+                    new_query_ctx_obj.users = ctx_obj.users.copy()
                     new_query_ctx_obj.unread_count = ctx_obj.unread_count
                     new_query_ctx_obj.scrollback_offset = ctx_obj.scrollback_offset
-                    new_query_ctx_obj.user_list_scroll_offset = ctx_obj.user_list_scroll_offset # Though not used for query
+                    new_query_ctx_obj.user_list_scroll_offset = ctx_obj.user_list_scroll_offset
 
                     was_active = (active_context_before_nick_change == ctx_name)
-                    client.context_manager.remove_context(ctx_name) # Remove old query context
+                    client.context_manager.remove_context(ctx_name)
                     logger.info(f"Successfully renamed query context from {ctx_name} to {new_query_ctx_name}.")
                     if was_active:
-                        renamed_query_context_new_name = new_query_ctx_name # Flag to set new one active
-                else: # Should not happen if create_context returned True
+                        renamed_query_context_new_name = new_query_ctx_name
+                else:
                     logger.error(f"Failed to get new query context {new_query_ctx_name} after creation during NICK rename.")
-                    client.add_message(nick_change_message, client.ui.colors["nick_change"], context_name=ctx_name) # Message in old context
-            else: # Failed to create new context (e.g., name collision, though unlikely for Query:NewNick)
+                    client.add_message(nick_change_message, client.ui.colors["nick_change"], context_name=ctx_name)
+            else:
                  logger.error(f"Failed to create new query context {new_query_ctx_name} during NICK rename.")
-                 client.add_message(nick_change_message, client.ui.colors["nick_change"], context_name=ctx_name) # Message in old context
+                 client.add_message(nick_change_message, client.ui.colors["nick_change"], context_name=ctx_name)
 
 
-    if renamed_query_context_new_name: # If the active query window was renamed
+    if renamed_query_context_new_name:
         client.context_manager.set_active_context(renamed_query_context_new_name)
 
-    # If it's our own nick changing
     if src_nick.lower() == (client.nick.lower() if client.nick else ""):
         logger.info(f"Our nick changed from {client.nick} to {new_nick}.")
-        old_nick_for_tracking = client.nick # Store our old nick
-        client.nick = new_nick # Update our main nick variable
+        old_nick_for_tracking = client.nick
+        client.nick = new_nick
 
-        # Update our nick in all channel user lists where we were present
-        for ch_name_iter in client.currently_joined_channels: # Iterate over channels we think we are in
+        for ch_name_iter in client.currently_joined_channels:
             ch_ctx = client.context_manager.get_context(ch_name_iter)
             if ch_ctx and old_nick_for_tracking in ch_ctx.users:
                 prefix = ch_ctx.users.get(old_nick_for_tracking, "")
@@ -245,16 +224,14 @@ def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
                 client.context_manager.add_user(ch_name_iter, new_nick, prefix)
 
         client.add_message(
-            nick_change_message, # "You are now known as NewNick" or similar can be added in add_message or here
+            nick_change_message,
             client.ui.colors["nick_change"],
-            context_name="Status", # Own nick changes often go to Status
+            context_name="Status",
         )
-        # Also display in active context if it's a channel/query where the change is relevant
         if client.context_manager.active_context_name and client.context_manager.active_context_name != "Status":
              client.add_message(nick_change_message, client.ui.colors["nick_change"], context_name=client.context_manager.active_context_name)
 
 
-# --- Individual Membership Event Handlers ---
 def _handle_join_event(client, parsed_msg: IRCMessage, raw_line: str):
     """Handles JOIN messages."""
     src_nick = parsed_msg.source_nick
@@ -318,8 +295,6 @@ def _handle_part_event(client, parsed_msg: IRCMessage, raw_line: str):
         client.add_message(f"[INVALID PART] {raw_line.strip()}", client.ui.colors["error"], "Status")
         return
 
-    # part_ctx_exists = client.context_manager.get_context(parted_channel) # Not strictly needed before logic
-
     if src_nick_lower == client_nick_lower:
         logger.info(f"We parted channel: {parted_channel}{reason_message}")
 
@@ -379,7 +354,6 @@ def _handle_kick_event(client, parsed_msg: IRCMessage, raw_line: str):
     params = parsed_msg.params
     trailing = parsed_msg.trailing
     client_nick_lower = client.nick.lower() if client.nick else ""
-    # src_nick_lower is not directly used here but kept for consistency if needed later
 
     channel_kicked_from = params[0] if len(params) > 0 else None
     user_kicked = params[1] if len(params) > 1 else None
@@ -419,7 +393,6 @@ def _handle_kick_event(client, parsed_msg: IRCMessage, raw_line: str):
 def _handle_membership_changes(client, parsed_msg: IRCMessage, raw_line: str):
     """Handles JOIN, PART, QUIT, KICK messages."""
     cmd = parsed_msg.command
-    # Common variables like src_nick, params, etc. are now handled within each specific event handler.
 
     if cmd == "JOIN":
         _handle_join_event(client, parsed_msg, raw_line)
@@ -555,11 +528,7 @@ def handle_server_message(client, line: str): # raw_line is 'line' here
             logger.info(f"SASL: Received AUTHENTICATE + challenge. Raw: {line.strip()}")
             client.sasl_authenticator.on_authenticate_challenge_received(payload)
         else:
-            # According to RFC 4616, any other payload for AUTHENTICATE after initial PLAIN is an error or unexpected.
-            # It could be the server sending an empty AUTHENTICATE on failure, or something else.
-            # The SASL numerics (903, 904, etc.) are the primary way to signal success/failure after payload.
             logger.warning(f"SASL: Received AUTHENTICATE with payload other than '+': '{payload}'. This is unusual. Relying on numerics for outcome. Raw: {line.strip()}")
-            # client.sasl_authenticator.handle_sasl_failure(f"Unexpected AUTHENTICATE payload: {payload}") # Or just log and wait for numeric
     elif cmd == "PRIVMSG":
         protocol_handler_instance._handle_privmsg(client, parsed_msg, line)
     elif cmd in ["JOIN", "PART", "QUIT", "KICK"]:
@@ -584,7 +553,7 @@ def handle_server_message(client, line: str): # raw_line is 'line' here
             client.context_manager.update_topic(channel, new_topic if new_topic is not None else "")
             client.add_message(message, client.ui.colors["system"], context_name=channel)
         else:
-            logger.warning(f"Malformed TOPIC message (no channel): {line.strip()}") # Use 'line' here
+            logger.warning(f"Malformed TOPIC message (no channel): {line.strip()}")
     elif cmd == "NOTICE":
         protocol_handler_instance._handle_notice(client, parsed_msg, line)
     else:

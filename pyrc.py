@@ -1,4 +1,3 @@
-# pyrc.py
 import curses
 import argparse
 import time
@@ -6,31 +5,27 @@ import logging
 import logging.handlers  # For RotatingFileHandler
 import os  # For log directory creation
 
-# Import necessary configuration variables
 from config import (
     IRC_SERVER,
     IRC_PORT,
     IRC_NICK,
     IRC_CHANNELS,
     IRC_PASSWORD,
-    NICKSERV_PASSWORD,  # Added
+    NICKSERV_PASSWORD,
     IRC_SSL,
     DEFAULT_PORT,  # Keep for logic if config port is somehow not set
     DEFAULT_SSL_PORT,  # Keep for logic if config port is somehow not set
-    # Logging config
     LOG_ENABLED,
     LOG_FILE,
-    LOG_LEVEL_STR, # Added for diagnostic print
+    LOG_LEVEL_STR,
     LOG_LEVEL,
     LOG_MAX_BYTES,
     LOG_BACKUP_COUNT,
     BASE_DIR,  # For creating log directory if needed
-    CHANNEL_LOG_ENABLED, # Added for per-channel logging
-    # CHANNEL_LOG_DIR,     # Removed as per user feedback
+    CHANNEL_LOG_ENABLED,
 )
 from irc_client_logic import IRCClient_Logic
 
-# --- Global Logger Setup ---
 logger = logging.getLogger("pyrc")
 
 
@@ -39,13 +34,8 @@ def setup_logging():
         logging.disable(logging.CRITICAL + 1)  # Disable all logging
         return
 
-    # Get the root logger
-    # --- Removed diagnostic print statement ---
-
     root_logger = logging.getLogger()
-    # --- Force DEBUG level for diagnostics ---
-    root_logger.setLevel(logging.DEBUG)
-    # ---
+    root_logger.setLevel(LOG_LEVEL)
 
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -68,14 +58,11 @@ def setup_logging():
     try:
         file_handler = logging.handlers.RotatingFileHandler(
             log_file_path,
-            maxBytes=LOG_MAX_BYTES, # Assuming LOG_MAX_BYTES is from config import
-            backupCount=LOG_BACKUP_COUNT, # Assuming LOG_BACKUP_COUNT is from config import
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
             encoding="utf-8",
         )
         file_handler.setFormatter(formatter)
-        # --- Force DEBUG level for handler ---
-        file_handler.setLevel(logging.DEBUG)
-        # ---
         root_logger.addHandler(file_handler)
 
         # Use the 'pyrc' specific logger for this message, it will propagate to root.
@@ -84,9 +71,6 @@ def setup_logging():
         print(f"Failed to initialize file logging: {e}")
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
-        # --- Force DEBUG level for console fallback ---
-        console_handler.setLevel(logging.DEBUG)
-        # ---
         root_logger.addHandler(console_handler)
         logging.getLogger("pyrc").error(f"File logging setup failed. Using console logging. Error: {e}")
 
@@ -116,7 +100,7 @@ def main_curses_wrapper(stdscr, args):
         args.nick,
         channels_to_join,
         args.password,
-        args.nickserv_password,  # Added
+        args.nickserv_password,
         args.ssl,
     )
     try:
@@ -194,7 +178,6 @@ def parse_arguments(
 
     args = parser.parse_args()
 
-    # Determine final values: CLI > Config > Fallback Defaults
     args.server = args.server if args.server is not None else cfg_server
     args.nick = args.nick if args.nick is not None else cfg_nick
 
@@ -228,9 +211,8 @@ def parse_arguments(
     else:  # User did not specify a channel, use config
         args.channel = cfg_channels if cfg_channels else []  # Ensure it's a list
 
-    # Password:
     args.password = args.password if args.password is not None else cfg_password
-    args.nickserv_password = cfg_nickserv_password  # Added: always use config for now
+    args.nickserv_password = cfg_nickserv_password
 
     # Final check for server (must exist)
     if not args.server:

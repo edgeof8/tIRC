@@ -1,4 +1,3 @@
-# trigger_commands.py
 import logging
 from typing import TYPE_CHECKING, Optional
 from .trigger_manager import TriggerType, Trigger
@@ -100,7 +99,6 @@ class TriggerCommands:
             )
             return True
 
-        # Format and display triggers
         for trigger in triggers:
             status = "Enabled" if trigger["is_enabled"] else "Disabled"
             trigger_info = (

@@ -1,4 +1,3 @@
-# registration_handler.py
 import logging
 from typing import List, Optional, TYPE_CHECKING
 
@@ -8,7 +7,7 @@ if TYPE_CHECKING:
     from cap_negotiator import CapNegotiator
     from sasl_authenticator import SaslAuthenticator
     # To add status messages, it might need a reference to IRCClient_Logic or a delegate
-    # from irc_client_logic import IRCClient_Logic
+    from irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.registration")
 
@@ -16,30 +15,30 @@ class RegistrationHandler:
     def __init__(self,
                  network_handler: 'NetworkHandler',
                  command_handler: 'CommandHandler',
-                 # client_logic_ref: 'IRCClient_Logic', # For add_message
                  initial_nick: str,
                  username: str, # Typically same as initial_nick or a configured username
                  realname: str, # Typically same as initial_nick or a configured realname
                  server_password: Optional[str],
                  nickserv_password: Optional[str],
                  initial_channels_to_join: List[str],
-                 cap_negotiator: Optional['CapNegotiator'] = None): # Made optional
-        self.network_handler = network_handler
-        self.command_handler = command_handler
-        self.cap_negotiator = cap_negotiator # Can be None initially
-        # self.client_logic_ref = client_logic_ref
-        self.sasl_authenticator: Optional['SaslAuthenticator'] = None # Set via method
+                 cap_negotiator: Optional['CapNegotiator'] = None,
+                 client_logic_ref: Optional['IRCClient_Logic'] = None):
+       self.network_handler = network_handler
+       self.command_handler = command_handler
+       self.cap_negotiator = cap_negotiator
+       self.client_logic_ref = client_logic_ref
+       self.sasl_authenticator: Optional['SaslAuthenticator'] = None
 
-        self.initial_nick = initial_nick
-        self.current_nick_to_register = initial_nick # Can be updated by 433 handler
-        self.username = username
-        self.realname = realname
-        self.server_password = server_password
-        self.nickserv_password = nickserv_password
-        self.initial_channels_to_join = initial_channels_to_join # List of channel names
+       self.initial_nick = initial_nick
+       self.current_nick_to_register = initial_nick # Can be updated by 433 handler
+       self.username = username
+       self.realname = realname
+       self.server_password = server_password
+       self.nickserv_password = nickserv_password
+       self.initial_channels_to_join = initial_channels_to_join
 
-        self.registration_triggered_by_001 = False
-        self.nick_user_sent = False
+       self.registration_triggered_by_001 = False
+       self.nick_user_sent = False
 
 
     def set_sasl_authenticator(self, sasl_authenticator: 'SaslAuthenticator'):
@@ -50,10 +49,14 @@ class RegistrationHandler:
         self.cap_negotiator = cap_negotiator
 
     def _add_status_message(self, message: str, color_key: str = "system"):
-        # Route to IRCClient_Logic.add_message or similar
         logger.info(f"[RegistrationHandler Status] {message}")
-        # if self.client_logic_ref:
-        #     self.client_logic_ref._add_status_message(message, color_key)
+        if self.client_logic_ref:
+            color_attr = self.client_logic_ref.ui.colors.get(color_key, self.client_logic_ref.ui.colors["system"])
+            self.client_logic_ref.add_message(
+                message,
+                color_attr,
+                context_name="Status"
+            )
 
     def update_nick_for_registration(self, new_nick: str):
         """Called if a NICK collision (433) occurs before 001, new nick should be used for USER."""
@@ -62,6 +65,31 @@ class RegistrationHandler:
 
 
     def on_cap_negotiation_complete(self):
+        # 1. Trigger: Called by `CapNegotiator`'s methods (`on_cap_ls_received`, `on_cap_ack_received`,
+        #    `on_cap_nak_received`, `on_sasl_flow_completed`) when the initial client-side CAP negotiation
+        #    (including sending CAP END, or after SASL completion which then triggers CAP END) is considered finished.
+        #    Specifically, it's called when `CapNegotiator.initial_cap_flow_complete_event` is set.
+        # 2. Expected State Before:
+        #    - CAP negotiation (LS, REQ, ACK/NAK) has concluded from the client's perspective.
+        #    - "CAP END" has been sent by the client (or is about to be sent immediately after SASL completion).
+        #    - SASL authentication, if attempted, has completed (successfully or unsuccessfully).
+        #    - `self.nick_user_sent` is typically False (unless 001 arrived unusually early).
+        #    - `self.registration_triggered_by_001` is typically False.
+        # 3. Key Actions:
+        #    - Logs that CAP negotiation is complete.
+        #    - If NICK/USER commands have not yet been sent (`self.nick_user_sent` is False) AND
+        #      registration wasn't already triggered by an early RPL_WELCOME (001) (`self.registration_triggered_by_001` is False):
+        #        - Calls `self._proceed_with_nick_user_registration()` to send PASS (if any), NICK, and USER commands.
+        #    - Otherwise, logs that NICK/USER was already sent or 001 arrived first.
+        # 4. Expected State After:
+        #    - If conditions were met:
+        #        - `self._proceed_with_nick_user_registration()` is called.
+        #        - PASS (if configured), NICK, and USER commands are sent to the server.
+        #        - `self.nick_user_sent` becomes True.
+        #    - The client is now waiting for the server to respond to NICK/USER, primarily expecting RPL_WELCOME (001)
+        #      to confirm successful registration.
+        #    - Subsequent step: Server responses to NICK/USER, especially RPL_WELCOME (001) handled by `self.on_welcome_received()`,
+        #      or error numerics like ERR_NICKNAMEINUSE (433).
         """
         Called by CapNegotiator when its initial flow (LS, REQ, ACK/NAK, END) is complete.
         This is the primary trigger for sending NICK/USER if 001 hasn't arrived yet.
@@ -74,6 +102,32 @@ class RegistrationHandler:
 
 
     def on_welcome_received(self, confirmed_nick: str):
+        # 1. Trigger: Called by `irc_protocol.handle_rpl_welcome()` when the server sends RPL_WELCOME (001).
+        #    This numeric signifies that the client is now successfully registered with the server.
+        # 2. Expected State Before:
+        #    - PASS (if any), NICK, and USER commands have been sent (or are about to be, if 001 arrived very quickly).
+        #    - CAP negotiation and SASL (if used) should ideally be complete or nearing completion.
+        #    - `confirmed_nick` (method argument) is the nickname the server has acknowledged for the client.
+        # 3. Key Actions:
+        #    - Sets `self.registration_triggered_by_001 = True`.
+        #    - Updates `self.current_nick_to_register` with `confirmed_nick`.
+        #    - If `self.nick_user_sent` is False (i.e., 001 arrived before NICK/USER was flagged as sent):
+        #        - Logs a warning.
+        #        - Calls `self._proceed_with_nick_user_registration()` to ensure NICK/USER are sent if they weren't.
+        #    - If `self.cap_negotiator` exists and `is_cap_negotiation_pending()` is True:
+        #        - Calls `self.cap_negotiator.on_cap_end_confirmed()`. This is crucial because RPL_WELCOME
+        #          implicitly confirms that CAP negotiation (from the server's perspective) is over.
+        #    - Waits for `self.cap_negotiator.wait_for_negotiation_finish()` (if `cap_negotiator` exists) to ensure
+        #      any final CAP/SASL cleanup or event setting in CapNegotiator has occurred.
+        #    - Calls `self._perform_post_registration_actions()` to handle auto-channel joins and NickServ identification.
+        # 4. Expected State After:
+        #    - `self.registration_triggered_by_001` is True.
+        #    - `self.current_nick_to_register` reflects the server-confirmed nickname.
+        #    - `self.nick_user_sent` is True.
+        #    - If CAP was pending, `CapNegotiator` is notified that CAP END is confirmed.
+        #    - Post-registration actions (channel joins, NickServ IDENTIFY) are initiated via `_perform_post_registration_actions()`.
+        #    - The client is now fully registered and ready for general IRC interaction.
+        #    - Subsequent step: Client joins channels, sends/receives messages, etc. The connection handshake is complete.
         """
         Called when RPL_WELCOME (001) is received.
         This confirms server registration and triggers post-registration actions.
@@ -121,6 +175,26 @@ class RegistrationHandler:
 
 
     def _proceed_with_nick_user_registration(self):
+        # 1. Trigger: Called by `self.on_cap_negotiation_complete()` if NICK/USER hasn't been sent and 001 hasn't arrived,
+        #    OR by `self.on_welcome_received()` if 001 arrives before NICK/USER was flagged as sent (e.g., CAP skipped or very fast server).
+        # 2. Expected State Before:
+        #    - `self.nick_user_sent` is False.
+        #    - CAP negotiation and SASL (if applicable) are considered complete from the client's perspective, allowing registration.
+        #    - `self.current_nick_to_register` holds the nick to use (initial or modified by 433).
+        #    - `self.username`, `self.realname`, `self.server_password` are configured.
+        # 3. Key Actions:
+        #    - If `self.nick_user_sent` is already True, returns early.
+        #    - Logs intent to send NICK/USER and adds a status message.
+        #    - If `self.server_password` is set, sends "PASS <password>" via `NetworkHandler`.
+        #    - Sends "NICK <current_nick_to_register>" via `NetworkHandler`.
+        #    - Sends "USER <username> 0 * :<realname>" via `NetworkHandler`.
+        #    - Sets `self.nick_user_sent = True`.
+        # 4. Expected State After:
+        #    - `self.nick_user_sent` is True.
+        #    - PASS (if applicable), NICK, and USER commands have been sent to the server.
+        #    - The client is now awaiting server responses, primarily RPL_WELCOME (001) to confirm successful registration,
+        #      or error numerics like ERR_NICKNAMEINUSE (433), ERR_ALREADYREGISTRED (462), etc.
+        #    - Subsequent step: Server responses to these commands, leading to `self.on_welcome_received()` or error handlers.
         """Sends NICK and USER commands to the server."""
         if self.nick_user_sent:
             logger.info("NICK/USER registration already sent for this connection attempt.")
@@ -146,10 +220,7 @@ class RegistrationHandler:
             logger.info(f"Post-001: Processing auto-join for channels: {', '.join(channels_to_join_now)}")
             self._add_status_message(f"Auto-joining channels: {', '.join(channels_to_join_now)}", "system")
             for channel_name in channels_to_join_now:
-                # The command handler will create context if needed and manage join status
                 self.command_handler.process_user_command(f"/join {channel_name}")
-            # Clear the list for this connection attempt, IRCClient_Logic might repopulate it for /reconnect
-            # self.initial_channels_to_join.clear() # Or let IRCClient_Logic manage this source list
         else:
             logger.info("No channels queued for auto-join post-001.")
 
@@ -184,4 +255,3 @@ class RegistrationHandler:
         self.registration_triggered_by_001 = False
         self.nick_user_sent = False
         self.current_nick_to_register = self.initial_nick # Reset to initial for next attempt
-        # initial_channels_to_join, passwords etc. are typically set at __init__ or by client logic for reconnect

@@ -1,15 +1,13 @@
-# network_handler.py
 import socket
 import ssl
 import threading
 import time
 import logging
-from typing import List, Optional, Set # Added Set for type hint
+from typing import List, Optional, Set
 from config import (
     CONNECTION_TIMEOUT,
     RECONNECT_INITIAL_DELAY,
     RECONNECT_MAX_DELAY,
-    # VERIFY_SSL_CERT, # No longer imported directly
 )
 
 logger = logging.getLogger("pyrc.network")
@@ -24,13 +22,10 @@ class NetworkHandler:
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
         self.network_thread = None
         self._should_thread_stop = threading.Event()
-        self.channels_to_join_on_connect: List[str] = [] # This list will be read by IRCClient_Logic
+        self.channels_to_join_on_connect: List[str] = []
         self.is_handling_nick_collision: bool = (
-            False  # Flag for NICK collision handling
+            False
         )
-        # self.initial_registration_sent: bool = ( # This flag might not be strictly needed anymore here
-        #     False  # Track if NICK/USER sent for this connection
-        # )
 
     def start(self):
         if self.network_thread and self.network_thread.is_alive():
@@ -42,13 +37,12 @@ class NetworkHandler:
         self.network_thread.start()
         logger.debug("Network thread object created and started.")
 
-    def stop(self, send_quit=True, quit_message: Optional[str] = "Client shutting down"): # Added type hint and default
+    def stop(self, send_quit=True, quit_message: Optional[str] = "Client shutting down"):
         logger.info(f"Stopping network thread. Send QUIT: {send_quit}, Message: '{quit_message}'")
         self._should_thread_stop.set()
         if self.sock:
             if self.connected and send_quit:
                 try:
-                    # Use the provided quit_message, or a default if None/empty
                     effective_quit_message = quit_message if quit_message and quit_message.strip() else "Client shutting down"
                     logger.debug(f"Sending QUIT: {effective_quit_message}")
                     self.send_raw(f"QUIT :{effective_quit_message}")
@@ -101,14 +95,10 @@ class NetworkHandler:
             )
             self.disconnect_gracefully(quit_msg)
 
-        # Client's main server/port/ssl attributes are already updated by CommandHandler before this call.
 
         if channels_to_join is not None:
             self.channels_to_join_on_connect = channels_to_join
         else:
-            # If called from /connect without channels, it might default to initial_channels_list
-            # If called during startup, initial_channels_list is used.
-            # This ensures channels_to_join_on_connect is correctly set based on context.
             self.channels_to_join_on_connect = self.client.initial_channels_list[:]
 
 
@@ -121,17 +111,29 @@ class NetworkHandler:
             logger.debug(
                 "Network thread is alive. Setting connected=False to force re-evaluation in loop."
             )
-            # Ensure CAP/SASL/Registration negotiation state is reset for the new connection attempt
             if hasattr(self.client, 'cap_negotiator') and self.client.cap_negotiator:
-                self.client.cap_negotiator.reset_negotiation_state() # This also resets SASL
+                self.client.cap_negotiator.reset_negotiation_state()
             if hasattr(self.client, 'registration_handler') and self.client.registration_handler:
                 self.client.registration_handler.reset_registration_state()
 
-            self.connected = False # This will trigger _connect_socket in the loop
-            # The loop will pick this up. If it's sleeping, it will eventually wake.
+            self.connected = False
 
 
     def send_cap_ls(self, version: Optional[str] = "302"):
+        # 1. Trigger: Called by `CapNegotiator.start_negotiation()` immediately after a successful socket connection
+        #    (specifically, after `_connect_socket()` calls `cap_negotiator.start_negotiation()`).
+        # 2. Expected State Before:
+        #    - `self.connected` is True.
+        #    - `self.sock` is an active, connected socket.
+        #    - CAP negotiation is just beginning.
+        # 3. Key Actions:
+        #    - Sends the "CAP LS [version]" (e.g., "CAP LS 302") command to the IRC server.
+        #      This requests the server to list the capabilities it supports.
+        # 4. Expected State After:
+        #    - The "CAP LS" command has been sent.
+        #    - The client expects the server to respond with one or more "CAP * LS" messages detailing available capabilities,
+        #      or "CAP * ACK/NAK" if the CAP LS command itself is problematic (less common for LS).
+        #    - Subsequent step: `CapNegotiator` will process the server's "CAP * LS" response.
         if self.connected:
             if version:
                 self.send_raw(f"CAP LS {version}")
@@ -141,6 +143,21 @@ class NetworkHandler:
             logger.warning("send_cap_ls called but not connected.")
 
     def send_cap_req(self, capabilities: List[str]):
+        # 1. Trigger: Called by `CapNegotiator.request_capabilities()` after it has processed the server's
+        #    "CAP * LS" response and determined which capabilities to request.
+        # 2. Expected State Before:
+        #    - `self.connected` is True.
+        #    - `self.sock` is an active, connected socket.
+        #    - The client has received and parsed the server's list of supported capabilities.
+        #    - `capabilities` (method argument) contains a list of capability names to request.
+        # 3. Key Actions:
+        #    - Sends the "CAP REQ :cap1 cap2 ..." command to the IRC server.
+        #      This requests the server to enable the specified capabilities.
+        # 4. Expected State After:
+        #    - The "CAP REQ" command has been sent.
+        #    - The client expects the server to respond with "CAP * ACK :cap1 cap2..." for successfully enabled capabilities
+        #      and/or "CAP * NAK :cap3 cap4..." for rejected capabilities.
+        #    - Subsequent step: `CapNegotiator` will process the server's "CAP * ACK/NAK" responses.
         if self.connected:
             if capabilities:
                 self.send_raw(f"CAP REQ :{ ' '.join(capabilities)}")
@@ -148,10 +165,52 @@ class NetworkHandler:
             logger.warning("send_cap_req called but not connected.")
 
     def send_cap_end(self):
+        # 1. Trigger: Called by `CapNegotiator.end_negotiation()` when:
+        #    a) The client has finished requesting all desired capabilities (and received ACK/NAK responses).
+        #    b) The client decides not to request any capabilities after "CAP LS" (e.g., if none are desired or supported).
+        #    c) The server indicates no more capabilities will be listed (e.g. an empty LS response or specific server behavior).
+        # 2. Expected State Before:
+        #    - `self.connected` is True.
+        #    - `self.sock` is an active, connected socket.
+        #    - The client has either completed its CAP REQs or decided not to make any/further REQs.
+        #    - `CapNegotiator.negotiation_in_progress` is likely True.
+        # 3. Key Actions:
+        #    - Sends the "CAP END" command to the IRC server.
+        #      This signals to the server that the client has finished capability negotiation.
+        # 4. Expected State After:
+        #    - The "CAP END" command has been sent.
+        #    - `CapNegotiator.negotiation_in_progress` is set to False.
+        #    - The client is now ready to proceed with the next stage of registration, typically SASL authentication
+        #      (if `sasl-auth.enabled` is True and the 'sasl' capability was ACKed) or traditional NICK/USER registration.
+        #    - Subsequent step: `CapNegotiator` calls `self.client.sasl_authenticator.start_authentication()` or
+        #      `self.client.registration_handler.start_registration()` depending on SASL configuration and success.
         logger.debug("Sending CAP END")
         self.send_raw("CAP END")
 
     def send_authenticate(self, payload: str):
+        # 1. Trigger: Called by `SaslAuthenticator.send_initial_auth()` or `SaslAuthenticator.send_challenge_response()`
+        #    during the SASL authentication process. This happens after CAP negotiation is complete (`CAP END` sent)
+        #    and if SASL authentication is enabled and the 'sasl' capability was acknowledged.
+        # 2. Expected State Before:
+        #    - `self.connected` is True.
+        #    - `self.sock` is an active, connected socket.
+        #    - CAP negotiation is complete.
+        #    - `SaslAuthenticator.authentication_in_progress` is True.
+        #    - `payload` (method argument) contains the base64-encoded SASL mechanism data (e.g., for PLAIN or EXTERNAL)
+        #      or a response to a server challenge.
+        # 3. Key Actions:
+        #    - Sends the "AUTHENTICATE <payload>" command to the IRC server.
+        #      This transmits the client's authentication credentials or challenge response.
+        # 4. Expected State After:
+        #    - The "AUTHENTICATE <payload>" command has been sent.
+        #    - The client expects the server to respond with:
+        #      - `AUTHENTICATE +` (challenge from server, if mechanism requires multiple steps).
+        #      - `903` (RPL_SASLSUCCESS): SASL authentication successful.
+        #      - `904` (RPL_SASLFAIL): SASL authentication failed.
+        #      - `905` (RPL_SASLTOOLONG): SASL payload was too long.
+        #      - `906` (RPL_SASLABORTED): SASL authentication aborted by client (less common here, usually via `AUTHENTICATE *`).
+        #      - `907` (RPL_SASLALREADY): Already authenticated (should not happen if logic is correct).
+        #    - Subsequent step: `SaslAuthenticator` will process the server's response (e.g., `handle_sasl_response`, `handle_sasl_success`, `handle_sasl_failure`).
         logger.debug(
             f"Sending AUTHENTICATE {payload[:20]}..."
         )
@@ -166,16 +225,40 @@ class NetworkHandler:
                 logger.error(f"Error closing socket during reset: {e_close}")
             self.sock = None
         self.connected = False
-        # Reset CAP/SASL/Registration state for the client logic as well, as connection is lost
-        if self.client: # Guard against client being None during shutdown
+        if self.client:
             if hasattr(self.client, 'cap_negotiator') and self.client.cap_negotiator:
-                self.client.cap_negotiator.reset_negotiation_state() # Also resets SASL
+                self.client.cap_negotiator.reset_negotiation_state()
             if hasattr(self.client, 'registration_handler') and self.client.registration_handler:
                 self.client.registration_handler.reset_registration_state()
-            # The old direct attribute resets are removed as they are handled by the new classes.
 
 
     def _connect_socket(self):
+        # 1. Trigger: Called by the `_network_loop` when `self.connected` is False.
+        #    This typically happens on initial startup or after a disconnect when a reconnect attempt is made.
+        # 2. Expected State Before:
+        #    - `self.sock` might be None or a closed socket.
+        #    - `self.connected` is False.
+        #    - `self.client.server`, `self.client.port`, `self.client.use_ssl` are set with connection parameters.
+        #    - `self.is_handling_nick_collision` is reset to False.
+        # 3. Key Actions:
+        #    - Resets `self.is_handling_nick_collision`.
+        #    - Attempts to create a TCP socket connection to the configured server and port.
+        #    - If `self.client.use_ssl` is True, wraps the socket with SSL/TLS.
+        #    - Sets `self.sock` to the new socket object.
+        #    - Sets `self.connected` to True on successful connection.
+        #    - Resets `self.reconnect_delay`.
+        #    - Calls `self.client.cap_negotiator.start_negotiation()` to initiate CAP negotiation.
+        # 4. Expected State After (Success):
+        #    - `self.sock` is an active, connected (and possibly SSL-wrapped) socket.
+        #    - `self.connected` is True.
+        #    - CAP negotiation process is initiated via `CapNegotiator`.
+        #    - Returns True.
+        # Expected State After (Failure):
+        #    - `self.sock` remains None or is closed.
+        #    - `self.connected` remains False.
+        #    - An error message is logged and added to the UI.
+        #    - `_reset_connection_state()` is called.
+        #    - Returns False, leading to a retry attempt in `_network_loop`.
         self.is_handling_nick_collision = False
         self.client.add_message(
             f"Attempting to connect to {self.client.server}:{self.client.port}...",
@@ -221,24 +304,13 @@ class NetworkHandler:
                 context_name="Status",
             )
 
-            # Initiate CAP negotiation via the CapNegotiator
             if hasattr(self.client, 'cap_negotiator') and self.client.cap_negotiator:
+                # This is the first step in the IRC handshake after TCP/IP connection.
                 self.client.cap_negotiator.start_negotiation()
             else:
                 logger.error("NetworkHandler: cap_negotiator not found on client object during _connect_socket.")
                 self.client.add_message("Error: CAP negotiator not initialized.", self.client.ui.colors["error"], "Status")
-                # Potentially treat as connection failure or proceed without CAP if design allows
 
-            # Note: NICK/USER are no longer sent here directly.
-            # They are handled by RegistrationHandler, triggered by CapNegotiator events or RPL_WELCOME (001).
-
-            # --- REMOVED CHANNEL JOIN LOGIC FROM HERE ---
-            # if self.channels_to_join_on_connect:
-            #    # ... loop to send JOIN commands ...
-            #    logger.info(f"Will attempt to auto-join channels after registration: {unique_channels_to_join}")
-            # else:
-            #    logger.info("No channels specified to auto-join on connect.")
-            # --- END OF REMOVED LOGIC ---
 
             return True
         except socket.timeout:
@@ -279,7 +351,7 @@ class NetworkHandler:
                 context_name="Status",
             )
 
-        self._reset_connection_state() # This also resets client's CAP/SASL state
+        self._reset_connection_state()
         return False
 
     def send_raw(self, data: str):
@@ -292,7 +364,7 @@ class NetworkHandler:
                 log_data = data.strip()
                 if log_data.upper().startswith("PASS "):
                     log_data = "PASS ******"
-                elif log_data.upper().startswith("AUTHENTICATE ") and len(log_data) > 15: # SASL PLAIN creds
+                elif log_data.upper().startswith("AUTHENTICATE ") and len(log_data) > 15:
                     log_data = log_data.split(" ", 1)[0] + " ******"
                 elif log_data.upper().startswith("PRIVMSG NICKSERV :IDENTIFY"):
                     parts = log_data.split(" ", 3)
@@ -323,9 +395,8 @@ class NetworkHandler:
             self.client.add_message(
                 "Cannot send: Not connected.",
                 self.client.ui.colors["error"],
-                context_name="Status", # Or active context
+                context_name="Status",
             )
-            # Forcing a UI update might be good here if the user tried to type something
             self.client.ui_needs_update.set()
 
 
@@ -340,9 +411,6 @@ class NetworkHandler:
                     )
                     break
                 logger.debug("Not connected. Attempting to connect.")
-                # _connect_socket now initiates CAP negotiation.
-                # NICK/USER are sent after CAP negotiation (or 001).
-                # Channel JOINs are sent after 001 and CAP negotiation is fully finished.
                 if self._connect_socket():
                     logger.info("Connection successful in loop, CAP negotiation initiated.")
                 else:
@@ -352,7 +420,7 @@ class NetworkHandler:
                         self.client.ui.colors["system"],
                         context_name="Status",
                     )
-                    self.client.ui_needs_update.set() # Show retry message
+                    self.client.ui_needs_update.set()
                     interrupted = self._should_thread_stop.wait(self.reconnect_delay)
                     if interrupted or self.client.should_quit:
                         logger.debug(
@@ -365,15 +433,13 @@ class NetworkHandler:
                     logger.debug(
                         f"Increased reconnect delay to {self.reconnect_delay}s."
                     )
-                    continue # Try to connect again
-
-            # If connected, proceed to read data
+                    continue
             try:
-                if not self.sock: # Should not happen if self.connected is True
+                if not self.sock:
                     logger.error(
                         "Socket is None despite connected=True. Resetting state."
                     )
-                    self._reset_connection_state() # This will set connected=False
+                    self._reset_connection_state()
                     self.client.ui_needs_update.set()
                     continue
 
@@ -388,7 +454,6 @@ class NetworkHandler:
                     self._reset_connection_state()
                     self.client.ui_needs_update.set()
                     continue # Will attempt to reconnect in the next iteration
-
                 buffer += data
                 while b"\r\n" in buffer:
                     line_bytes, buffer = buffer.split(b"\r\n", 1)
@@ -409,13 +474,12 @@ class NetworkHandler:
                                 self.client.ui.colors["error"],
                                 context_name="Status",
                             )
-
             except socket.timeout:
                 logger.debug("Socket recv timed out (should not happen with blocking recv unless timeout is set on socket).")
-                pass # Continue loop
-            except ssl.SSLWantReadError: # Non-blocking SSL socket might raise this
+                pass
+            except ssl.SSLWantReadError:
                 logger.debug("SSLWantReadError, need to select/poll. Sleeping briefly.")
-                time.sleep(0.1) # Basic way to handle, select/poll is better for responsiveness
+                time.sleep(0.1)
                 continue
             except (OSError, socket.error, ssl.SSLError) as e:
                 if not self._should_thread_stop.is_set() and not self.client.should_quit :
@@ -426,12 +490,11 @@ class NetworkHandler:
                             self.client.ui.colors["error"],
                             context_name="Status",
                         )
-                else: # Error during shutdown
+                else:
                     logger.info(f"Network error during shutdown: {e}")
                 self._reset_connection_state()
                 if self.client: self.client.ui_needs_update.set()
-                # Loop will continue and attempt reconnect if appropriate
-            except Exception as e: # Catch-all for truly unexpected issues
+            except Exception as e:
                 if not self._should_thread_stop.is_set() and not self.client.should_quit:
                     logger.critical(f"Unexpected critical error in network loop: {e}", exc_info=True)
                     if self.client:
@@ -445,18 +508,14 @@ class NetworkHandler:
                 self._reset_connection_state()
                 if self.client: self.client.ui_needs_update.set()
                 logger.info("Breaking network loop due to critical error.")
-                break # Exit loop on critical unknown error
+                break
 
         logger.info("Network loop has exited.")
-        # Ensure cleanup if loop exited for reasons other than explicit stop
         if not self._should_thread_stop.is_set() and self.connected:
             logger.debug("Loop exited but _should_thread_stop not set and still connected, calling stop() for cleanup.")
-            self.stop(send_quit=False) # Don't try to send QUIT if connection might be bad
+            self.stop(send_quit=False)
 
         if self.client and not self.client.should_quit:
             logger.info("Network thread officially stopped (client not globally quitting).")
-            # self.client.add_message( # Avoid adding message if client might be shutting down
-            #     "Network thread stopped.", self.client.ui.colors["system"], context_name="Status"
-            # )
         elif self.client and self.client.should_quit:
             logger.info("Network thread stopped (client is globally quitting).")

@@ -1,4 +1,3 @@
-# fun_commands_handler.py
 import logging
 import random
 import os
@@ -10,41 +9,58 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.fun_commands_handler")
 
+
 class FunCommandsHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client = client_logic
 
     def handle_slap_command(self, args_str: str):
         """Handle the /slap command - slap someone with a random item"""
-        parts = self.client.command_handler._ensure_args(args_str, "Usage: /slap <nickname>")
+        parts = self.client.command_handler._ensure_args(
+            args_str, "Usage: /slap <nickname>"
+        )
         if not parts:
             return
 
         target = parts[0]
-        slap_items_file_path = "slap_items.txt"
+        slap_items_file_path = os.path.join("features", "slap_items.txt")
         items = []
         default_items = [
-            "a large trout", "a wet noodle", "a rubber chicken", "a sock full of pennies",
-            "a dictionary", "a rubber duck", "a pillow", "a keyboard", "a mouse",
-            "a monitor", "a coffee cup", "a banana", "a cactus", "a fish", "a brick"
+            "a large trout",
+            "a wet noodle",
+            "a rubber chicken",
+            "a sock full of pennies",
+            "a dictionary",
+            "a rubber duck",
+            "a pillow",
+            "a keyboard",
+            "a mouse",
+            "a monitor",
+            "a coffee cup",
+            "a banana",
+            "a cactus",
+            "a fish",
+            "a brick",
         ]
 
         if not os.path.exists(slap_items_file_path):
             self.client.add_message(
                 f"Warning: Slap items file not found at '{slap_items_file_path}'. Using default items.",
                 self.client.ui.colors["warning"],
-                context_name=self.client.context_manager.active_context_name or "Status",
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
             items = default_items
         else:
             try:
                 with open(slap_items_file_path, "r") as f:
                     items = [line.strip() for line in f if line.strip()]
-                if not items:  # File exists but is empty or only whitespace
+                if not items:
                     self.client.add_message(
                         f"Warning: Slap items file '{slap_items_file_path}' is empty. Using default items.",
                         self.client.ui.colors["warning"],
-                        context_name=self.client.context_manager.active_context_name or "Status",
+                        context_name=self.client.context_manager.active_context_name
+                        or "Status",
                     )
                     items = default_items
             except Exception as e:
@@ -52,42 +68,48 @@ class FunCommandsHandler:
                 self.client.add_message(
                     f"Error reading slap items file: {e}. Using default items.",
                     self.client.ui.colors["error"],
-                    context_name=self.client.context_manager.active_context_name or "Status",
+                    context_name=self.client.context_manager.active_context_name
+                    or "Status",
                 )
                 items = default_items
 
-        if not items: # Should only happen if default_items was somehow empty
-            items = ["a generic item"] # Absolute fallback
+        if not items:
+            items = ["a generic item"]
 
         item = random.choice(items)
-        # Construct the message to be sent to the channel/query
         action_message = f"*slaps {target} around a bit with {item}*"
 
-        # Send as a CTCP ACTION if in a channel or query
         current_context = self.client.context_manager.get_context(
             self.client.context_manager.active_context_name or "Status"
         )
-        if current_context and (current_context.type == "channel" or current_context.type == "query"):
-             self.client.network.send_raw(
-                 f"PRIVMSG {current_context.name} :\x01ACTION slaps {target} around a bit with {item}\x01"
-             )
-        else: # Fallback to just displaying locally if not in a suitable context
-            self.client.add_message(action_message, self.client.ui.colors.get("action", self.client.ui.colors["system"]))
-
+        if current_context and (
+            current_context.type == "channel" or current_context.type == "query"
+        ):
+            self.client.network.send_raw(
+                f"PRIVMSG {current_context.name} :\x01ACTION slaps {target} around a bit with {item}\x01"
+            )
+        else:
+            self.client.add_message(
+                action_message,
+                self.client.ui.colors.get("action", self.client.ui.colors["system"]),
+            )
 
     def handle_8ball_command(self, args_str: str):
         """Handle the /8ball command - get a random fortune"""
-        if not self.client.command_handler._ensure_args(args_str, "Usage: /8ball <question>"):
+        if not self.client.command_handler._ensure_args(
+            args_str, "Usage: /8ball <question>"
+        ):
             return
 
-        answers_file_path = "magic_eight_ball_answers.txt"
+        answers_file_path = os.path.join("features", "magic_eight_ball_answers.txt")
         answers = []
 
         if not os.path.exists(answers_file_path):
             self.client.add_message(
                 f"Error: Magic 8-ball answers file not found at '{answers_file_path}'. Please create it.",
                 self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status",
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
             answers = ["Cannot predict now, answers file missing."]
         else:
@@ -98,7 +120,8 @@ class FunCommandsHandler:
                     self.client.add_message(
                         f"Warning: Magic 8-ball answers file '{answers_file_path}' is empty. Using a default answer.",
                         self.client.ui.colors["warning"],
-                        context_name=self.client.context_manager.active_context_name or "Status",
+                        context_name=self.client.context_manager.active_context_name
+                        or "Status",
                     )
                     answers = ["The file is empty, ask again later."]
             except Exception as e:
@@ -106,7 +129,8 @@ class FunCommandsHandler:
                 self.client.add_message(
                     f"Error reading answers file: {e}. Using a default answer.",
                     self.client.ui.colors["error"],
-                    context_name=self.client.context_manager.active_context_name or "Status",
+                    context_name=self.client.context_manager.active_context_name
+                    or "Status",
                 )
                 answers = ["Error reading answers, try again."]
 
@@ -118,11 +142,15 @@ class FunCommandsHandler:
 
     def handle_dice_command(self, args_str: str):
         """Handle the /dice command - roll dice in NdN format"""
-        parts = self.client.command_handler._ensure_args(args_str, "Usage: /dice <NdN> (e.g., 2d6 for two six-sided dice)")
+        parts = self.client.command_handler._ensure_args(
+            args_str, "Usage: /dice <NdN> (e.g., 2d6 for two six-sided dice)"
+        )
         if not parts:
             return
 
-        match = re.match(r"(\d+)d(\d+)", args_str) # args_str is parts[0] if ensure_args used num_expected_parts=1
+        match = re.match(
+            r"(\d+)d(\d+)", args_str
+        )
         if not match:
             self.client.add_message(
                 "Invalid dice format. Use NdN (e.g., 2d6)",
@@ -141,7 +169,7 @@ class FunCommandsHandler:
                 context_name=self.client.context_manager.active_context_name,
             )
             return
-        if num_dice > 100 or sides > 1000: # Adjusted sides limit
+        if num_dice > 100 or sides > 1000:
             self.client.add_message(
                 "Too many dice or sides! Keep it reasonable (max 100d1000).",
                 self.client.ui.colors["error"],
@@ -161,18 +189,20 @@ class FunCommandsHandler:
 
     def handle_rainbow_command(self, args_str: str):
         """Handle the /rainbow command - make text colorful"""
-        if not self.client.command_handler._ensure_args(args_str, "Usage: /rainbow <text>"):
+        if not self.client.command_handler._ensure_args(
+            args_str, "Usage: /rainbow <text>"
+        ):
             return
 
         colors = [
-            "\x0304",  # Red (IRC color code)
-            "\x0308",  # Yellow
-            "\x0309",  # Green
-            "\x0311",  # Cyan
-            "\x0302",  # Blue
-            "\x0306",  # Magenta
+            "\x0304",
+            "\x0308",
+            "\x0309",
+            "\x0311",
+            "\x0302",
+            "\x0306",
         ]
-        reset = "\x0f" # IRC reset color
+        reset = "\x0f"
 
         rainbow_text_parts = []
         for i, char in enumerate(args_str):
@@ -180,44 +210,49 @@ class FunCommandsHandler:
             rainbow_text_parts.append(f"{color}{char}")
         rainbow_text = "".join(rainbow_text_parts) + reset
 
-        # Send as a message to the current channel/query
         current_context = self.client.context_manager.get_context(
             self.client.context_manager.active_context_name or "Status"
         )
-        if current_context and (current_context.type == "channel" or current_context.type == "query"):
+        if current_context and (
+            current_context.type == "channel" or current_context.type == "query"
+        ):
             self.client.network.send_raw(
                 f"PRIVMSG {current_context.name} :{rainbow_text}"
             )
-            # Optionally, also display it locally if server doesn't echo own messages with color
-            # self.client.add_message(rainbow_text, self.client.ui.colors["system"])
         else:
-            self.client.add_message("Cannot /rainbow here. Try in a channel or query.", self.client.ui.colors["error"])
-
+            self.client.add_message(
+                "Cannot /rainbow here. Try in a channel or query.",
+                self.client.ui.colors["error"],
+            )
 
     def handle_reverse_command(self, args_str: str):
         """Handle the /reverse command - reverse text"""
-        if not self.client.command_handler._ensure_args(args_str, "Usage: /reverse <text>"):
+        if not self.client.command_handler._ensure_args(
+            args_str, "Usage: /reverse <text>"
+        ):
             return
 
         reversed_text = args_str[::-1]
-        # Send as a message to the current channel/query
         current_context = self.client.context_manager.get_context(
             self.client.context_manager.active_context_name or "Status"
         )
-        if current_context and (current_context.type == "channel" or current_context.type == "query"):
+        if current_context and (
+            current_context.type == "channel" or current_context.type == "query"
+        ):
             self.client.network.send_raw(
                 f"PRIVMSG {current_context.name} :{reversed_text}"
             )
         else:
-             self.client.add_message(reversed_text, self.client.ui.colors["system"])
-
+            self.client.add_message(reversed_text, self.client.ui.colors["system"])
 
     def handle_wave_command(self, args_str: str):
         """Handle the /wave command - make text wave (sends to channel/query)"""
-        if not self.client.command_handler._ensure_args(args_str, "Usage: /wave <text>"):
+        if not self.client.command_handler._ensure_args(
+            args_str, "Usage: /wave <text>"
+        ):
             return
 
-        wave_chars = list("~-.~") # Simple wave pattern
+        wave_chars = list("~-.~")
         waved_text_parts = []
         for i, char in enumerate(args_str):
             if char.isspace():
@@ -229,13 +264,14 @@ class FunCommandsHandler:
         current_context = self.client.context_manager.get_context(
             self.client.context_manager.active_context_name or "Status"
         )
-        if current_context and (current_context.type == "channel" or current_context.type == "query"):
+        if current_context and (
+            current_context.type == "channel" or current_context.type == "query"
+        ):
             self.client.network.send_raw(
                 f"PRIVMSG {current_context.name} :{waved_text}"
             )
         else:
             self.client.add_message(waved_text, self.client.ui.colors["system"])
-
 
     def handle_ascii_command(self, args_str: str):
         """Handle the /ascii command - convert text to ASCII art (sends to channel/query)"""
@@ -249,7 +285,9 @@ class FunCommandsHandler:
             )
             return
 
-        if not self.client.command_handler._ensure_args(args_str, "Usage: /ascii <text>"):
+        if not self.client.command_handler._ensure_args(
+            args_str, "Usage: /ascii <text>"
+        ):
             return
 
         try:
@@ -258,17 +296,20 @@ class FunCommandsHandler:
             current_context = self.client.context_manager.get_context(
                 self.client.context_manager.active_context_name or "Status"
             )
-            if current_context and (current_context.type == "channel" or current_context.type == "query"):
-                # Send line by line to avoid potential message length limits on server
+            if current_context and (
+                current_context.type == "channel" or current_context.type == "query"
+            ):
                 for line_art in ascii_art.split("\n"):
-                    if line_art.strip(): # Only send non-empty lines
+                    if line_art.strip():
                         self.client.network.send_raw(
                             f"PRIVMSG {current_context.name} :{line_art}"
                         )
-            else: # Fallback to local display if not in a suitable context
-                 for line_art in ascii_art.split("\n"):
+            else:
+                for line_art in ascii_art.split("\n"):
                     if line_art.strip():
-                        self.client.add_message(line_art, self.client.ui.colors["system"])
+                        self.client.add_message(
+                            line_art, self.client.ui.colors["system"]
+                        )
 
         except Exception as e:
             self.client.add_message(

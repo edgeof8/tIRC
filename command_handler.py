@@ -1,28 +1,25 @@
-# command_handler.py
 import logging
-from typing import TYPE_CHECKING, List, Optional, Tuple # Added Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 from features.triggers.trigger_commands import TriggerCommands
-from context_manager import ChannelJoinStatus, Context # Added import, Added Context
+from context_manager import ChannelJoinStatus, Context
 from fun_commands_handler import FunCommandsHandler
 from channel_commands_handler import ChannelCommandsHandler
 from server_commands_handler import ServerCommandsHandler
 from config import (
     get_all_settings, set_config_value, get_config_value, config as global_config_parser,
-    add_ignore_pattern, remove_ignore_pattern, IGNORED_PATTERNS # Import ignore functions
+    add_ignore_pattern, remove_ignore_pattern, IGNORED_PATTERNS
 )
 
 if TYPE_CHECKING:
     from irc_client_logic import (
         IRCClient_Logic,
-    )  # To avoid circular import for type hinting
+    )
 
-from context_manager import Context as CTX_Type # For type hinting
-# Get a logger instance
+from context_manager import Context as CTX_Type
 logger = logging.getLogger("pyrc.command_handler")
 
 
 class CommandHandler:
-    # Define detailed help strings for primary commands
     COMMAND_USAGE_STRINGS = {
         "join": "Usage: /join <channel> - Joins the specified channel.",
         "part": "Usage: /part [channel] [reason] - Leaves the specified or current channel. If [channel] is omitted, parts the active channel.",
@@ -56,7 +53,7 @@ class CommandHandler:
             "/set <section.key> : Shows value of <section.key>.\n"
             "/set <section.key> <value> : Modifies the setting and saves it to pyterm_irc_config.ini."
         ),
-        "on": ( # This will be handled specially to call trigger_commands._show_usage()
+        "on": (
             "Usage: /on <subcommand> [args] - Manages event triggers. Type /on for detailed subcommands.\n"
             "See also: /on add, /on list, /on remove, /on enable, /on disable."
         ),
@@ -68,7 +65,6 @@ class CommandHandler:
         "wave": "Usage: /wave <text> - Sends <text> with a wave effect to the current channel/query.",
         "ascii": "Usage: /ascii <text> - Converts <text> to ASCII art and sends it to the current channel/query.",
         "help": "Usage: /help [command] - Shows this help message or help for a specific command.",
-        # Ignore commands
         "ignore": "Usage: /ignore <nick|hostmask> - Ignores messages from the specified user or hostmask. Wildcards * and ? can be used (e.g., *!*@*.someisp.com).",
         "unignore": "Usage: /unignore <nick|hostmask> - Removes an ignore pattern.",
         "listignores": "Usage: /listignores - Lists all current ignore patterns.",
@@ -120,7 +116,7 @@ class CommandHandler:
             "window": self._handle_window_command,
             "close": self._handle_close_command,
             "wc": self._handle_close_command,
-            "partchannel": self._handle_close_command, # Usually alias for part, but here it's close
+            "partchannel": self._handle_close_command,
             "cyclechannel": self.channel_commands.handle_cycle_channel_command,
             "cc": self.channel_commands.handle_cycle_channel_command,
             "prevchannel": self._handle_prev_channel_command,
@@ -135,7 +131,6 @@ class CommandHandler:
             "set": self._handle_set_command,
             "se": self._handle_set_command,
             "on": self.trigger_commands.handle_on_command,
-            # Fun commands
             "slap": self.fun_commands.handle_slap_command,
             "8ball": self.fun_commands.handle_8ball_command,
             "dice": self.fun_commands.handle_dice_command,
@@ -144,23 +139,16 @@ class CommandHandler:
             "reverse": self.fun_commands.handle_reverse_command,
             "wave": self.fun_commands.handle_wave_command,
             "ascii": self.fun_commands.handle_ascii_command,
-            # Help command
             "help": self._handle_help_command,
             "h": self._handle_help_command,
-            # Ignore commands
             "ignore": self._handle_ignore_command,
             "unignore": self._handle_unignore_command,
             "listignores": self._handle_listignores_command,
         }
 
-        # Build a map from alias to primary command name for help lookups
         self.command_primary_map = {}
-        seen_handlers = {} # Maps handler function to its first encountered (primary) command name
+        seen_handlers = {}
         for cmd_name, handler_func in self.command_map.items():
-            # Corrected logic for primary_map for specific help:
-            # If a handler_func is already in seen_handlers, then cmd_name is an alias.
-            # Its primary command is seen_handlers[handler_func].
-            # If cmd_name is 'help' or 'h', skip adding to primary_map as it's self-referential for help.
             if cmd_name in ["help", "h"]:
                 continue
 
@@ -168,9 +156,7 @@ class CommandHandler:
                 primary_name = seen_handlers[handler_func]
                 self.command_primary_map[cmd_name] = primary_name
             else:
-                # This is the first time we see this handler, so cmd_name is considered primary for it.
                 seen_handlers[handler_func] = cmd_name
-                # Primary commands don't need an entry in command_primary_map that maps to themselves.
 
     def _handle_help_command(self, args_str: str):
         active_context_name = self.client.context_manager.active_context_name or "Status"
@@ -178,43 +164,38 @@ class CommandHandler:
         error_color = self.client.ui.colors.get("error", 0)
 
         if not args_str:
-            # General help - list all commands
             self.client.add_message("Available commands (use /help <command> for details):", system_color, context_name=active_context_name)
 
-            commands_to_list = sorted([cmd for cmd in self.command_map.keys() if cmd not in ["h"]]) # Exclude 'h' from general list
+            commands_to_list = sorted([cmd for cmd in self.command_map.keys() if cmd not in ["h"]])
 
-            # Group commands for display
             line_buffer = []
             current_line_len = 0
-            # Try to get msg_win_width, default to 70 if not available early
             max_line_width = getattr(self.client.ui, 'msg_win_width', 70) - 5
 
             for cmd_name in commands_to_list:
                 display_cmd = f"/{cmd_name}"
                 if not line_buffer or current_line_len + len(display_cmd) + 2 > max_line_width:
-                    if line_buffer: # Print previous line
+                    if line_buffer:
                         self.client.add_message(", ".join(line_buffer), system_color, context_name=active_context_name)
                     line_buffer = [display_cmd]
                     current_line_len = len(display_cmd)
                 else:
                     line_buffer.append(display_cmd)
-                    current_line_len += len(display_cmd) + 2 # for ", "
+                    current_line_len += len(display_cmd) + 2
 
-            if line_buffer: # Print the last accumulated line
+            if line_buffer:
                 self.client.add_message(", ".join(line_buffer), system_color, context_name=active_context_name)
 
             self.client.add_message("Common aliases: /j (join), /p (part), /m (msg), /q (quit), /w (whois), /r (raw), /s (connect/server), /d (disconnect), /c (clear), /wc (close), /k (kick), /pc (prevchannel), /u (userlistscroll), /se (set), /no (notice), /cc (cyclechannel), /h (help).", system_color, context_name=active_context_name)
             self.client.add_message("For event triggers, type /on for specific help.", system_color, context_name=active_context_name)
 
         else:
-            # Specific command help
             command_name_from_user = args_str.lower().lstrip('/')
 
-            # Resolve alias to primary command name using self.command_primary_map
             primary_command_name = self.command_primary_map.get(command_name_from_user, command_name_from_user)
 
             if primary_command_name == "on":
-                self.trigger_commands._show_usage() # Calls the specific usage display for /on
+                self.trigger_commands._show_usage()
                 return
 
             if primary_command_name in self.COMMAND_USAGE_STRINGS:
@@ -273,28 +254,22 @@ class CommandHandler:
     def process_user_command(self, line: str) -> bool:
         """Process a user command (starts with /) or a channel message"""
         if not line.startswith("/"):
-            # This is not a slash command, treat as a message to the active context
-            if self.client.context_manager.active_context_name:  # Ensure there's an active context
-                self.client.handle_text_input(line)  # New method in IRCClient_Logic
-                return True  # Indicate it was handled
+            if self.client.context_manager.active_context_name:
+                self.client.handle_text_input(line)
+                return True
             else:
-                # No active context to send a message to
                 self.client.add_message(
                     "No active window to send message to.",
                     self.client.ui.colors["error"],
                     context_name="Status"
                 )
-                return False # Not handled
+                return False
 
-        # Existing command processing logic
-        command_parts = line[1:].split(" ", 1) # Use command_parts to avoid conflict
+        command_parts = line[1:].split(" ", 1)
         cmd = command_parts[0].lower()
         args = command_parts[1] if len(command_parts) > 1 else ""
 
         if cmd in self.command_map:
-            # For '/on' command without args, it shows usage.
-            # For '/help' command without args, it also shows usage.
-            # This logic is now handled within the respective handlers.
             self.command_map[cmd](args)
             return True
         else:
@@ -303,7 +278,7 @@ class CommandHandler:
                 self.client.ui.colors["error"],
                 context_name=self.client.context_manager.active_context_name or "Status",
             )
-            return True # It was a command, albeit unknown, so True
+            return True
 
     def _handle_msg_command(self, args_str: str):
         """Handle the /msg command"""
@@ -348,7 +323,7 @@ class CommandHandler:
         if not self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["me"]):
             return
         action_text = args_str
-        current_context_obj = self.client.context_manager.get_active_context() # Use get_active_context
+        current_context_obj = self.client.context_manager.get_active_context()
         if not current_context_obj:
             self.client.add_message("Cannot /me: No active context.", self.client.ui.colors["error"], context_name="Status")
             return
@@ -369,7 +344,6 @@ class CommandHandler:
 
     def _handle_away_command(self, args_str: str):
         """Handle the /away command"""
-        # No specific args check, empty args_str is valid for /away
         if not args_str:
             self.client.network.send_raw("AWAY")
         else:
@@ -444,7 +418,6 @@ class CommandHandler:
 
     def _handle_userlist_scroll_command(self, args_str: str):
         """Handle the /userlistscroll or /u command"""
-        # This command can be called by Ctrl+U (no args_str) or /u <offset>
         active_ctx = self.client.context_manager.get_active_context()
         if not active_ctx or active_ctx.type != "channel":
             self.client.add_message(
@@ -454,27 +427,19 @@ class CommandHandler:
             )
             return
 
-        if not args_str: # From Ctrl+U or /u without args
-             # Default behavior for no args: scroll down by one page (handled by ui_manager.scroll_user_list)
-             # For consistency, let's assume this means "page down"
+        if not args_str:
              self.client.ui.scroll_user_list("pagedown")
         else:
             try:
-                # Try to interpret as specific direction or offset
                 arg_lower = args_str.lower()
                 if arg_lower in ["up", "down", "pageup", "pagedown", "top", "bottom"]:
                     self.client.ui.scroll_user_list(arg_lower)
-                else: # Assume it's an offset number
+                else:
                     offset = int(args_str)
-                    # For direct offset, we can set it, but ui.scroll_user_list doesn't directly support setting absolute offset.
-                    # We'd need to adjust active_ctx.user_list_scroll_offset and then clamp it.
-                    # For now, let's support relative scroll by N lines for /u N
                     if offset > 0:
                         self.client.ui.scroll_user_list("down", lines_arg=offset)
                     elif offset < 0:
                         self.client.ui.scroll_user_list("up", lines_arg=abs(offset))
-                    # If offset is 0, do nothing or treat as error.
-                    # Let's simplify: /u <number> scrolls down by <number> lines. /u -<number> scrolls up.
             except ValueError:
                 self.client.add_message(
                     f"Invalid argument for userlistscroll: '{args_str}'. Use up, down, pageup, pagedown, top, bottom, or a number.",
@@ -512,7 +477,6 @@ class CommandHandler:
         stripped_args = args_str.strip()
 
         if not stripped_args:
-            # Case 1: /set (list all settings)
             all_settings = get_all_settings()
             if not all_settings:
                 self.client.add_message("No settings found.", system_color, context_name=active_context_name)
@@ -529,7 +493,6 @@ class CommandHandler:
         variable_arg = parts[0]
 
         if len(parts) == 1:
-            # Case 2: /set <variable> (view a setting)
             section_name_filter: Optional[str] = None
             key_name_filter: str = variable_arg
 
@@ -546,7 +509,6 @@ class CommandHandler:
             all_current_settings = get_all_settings()
 
             if section_name_filter:
-                # Specific section.key provided
                 if section_name_filter in all_current_settings and key_name_filter in all_current_settings[section_name_filter]:
                     value = all_current_settings[section_name_filter][key_name_filter]
                     found_settings_messages.append(f"{section_name_filter}.{key_name_filter} = {value}")
@@ -554,7 +516,6 @@ class CommandHandler:
                     self.client.add_message(f"Setting '{variable_arg}' not found.", error_color, context_name=active_context_name)
                     return
             else:
-                # Key only, search all sections
                 for sec, settings_in_sec in all_current_settings.items():
                     if key_name_filter in settings_in_sec:
                         found_settings_messages.append(f"{sec}.{key_name_filter} = {settings_in_sec[key_name_filter]}")
@@ -567,12 +528,10 @@ class CommandHandler:
             return
 
         elif len(parts) == 2:
-            # Case 3: /set <variable> <value> (set a setting)
             value_arg = parts[1]
 
             if "." not in variable_arg:
                 self.client.add_message("For setting a value, 'section.key' format is required.", error_color, context_name=active_context_name)
-                # Also print full usage for /set
                 usage_lines_set = self.COMMAND_USAGE_STRINGS["set"].splitlines()
                 for line_usage in usage_lines_set:
                     self.client.add_message(line_usage, error_color, context_name=active_context_name)
@@ -593,7 +552,6 @@ class CommandHandler:
                 self.client.add_message(f"Failed to set {section_to_set}.{key_to_set}.", error_color, context_name=active_context_name)
             return
 
-        # Fallback for incorrect number of arguments if not 0, 1, or 2
         usage_lines = self.COMMAND_USAGE_STRINGS["set"].splitlines()
         for line in usage_lines:
             self.client.add_message(line, error_color, context_name=active_context_name)
@@ -605,10 +563,7 @@ class CommandHandler:
             return
 
         pattern_to_ignore = parts[0]
-        # Normalize: ensure it has wildcards if it's just a nick, to make it a hostmask pattern
-        # e.g., "someuser" becomes "someuser!*@*"
         if '!' not in pattern_to_ignore and '@' not in pattern_to_ignore:
-            # Check if it's a simple nick without wildcards
             if '*' not in pattern_to_ignore and '?' not in pattern_to_ignore:
                 pattern_to_ignore = f"{pattern_to_ignore}!*@*"
                 self.client.add_message(
@@ -637,9 +592,8 @@ class CommandHandler:
             return
 
         pattern_to_unignore = parts[0]
-        # If user types just a nick, try to unignore the common hostmask pattern for it
         original_pattern_arg = pattern_to_unignore
-        attempted_patterns = [pattern_to_unignore.lower()] # Try the exact input first (lowercased)
+        attempted_patterns = [pattern_to_unignore.lower()]
 
         if '!' not in pattern_to_unignore and '@' not in pattern_to_unignore:
              if '*' not in pattern_to_unignore and '?' not in pattern_to_unignore:
@@ -654,7 +608,7 @@ class CommandHandler:
                     context_name=active_context_name
                 )
                 removed = True
-                break # Stop after first successful removal
+                break
 
         if not removed:
             self.client.add_message(

@@ -1,4 +1,3 @@
-# trigger_manager.py
 import re
 import json
 import logging
@@ -112,7 +111,6 @@ class TriggerManager:
             if not trigger.is_enabled or trigger.event_type != trigger_type:
                 continue
 
-            # Determine which field to match against based on event type
             field_to_match = self._get_field_to_match(trigger_type)
             if not field_to_match or field_to_match not in data:
                 continue
@@ -145,7 +143,6 @@ class TriggerManager:
 
     def _substitute_variables(self, action: str, data: Dict[str, Any]) -> str:
         """Replace mIRC-style variables in the action string with their values."""
-        # Basic variable mapping
         variable_map = {
             "$nick": data.get("nick", ""),
             "$channel": data.get("channel", ""),
@@ -160,7 +157,6 @@ class TriggerManager:
             "$timestamp": data.get("timestamp", ""),
         }
 
-        # Handle parameterized variables
         message_words = data.get("message_words", [])
         for i, word in enumerate(message_words, 1):
             variable_map[f"$${i}"] = word
@@ -169,7 +165,6 @@ class TriggerManager:
             elif i == 2:
                 variable_map["$2-"] = " ".join(message_words[2:])
 
-        # Replace all variables in the action string
         result = action
         for var, value in variable_map.items():
             result = result.replace(var, str(value))

@@ -1,4 +1,3 @@
-# irc_message.py
 import re
 from typing import Optional
 from config import IRC_MSG_REGEX_PATTERN

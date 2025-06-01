@@ -1,4 +1,3 @@
-# context_manager.py
 import logging
 from collections import deque
 from enum import Enum, auto
@@ -9,7 +8,7 @@ from typing import (
     Tuple,
     Dict,
     List,
-)  # Set removed, Dict was already present
+)
 
 from config import MAX_HISTORY
 
@@ -18,12 +17,12 @@ logger = logging.getLogger("pyrc.context")
 
 class ChannelJoinStatus(Enum):
     NOT_JOINED = auto()
-    PENDING_INITIAL_JOIN = auto()  # For initial channels list before connect/join command
-    JOIN_COMMAND_SENT = auto()    # /join issued, or initial join command sent
-    SELF_JOIN_RECEIVED = auto()   # Own JOIN echoed by server
-    FULLY_JOINED = auto()         # RPL_ENDOFNAMES received, channel is ready
-    PARTING = auto()              # /part issued, awaiting confirmation
-    JOIN_FAILED = auto()          # Explicit failure (e.g. banned, invite-only)
+    PENDING_INITIAL_JOIN = auto()
+    JOIN_COMMAND_SENT = auto()
+    SELF_JOIN_RECEIVED = auto()
+    FULLY_JOINED = auto()
+    PARTING = auto()
+    JOIN_FAILED = auto()
 
 
 class Context:
@@ -42,17 +41,17 @@ class Context:
         self.messages: Deque[Tuple[str, Any]] = deque(maxlen=max_history)
         self.users: Dict[str, str] = (
             {}
-        )  # {'nickname': '<prefix_char>'} e.g. {'ChanOp': '@', 'User': ''}
+        )
         self.topic: Optional[str] = topic
         self.unread_count: int = 0
         self.scrollback_offset: int = 0
         self.user_list_scroll_offset: int = 0
 
-        self.join_status: Optional[ChannelJoinStatus] # Declare with the broader type
+        self.join_status: Optional[ChannelJoinStatus]
         if context_type == "channel":
             self.join_status = initial_join_status if initial_join_status is not None else ChannelJoinStatus.NOT_JOINED
         else:
-            self.join_status = None # Not applicable for non-channel contexts
+            self.join_status = None
 
     def add_message(self, text: str, color_attr: Any):
         self.messages.append((text, color_attr))
@@ -73,8 +72,7 @@ class Context:
             return False
 
         if self.join_status == new_status:
-            # logger.debug(f"Join status for '{self.name}' is already {new_status.name}. No change.") # Optional: log no-ops
-            return True # Considered successful as state is already as desired
+            return True
 
         old_status_name = self.join_status.name if self.join_status else "None"
         self.join_status = new_status
@@ -87,18 +85,18 @@ class ContextManager:
 
     def __init__(self, max_history_per_context: int = MAX_HISTORY):
         self.contexts: Dict[str, Context] = {}
-        self.active_context_name: Optional[str] = None  # Will store normalized names
+        self.active_context_name: Optional[str] = None
         self.max_history = max_history_per_context
         logger.info(
             f"ContextManager initialized with max_history={max_history_per_context}"
         )
 
     def _normalize_context_name(self, name: str) -> str:
-        if not name:  # Handle empty or None names gracefully
-            return ""  # Or raise an error, depending on desired behavior
+        if not name:
+            return ""
         if name.startswith(("#", "&", "!", "+")):
             return name.lower()
-        return name  # For "Status", server names, query nicks, preserve case.
+        return name
 
     def create_context(
         self,
@@ -107,10 +105,10 @@ class ContextManager:
         topic: Optional[str] = None,
         initial_join_status_for_channel: Optional[ChannelJoinStatus] = None,
     ) -> bool:
-        original_passed_name = context_name  # For logging/debugging
+        original_passed_name = context_name
         normalized_name = self._normalize_context_name(context_name)
 
-        if not normalized_name:  # Avoid creating context with empty normalized name
+        if not normalized_name:
             logger.warning(
                 f"Attempted to create context with an empty or invalid original name: '{original_passed_name}'"
             )
@@ -118,13 +116,12 @@ class ContextManager:
 
         if normalized_name not in self.contexts:
             self.contexts[normalized_name] = Context(
-                name=normalized_name,  # Store normalized name in Context object
+                name=normalized_name,
                 context_type=context_type,
                 topic=topic,
                 max_history=self.max_history,
                 initial_join_status=initial_join_status_for_channel if context_type == "channel" else None,
             )
-            # Refactor logging line to potentially help Pylance with type inference
             created_context = self.contexts[normalized_name]
             join_status_name = created_context.join_status.name if created_context.join_status else 'N/A'
             logger.debug(
@@ -158,15 +155,15 @@ class ContextManager:
         return self.contexts.get(normalized_name)
 
     def get_active_context(self) -> Optional[Context]:
-        if self.active_context_name:  # active_context_name is already normalized
-            return self.contexts.get(self.active_context_name)  # Use .get for safety
+        if self.active_context_name:
+            return self.contexts.get(self.active_context_name)
         return None
 
     def set_active_context(self, context_name: str) -> bool:
         original_passed_name = context_name
         normalized_name = self._normalize_context_name(context_name)
         if normalized_name in self.contexts:
-            self.active_context_name = normalized_name  # Store normalized name
+            self.active_context_name = normalized_name
             context = self.contexts[normalized_name]
             context.unread_count = 0
             logger.debug(
@@ -190,7 +187,7 @@ class ContextManager:
     ):
         original_passed_name = context_name
         normalized_name = self._normalize_context_name(context_name)
-        context = self.contexts.get(normalized_name)  # Use .get for safety
+        context = self.contexts.get(normalized_name)
 
         if not context:
             logger.error(
@@ -200,7 +197,6 @@ class ContextManager:
 
         context.add_message(text_line, color_attr)
 
-        # active_context_name is already stored normalized
         if self.active_context_name != normalized_name:
             context.unread_count += num_lines_added
 
@@ -212,7 +208,7 @@ class ContextManager:
             context.topic = topic
             logger.debug(
                 f"Updated topic for context: '{context.name}' (original passed: '{original_passed_name}')"
-            )  # context.name is normalized
+            )
             return True
         logger.warning(
             f"Failed to update topic for non-existent context: '{normalized_name}' (original: '{original_passed_name}')"
@@ -227,7 +223,7 @@ class ContextManager:
         if context:
             if context.type in ["channel", "query"]:
                 context.users[user] = (
-                    prefix  # Usernames themselves are case-sensitive/preserving
+                    prefix
                 )
                 logger.debug(
                     f"Added/updated user '{user}' with prefix '{prefix}' in context '{context.name}' (original passed: '{original_passed_name}')"
@@ -258,7 +254,7 @@ class ContextManager:
             logger.warning(
                 f"Failed to remove user from non-existent context: '{normalized_name}' (original: '{original_passed_name}')"
             )
-        elif context:  # Context exists but user not in it
+        elif context:
             logger.debug(
                 f"User '{user}' not found in context '{context.name}', cannot remove (original passed: '{original_passed_name}')."
             )
@@ -289,7 +285,7 @@ class ContextManager:
         """
         context = self.get_context(context_name)
         if context:
-            if context.type in ["channel", "query"]:  # Only for relevant context types
+            if context.type in ["channel", "query"]:
                 context.users[user] = new_prefix
                 logger.debug(
                     f"Updated prefix for user '{user}' to '{new_prefix}' in context '{context_name}'"
