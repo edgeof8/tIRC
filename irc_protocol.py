@@ -11,6 +11,105 @@ from irc_numeric_handlers import _handle_numeric_command
 logger = logging.getLogger("pyrc.protocol")
 
 
+class IRCProtocolHandler:
+    def _handle_privmsg(self, client, parsed_msg: IRCMessage, raw_line: str):
+        nick = parsed_msg.source_nick
+        # parsed_msg.prefix should be the full nick!user@host
+        source_full_ident = parsed_msg.prefix
+
+        if not nick or not source_full_ident: # Should not happen for valid PRIVMSG
+            logger.warning(f"PRIVMSG without valid source: {raw_line.strip()}")
+            return
+
+        target = parsed_msg.params[0] if parsed_msg.params else None
+        message_body = parsed_msg.trailing if parsed_msg.trailing else ""
+
+        if not target:
+            logger.warning(f"PRIVMSG without target: {raw_line.strip()}")
+            return
+
+        # Determine context and color
+        is_channel_msg = target.startswith(("#", "&", "!", "+"))
+        is_private_msg_to_me = not is_channel_msg and target.lower() == client.nick.lower()
+
+        target_context_name = target
+        display_nick = f"<{nick}>"
+        color = client.ui.colors["other_message"]
+
+        if is_private_msg_to_me:
+            target_context_name = nick # Context for PM is the sender's nick
+            client.context_manager.create_context(target_context_name, context_type="query")
+            display_nick = f"*{nick}*" # Indicate PM
+            color = client.ui.colors["pm"]
+        elif nick.lower() == client.nick.lower() and is_channel_msg: # My message to a channel
+            color = client.ui.colors["my_message"]
+            # display_nick = f"<{client.nick}>" # Already handled by nick variable
+
+        # Highlight check
+        if client.nick and client.nick.lower() in message_body.lower() and not (nick.lower() == client.nick.lower()):
+            color = client.ui.colors["highlight"]
+            # Potentially add a notification sound/visual cue here in the future
+
+        formatted_msg = f"{display_nick} {message_body}"
+
+        client.add_message(
+            formatted_msg,
+            color,
+            context_name=target_context_name,
+            source_full_ident=source_full_ident, # Pass the full ident
+            is_privmsg_or_notice=True           # Mark as a user message
+        )
+        # ... (trigger processing for TEXT event)
+        client.process_trigger_event("TEXT", {
+            "nick": nick, "userhost": source_full_ident, "target": target, "channel": target if is_channel_msg else "",
+            "message": message_body, "message_words": message_body.split(), "client_nick": client.nick,
+            "raw_line": raw_line, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        })
+
+    def _handle_notice(self, client, parsed_msg: IRCMessage, raw_line: str):
+        nick = parsed_msg.source_nick # Could be server name or user nick
+        source_full_ident = parsed_msg.prefix # nick!user@host or servername
+
+        target = parsed_msg.params[0] if parsed_msg.params else None
+        message_body = parsed_msg.trailing if parsed_msg.trailing else ""
+
+        if not target:
+            logger.warning(f"NOTICE without target: {raw_line.strip()}")
+            return
+
+        is_channel_notice = target.startswith(("#", "&", "!", "+"))
+        display_source = nick if nick else (source_full_ident if source_full_ident and '!' not in source_full_ident else "Server")
+
+        notice_prefix = f"-{display_source}-"
+        target_context_name = "Status" # Default for notices unless they are to a channel/me
+
+        if is_channel_notice:
+            target_context_name = target
+        elif target.lower() == (client.nick.lower() if client.nick else ""): # Notice to me
+            if nick and source_full_ident and '!' in source_full_ident: # If from a user
+                target_context_name = nick
+                client.context_manager.create_context(target_context_name, context_type="query")
+            else: # Notice from server to me, keep in Status
+                target_context_name = "Status"
+
+        formatted_msg = f"{notice_prefix} {message_body}"
+
+        client.add_message(
+            formatted_msg,
+            client.ui.colors["system"], # Or a dedicated notice color
+            context_name=target_context_name,
+            source_full_ident=source_full_ident,
+            is_privmsg_or_notice=True # Mark as a message type that can be ignored
+        )
+        client.process_trigger_event("NOTICE", {
+            "nick": nick if nick else "", "userhost": source_full_ident if source_full_ident else "", "target": target,
+            "channel": target if is_channel_notice else "", "message": message_body, "message_words": message_body.split(),
+            "client_nick": client.nick, "raw_line": raw_line, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        })
+
+protocol_handler_instance = IRCProtocolHandler()
+
+
 def _handle_cap_message(client, parsed_msg: IRCMessage, raw_line: str):
     """Handles CAP messages."""
     params = parsed_msg.params
@@ -68,73 +167,7 @@ def _handle_cap_message(client, parsed_msg: IRCMessage, raw_line: str):
             context_name="Status",
         )
 
-def _handle_privmsg(client, parsed_msg: IRCMessage, raw_line: str):
-    """Handles PRIVMSG messages."""
-    src_nick = parsed_msg.source_nick
-    params = parsed_msg.params
-    trailing = parsed_msg.trailing
-    client_nick_lower = client.nick.lower() if client.nick else ""
-    # src_nick_lower = src_nick.lower() if src_nick else "" # Not used directly, comparison is with client_nick_lower
-
-    target = params[0] if params else None
-    message = trailing
-
-    if not target or message is None: # Message can be an empty string, but not None
-        client.add_message(
-            f"[INVALID PRIVMSG] Raw: {raw_line.strip()}", # Use .strip() for cleaner log
-            client.ui.colors["error"],
-            context_name="Status",
-        )
-        logger.warning(f"Invalid PRIVMSG received: {raw_line.strip()}")
-        return
-
-    target_lower = target.lower()
-    msg_context_name = "Status" # Default context
-
-    # Determine context for the message
-    if target_lower == client_nick_lower: # Private message to us
-        # Use original casing of src_nick for query window name for display consistency
-        msg_context_name = f"Query:{src_nick}" if src_nick else "Query:Unknown"
-        if client.context_manager.create_context(msg_context_name, context_type="query"):
-            logger.debug(f"Created/ensured query context for PM from {src_nick}: {msg_context_name}")
-    elif target.startswith(("#", "&", "+", "!")): # Channel message (common prefixes)
-        msg_context_name = target # Use original casing for channel name context
-        if client.context_manager.create_context(msg_context_name, context_type="channel"):
-            logger.debug(f"Ensured channel context exists for PRIVMSG: {msg_context_name}")
-    else: # PRIVMSG to a non-channel, non-us target (e.g. some bots, services not via Query: prefix)
-        logger.info(f"Received PRIVMSG to non-channel/non-PM target '{target}': {raw_line.strip()}")
-        # Keep msg_context_name as "Status" for these, or handle as a special context type if needed.
-
-    # Format and add the message
-    color_key = "other_message"
-    display_message = ""
-
-    if message.startswith("\x01ACTION ") and message.endswith("\x01"): # CTCP ACTION (/me)
-        action_message = message[len("\x01ACTION ") : -1]
-        display_message = f"* {src_nick} {action_message}"
-        color_key = "action" # Assuming you have an "action" color, else "other_message" or "pm"
-        if msg_context_name.startswith("Query:"):
-            color_key = "pm" # Or a specific action_pm color
-    else: # Regular message
-        display_message = f"<{src_nick}> {message}"
-        if msg_context_name.startswith("Query:"):
-            color_key = "pm"
-        elif src_nick and src_nick.lower() == client_nick_lower : # Our own message echoed back (e.g. no echo-message CAP)
-             color_key = "my_message"
-
-
-    # Highlight if our nick is mentioned in a channel or query (unless it's our own message)
-    if client.nick and client.nick.lower() in message.lower() and \
-       not (src_nick and src_nick.lower() == client_nick_lower) and \
-       not (message.startswith("\x01ACTION ") and message.endswith("\x01")): # Don't highlight own /me actions
-        color_key = "highlight"
-        logger.debug(f"Highlighting message in {msg_context_name} for nick {client.nick}")
-
-    client.add_message(
-        display_message,
-        client.ui.colors.get(color_key, client.ui.colors["default"]), # Fallback to default color
-        context_name=msg_context_name,
-    )
+# Removed old _handle_privmsg function
 
 def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
     """Handles NICK messages."""
@@ -529,7 +562,7 @@ def handle_server_message(client, line: str): # raw_line is 'line' here
         else:
             logger.warning(f"SASL: Received AUTHENTICATE with unexpected payload: '{payload}'. Raw: {line.strip()}")
     elif cmd == "PRIVMSG":
-        _handle_privmsg(client, parsed_msg, line)
+        protocol_handler_instance._handle_privmsg(client, parsed_msg, line)
     elif cmd in ["JOIN", "PART", "QUIT", "KICK"]:
         _handle_membership_changes(client, parsed_msg, line)
     elif cmd == "NICK":
@@ -554,21 +587,7 @@ def handle_server_message(client, line: str): # raw_line is 'line' here
         else:
             logger.warning(f"Malformed TOPIC message (no channel): {line.strip()}") # Use 'line' here
     elif cmd == "NOTICE":
-        target = parsed_msg.params[0] if parsed_msg.params else "Unknown"
-        message = parsed_msg.trailing
-        src = parsed_msg.source_nick if parsed_msg.source_nick else (parsed_msg.prefix if parsed_msg.prefix else "Server")
-
-        notice_context = "Status"
-        if target.startswith(("#","&","+","!")):
-            if client.context_manager.get_context(target): notice_context = target
-        elif target.lower() == (client.nick.lower() if client.nick else ""):
-            if src != "Server" and not (client.server and src.startswith(client.server)):
-                 query_like_ctx = f"Query:{src}"
-                 if client.context_manager.get_context(query_like_ctx) or client.context_manager.create_context(query_like_ctx, "query"):
-                      notice_context = query_like_ctx
-
-        client.add_message(f"-[{src}]- [{target}] {message}", client.ui.colors["system"], context_name=notice_context)
-
+        protocol_handler_instance._handle_notice(client, parsed_msg, line)
     else:
         display_p_parts = list(parsed_msg.params)
         if parsed_msg.trailing is not None: display_p_parts.append(f":{parsed_msg.trailing}")

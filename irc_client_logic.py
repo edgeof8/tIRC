@@ -4,14 +4,24 @@ import threading
 import time
 import socket
 from collections import deque
-from typing import Optional, Any, List, Set, Dict
+from typing import Optional, Any, List, Set, Dict, Tuple # Added Tuple
 import base64
 import logging
+import logging.handlers # Added for RotatingFileHandler
 import os
 
 from config import (
     MAX_HISTORY,
     VERIFY_SSL_CERT,
+    LEAVE_MESSAGE,  # Added LEAVE_MESSAGE
+    # Logging config for channel logs
+    CHANNEL_LOG_ENABLED,
+    # CHANNEL_LOG_DIR, # Removed as per user feedback
+    LOG_LEVEL, # Main log level, can be used for channel logs too
+    LOG_MAX_BYTES,
+    LOG_BACKUP_COUNT,
+    BASE_DIR, # To construct full log paths
+    is_source_ignored, # Import the new function
 )
 from context_manager import ContextManager, ChannelJoinStatus # Added ChannelJoinStatus
 
@@ -22,6 +32,7 @@ from input_handler import InputHandler
 from features.triggers.trigger_manager import TriggerManager
 from features.triggers.trigger_commands import TriggerCommands
 import irc_protocol
+from irc_message import IRCMessage # Added for parsing
 
 logger = logging.getLogger("pyrc.logic")
 
@@ -107,6 +118,28 @@ class IRCClient_Logic:
         # TriggerCommands is part of CommandHandler, no need to init separately here if CommandHandler does it.
         # self.trigger_commands = TriggerCommands(self) # Already done in CommandHandler
 
+        # Channel Logging Setup
+        self.channel_log_enabled = CHANNEL_LOG_ENABLED
+        self.main_log_dir_path = os.path.join(BASE_DIR, "logs") # Base "logs" directory
+        # self.channel_log_subdir_name removed - channel logs go directly into main_log_dir_path
+        self.channel_log_base_path = self.main_log_dir_path # Channel logs go directly here
+        self.channel_log_level = LOG_LEVEL # Use the same log level as main for now
+        self.channel_log_max_bytes = LOG_MAX_BYTES
+        self.channel_log_backup_count = LOG_BACKUP_COUNT
+        self.channel_loggers: Dict[str, logging.Logger] = {}
+        self.log_formatter = logging.Formatter(
+             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        ) # Re-use or define a standard formatter
+
+        # Ensure the main log directory exists (pyrc.py should also do this, this is a fallback)
+        if self.channel_log_enabled and not os.path.exists(self.main_log_dir_path):
+            try:
+                os.makedirs(self.main_log_dir_path)
+                logger.info(f"Created main log directory in logic: {self.main_log_dir_path}")
+            except OSError as e:
+                logger.error(f"Error creating main log directory in logic {self.main_log_dir_path}: {e}")
+                self.channel_log_enabled = False # Disable channel logging if dir creation fails
+
         self.add_message(
             "Simple IRC Client starting...",
             self.ui.colors["system"],
@@ -133,10 +166,17 @@ class IRCClient_Logic:
     def add_message(
         self,
         text: str,
-        color_attr: int,
+        color_attr: int, # curses color attribute
         prefix_time: bool = True,
         context_name: Optional[str] = None,
+        source_full_ident: Optional[str] = None, # New parameter
+        is_privmsg_or_notice: bool = False # New parameter to specify if it's a user message
     ):
+        """
+        Adds a message to the specified or active context.
+        If source_full_ident is provided and is_privmsg_or_notice is True,
+        it checks against the ignore list.
+        """
         target_context_name = (
             context_name
             if context_name is not None
@@ -145,6 +185,12 @@ class IRCClient_Logic:
         if not target_context_name:
             logger.error("add_message called with no target_context_name and no active context.")
             target_context_name = "Status" # Fallback
+
+        # --- IGNORE CHECK ---
+        if is_privmsg_or_notice and source_full_ident and is_source_ignored(source_full_ident):
+            logger.debug(f"Ignoring message from {source_full_ident} due to ignore list match.")
+            return # Do not add the message
+        # --- END IGNORE CHECK ---
 
         # Ensure context exists or create it
         target_ctx_exists = self.context_manager.get_context(target_context_name)
@@ -221,6 +267,15 @@ class IRCClient_Logic:
                 target_context_name, line_part, color_attr, 1 # Pass 1 line at a time for unread count
             )
 
+        # Log to channel-specific file if it's a channel message
+        if target_context_obj and target_context_obj.type == "channel":
+            channel_logger = self.get_channel_logger(target_context_name)
+            if channel_logger:
+                # Log the original, non-timestamped, non-wrapped text to the file.
+                # The logger's formatter will add its own timestamp.
+                channel_logger.info(text)
+
+
         if target_context_name == self.context_manager.active_context_name:
             if (
                 hasattr(target_context_obj, "scrollback_offset")
@@ -231,8 +286,78 @@ class IRCClient_Logic:
 
         self.ui_needs_update.set()
 
+    def get_channel_logger(self, channel_name: str) -> Optional[logging.Logger]:
+        if not self.channel_log_enabled:
+            return None
+
+        # Normalize channel name for filename and logger name
+        # Remove leading '#' and convert to lowercase for consistency.
+        # Ensure it's a valid filename (basic sanitization).
+        sanitized_name_part = channel_name.lstrip('#&+!').lower()
+        # Replace characters that might be problematic in filenames.
+        # This is a basic example; more robust sanitization might be needed.
+        safe_filename_part = "".join(c if c.isalnum() else "_" for c in sanitized_name_part)
+
+        logger_key = safe_filename_part # Key for self.channel_loggers dictionary
+
+        if logger_key in self.channel_loggers:
+            return self.channel_loggers[logger_key]
+
+        try:
+            # Construct full path for the channel's log file
+            log_file_name = f"{safe_filename_part}.log"
+            # Channel logs go directly into the main_log_dir_path (e.g. "logs/")
+            channel_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
+
+            # Create logger instance
+            # Use a distinct name for each channel logger to avoid conflicts.
+            channel_logger_instance = logging.getLogger(f"pyrc.channel.{safe_filename_part}")
+            channel_logger_instance.setLevel(self.channel_log_level) # Use configured log level
+
+            # Create RotatingFileHandler for this channel
+            # Ensure the directory self.main_log_dir_path exists
+            if not os.path.exists(self.main_log_dir_path):
+                 # This should have been created by pyrc.py or __init__, but double check
+                logger.warning(f"Main log directory {self.main_log_dir_path} not found when creating logger for {channel_name}. Attempting to create.")
+                try:
+                    os.makedirs(self.main_log_dir_path)
+                except OSError as e:
+                    logger.error(f"Failed to create main log directory {self.main_log_dir_path} for {channel_name}: {e}. Disabling logger for this channel.")
+                    return None
+
+            file_handler = logging.handlers.RotatingFileHandler(
+                channel_log_file_path,
+                maxBytes=self.channel_log_max_bytes,
+                backupCount=self.channel_log_backup_count,
+                encoding="utf-8",
+            )
+            file_handler.setFormatter(self.log_formatter) # Use the shared formatter
+
+            channel_logger_instance.addHandler(file_handler)
+            channel_logger_instance.propagate = False  # IMPORTANT: Prevent duplication to root logger / main file
+
+            self.channel_loggers[logger_key] = channel_logger_instance
+            logger.info(f"Initialized logger for channel {channel_name} at {channel_log_file_path}")
+            return channel_logger_instance
+        except Exception as e:
+            logger.error(f"Failed to create logger for channel {channel_name}: {e}", exc_info=True)
+            return None
 
     def handle_server_message(self, line: str):
+        # Potentially log raw line to channel log if it's a channel message
+        parsed_msg = IRCMessage.parse(line) # Corrected parser usage
+        if parsed_msg and parsed_msg.command in ["PRIVMSG", "NOTICE"] and \
+           parsed_msg.params and parsed_msg.params[0].startswith(("#", "&", "+", "!")):
+            target_channel = parsed_msg.params[0]
+            channel_logger = self.get_channel_logger(target_channel)
+            if channel_logger:
+                # Log a slightly modified line to indicate it's raw, or just the content
+                log_line_content = f"RAW << {line}"
+                if parsed_msg.trailing:
+                    # For PRIVMSG/NOTICE, the interesting part is often prefix, command, target, trailing
+                    log_line_content = f"{parsed_msg.prefix if parsed_msg.prefix else ''} {parsed_msg.command} {target_channel} :{parsed_msg.trailing}"
+                channel_logger.debug(log_line_content) # Log raw at DEBUG level
+
         irc_protocol.handle_server_message(self, line)
 
     def switch_active_context(self, direction: str):
@@ -714,7 +839,7 @@ class IRCClient_Logic:
                 logger.info("KeyboardInterrupt received. Initiating quit.")
                 self.add_message("Ctrl+C pressed. Quitting...", self.ui.colors["system"], context_name="Status")
                 self.should_quit = True
-                if self.network.connected: self.network.send_raw("QUIT :Ctrl+C pressed")
+                # Removed direct QUIT send, network.stop will handle it with the configured message
                 break
             except Exception as e:
                 logger.critical(f"Unhandled exception in main client loop: {e}", exc_info=True)
@@ -726,7 +851,7 @@ class IRCClient_Logic:
         self.should_quit = True # Ensure flag is set
         # network.stop might try to send QUIT again, which is fine.
         # The network thread itself will exit due to self.client.should_quit or _should_thread_stop.
-        self.network.stop(send_quit=self.network.connected) # Pass current connected state
+        self.network.stop(send_quit=self.network.connected, quit_message=LEAVE_MESSAGE) # Pass current connected state and LEAVE_MESSAGE
         if self.network.network_thread and self.network.network_thread.is_alive():
             logger.debug("Waiting for network thread to join...")
             self.network.network_thread.join(timeout=2.0)

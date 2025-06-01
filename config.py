@@ -2,7 +2,8 @@
 import configparser
 import os
 import logging  # Added for logging
-from typing import Type, Any, List, Union
+import fnmatch # For ignore pattern matching
+from typing import Type, Any, List, Union, Set # Added Set
 
 # --- Default Fallback Settings (if not in INI or INI is missing) ---
 DEFAULT_SERVER = "irc.libera.chat"
@@ -16,17 +17,26 @@ DEFAULT_NICKSERV_PASSWORD = None
 DEFAULT_AUTO_RECONNECT = True
 DEFAULT_VERIFY_SSL_CERT = True # Added for SSL certificate verification
 
+# --- New Ignore List Settings ---
+DEFAULT_IGNORED_PATTERNS = [] # Default to empty list
+
 # --- Default Logging Settings ---
 DEFAULT_LOG_ENABLED = True
 DEFAULT_LOG_FILE = "pyrc.log"
 DEFAULT_LOG_LEVEL = "INFO"  # e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL
 DEFAULT_LOG_MAX_BYTES = 1024 * 1024 * 5  # 5 MB
 DEFAULT_LOG_BACKUP_COUNT = 3
+DEFAULT_CHANNEL_LOG_ENABLED = True
+# DEFAULT_CHANNEL_LOG_DIR removed as per user feedback
 
 MAX_HISTORY = 500  # Will be overridden by INI if present
 RECONNECT_INITIAL_DELAY = 5  # seconds
 RECONNECT_MAX_DELAY = 300  # seconds
 CONNECTION_TIMEOUT = 30  # seconds
+DEFAULT_LEAVE_MESSAGE = "PyRC - https://github.com/edgeof8/PyRC"
+
+# Global variable to hold current ignore patterns
+IGNORED_PATTERNS: Set[str] = set() # Use a set for efficient add/remove and uniqueness
 
 # --- Load Configuration from INI file ---
 CONFIG_FILE_NAME = "pyterm_irc_config.ini"
@@ -118,6 +128,76 @@ def get_all_settings() -> dict:
     return all_settings
 
 
+# --- Functions to manage the ignore list in the config file ---
+def load_ignore_list():
+    """Loads ignore patterns from the config file into the global IGNORED_PATTERNS set."""
+    global IGNORED_PATTERNS, config
+    IGNORED_PATTERNS.clear()
+    if config.has_section("IgnoreList"):
+        for key, pattern in config.items("IgnoreList"):
+            # Values are stored as 'pattern = true' or similar, we only need the key (pattern)
+            IGNORED_PATTERNS.add(pattern.strip()) # Add the key itself as the pattern
+    logging.info(f"Loaded {len(IGNORED_PATTERNS)} ignore patterns: {IGNORED_PATTERNS}")
+
+def save_ignore_list():
+    """Saves the global IGNORED_PATTERNS set to the config file."""
+    global IGNORED_PATTERNS, config, CONFIG_FILE_PATH
+    try:
+        if config.has_section("IgnoreList"):
+            config.remove_section("IgnoreList") # Clear existing section
+        if IGNORED_PATTERNS: # Only add section if there are patterns
+            config.add_section("IgnoreList")
+            for i, pattern in enumerate(sorted(list(IGNORED_PATTERNS))): # Store sorted for consistency
+                # Store as "pattern<num> = <pattern_value>" to make it valid INI
+                # Simpler: store "pattern = true" (or some dummy value, key is what matters)
+                config.set("IgnoreList", pattern, "ignored") # Storing the pattern as key
+
+        with open(CONFIG_FILE_PATH, "w") as configfile:
+            config.write(configfile)
+        logging.info(f"Saved {len(IGNORED_PATTERNS)} ignore patterns to config.")
+    except Exception as e:
+        logging.error(f"Error writing ignore list to config file '{CONFIG_FILE_PATH}': {e}")
+
+def add_ignore_pattern(pattern: str) -> bool:
+    """Adds a pattern to the ignore list and saves it."""
+    global IGNORED_PATTERNS
+    normalized_pattern = pattern.strip().lower() # Normalize to lowercase for case-insensitive matching
+    if not normalized_pattern:
+        return False
+    if normalized_pattern not in IGNORED_PATTERNS:
+        IGNORED_PATTERNS.add(normalized_pattern)
+        save_ignore_list()
+        return True
+    return False # Pattern already exists
+
+def remove_ignore_pattern(pattern: str) -> bool:
+    """Removes a pattern from the ignore list and saves it."""
+    global IGNORED_PATTERNS
+    normalized_pattern = pattern.strip().lower()
+    if normalized_pattern in IGNORED_PATTERNS:
+        IGNORED_PATTERNS.remove(normalized_pattern)
+        save_ignore_list()
+        return True
+    return False
+
+def is_source_ignored(source_full_ident: str) -> bool:
+    """
+    Checks if a source (nick!user@host) matches any of the stored ignore patterns.
+    Uses fnmatch for wildcard matching. Patterns are matched case-insensitively.
+    """
+    global IGNORED_PATTERNS
+    if not source_full_ident:
+        return False
+
+    source_lower = source_full_ident.lower() # Match against lowercase source
+
+    for pattern in IGNORED_PATTERNS:
+        # Patterns are already stored lowercase
+        if fnmatch.fnmatchcase(source_lower, pattern): # fnmatchcase is case-sensitive if pattern has mixed case
+                                                       # but we store patterns lowercase, so this works
+            return True
+    return False
+
 # --- Connection Settings (from INI or defaults) ---
 IRC_SERVER = get_config_value("Connection", "default_server", DEFAULT_SERVER, str)
 IRC_SSL = get_config_value("Connection", "default_ssl", DEFAULT_SSL, bool)
@@ -184,9 +264,18 @@ LOG_MAX_BYTES = get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYT
 LOG_BACKUP_COUNT = get_config_value(
     "Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int
 )
+CHANNEL_LOG_ENABLED = get_config_value(
+    "Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool
+)
+# CHANNEL_LOG_DIR removed
 
 # Convert log level string to logging module's level integer
 LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO)
+
+# --- General Settings ---
+LEAVE_MESSAGE = get_config_value(
+    "General", "leave_message", DEFAULT_LEAVE_MESSAGE, str
+)
 
 
 # --- IRC Protocol ---
@@ -202,3 +291,6 @@ LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO)
 # IRC_MSG_REGEX_PATTERN = r"^(?:[:@]([^ !\r\n]+) )?([^ \r\n]+)(?: ([^:\r\n]*))?(?: ?:([^\r\n]*))?$"
 # Corrected:
 IRC_MSG_REGEX_PATTERN = r"^(?:@(?:[^ ]+) )?(?:[:]([^ ]+) )?([A-Z0-9]+|\d{3})(?: ([^:\r\n]*))?(?: ?:([^\r\n]*))?$"
+
+# --- Load initial ignore list at startup ---
+load_ignore_list()

@@ -123,6 +123,9 @@ PyRC supports a variety of commands, most of which are standard IRC commands. Ty
 - `/set <key>`: Displays the value of a specific setting (e.g., `/set default_nick`).
 - `/set <section.key>`: Displays the value of a specific setting within a section (e.g., `/set Connection.default_nick`).
 - `/set <section.key> <value>`: Modifies a setting and saves it to `pyterm_irc_config.ini` (e.g., `/set Connection.default_nick MyNewNick`).
+- `/ignore <nick|hostmask>`: Ignores messages from the specified user or hostmask (e.g., `*!*@some.host`).
+- `/unignore <nick|hostmask>`: Removes an ignore pattern.
+- `/listignores`: Lists all current ignore patterns.
 - `/help [command]`: Displays general help or help for a specific command.
 - `PageUp`/`PageDown`: Scroll through the message buffer in the current window.
 - `Ctrl+N`/`Ctrl+P` (or `/nextwindow`, `/prevwindow`): Switch to the next/previous active context (channel/query/status window).
