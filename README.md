@@ -25,6 +25,10 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
     - `CapNegotiator` (`cap_negotiator.py`): Manages the CAP negotiation lifecycle.
     - `SaslAuthenticator` (`sasl_authenticator.py`): Handles SASL PLAIN authentication. It has been refactored to dynamically fetch the client's current nickname from `IRCClient_Logic` at the time of authentication, ensuring the most up-to-date nick is used even if changes occurred shortly before SASL credential transmission.
     - `RegistrationHandler` (`registration_handler.py`): Orchestrates NICK/USER registration, auto-channel joins, and NickServ identification.
+- **Advanced Trigger System:**
+  - Define custom actions based on IRC events (TEXT, ACTION, JOIN, etc.).
+  - Actions can be standard client commands or **arbitrary Python code snippets**.
+  - Utilize **regex capture groups** from trigger patterns as variables (`$0`, `$1`, etc.) in both command and Python actions.
 - **Multiple Server Connections:** (Planned)
 - **Color Themes:** (Basic support, planned for expansion)
 
@@ -134,6 +138,58 @@ PyRC supports a variety of commands, most of which are standard IRC commands. Ty
 - `PageUp`/`PageDown`: Scroll through the message buffer in the current window.
 - `Ctrl+N`/`Ctrl+P` (or `/nextwindow`, `/prevwindow`): Switch to the next/previous active context (channel/query/status window).
 - `Ctrl+U` (or `/u`, `/userlistscroll [offset]`): Scroll the user list in a channel window.
+
+### Triggers (`/on` command)
+
+PyRC features a powerful trigger system that allows you to automate responses and actions based on IRC events.
+
+- `/on add <event> <pattern> <TYPE> <action_content>`: Adds a new trigger.
+
+  - `<event>`: The IRC event to trigger on (e.g., `TEXT`, `ACTION`, `JOIN`, `PART`, `QUIT`, `KICK`, `MODE`, `TOPIC`, `NICK`, `NOTICE`, `INVITE`, `CTCP`, `RAW`).
+  - `<pattern>`: A regular expression to match against relevant data for the event (e.g., the message content for `TEXT` events).
+  - `<TYPE>`:
+    - `CMD`: The `action_content` is a client command (e.g., `/say Hello $nick`).
+    - `PY`: The `action_content` is a Python code snippet.
+  - `<action_content>`: The command to execute or the Python code to run.
+
+- `/on list [event]`: Lists currently defined triggers, optionally filtered by event type.
+- `/on remove <id>`: Removes a trigger by its ID.
+- `/on enable <id>`: Enables a disabled trigger.
+- `/on disable <id>`: Disables an active trigger.
+
+**Regex Capture Groups & Variables:**
+
+When a trigger's regex pattern matches, capture groups are made available as variables:
+
+- `$0`: The full text matched by the regex pattern.
+- `$1`, `$2`, ...: The text matched by the 1st, 2nd, ... capture group in the pattern.
+- Other standard variables like `$nick`, `$channel`, `$msg`, `$me` are also available.
+
+These variables can be used directly in `CMD` actions (e.g., `/msg $nick You said $1`) and are accessible within the `event_data` dictionary in `PY` actions (e.g., `event_data['$1']`).
+
+**Python (`PY`) Actions:**
+
+When using `PY` as the action type, the `<action_content>` is a Python code snippet that will be executed.
+
+- **Security Warning:** Executing arbitrary Python code can be dangerous. Only use Python code from trusted sources or code you have written and understand yourself. PyRC provides the code execution environment, but does not sandbox it heavily beyond the provided context.
+- **Execution Context:** The Python code is executed with the following available in its local scope:
+  - `client`: An instance of `IRCClient_Logic`, allowing interaction with the client (e.g., `client.add_message(...)`, `client.send_raw(...)`).
+  - `event_data`: A dictionary containing the standard variables and regex captures (e.g., `event_data['$nick']`, `event_data['$0']`, `event_data['$1']`).
+
+**Examples:**
+
+- Respond to "hello" with a greeting using a command:
+  ```
+  /on add TEXT "hello" CMD /say Hi there, $nick!
+  ```
+- Extract a number from a message and perform a calculation using Python:
+  ```
+  /on add TEXT "calc (\d+)\s*\+\s*(\d+)" PY client.add_message(f"Calculation: {event_data['$1']} + {event_data['$2']} = {int(event_data['$1']) + int(event_data['$2'])}", client.ui.colors['system'], context_name=event_data['$channel'])
+  ```
+- Announce when a specific user joins a channel:
+  ```
+  /on add JOIN "BadUser" PY client.send_raw(f"NOTICE {event_data['$channel']} :Watch out! {event_data['$nick']} just joined!")
+  ```
 
 ## Contributing
 

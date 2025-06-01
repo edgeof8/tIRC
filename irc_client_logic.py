@@ -25,7 +25,7 @@ from ui_manager import UIManager
 from network_handler import NetworkHandler
 from command_handler import CommandHandler
 from input_handler import InputHandler
-from features.triggers.trigger_manager import TriggerManager
+from features.triggers.trigger_manager import TriggerManager, ActionType
 from features.triggers.trigger_commands import TriggerCommands
 import irc_protocol
 from irc_message import IRCMessage
@@ -550,8 +550,59 @@ class IRCClient_Logic:
                     self.ui_needs_update.set()
 
 
+    def _execute_python_trigger(self, code: str, event_data: Dict[str, Any], trigger_info_for_error: str):
+        """
+        Executes a Python code snippet from a trigger.
+        WARNING: This uses exec() and can be dangerous if untrusted code is used.
+        """
+        current_context_name = self.context_manager.active_context_name or "Status"
+        try:
+            # Prepare a limited execution scope
+            # Provide 'client' for interacting with the IRC client and 'event_data' for trigger context
+            execution_globals = {} # Or provide some safe builtins if needed
+            execution_locals = {
+                "client": self,      # Gives access to self.add_message, self.send_raw etc.
+                "event_data": event_data # Contains $nick, $channel, $msg, $0, $1 etc.
+            }
+            exec(code, execution_globals, execution_locals)
+        except Exception as e:
+            error_message = f"Error executing Python trigger ({trigger_info_for_error}): {type(e).__name__}: {e}"
+            logger.error(error_message, exc_info=True)
+            self.add_message(
+                error_message,
+                self.ui.colors["error"],
+                context_name=current_context_name, # Or a specific error context
+            )
+            # Optionally, add more detailed error to a specific debug context or log if too verbose for main chat
+
     def process_trigger_event(self, event_type: str, event_data: dict) -> Optional[str]:
-        return self.trigger_manager.process_trigger(event_type, event_data)
+        """
+        Processes a trigger event.
+        If a COMMAND trigger matches, returns the command string.
+        If a PYTHON trigger matches, executes the Python code and returns None.
+        """
+        processed_action = self.trigger_manager.process_trigger(event_type, event_data)
+
+        if processed_action:
+            action_type = processed_action.get("type")
+
+            if action_type == ActionType.COMMAND:
+                return processed_action.get("content")
+            elif action_type == ActionType.PYTHON:
+                code_to_execute = processed_action.get("code")
+                data_for_code = processed_action.get("event_data", {}) # Default to empty dict
+
+                # Construct a string for error reporting, e.g., "event_type matching pattern"
+                # This is a bit simplistic, might need original trigger pattern/id if available in processed_action
+                trigger_info_str = f"Type: PY, Event: {event_type}"
+                if data_for_code.get('$0'): # If regex match was involved
+                    trigger_info_str += f", Match: \"{data_for_code['$0'][:50]}{'...' if len(data_for_code['$0']) > 50 else ''}\""
+
+                if code_to_execute:
+                    self._execute_python_trigger(code_to_execute, data_for_code, trigger_info_str)
+                return None # Python actions are self-contained
+
+        return None
 
     def handle_text_input(self, text: str):
         active_ctx_name = self.context_manager.active_context_name

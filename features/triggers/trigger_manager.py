@@ -4,9 +4,15 @@ import logging
 import os
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
-from enum import Enum, auto
+from enum import Enum, auto, unique
 
 logger = logging.getLogger("pyrc.triggers")
+
+
+@unique
+class ActionType(Enum):
+    COMMAND = auto()
+    PYTHON = auto()
 
 
 class TriggerType(Enum):
@@ -30,7 +36,8 @@ class Trigger:
     id: int
     event_type: TriggerType
     pattern: str
-    action: str
+    action_content: str  # Stores the command string or Python code
+    action_type: ActionType = ActionType.COMMAND  # Type of action
     is_enabled: bool = True
     compiled_pattern: Optional[re.Pattern] = None
 
@@ -50,16 +57,28 @@ class TriggerManager:
         self.triggers_file = os.path.join(config_dir, "triggers.json")
         self.load_triggers()
 
-    def add_trigger(self, event_type: str, pattern: str, action: str) -> Optional[int]:
+    def add_trigger(
+        self, event_type_str: str, pattern: str, action_type_str: str, action_content: str
+    ) -> Optional[int]:
         """Add a new trigger and return its ID if successful."""
         try:
-            trigger_type = TriggerType[event_type.upper()]
+            trigger_type = TriggerType[event_type_str.upper()]
         except KeyError:
-            logger.error(f"Invalid event type: {event_type}")
+            logger.error(f"Invalid event type: {event_type_str}")
+            return None
+
+        try:
+            action_type = ActionType[action_type_str.upper()]
+        except KeyError:
+            logger.error(f"Invalid action type: {action_type_str}")
             return None
 
         trigger = Trigger(
-            id=self.next_id, event_type=trigger_type, pattern=pattern, action=action
+            id=self.next_id,
+            event_type=trigger_type,
+            pattern=pattern,
+            action_type=action_type,
+            action_content=action_content,
         )
 
         if trigger.compiled_pattern is None:
@@ -98,12 +117,76 @@ class TriggerManager:
             except KeyError:
                 return []
 
-        return [asdict(t) for t in triggers]
+        # Convert ActionType enum to string for serialization
+        trigger_dicts = []
+        for t in triggers:
+            t_dict = asdict(t)
+            t_dict["action_type"] = t.action_type.name
+            trigger_dicts.append(t_dict)
+        return trigger_dicts
 
-    def process_trigger(self, event_type: str, data: Dict[str, Any]) -> Optional[str]:
-        """Process an event and return the action to execute if a trigger matches."""
+    def _prepare_event_data(
+        self, base_data: Dict[str, Any], match: Optional[re.Match]
+    ) -> Dict[str, Any]:
+        """Prepare the event data dictionary, including regex capture groups."""
+        event_data = {
+            "$nick": base_data.get("nick", ""),
+            "$channel": base_data.get("channel", ""),
+            "$target": base_data.get("target", ""),
+            "$me": base_data.get("client_nick", ""),
+            "$msg": base_data.get("message", ""),
+            "$message": base_data.get("message", ""), # Alias for $msg
+            "$reason": base_data.get("reason", ""),
+            "$mode": base_data.get("modes_str", ""),
+            "$topic": base_data.get("new_topic", ""),
+            "$raw": base_data.get("raw_line", ""),
+            "$timestamp": base_data.get("timestamp", ""),
+            # Add other standard variables from base_data as needed
+        }
+
+        message_words = base_data.get("message_words", [])
+        for i, word in enumerate(message_words, 1):
+            event_data[f"$${i}"] = word # $$1, $$2, etc. for words
+            if i == 1:
+                event_data["$1-"] = " ".join(message_words[1:])
+            elif i == 2:
+                event_data["$2-"] = " ".join(message_words[2:])
+            # Add $N- for other word ranges if desired
+
+        if match:
+            event_data["$0"] = match.group(0)  # Full match
+            for i, group_val in enumerate(match.groups(), 1):
+                event_data[f"${i}"] = group_val if group_val is not None else "" # $1, $2, etc.
+            # For named capture groups, if any: event_data.update(match.groupdict())
+
+
+        # Ensure all values are strings for substitution
+        for key, value in event_data.items():
+            event_data[key] = str(value)
+
+        return event_data
+
+    def _perform_string_substitutions(
+        self, action_string: str, event_data: Dict[str, Any]
+    ) -> str:
+        """Replace variables in the action string with their values from event_data."""
+        result = action_string
+        # Sort keys by length descending to replace longer keys first (e.g., $message before $msg)
+        # This is a simple approach; more robust templating could be used if needed.
+        sorted_vars = sorted(event_data.keys(), key=len, reverse=True)
+        for var_name in sorted_vars:
+            result = result.replace(var_name, str(event_data[var_name]))
+        return result
+
+    def process_trigger(
+        self, event_type_str: str, data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Process an event. If a trigger matches, return a dictionary
+        containing the action type, content, and event data.
+        """
         try:
-            trigger_type = TriggerType[event_type.upper()]
+            trigger_type = TriggerType[event_type_str.upper()]
         except KeyError:
             return None
 
@@ -115,11 +198,28 @@ class TriggerManager:
             if not field_to_match or field_to_match not in data:
                 continue
 
-            if trigger.compiled_pattern and trigger.compiled_pattern.search(
-                data[field_to_match]
-            ):
-                return self._substitute_variables(trigger.action, data)
+            match = None
+            if trigger.compiled_pattern:
+                match = trigger.compiled_pattern.search(data.get(field_to_match, ""))
 
+            if match:
+                event_data_for_action = self._prepare_event_data(data, match)
+
+                if trigger.action_type == ActionType.COMMAND:
+                    final_command_string = self._perform_string_substitutions(
+                        trigger.action_content, event_data_for_action
+                    )
+                    return {
+                        "type": ActionType.COMMAND,
+                        "content": final_command_string,
+                        # event_data not strictly needed by caller for COMMAND if already substituted
+                    }
+                elif trigger.action_type == ActionType.PYTHON:
+                    return {
+                        "type": ActionType.PYTHON,
+                        "code": trigger.action_content,
+                        "event_data": event_data_for_action,
+                    }
         return None
 
     def _get_field_to_match(self, trigger_type: TriggerType) -> Optional[str]:
@@ -141,42 +241,18 @@ class TriggerManager:
         }
         return field_map.get(trigger_type)
 
-    def _substitute_variables(self, action: str, data: Dict[str, Any]) -> str:
-        """Replace mIRC-style variables in the action string with their values."""
-        variable_map = {
-            "$nick": data.get("nick", ""),
-            "$channel": data.get("channel", ""),
-            "$target": data.get("target", ""),
-            "$me": data.get("client_nick", ""),
-            "$msg": data.get("message", ""),
-            "$message": data.get("message", ""),
-            "$reason": data.get("reason", ""),
-            "$mode": data.get("modes_str", ""),
-            "$topic": data.get("new_topic", ""),
-            "$raw": data.get("raw_line", ""),
-            "$timestamp": data.get("timestamp", ""),
-        }
-
-        message_words = data.get("message_words", [])
-        for i, word in enumerate(message_words, 1):
-            variable_map[f"$${i}"] = word
-            if i == 1:
-                variable_map["$1-"] = " ".join(message_words[1:])
-            elif i == 2:
-                variable_map["$2-"] = " ".join(message_words[2:])
-
-        result = action
-        for var, value in variable_map.items():
-            result = result.replace(var, str(value))
-
-        return result
-
     def save_triggers(self):
         """Save triggers to the JSON file."""
         try:
             os.makedirs(self.config_dir, exist_ok=True)
             with open(self.triggers_file, "w") as f:
-                json.dump([asdict(t) for t in self.triggers], f, indent=2)
+                triggers_to_save = []
+                for t in self.triggers:
+                    t_dict = asdict(t)
+                    t_dict["event_type"] = t.event_type.name  # Save enum name
+                    t_dict["action_type"] = t.action_type.name # Save enum name
+                    triggers_to_save.append(t_dict)
+                json.dump(triggers_to_save, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to save triggers: {e}")
 
@@ -194,11 +270,16 @@ class TriggerManager:
                 try:
                     trigger = Trigger(
                         id=t_data["id"],
-                        event_type=TriggerType[t_data["event_type"]],
+                        event_type=TriggerType[t_data["event_type"]], # Already a string from save
                         pattern=t_data["pattern"],
-                        action=t_data["action"],
+                        action_content=t_data["action_content"], # New field name
+                        action_type=ActionType[t_data.get("action_type", ActionType.COMMAND.name)], # Default for backward compatibility
                         is_enabled=t_data["is_enabled"],
                     )
+                    # Ensure action_type is an enum member if loaded as string
+                    if isinstance(trigger.action_type, str):
+                         trigger.action_type = ActionType[trigger.action_type]
+
                     if trigger.compiled_pattern is not None:
                         self.triggers.append(trigger)
                         self.next_id = max(self.next_id, trigger.id + 1)
