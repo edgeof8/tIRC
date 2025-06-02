@@ -73,14 +73,14 @@ You can also view and modify many settings directly within the client using the 
 ```ini
 [Connection]
 default_server = irc.libera.chat
-default_port = 6697
+default_port = 6667
 default_ssl = true
-default_nick = PyTermUser
+default_nick = YourNick
 default_channels = #python,#testchannel
-password =
-nickserv_password =
-verify_ssl_cert = true
+password = optional_server_password
+nickserv_password = optional_nickserv_password
 auto_reconnect = true
+verify_ssl_cert = true
 
 [UI]
 message_history_lines = 500
@@ -94,13 +94,8 @@ log_max_bytes = 5242880
 log_backup_count = 3
 channel_log_enabled = true
 
-[General]
-# leave_message setting is now superseded by the default_random_messages.py script
-# but can serve as a fallback if the script is disabled or fails to load messages.
-
-[IgnoreList]
-# Managed by /ignore commands, usually not edited manually.
-# Stores ignore patterns, e.g., someuser!*@* = ignored
+[Ignore]
+patterns = *bot*,*spam*
 ```
 
 ## Usage
@@ -194,7 +189,7 @@ PyRC supports a variety of commands. Type `/help` within the client for a list o
 
 ## Scripting System
 
-PyRC features a powerful scripting system allowing users to extend its functionality. Scripts are Python files placed in the `scripts/` directory.
+PyRC features a powerful and flexible scripting system, allowing users to extend and customize client functionality using Python. Scripts can introduce new commands, react to IRC and client events, manage their own data, and much more. All scripts are placed in the `scripts/` directory in PyRC's root folder and are loaded automatically on startup.
 
 ### Key Scripting Capabilities:
 
@@ -208,15 +203,6 @@ PyRC features a powerful scripting system allowing users to extend its functiona
   - Log messages.
   - Register commands, help texts, and subscribe to events.
   - Request paths to their data files.
-
-### Default Scripts:
-
-- `default_fun_commands.py`: Implements commands like `/slap`, `/8ball`, etc. Uses data files from `scripts/data/default_fun_commands/`.
-- `default_exit_handler.py`: Displays the full-screen exit message when the client shuts down.
-- `default_random_messages.py`: Provides randomized quit and part messages. Loads messages from `scripts/data/default_random_messages/`.
-- `default_help_handler.py` (Conceptual - help is currently loaded by ScriptManager directly): The primary help texts are loaded from `scripts/data/default_help/command_help.ini` by the ScriptManager.
-- `event_test_script.py`: A sample script demonstrating various event subscriptions.
-- `test_script.py`: A basic example of command registration.
 
 ### Creating Scripts:
 
@@ -242,6 +228,125 @@ The legacy `/on` trigger system allows defining custom actions based on IRC even
 - `/on remove <id>`: Removes a trigger.
 
 And more subcommands. Type `/help on` or `/on` in the client for details.
+
+### Script Structure Basics
+
+A typical PyRC script is a Python file (e.g., `my_script.py`) in the `scripts/` directory. It should contain:
+
+1.  A class that encapsulates the script's logic. This class often inherits from `ScriptBase` (found in `script_base.py` in the project root) for convenience, though it's not strictly required.
+2.  An `__init__(self, api_handler)` method that receives and stores an instance of `ScriptAPIHandler`. This `api_handler` is the script's gateway to interacting with PyRC.
+3.  A `load(self)` method. This method is called by PyRC when the script is loaded. It's the primary place to register commands, subscribe to events, and perform any initial setup.
+4.  A top-level factory function named `get_script_instance(api_handler)` that returns an instance of your script's class.
+
+**Example Skeleton:**
+
+```python
+# scripts/my_cool_script.py
+from ..script_base import ScriptBase # If script_base.py is in parent (project root)
+
+class MyCoolScript(ScriptBase): # Inheriting from ScriptBase is optional but recommended
+    def __init__(self, api_handler):
+        super().__init__(api_handler) # Call if inheriting
+        # self.api = api_handler # Or store directly if not inheriting
+        self.script_name = self.__class__.__module__ # Useful for logging
+
+    def load(self):
+        self.api.log_info(f"{self.script_name} is loading!")
+        # Register commands:
+        # self.api.register_command("mycommand", self.handle_my_command, help_text="Does something cool.")
+        # Subscribe to events:
+        # self.api.subscribe_to_event("PRIVMSG", self.on_privmsg)
+
+    # def handle_my_command(self, args_str, event_data_command):
+    #     # ... command logic ...
+    #     self.api.add_message_to_context(event_data_command['active_context_name'], "My command ran!")
+
+    # def on_privmsg(self, event_data_msg):
+    #     # ... event handling logic ...
+    #     # self.api.log_info(f"PRIVMSG from {event_data_msg['nick']}: {event_data_msg['message']}")
+
+# Required factory function
+def get_script_instance(api_handler):
+    return MyCoolScript(api_handler)
+```
+
+### Script API Overview (`self.api.*`)
+
+Scripts interact with PyRC through the `ScriptAPIHandler` instance (typically `self.api`). Key methods include:
+
+- **Sending Messages & Commands:**
+  - `send_raw(command_string: str)`: Sends any raw IRC command string directly to the server.
+  - `send_privmsg(target: str, message: str)`: Sends a `PRIVMSG` to a channel or user.
+  - `send_notice(target: str, message: str)`: Sends a `NOTICE` to a channel or user.
+  - `send_action(target: str, action_text: str)`: Sends a CTCP ACTION (e.g., `/me waves`) to a channel or user.
+- **Interacting with Client UI:**
+  - `add_message_to_context(context_name: str, text: str, color_key: str = "system", prefix_time: bool = True)`: Adds a formatted message line to the specified window/context in the PyRC UI.
+- **Accessing Client Information:**
+  - `get_client_nick() -> str`: Returns the client's current nickname.
+  - `get_current_context_name() -> Optional[str]`: Returns the name of the currently active window (e.g., "#channel", "QueryNick", "Status").
+  - `get_active_context_type() -> Optional[str]`: Returns the type (`channel`, `query`, `status`, etc.) of the active window.
+- **Registering Functionality:**
+  - `register_command(command_name: str, handler_function: Callable, help_text: str = "", aliases: List[str] = [])`: Registers a new slash command (e.g., `/mycmd`).
+    - `handler_function` should have the signature: `def my_handler(self, args_str: str, event_data: Dict[str, Any]): ...`
+    - `event_data` for commands includes: `{'client_logic_ref', 'raw_line', 'command', 'args_str', 'client_nick', 'active_context_name', 'script_name'}`.
+  - `subscribe_to_event(event_name: str, handler_function: Callable)`: Subscribes a script method to be called when a specific client or IRC event occurs.
+    - `handler_function` should have the signature: `def my_event_handler(self, event_data: Dict[str, Any]): ...` (See "Key Script Events" below for `event_data` contents).
+  - `register_help_text(command_name: str, usage_str: str, description_str: str = "", aliases: Optional[List[str]] = None)`: Registers detailed help for a command. This is useful if a script provides commands and wants to integrate with the `/help` system. `usage_str` should be a concise usage line (e.g., "Usage: /mycmd <option>"), and `description_str` a more detailed explanation.
+- **Logging:**
+  - `log_info(message: str)`, `log_warning(message: str)`, `log_error(message: str)`: Writes messages to PyRC's main log file, automatically prefixed with the script's module name for easy identification.
+- **Data File Management:**
+  - `request_data_file_path(data_filename: str) -> str`: Returns the absolute path to a file within the script's dedicated data directory. This directory is automatically created if it doesn't exist at `scripts/data/<script_module_name>/`. Scripts should use this method to reliably access their configuration or data files (e.g., `self.api.request_data_file_path("my_settings.txt")`).
+
+### Key Script Events
+
+Scripts can subscribe to various events. Event handler functions (see `subscribe_to_event` above) receive a single dictionary argument, `event_data`, containing event-specific information. All `event_data` dictionaries also include a `timestamp` (float, from `time.time()`).
+
+- **Client Lifecycle Events:**
+  - `CLIENT_CONNECTED`: Fired when a TCP/IP connection to the server is established and initial IRC CAP negotiation begins.
+    - `event_data` keys: `server` (str), `port` (int), `nick` (str - current client nick), `ssl` (bool).
+  - `CLIENT_DISCONNECTED`: Fired when the connection to the server is lost or closed.
+    - `event_data` keys: `server` (str), `port` (int).
+  - `CLIENT_REGISTERED`: Typically fired upon receiving RPL_WELCOME (001) from the server, indicating successful registration.
+    - `event_data` keys: `nick` (str - confirmed client nick), `server_message` (str - the welcome message), `raw_line` (str).
+  - `CLIENT_SHUTDOWN_FINAL`: Fired just before the application fully exits, _after_ the curses UI has been shut down. Useful for cleanup tasks that need to `print()` directly to the console (e.g., the default exit screen script).
+- **IRC Message & Command Events:**
+  - `PRIVMSG`: For channel messages and private messages sent by other users or the client itself (if `echo-message` CAP is active).
+    - `event_data` keys: `nick` (str - sender's nick), `userhost` (str - sender's full user@host), `target` (str - channel or your nick), `message` (str - the content), `is_channel_msg` (bool), `client_nick` (str - your current nick), `raw_line` (str).
+  - `NOTICE`: For IRC NOTICEs.
+    - `event_data` keys: `nick` (str - sender's nick, or server name if server notice), `userhost` (str - sender's full user@host, or server name), `target` (str - channel or your nick), `message` (str - the content), `is_channel_notice` (bool), `client_nick` (str), `raw_line` (str).
+  - `JOIN`: When a user (including the client) joins a channel.
+    - `event_data` keys: `nick` (str), `userhost` (str), `channel` (str), `is_self` (bool - true if it's the client joining), `client_nick` (str), `raw_line` (str).
+  - `PART`: When a user (including the client) parts a channel.
+    - `event_data` keys: `nick` (str), `userhost` (str), `channel` (str), `reason` (str - part message, if any), `is_self` (bool), `client_nick` (str), `raw_line` (str).
+  - `QUIT`: When a user quits the IRC server.
+    - `event_data` keys: `nick` (str), `userhost` (str), `reason` (str - quit message, if any), `client_nick` (str), `raw_line` (str).
+  - `NICK`: When a user (including the client) changes their nickname.
+    - `event_data` keys: `old_nick` (str), `new_nick` (str), `userhost` (str), `is_self` (bool), `client_nick` (str - current nick after potential change if self), `raw_line` (str).
+  - `MODE`: When a mode change occurs on a channel or user.
+    - `event_data` keys: `nick` (str - nick of user setting the mode, or server name), `userhost` (str), `target` (str - channel or nick affected by mode), `modes_and_params` (str - the mode string and its parameters, e.g., "+o someuser"), `client_nick` (str), `raw_line` (str).
+  - `TOPIC`: When a channel topic is changed or viewed (on join).
+    - `event_data` keys: `nick` (str - nick of user changing topic, or server on join), `userhost` (str), `channel` (str), `topic` (str - the new topic), `client_nick` (str), `raw_line` (str).
+- **Raw IRC Lines:**
+  - `RAW_IRC_LINE`: Fired for _every_ complete, raw line received from the server _before_ PyRC's internal parsing. Useful for advanced or custom protocol handling.
+    - `event_data` keys: `raw_line` (str - the unmodified line), `client_nick` (str).
+  - _(Note: For reacting to specific IRC numeric replies (e.g., RPL_WHOISUSER 311), scripts currently should subscribe to `RAW_IRC_LINE` and parse the numeric from the `raw_line` content. Future API enhancements might provide direct events for all numerics.)_
+
+### Default Scripts & Help System
+
+PyRC ships with several default scripts in the `scripts/` directory to provide core and extended functionality:
+
+- `default_fun_commands.py`: Implements "fun" commands like `/slap`, `/8ball`, `/dice`, etc. It loads its data (e.g., slap items, 8-ball answers) from files in `scripts/data/default_fun_commands/`.
+- `default_exit_handler.py`: Subscribes to the `CLIENT_SHUTDOWN_FINAL` event to display the full-screen thank you message when PyRC exits.
+- `default_random_messages.py`: Provides randomized quit and part messages if the user doesn't specify one. It loads message templates from `scripts/data/default_random_messages/`.
+- `event_test_script.py`: A demonstration script that logs various IRC and client events. Useful for testing or as a template for new event-driven scripts.
+- `test_script.py`: A very basic example primarily showing command registration.
+
+The client's `/help` system is primarily driven by `scripts/data/default_help/command_help.ini`. This file defines help for core client commands. Scripts can also register help for their own commands using `self.api.register_help_text()`, which will then be available via `/help <script_command>`.
+
+### Script Lifecycle
+
+- **Loading:** All valid `.py` files in the `scripts/` directory (that are not prefixed with `_` and contain a `get_script_instance` factory function) are loaded when PyRC starts. The `load()` method of each script instance is then called.
+- **Unloading:** The `ScriptBase` class defines an optional `unload(self)` method. While PyRC does not currently support dynamic unloading/reloading of scripts at runtime, this method is reserved for future use if such functionality is added (e.g., for script cleanup).
 
 ## Contributing
 

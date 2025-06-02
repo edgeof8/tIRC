@@ -33,7 +33,6 @@ MAX_HISTORY = 500
 RECONNECT_INITIAL_DELAY = 5  # seconds
 RECONNECT_MAX_DELAY = 300  # seconds
 CONNECTION_TIMEOUT = 30  # seconds
-DEFAULT_LEAVE_MESSAGE = "PyRC - https://github.com/edgeof8/PyRC"
 
 # Global variable to hold current ignore patterns
 IGNORED_PATTERNS: Set[str] = set()
@@ -131,8 +130,12 @@ def save_current_config():
         logging.info("Configuration explicitly saved by /save command.")
         return True
     except Exception as e:
-        logging.error(f"Error writing to config file '{CONFIG_FILE_PATH}' during /save: {e}")
+        logging.error(
+            f"Error writing to config file '{CONFIG_FILE_PATH}' during /save: {e}"
+        )
         return False
+
+
 # --- Functions to manage the ignore list in the config file ---
 def load_ignore_list():
     """Loads ignore patterns from the config file into the global IGNORED_PATTERNS set."""
@@ -142,6 +145,7 @@ def load_ignore_list():
         for key, pattern in config.items("IgnoreList"):
             IGNORED_PATTERNS.add(pattern.strip())
     logging.info(f"Loaded {len(IGNORED_PATTERNS)} ignore patterns: {IGNORED_PATTERNS}")
+
 
 def save_ignore_list():
     """Saves the global IGNORED_PATTERNS set to the config file."""
@@ -159,7 +163,10 @@ def save_ignore_list():
             config.write(configfile)
         logging.info(f"Saved {len(IGNORED_PATTERNS)} ignore patterns to config.")
     except Exception as e:
-        logging.error(f"Error writing ignore list to config file '{CONFIG_FILE_PATH}': {e}")
+        logging.error(
+            f"Error writing ignore list to config file '{CONFIG_FILE_PATH}': {e}"
+        )
+
 
 def add_ignore_pattern(pattern: str) -> bool:
     """Adds a pattern to the ignore list and saves it."""
@@ -173,6 +180,7 @@ def add_ignore_pattern(pattern: str) -> bool:
         return True
     return False
 
+
 def remove_ignore_pattern(pattern: str) -> bool:
     """Removes a pattern from the ignore list and saves it."""
     global IGNORED_PATTERNS
@@ -182,6 +190,7 @@ def remove_ignore_pattern(pattern: str) -> bool:
         save_ignore_list()
         return True
     return False
+
 
 def is_source_ignored(source_full_ident: str) -> bool:
     """
@@ -196,10 +205,13 @@ def is_source_ignored(source_full_ident: str) -> bool:
 
     for pattern in IGNORED_PATTERNS:
         # Patterns are already stored lowercase
-        if fnmatch.fnmatchcase(source_lower, pattern): # fnmatchcase is case-sensitive if pattern has mixed case
-                                                       # but we store patterns lowercase, so this works
+        if fnmatch.fnmatchcase(
+            source_lower, pattern
+        ):  # fnmatchcase is case-sensitive if pattern has mixed case
+            # but we store patterns lowercase, so this works
             return True
     return False
+
 
 # --- Connection Settings (from INI or defaults) ---
 IRC_SERVER = get_config_value("Connection", "default_server", DEFAULT_SERVER, str)
@@ -268,12 +280,6 @@ CHANNEL_LOG_ENABLED = get_config_value(
 
 LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO)
 
-# --- General Settings ---
-LEAVE_MESSAGE = get_config_value(
-    "General", "leave_message", DEFAULT_LEAVE_MESSAGE, str
-)
-
-
 # --- IRC Protocol ---
 # Regex for parsing IRC messages
 # :prefix COMMAND params :trailing
@@ -296,8 +302,7 @@ def reload_all_config_values():
     global AUTO_RECONNECT, VERIFY_SSL_CERT
     global MAX_HISTORY, UI_COLORSCHEME
     global LOG_ENABLED, LOG_FILE, LOG_LEVEL_STR, LOG_LEVEL, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CHANNEL_LOG_ENABLED
-    global LEAVE_MESSAGE
-    global IGNORED_PATTERNS # Though load_ignore_list handles this
+    global IGNORED_PATTERNS  # Though load_ignore_list handles this
 
     logger.info(f"Reloading configuration from {CONFIG_FILE_PATH}")
     config.read(CONFIG_FILE_PATH)
@@ -312,8 +317,14 @@ def reload_all_config_values():
     IRC_CHANNELS = get_config_value(
         "Connection", "default_channels", DEFAULT_CHANNELS, list
     )
-    _raw_password_reload = get_config_value("Connection", "password", DEFAULT_PASSWORD, str)
-    IRC_PASSWORD = _raw_password_reload if _raw_password_reload and _raw_password_reload.strip() else None
+    _raw_password_reload = get_config_value(
+        "Connection", "password", DEFAULT_PASSWORD, str
+    )
+    IRC_PASSWORD = (
+        _raw_password_reload
+        if _raw_password_reload and _raw_password_reload.strip()
+        else None
+    )
 
     _raw_nickserv_password_reload = get_config_value(
         "Connection", "nickserv_password", DEFAULT_NICKSERV_PASSWORD, str
@@ -331,29 +342,34 @@ def reload_all_config_values():
     )
 
     # --- UI Settings ---
-    _max_history_val_reload = get_config_value("UI", "message_history_lines", MAX_HISTORY, int)
+    _max_history_val_reload = get_config_value(
+        "UI", "message_history_lines", MAX_HISTORY, int
+    )
     MAX_HISTORY = (
-        int(_max_history_val_reload) if isinstance(_max_history_val_reload, int) else int(MAX_HISTORY)
+        int(_max_history_val_reload)
+        if isinstance(_max_history_val_reload, int)
+        else int(MAX_HISTORY)
     )
     UI_COLORSCHEME = get_config_value("UI", "colorscheme", "default", str)
 
     # --- Logging Settings ---
     LOG_ENABLED = get_config_value("Logging", "log_enabled", DEFAULT_LOG_ENABLED, bool)
     LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
-    LOG_LEVEL_STR = get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
-    LOG_MAX_BYTES = get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
+    LOG_LEVEL_STR = get_config_value(
+        "Logging", "log_level", DEFAULT_LOG_LEVEL, str
+    ).upper()
+    LOG_MAX_BYTES = get_config_value(
+        "Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int
+    )
     LOG_BACKUP_COUNT = get_config_value(
         "Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int
     )
     CHANNEL_LOG_ENABLED = get_config_value(
         "Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool
     )
-    LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO) # Update log level based on new string
-
-    # --- General Settings ---
-    LEAVE_MESSAGE = get_config_value(
-        "General", "leave_message", DEFAULT_LEAVE_MESSAGE, str
-    )
+    LOG_LEVEL = getattr(
+        logging, LOG_LEVEL_STR, logging.INFO
+    )  # Update log level based on new string
 
     # --- Reload Ignore List ---
     load_ignore_list()
