@@ -192,14 +192,38 @@ class UIManager:
 
         text_to_render = text[:available_width]
 
-        try:
-            window.addstr(y, x, text_to_render, attr)
-        except curses.error as e:
-            logger.warning(
-                f"_safe_addstr ({context_info}): curses.error writing '{text_to_render[:30]}...' at y={y},x={x} (win_dims {max_y}x{max_x}): {e}"
-            )
-        except Exception as ex: # Catch other unexpected errors during addstr
-            logger.error(f"_safe_addstr ({context_info}): Unexpected error writing '{text_to_render[:30]}...' at y={y},x={x}: {ex}", exc_info=True)
+        # Workaround for Curses issue: writing to the lower-right corner (max_y-1, max_x-1)
+        # with addstr can cause errors due to implicit cursor movement.
+        is_last_line = (y == max_y - 1)
+        string_reaches_last_col = (x + len(text_to_render) == max_x)
+
+        if is_last_line and string_reaches_last_col and len(text_to_render) > 0:
+            try:
+                # Write all but the last character (if any) using addstr
+                if len(text_to_render) > 1:
+                    window.addstr(y, x, text_to_render[:-1], attr)
+
+                # Write the very last character using addch.
+                # The X position for the last character is (x + len(text_to_render) - 1),
+                # which simplifies to (max_x - 1) because string_reaches_last_col is true.
+                window.addch(y, max_x - 1, text_to_render[-1], attr)
+            except curses.error as e_corner:
+                logger.warning(
+                    f"_safe_addstr ({context_info}): curses.error during lower-right corner handling for '{text_to_render[:30]}...' (last char: '{text_to_render[-1]}') at y={y},x_start={x},x_end={max_x-1} (win_dims {max_y}x{max_x}): {e_corner}"
+                )
+            except Exception as ex_corner:
+                logger.error(f"_safe_addstr ({context_info}): Unexpected error during lower-right corner handling: {ex_corner}", exc_info=True)
+        else:
+            # Normal case: string does not end exactly at the lower-right corner
+            try:
+                window.addstr(y, x, text_to_render, attr)
+            except curses.error as e:
+                logger.warning(
+                    f"_safe_addstr ({context_info}): curses.error writing '{text_to_render[:30]}...' at y={y},x={x} (win_dims {max_y}x{max_x}): {e}"
+                )
+            except Exception as ex: # Catch other unexpected errors during addstr
+                logger.error(f"_safe_addstr ({context_info}): Unexpected error writing '{text_to_render[:30]}...' at y={y},x={x}: {ex}", exc_info=True)
+
 
     def _safe_hline(self, window: Any, y: int, x: int, char: Any, n: int, attr: int, context_info: str = ""):
         """Safely draws a horizontal line, with coordinate and boundary checks."""
@@ -619,7 +643,7 @@ class UIManager:
         len_status_left_drawn = len(full_status_text[:max_x]) # What _safe_addstr would draw for the left part
 
         if len_status_left_drawn + len(status_right) + 1 < max_x : # +1 for a potential space
-            x_pos_right = max_x - len(status_right) -1
+            x_pos_right = max_x - (len(status_right) + 1) # Position for " " + status_right
             if x_pos_right > len_status_left_drawn : # Ensure no overlap
                  self._safe_addstr(self.status_win, 0, x_pos_right , " " + status_right, status_bar_color, "draw_status_bar_right")
             # else: not enough distinct space for status_right without overlap or being too cramped.

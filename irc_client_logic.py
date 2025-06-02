@@ -22,6 +22,7 @@ from config import (
 )
 # Import the config module itself to access its updated globals after reload
 import config as app_config
+from script_manager import ScriptManager # Add this
 
 from context_manager import ContextManager, ChannelJoinStatus
 
@@ -104,7 +105,12 @@ class IRCClient_Logic:
         self.network.channels_to_join_on_connect = self.initial_channels_list[:]
 
         self.ui = UIManager(stdscr, self)
-        self.command_handler = CommandHandler(self)
+        self.command_handler = CommandHandler(self) # CommandHandler needs to be initialized before ScriptManager if ScriptManager interacts with it during load
+
+        # Initialize ScriptManager
+        # app_config.BASE_DIR should be the root directory where config.py and pyrc.py are.
+        self.script_manager = ScriptManager(self, app_config.BASE_DIR)
+        self.script_manager.load_scripts() # Load scripts after core components are ready
 
         self.cap_negotiator = CapNegotiator(
             network_handler=self.network,

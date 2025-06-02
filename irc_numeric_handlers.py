@@ -290,22 +290,28 @@ def _handle_rpl_liststart(client, parsed_msg: IRCMessage, raw_line: str, display
     # display_params might be empty or contain "Channels"
     # trailing might be "Users Name" or absent
 
-    # Check if this LIST sequence is tied to an active /list command
-    # For now, we still direct to "Status", but acknowledge the active_list_context_name.
-    # A future step could involve creating a temporary context using this name.
-    active_list_id = getattr(client, 'active_list_context_name', None)
-    target_context_name = "Status"
+    active_list_ctx_name = getattr(client, 'active_list_context_name', None)
+    target_context_name = "Status" # Default target
 
-    prefix = "[List]"
-    if active_list_id:
-        logger.debug(f"RPL_LISTSTART: Active list operation detected (ID: {active_list_id}).")
-        # prefix = f"[List-{active_list_id.split('-')[-1][:4]}]" # Example of using part of the ID
+    if active_list_ctx_name:
+        list_ctx = client.context_manager.get_context(active_list_ctx_name)
+        if list_ctx and list_ctx.type == "list_results":
+            target_context_name = active_list_ctx_name
+            logger.debug(f"RPL_LISTSTART: Active list operation detected. Target context: {target_context_name}")
+        elif list_ctx: # Context exists but is not list_results type
+            logger.warning(f"RPL_LISTSTART: active_list_context_name '{active_list_ctx_name}' exists but is not type 'list_results' (type: {list_ctx.type}). Defaulting to Status.")
+        else: # Context name was set, but context doesn't exist
+            logger.warning(f"RPL_LISTSTART: active_list_context_name '{active_list_ctx_name}' not found. Defaulting to Status.")
 
-    message = f"{prefix} {trailing if trailing else 'Channel List Start'}"
-    if display_params and display_params[0] == "Channels" and not trailing: # Some servers send "Channels" as a param
-        message = f"[List] Channel List (Users Name)" # Generic start
-    elif not display_params and not trailing : # e.g. Bahamut just sends 321 :
-         message = f"[List] Channel List Start"
+    prefix = "" # No prefix needed if going to its own window
+    if target_context_name == "Status":
+        prefix = "[List] " # Add prefix only if falling back to Status
+
+    message = f"{prefix}{trailing if trailing else 'Channel List Start'}"
+    if display_params and display_params[0] == "Channels" and not trailing:
+        message = f"{prefix}Channel List (Users Name)"
+    elif not display_params and not trailing:
+         message = f"{prefix}Channel List Start"
 
     client.add_message(message, client.ui.colors["system"], target_context_name)
 
@@ -315,38 +321,77 @@ def _handle_rpl_list(client, parsed_msg: IRCMessage, raw_line: str, display_para
     # display_params[1] is <#_visible>
     # trailing is <topic>
 
-    active_list_id = getattr(client, 'active_list_context_name', None)
-    target_context_name = "Status"
+    active_list_ctx_name = getattr(client, 'active_list_context_name', None)
+    target_context_name = "Status" # Default target
 
-    prefix = "[List]"
-    if active_list_id:
-        logger.debug(f"RPL_LIST: Active list operation detected (ID: {active_list_id}).")
-        # prefix = f"[List-{active_list_id.split('-')[-1][:4]}]"
+    if active_list_ctx_name:
+        list_ctx = client.context_manager.get_context(active_list_ctx_name)
+        if list_ctx and list_ctx.type == "list_results":
+            target_context_name = active_list_ctx_name
+            logger.debug(f"RPL_LIST: Active list operation detected. Target context: {target_context_name}")
+        elif list_ctx:
+            logger.warning(f"RPL_LIST: active_list_context_name '{active_list_ctx_name}' exists but is not type 'list_results' (type: {list_ctx.type}). Defaulting to Status.")
+        else:
+            logger.warning(f"RPL_LIST: active_list_context_name '{active_list_ctx_name}' not found. Defaulting to Status.")
+
+    prefix = "" # No prefix needed if going to its own window
+    if target_context_name == "Status":
+        prefix = "[List] " # Add prefix only if falling back to Status
 
     channel = display_params[0] if len(display_params) > 0 else "N/A"
     visible_users = display_params[1] if len(display_params) > 1 else "N/A"
     topic = trailing if trailing else "No topic"
 
-    message_to_add = f"{prefix} {channel}: {visible_users} users - {topic}"
+    message_to_add = f"{prefix}{channel}: {visible_users} users - {topic}"
     client.add_message(message_to_add, client.ui.colors["system"], target_context_name)
 
 def _handle_rpl_listend(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
     """Handles RPL_LISTEND (323). <client_nick> :End of LIST"""
-    active_list_id = getattr(client, 'active_list_context_name', None)
-    target_context_name = "Status"
+    active_list_ctx_name = getattr(client, 'active_list_context_name', None)
+    target_context_name_for_message = "Status" # Default for the main "End of list" message
 
-    prefix = "[List]"
-    if active_list_id:
-        logger.debug(f"RPL_LISTEND: Active list operation detected (ID: {active_list_id}). Clearing active_list_context_name.")
-        # prefix = f"[List-{active_list_id.split('-')[-1][:4]}]"
+    if active_list_ctx_name:
+        list_ctx = client.context_manager.get_context(active_list_ctx_name)
+        if list_ctx and list_ctx.type == "list_results":
+            target_context_name_for_message = active_list_ctx_name
+            logger.debug(f"RPL_LISTEND: Active list operation detected. Target context: {target_context_name_for_message}")
+            # Add specific instructions to the temporary list window
+            client.add_message(
+                "--- End of /list results ---",
+                client.ui.colors["system"],
+                target_context_name_for_message
+            )
+            client.add_message(
+                "This is a temporary window. Type /close or press Ctrl+W to close it.",
+                client.ui.colors["system"],
+                target_context_name_for_message
+            )
+        elif list_ctx:
+            logger.warning(f"RPL_LISTEND: active_list_context_name '{active_list_ctx_name}' exists but is not type 'list_results' (type: {list_ctx.type}). Defaulting to Status for end message.")
+            client.add_message(
+                f"[List] {trailing if trailing else 'End of channel list.'}",
+                client.ui.colors["system"],
+                "Status"
+            )
+        else:
+            logger.warning(f"RPL_LISTEND: active_list_context_name '{active_list_ctx_name}' not found. Defaulting to Status for end message.")
+            client.add_message(
+                f"[List] {trailing if trailing else 'End of channel list.'}",
+                client.ui.colors["system"],
+                "Status"
+            )
+    else: # No active_list_context_name was set, so message definitely goes to Status
+        client.add_message(
+            f"[List] {trailing if trailing else 'End of channel list.'}",
+            client.ui.colors["system"],
+            "Status"
+        )
 
-    message_to_add = f"{prefix} {trailing if trailing else 'End of channel list.'}"
-    client.add_message(message_to_add, client.ui.colors["system"], target_context_name)
-
-    # Clear active list context if it was used
+    # Clear active_list_context_name regardless of where messages went,
+    # as the /list server operation is now finished.
     if hasattr(client, 'active_list_context_name') and client.active_list_context_name is not None:
+        logger.debug(f"RPL_LISTEND: Clearing active_list_context_name ('{client.active_list_context_name}').")
         client.active_list_context_name = None
-        logger.debug("Cleared active_list_context_name.")
 
 
 NUMERIC_HANDLERS = {

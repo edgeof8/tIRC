@@ -1,11 +1,12 @@
 import logging
-import time
+import time  # Moved from handle_list_command
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.information_commands_handler")
+
 
 class InformationCommandsHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
@@ -19,10 +20,14 @@ class InformationCommandsHandler:
                 target = active_context.name
                 logger.debug(f"/who command using active channel '{target}' as target.")
             else:
+                help_data = self.client.script_manager.get_help_text_for_command("who")
+                usage_msg = (
+                    help_data["help_text"]
+                    if help_data
+                    else "Usage: /who [channel|nick]"
+                )
                 self.client.add_message(
-                    self.client.command_handler.COMMAND_USAGE_STRINGS["who"],
-                    self.client.ui.colors["error"],
-                    context_name="Status"
+                    usage_msg, self.client.ui.colors["error"], context_name="Status"
                 )
                 return
 
@@ -31,17 +36,25 @@ class InformationCommandsHandler:
         else:
             # This case should ideally be caught by the logic above,
             # but as a fallback, show usage if no target could be determined.
+            help_data = self.client.script_manager.get_help_text_for_command("who")
+            usage_msg = (
+                help_data["help_text"] if help_data else "Usage: /who [channel|nick]"
+            )
             self.client.add_message(
-                self.client.command_handler.COMMAND_USAGE_STRINGS["who"],
-                self.client.ui.colors["error"],
-                context_name="Status"
+                usage_msg, self.client.ui.colors["error"], context_name="Status"
             )
 
     def handle_whowas_command(self, args_str: str):
+        help_data = self.client.script_manager.get_help_text_for_command("whowas")
+        usage_msg = (
+            help_data["help_text"]
+            if help_data
+            else "Usage: /whowas <nick> [count] [server]"
+        )
         parts = self.client.command_handler._ensure_args(
             args_str,
-            self.client.command_handler.COMMAND_USAGE_STRINGS["whowas"],
-            num_expected_parts=1 # Ensure at least the nick is provided
+            usage_msg,
+            num_expected_parts=1,  # Ensure at least the nick is provided
         )
         if not parts:
             return
@@ -83,21 +96,62 @@ class InformationCommandsHandler:
     def handle_list_command(self, args_str: str):
         pattern = args_str.strip()
 
-        # Placeholder for temporary context logic (Phase 4)
-        # For now, self.client.active_list_context_name can be a simple attribute
-        # on IRCClient_Logic.
+        # Generate a unique name for the temporary list results context.
+        unique_list_context_name = f"##LIST_RESULTS_{time.time_ns()}##"
+        logger.debug(
+            f"Generated unique context name for /list: {unique_list_context_name}"
+        )
 
-        # Generate a unique name for the list context.
-        # This doesn't create a "real" context in ContextManager yet,
-        # but provides a unique identifier for numeric handlers to use if they
-        # were to create one or direct messages.
-        # For now, we'll just use it to signal to numeric handlers.
-        # A more robust solution would involve ContextManager.
-        import time # Add this import at the top of the file
-        self.client.active_list_context_name = f"list-output-{time.time_ns()}"
-        logger.debug(f"Set active_list_context_name to {self.client.active_list_context_name} for /list command.")
-        # The numeric handlers will still default to "Status" for now,
-        # but this attribute is now set for them to potentially use.
+        # Create the temporary context.
+        created = self.client.context_manager.create_context(
+            unique_list_context_name, context_type="list_results"
+        )
+
+        if created:
+            logger.info(
+                f"Created temporary context '{unique_list_context_name}' for /list results."
+            )
+            # Store the name for numeric handlers to use.
+            self.client.active_list_context_name = unique_list_context_name
+            logger.debug(
+                f"Set active_list_context_name to {self.client.active_list_context_name}"
+            )
+
+            # Switch focus to the new temporary context.
+            switched = self.client.switch_active_context(unique_list_context_name)
+            if switched:
+                logger.debug(
+                    f"Switched active context to '{unique_list_context_name}'."
+                )
+            else:
+                logger.warning(
+                    f"Failed to switch active context to '{unique_list_context_name}'."
+                )
+                # Potentially add a message to Status if switching fails but context was created.
+                help_data = self.client.script_manager.get_help_text_for_command("list")
+                usage_msg = (
+                    help_data["help_text"]
+                    if help_data
+                    else "Error: Could not switch to list results window. Output may appear in Status."
+                )
+                self.client.add_message(
+                    usage_msg, self.client.ui.colors["error"], context_name="Status"
+                )
+        else:
+            logger.error(
+                f"Failed to create temporary context '{unique_list_context_name}' for /list. Output will go to Status."
+            )
+            # Ensure active_list_context_name is None if creation fails, so numerics don't try to use it.
+            self.client.active_list_context_name = None
+            help_data = self.client.script_manager.get_help_text_for_command("list")
+            usage_msg = (
+                help_data["help_text"]
+                if help_data
+                else "Error: Could not create list results window. Output will appear in Status."
+            )
+            self.client.add_message(
+                usage_msg, self.client.ui.colors["error"], context_name="Status"
+            )
 
         self.client.network.send_raw(f"LIST {pattern}" if pattern else "LIST")
 
@@ -108,14 +162,16 @@ class InformationCommandsHandler:
             self.client.network.send_raw(f"NAMES {channel_arg}")
             # Determine context for feedback message
             feedback_context_name = "Status"
-            target_channel_context = self.client.context_manager.get_context(channel_arg)
+            target_channel_context = self.client.context_manager.get_context(
+                channel_arg
+            )
             if target_channel_context and target_channel_context.type == "channel":
                 feedback_context_name = target_channel_context.name
 
             self.client.add_message(
                 f"Refreshing names for {channel_arg}...",
                 self.client.ui.colors["system"],
-                context_name=feedback_context_name
+                context_name=feedback_context_name,
             )
         else:
             self.client.network.send_raw("NAMES")

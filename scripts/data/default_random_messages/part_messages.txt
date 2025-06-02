@@ -1,0 +1,10 @@
+Leaving $channel.
+See ya in $channel!
+Taking a break from $channel.
+Back later, $channel!
+Peace out, $channel!
+Signing off from $channel.
+Time to go from $channel.
+Bye for now, $channel!
+Catch you later in $channel!
+Taking a break from $channel.

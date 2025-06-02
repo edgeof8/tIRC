@@ -2,13 +2,18 @@ import logging
 from typing import TYPE_CHECKING, List, Optional, Tuple
 from features.triggers.trigger_commands import TriggerCommands
 from context_manager import ChannelJoinStatus, Context
-from fun_commands_handler import FunCommandsHandler
 from channel_commands_handler import ChannelCommandsHandler
 from server_commands_handler import ServerCommandsHandler
 from information_commands_handler import InformationCommandsHandler
 from config import (
-    get_all_settings, set_config_value, get_config_value, config as global_config_parser,
-    add_ignore_pattern, remove_ignore_pattern, IGNORED_PATTERNS, save_current_config
+    get_all_settings,
+    set_config_value,
+    get_config_value,
+    config as global_config_parser,
+    add_ignore_pattern,
+    remove_ignore_pattern,
+    IGNORED_PATTERNS,
+    save_current_config,
 )
 
 if TYPE_CHECKING:
@@ -17,81 +22,14 @@ if TYPE_CHECKING:
     )
 
 from context_manager import Context as CTX_Type
+
 logger = logging.getLogger("pyrc.command_handler")
 
 
 class CommandHandler:
-    COMMAND_USAGE_STRINGS = {
-        "join": "Usage: /join <channel> - Joins the specified channel.",
-        "part": "Usage: /part [channel] [reason] - Leaves the specified or current channel. If [channel] is omitted, parts the active channel.",
-        "msg": "Usage: /msg <nick> <message> - Sends a private message to <nick>.",
-        "query": "Usage: /query <nick> [message] - Opens a private message window with <nick> and optionally sends an initial message.",
-        "nick": "Usage: /nick <newnick> - Changes your nickname to <newnick>.",
-        "quit": "Usage: /quit [message] - Disconnects from the server with an optional quit message.",
-        "whois": "Usage: /whois <nick> - Retrieves WHOIS information for <nick>.",
-        "me": "Usage: /me <action> - Sends an action (CTCP ACTION) to the current channel or query.",
-        "away": "Usage: /away [message] - Sets your away status. No message marks you as back.",
-        "invite": "Usage: /invite <nick> [channel] - Invites <nick> to [channel] (current channel if omitted).",
-        "topic": "Usage: /topic [newtopic] - Shows current topic or sets a new one for the active channel.",
-        "raw": "Usage: /raw <raw IRC command> - Sends a raw command line to the server.",
-        "connect": "Usage: /connect <server[:port]> [ssl|nossl] - Connects to the specified server.",
-        "disconnect": "Usage: /disconnect [reason] - Disconnects from the current server.",
-        "clear": "Usage: /clear - Clears messages from the current window.",
-        "nextwindow": "Usage: /nextwindow (aliases: /next, Ctrl+N) - Switches to the next window.",
-        "prevwindow": "Usage: /prevwindow (aliases: /prev, Ctrl+P) - Switches to the previous window.",
-        "window": "Usage: /window <name|number> - Switches to the window specified by name or number.",
-        "close": "Usage: /close (aliases: /wc, /partchannel) - Closes the current query window or parts the current channel.",
-        "cyclechannel": "Usage: /cyclechannel (alias: /cc) - Parts and rejoins the current channel.",
-        "prevchannel": "Usage: /prevchannel (alias: /pc) - Switches to the previously active channel/context (implementation might vary).",
-        "userlistscroll": "Usage: /userlistscroll [offset] (aliases: /u [offset], Ctrl+U) - Scrolls user list. Ctrl+U pages. [offset] sets absolute scroll.",
-        "status": "Usage: /status - Switches to the Status window.",
-        "kick": "Usage: /kick <nick> [reason] - Kicks <nick> from the current channel.",
-        "notice": "Usage: /notice <target> <message> - Sends a NOTICE to <target> (nick or channel).",
-        "set": (
-            "Usage: /set [<section.key> [<value>]] (alias: /se)\n"
-            "/set : Lists all current settings.\n"
-            "/set <key> : Shows value of <key> (searches all sections).\n"
-            "/set <section.key> : Shows value of <section.key>.\n"
-            "/set <section.key> <value> : Modifies the setting and saves it to pyterm_irc_config.ini."
-        ),
-        "on": (
-            "Usage: /on <subcommand> [args] - Manages event triggers. Type /on for detailed subcommands.\n"
-            "See also: /on add, /on list, /on remove, /on enable, /on disable."
-        ),
-        "slap": "Usage: /slap <nickname> - Slaps <nickname> with a random item.",
-        "8ball": "Usage: /8ball <question> - Asks the Magic 8-Ball a question.",
-        "dice": "Usage: /dice <NdN> (e.g., 2d6, alias /roll) - Rolls NdN dice.",
-        "rainbow": "Usage: /rainbow <text> - Sends <text> in rainbow colors to the current channel/query.",
-        "reverse": "Usage: /reverse <text> - Sends <text> reversed to the current channel/query.",
-        "wave": "Usage: /wave <text> - Sends <text> with a wave effect to the current channel/query.",
-        "ascii": "Usage: /ascii <text> - Converts <text> to ASCII art and sends it to the current channel/query.",
-        "help": "Usage: /help [command] - Shows this help message or help for a specific command.",
-        "ignore": "Usage: /ignore <nick|hostmask> - Ignores messages from the specified user or hostmask. Wildcards * and ? can be used (e.g., *!*@*.someisp.com).",
-        "unignore": "Usage: /unignore <nick|hostmask> - Removes an ignore pattern.",
-        "listignores": "Usage: /listignores - Lists all current ignore patterns.",
-        "ban": "Usage: /ban <nick|hostmask> - Bans the user/hostmask from the current channel.",
-        "unban": "Usage: /unban <hostmask> - Unbans the hostmask from the current channel.",
-        "mode": "Usage: /mode [<target>] <modes_and_params> - Sets modes. Target is current channel if omitted.",
-        "op": "Usage: /op <nick> (alias: /o) - Ops <nick> in the current channel.",
-        "deop": "Usage: /deop <nick> (alias: /do) - De-ops <nick> in the current channel.",
-        "voice": "Usage: /voice <nick> (alias: /v) - Voices <nick> in the current channel.",
-        "devoice": "Usage: /devoice <nick> (alias: /dv) - De-voices <nick> in the current channel.",
-        "who": "Usage: /who <target> - Retrieves WHO information for <target> (nick, channel, mask). Defaults to current channel if active and no target given.",
-        "whowas": "Usage: /whowas <nick> [count [target_server]] - Retrieves information about a nickname that is no longer in use.",
-        "list": "Usage: /list [pattern] - Lists channels, optionally matching [pattern].",
-        "names": "Usage: /names [channel] - Lists users in [channel] or all joined channels if omitted.",
-        "reconnect": "Usage: /reconnect - Disconnects and reconnects to the current server.",
-        "rehash": "Usage: /rehash - Reloads the pyterm_irc_config.ini configuration file. Some changes may require a reconnect or restart.",
-        "rawlog": "Usage: /rawlog [on|off|toggle] - Toggles or sets display of raw IRC messages in the Status window.",
-        "save": "Usage: /save - Saves the current configuration to pyterm_irc_config.ini.",
-        "lastlog": "Usage: /lastlog <pattern> - Searches message history of the active window for <pattern> (case-insensitive).",
-    }
-
-
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client = client_logic
         self.trigger_commands = TriggerCommands(client_logic)
-        self.fun_commands = FunCommandsHandler(client_logic)
         self.channel_commands = ChannelCommandsHandler(client_logic)
         self.server_commands = ServerCommandsHandler(client_logic)
         self.info_commands = InformationCommandsHandler(client_logic)
@@ -149,14 +87,6 @@ class CommandHandler:
             "set": self._handle_set_command,
             "se": self._handle_set_command,
             "on": self.trigger_commands.handle_on_command,
-            "slap": self.fun_commands.handle_slap_command,
-            "8ball": self.fun_commands.handle_8ball_command,
-            "dice": self.fun_commands.handle_dice_command,
-            "roll": self.fun_commands.handle_dice_command,
-            "rainbow": self.fun_commands.handle_rainbow_command,
-            "reverse": self.fun_commands.handle_reverse_command,
-            "wave": self.fun_commands.handle_wave_command,
-            "ascii": self.fun_commands.handle_ascii_command,
             "help": self._handle_help_command,
             "h": self._handle_help_command,
             "ignore": self._handle_ignore_command,
@@ -198,130 +128,112 @@ class CommandHandler:
                 seen_handlers[handler_func] = cmd_name
 
     def _handle_help_command(self, args_str: str):
-        active_context_name = self.client.context_manager.active_context_name or "Status"
-        system_color = self.client.ui.colors.get("system", 0)
-        error_color = self.client.ui.colors.get("error", 0)
+        """Handle the /help command"""
+        system_color = self.client.ui.colors["system"]
+        error_color = self.client.ui.colors["error"]
+        active_context_name = self.client.context_manager.active_context_name
 
         if not args_str:
-            self.client.add_message("Available commands (use /help <command> for details):", system_color, context_name=active_context_name)
+            # Show general help
+            self.client.add_message(
+                "\nAvailable commands:",
+                system_color,
+                context_name=active_context_name,
+            )
 
-            commands_to_list = sorted([cmd for cmd in self.command_map.keys() if cmd not in ["h"]])
+            # Get all help texts
+            help_texts = self.client.script_manager.get_all_help_texts()
 
-            line_buffer = []
-            current_line_len = 0
-            max_line_width = getattr(self.client.ui, 'msg_win_width', 70) - 5
-
-            for cmd_name in commands_to_list:
-                display_cmd = f"/{cmd_name}"
-                if not line_buffer or current_line_len + len(display_cmd) + 2 > max_line_width:
-                    if line_buffer:
-                        self.client.add_message(", ".join(line_buffer), system_color, context_name=active_context_name)
-                    line_buffer = [display_cmd]
-                    current_line_len = len(display_cmd)
+            # Group commands by script
+            commands_by_script = {}
+            for cmd, help_text in help_texts.items():
+                # For core commands, help_text is a string
+                # For script commands, help_text is a dict with 'help_text' and 'script_name'
+                if isinstance(help_text, dict):
+                    script_name = help_text.get("script_name", "core")
+                    help_text_str = help_text.get("help_text", "")
                 else:
-                    line_buffer.append(display_cmd)
-                    current_line_len += len(display_cmd) + 2
+                    script_name = "core"
+                    help_text_str = help_text
 
-            if line_buffer:
-                self.client.add_message(", ".join(line_buffer), system_color, context_name=active_context_name)
+                if script_name not in commands_by_script:
+                    commands_by_script[script_name] = []
+                commands_by_script[script_name].append((cmd, help_text_str))
 
-            self.client.add_message("Common aliases: /j (join), /p (part), /m (msg), /q (quit), /w (whois), /r (raw), /s (connect/server), /d (disconnect), /c (clear), /wc (close), /k (kick), /pc (prevchannel), /u (userlistscroll), /se (set), /no (notice), /cc (cyclechannel), /h (help).", system_color, context_name=active_context_name)
-            self.client.add_message("For event triggers, type /on for specific help.", system_color, context_name=active_context_name)
+            # Display commands grouped by script
+            for script_name, commands in sorted(commands_by_script.items()):
+                if script_name != "core":
+                    self.client.add_message(
+                        f"\nCommands from script '{script_name}':",
+                        system_color,
+                        context_name=active_context_name,
+                    )
+                else:
+                    self.client.add_message(
+                        "\nCore commands:",
+                        system_color,
+                        context_name=active_context_name,
+                    )
 
-        else:
-            command_name_from_user = args_str.lower().lstrip('/')
+                for cmd, help_text in sorted(commands):
+                    summary = help_text.split("\n")[0]
+                    self.client.add_message(
+                        f"/{cmd}: {summary}",
+                        system_color,
+                        context_name=active_context_name,
+                    )
 
-            primary_command_name = self.command_primary_map.get(command_name_from_user, command_name_from_user)
-
-            if primary_command_name == "on":
-                self.trigger_commands._show_usage()
-                return
-
-            if primary_command_name in self.COMMAND_USAGE_STRINGS:
-                usage = self.COMMAND_USAGE_STRINGS[primary_command_name]
-                if primary_command_name != command_name_from_user:
-                     self.client.add_message(f"(Showing help for '/{primary_command_name}', as '/{command_name_from_user}' is an alias)", system_color, context_name=active_context_name)
-                for line in usage.splitlines():
-                     self.client.add_message(line, system_color, context_name=active_context_name)
-            else:
-                self.client.add_message(f"No help available for command: {command_name_from_user}", error_color, context_name=active_context_name)
-
-
-    def get_available_commands_for_tab_complete(self) -> List[str]:
-        """
-        Returns a list of commands primarily for tab-completion,
-        dynamically generated from the command_map.
-        """
-        return ["/" + cmd for cmd in self.command_map.keys()]
-
-    def _ensure_args(self, args_str: str, usage_message: str, num_expected_parts: int = 1) -> Optional[List[str]]:
-        """
-        Validates if args_str is present and optionally contains a minimum number of parts.
-        Adds a usage message and returns None if validation fails.
-        Returns a list of parts split appropriately if validation succeeds.
-        - If num_expected_parts is 1, returns [args_str] (if args_str is not empty).
-        - If num_expected_parts > 1, returns args_str.split(" ", num_expected_parts - 1).
-        """
-        if not args_str:
             self.client.add_message(
-                usage_message,
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status",
+                "\nUse /help <command> for detailed help on a specific command.",
+                system_color,
+                context_name=active_context_name,
             )
-            return None
+            return
 
-        if num_expected_parts == 1:
-            # For num_expected_parts = 1, we just need args_str to be non-empty (checked above).
-            # Return it as a single-element list, consistent with splitting behavior.
-            return [args_str]
+        # Show help for specific command
+        command_name_from_user = args_str.strip().lower()
+        help_data = self.client.script_manager.get_help_text_for_command(
+            command_name_from_user
+        )
 
-        # For num_expected_parts > 1
-        # Split only up to num_expected_parts - 1 times to get the required initial parts,
-        # with the last element containing the rest of the string.
-        parts = args_str.split(" ", num_expected_parts - 1)
-
-        if len(parts) < num_expected_parts:
-            self.client.add_message(
-                usage_message,
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status",
-            )
-            return None
-
-        return parts
-
-    def process_user_command(self, line: str) -> bool:
-        """Process a user command (starts with /) or a channel message"""
-        if not line.startswith("/"):
-            if self.client.context_manager.active_context_name:
-                self.client.handle_text_input(line)
-                return True
-            else:
+        if help_data:
+            # Check if this is an alias
+            if help_data.get("is_alias"):
+                primary_cmd = help_data.get("primary_command")
                 self.client.add_message(
-                    "No active window to send message to.",
-                    self.client.ui.colors["error"],
-                    context_name="Status"
+                    f"(Showing help for '/{primary_cmd}', as '/{command_name_from_user}' is an alias)",
+                    system_color,
+                    context_name=active_context_name,
                 )
-                return False
 
-        command_parts = line[1:].split(" ", 1)
-        cmd = command_parts[0].lower()
-        args = command_parts[1] if len(command_parts) > 1 else ""
+            # Show the help text
+            help_text = help_data.get("help_text", "")
+            for line in help_text.splitlines():
+                self.client.add_message(
+                    line, system_color, context_name=active_context_name
+                )
 
-        if cmd in self.command_map:
-            self.command_map[cmd](args)
-            return True
+            # Show script name if it's from a script
+            if help_data.get("script_name") and help_data["script_name"] != "core":
+                self.client.add_message(
+                    f"(Help from script: {help_data['script_name']})",
+                    system_color,
+                    context_name=active_context_name,
+                )
         else:
             self.client.add_message(
-                f"Unknown command: {cmd}",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status",
+                f"No help available for command: {command_name_from_user}",
+                error_color,
+                context_name=active_context_name,
             )
-            return True
 
     def _handle_msg_command(self, args_str: str):
         """Handle the /msg command"""
-        parts = self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["msg"], num_expected_parts=2)
+        help_data = self.client.script_manager.get_help_text_for_command("msg")
+        usage_msg = (
+            help_data["help_text"] if help_data else "Usage: /msg <nick> <message>"
+        )
+        parts = self._ensure_args(args_str, usage_msg, num_expected_parts=2)
         if not parts:
             return
         target = parts[0]
@@ -330,7 +242,11 @@ class CommandHandler:
 
     def _handle_query_command(self, args_str: str):
         """Handle the /query command"""
-        parts = self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["query"], num_expected_parts=1)
+        help_data = self.client.script_manager.get_help_text_for_command("query")
+        usage_msg = (
+            help_data["help_text"] if help_data else "Usage: /query <nick> [message]"
+        )
+        parts = self._ensure_args(args_str, usage_msg, num_expected_parts=1)
         if not parts:
             return
         query_parts = args_str.split(" ", 1)
@@ -343,7 +259,9 @@ class CommandHandler:
 
     def _handle_nick_command(self, args_str: str):
         """Handle the /nick command"""
-        parts = self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["nick"])
+        help_data = self.client.script_manager.get_help_text_for_command("nick")
+        usage_msg = help_data["help_text"] if help_data else "Usage: /nick <newnick>"
+        parts = self._ensure_args(args_str, usage_msg)
         if not parts:
             return
         new_nick = parts[0]
@@ -351,7 +269,9 @@ class CommandHandler:
 
     def _handle_whois_command(self, args_str: str):
         """Handle the /whois command"""
-        parts = self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["whois"])
+        help_data = self.client.script_manager.get_help_text_for_command("whois")
+        usage_msg = help_data["help_text"] if help_data else "Usage: /whois <nick>"
+        parts = self._ensure_args(args_str, usage_msg)
         if not parts:
             return
         target = parts[0]
@@ -359,27 +279,44 @@ class CommandHandler:
 
     def _handle_me_command(self, args_str: str):
         """Handle the /me command"""
-        if not self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["me"]):
+        help_data = self.client.script_manager.get_help_text_for_command("me")
+        usage_msg = help_data["help_text"] if help_data else "Usage: /me <action>"
+        if not self._ensure_args(args_str, usage_msg):
             return
         action_text = args_str
         current_context_obj = self.client.context_manager.get_active_context()
         if not current_context_obj:
-            self.client.add_message("Cannot /me: No active context.", self.client.ui.colors["error"], context_name="Status")
+            self.client.add_message(
+                "Cannot /me: No active context.",
+                self.client.ui.colors["error"],
+                context_name="Status",
+            )
             return
 
         if current_context_obj.type == "channel":
-            if hasattr(current_context_obj, 'join_status') and current_context_obj.join_status == ChannelJoinStatus.FULLY_JOINED:
+            if (
+                hasattr(current_context_obj, "join_status")
+                and current_context_obj.join_status == ChannelJoinStatus.FULLY_JOINED
+            ):
                 self.client.network.send_raw(
                     f"PRIVMSG {current_context_obj.name} :\x01ACTION {action_text}\x01"
                 )
             else:
-                self.client.add_message(f"Cannot /me: Channel {current_context_obj.name} not fully joined.", self.client.ui.colors["error"], context_name=current_context_obj.name)
+                self.client.add_message(
+                    f"Cannot /me: Channel {current_context_obj.name} not fully joined.",
+                    self.client.ui.colors["error"],
+                    context_name=current_context_obj.name,
+                )
         elif current_context_obj.type == "query":
             self.client.network.send_raw(
                 f"PRIVMSG {current_context_obj.name} :\x01ACTION {action_text}\x01"
             )
         else:
-            self.client.add_message("Cannot /me in this window.", self.client.ui.colors["error"], context_name=current_context_obj.name)
+            self.client.add_message(
+                "Cannot /me in this window.",
+                self.client.ui.colors["error"],
+                context_name=current_context_obj.name,
+            )
 
     def _handle_away_command(self, args_str: str):
         """Handle the /away command"""
@@ -405,51 +342,78 @@ class CommandHandler:
 
     def _handle_window_command(self, args_str: str):
         """Handle the /window or /win command"""
-        parts = self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["window"])
+        help_data = self.client.script_manager.get_help_text_for_command("window")
+        usage_msg = (
+            help_data["help_text"] if help_data else "Usage: /window <name|number>"
+        )
+        parts = self._ensure_args(args_str, usage_msg)
         if not parts:
             return
         target = parts[0]
         self.client.context_manager.set_active_context(target)
 
-    def _close_channel_context(self, channel_context: 'CTX_Type'):
+    def _close_channel_context(self, channel_context: "CTX_Type"):
         """Helper to handle closing (parting) a channel context."""
-        if hasattr(channel_context, 'join_status'):
+        if hasattr(channel_context, "join_status"):
             channel_context.join_status = ChannelJoinStatus.PARTING
-        self.client.network.send_raw(f"PART {channel_context.name}")
+
+        # Try to get a random part message from scripts
+        variables = {"nick": self.client.nick, "channel": channel_context.name}
+        part_message = self.client.script_manager.get_random_part_message_from_scripts(
+            variables
+        )
+        if not part_message:
+            part_message = "Leaving"  # Fallback if no script provides a message
+
+        self.client.network.send_raw(f"PART {channel_context.name} :{part_message}")
         self.client.add_message(
             f"Parting {channel_context.name}...",
             self.client.ui.colors["system"],
-            context_name=channel_context.name
+            context_name=channel_context.name,
         )
 
-    def _close_query_or_generic_context(self, context_obj: 'CTX_Type'):
+    def _close_query_or_generic_context(self, context_obj: "CTX_Type"):
         """Helper to handle closing a query or generic context."""
         context_name_to_close = context_obj.name
         self.client.context_manager.remove_context(context_name_to_close)
         self.client.add_message(
             f"Closed window: {context_name_to_close}",
             self.client.ui.colors["system"],
-            context_name="Status"
+            context_name="Status",
         )
 
     def _handle_close_command(self, args_str: str):
         """Handle the /close, /wc, /partchannel command."""
         active_ctx_name = self.client.context_manager.active_context_name
         if not active_ctx_name:
-            self.client.add_message("No active window to close.", self.client.ui.colors["error"], context_name="Status")
+            self.client.add_message(
+                "No active window to close.",
+                self.client.ui.colors["error"],
+                context_name="Status",
+            )
             return
 
         current_context = self.client.context_manager.get_context(active_ctx_name)
         if not current_context:
-            logger.error(f"/close: Active context '{active_ctx_name}' not found in manager.")
+            logger.error(
+                f"/close: Active context '{active_ctx_name}' not found in manager."
+            )
             return
 
         if current_context.type == "channel":
             self._close_channel_context(current_context)
-        elif current_context.type == "query" or current_context.type == "generic":
+        elif (
+            current_context.type == "query"
+            or current_context.type == "generic"
+            or current_context.type == "list_results"
+        ):
             self._close_query_or_generic_context(current_context)
         elif current_context.type == "status":
-            self.client.add_message("Cannot close the Status window.", self.client.ui.colors["error"], context_name="Status")
+            self.client.add_message(
+                "Cannot close the Status window.",
+                self.client.ui.colors["error"],
+                context_name="Status",
+            )
 
     def _handle_prev_channel_command(self, args_str: str):
         """Handle the /prevchannel command"""
@@ -462,12 +426,13 @@ class CommandHandler:
             self.client.add_message(
                 "User list scroll is only available in channel windows.",
                 self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status"
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
             return
 
         if not args_str:
-             self.client.ui.scroll_user_list("pagedown")
+            self.client.ui.scroll_user_list("pagedown")
         else:
             try:
                 arg_lower = args_str.lower()
@@ -483,10 +448,9 @@ class CommandHandler:
                 self.client.add_message(
                     f"Invalid argument for userlistscroll: '{args_str}'. Use up, down, pageup, pagedown, top, bottom, or a number.",
                     self.client.ui.colors["error"],
-                    context_name=active_ctx.name
+                    context_name=active_ctx.name,
                 )
         self.client.ui_needs_update.set()
-
 
     def _handle_status_command(self, args_str: str):
         """Handle the /status command"""
@@ -494,7 +458,11 @@ class CommandHandler:
 
     def _handle_notice_command(self, args_str: str):
         """Handle the /notice command"""
-        parts = self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["notice"], num_expected_parts=2)
+        help_data = self.client.script_manager.get_help_text_for_command("notice")
+        usage_msg = (
+            help_data["help_text"] if help_data else "Usage: /notice <target> <message>"
+        )
+        parts = self._ensure_args(args_str, usage_msg, num_expected_parts=2)
         if not parts:
             return
         target = parts[0]
@@ -502,14 +470,16 @@ class CommandHandler:
         self.client.network.send_raw(f"NOTICE {target} :{message}")
 
     def _handle_set_command(self, args_str: str):
-        """
-        Handle the /set command.
-        - /set : Lists all settings.
-        - /set <key> : Shows value of <key>. Searches all sections.
-        - /set <section.key> : Shows value of <section.key>.
-        - /set <section.key> <value> : Sets <section.key> to <value>.
-        """
-        active_context_name = self.client.context_manager.active_context_name or "Status"
+        """Handle the /set command"""
+        help_data = self.client.script_manager.get_help_text_for_command("set")
+        usage_msg = (
+            help_data["help_text"]
+            if help_data
+            else "Usage: /set [<section.key> [<value>]]"
+        )
+        active_context_name = (
+            self.client.context_manager.active_context_name or "Status"
+        )
         system_color = self.client.ui.colors.get("system", 0)
         error_color = self.client.ui.colors.get("error", 0)
 
@@ -518,14 +488,26 @@ class CommandHandler:
         if not stripped_args:
             all_settings = get_all_settings()
             if not all_settings:
-                self.client.add_message("No settings found.", system_color, context_name=active_context_name)
+                self.client.add_message(
+                    "No settings found.", system_color, context_name=active_context_name
+                )
                 return
 
-            self.client.add_message("Current settings (use /help set for usage):", system_color, context_name=active_context_name)
+            self.client.add_message(
+                "Current settings (use /help set for usage):",
+                system_color,
+                context_name=active_context_name,
+            )
             for section, settings_in_section in all_settings.items():
-                self.client.add_message(f"[{section}]", system_color, context_name=active_context_name)
+                self.client.add_message(
+                    f"[{section}]", system_color, context_name=active_context_name
+                )
                 for key, val in settings_in_section.items():
-                    self.client.add_message(f"  {key} = {val}", system_color, context_name=active_context_name)
+                    self.client.add_message(
+                        f"  {key} = {val}",
+                        system_color,
+                        context_name=active_context_name,
+                    )
             return
 
         parts = stripped_args.split(" ", 1)
@@ -541,39 +523,64 @@ class CommandHandler:
                     if not section_name_filter or not key_name_filter:
                         raise ValueError("Section or key part is empty.")
                 except ValueError:
-                    self.client.add_message(f"Invalid format for variable: '{variable_arg}'. Use 'key' or 'section.key'.", error_color, context_name=active_context_name)
+                    self.client.add_message(
+                        f"Invalid format for variable: '{variable_arg}'. Use 'key' or 'section.key'.",
+                        error_color,
+                        context_name=active_context_name,
+                    )
                     return
 
             found_settings_messages = []
             all_current_settings = get_all_settings()
 
             if section_name_filter:
-                if section_name_filter in all_current_settings and key_name_filter in all_current_settings[section_name_filter]:
+                if (
+                    section_name_filter in all_current_settings
+                    and key_name_filter in all_current_settings[section_name_filter]
+                ):
                     value = all_current_settings[section_name_filter][key_name_filter]
-                    found_settings_messages.append(f"{section_name_filter}.{key_name_filter} = {value}")
+                    found_settings_messages.append(
+                        f"{section_name_filter}.{key_name_filter} = {value}"
+                    )
                 else:
-                    self.client.add_message(f"Setting '{variable_arg}' not found.", error_color, context_name=active_context_name)
+                    self.client.add_message(
+                        f"Setting '{variable_arg}' not found.",
+                        error_color,
+                        context_name=active_context_name,
+                    )
                     return
             else:
                 for sec, settings_in_sec in all_current_settings.items():
                     if key_name_filter in settings_in_sec:
-                        found_settings_messages.append(f"{sec}.{key_name_filter} = {settings_in_sec[key_name_filter]}")
+                        found_settings_messages.append(
+                            f"{sec}.{key_name_filter} = {settings_in_sec[key_name_filter]}"
+                        )
 
             if not found_settings_messages:
-                self.client.add_message(f"Setting '{key_name_filter}' not found in any section.", error_color, context_name=active_context_name)
+                self.client.add_message(
+                    f"Setting '{key_name_filter}' not found in any section.",
+                    error_color,
+                    context_name=active_context_name,
+                )
             else:
                 for setting_str in found_settings_messages:
-                    self.client.add_message(setting_str, system_color, context_name=active_context_name)
+                    self.client.add_message(
+                        setting_str, system_color, context_name=active_context_name
+                    )
             return
 
         elif len(parts) == 2:
             value_arg = parts[1]
 
             if "." not in variable_arg:
-                self.client.add_message("For setting a value, 'section.key' format is required.", error_color, context_name=active_context_name)
-                usage_lines_set = self.COMMAND_USAGE_STRINGS["set"].splitlines()
-                for line_usage in usage_lines_set:
-                    self.client.add_message(line_usage, error_color, context_name=active_context_name)
+                self.client.add_message(
+                    "For setting a value, 'section.key' format is required.",
+                    error_color,
+                    context_name=active_context_name,
+                )
+                self.client.add_message(
+                    usage_msg, error_color, context_name=active_context_name
+                )
                 return
 
             try:
@@ -581,52 +588,80 @@ class CommandHandler:
                 if not section_to_set or not key_to_set:
                     raise ValueError("Section or key part is empty for setting.")
             except ValueError:
-                self.client.add_message(f"Invalid format for variable: '{variable_arg}'. Use 'section.key'.", error_color, context_name=active_context_name)
+                self.client.add_message(
+                    f"Invalid format for variable: '{variable_arg}'. Use 'section.key'.",
+                    error_color,
+                    context_name=active_context_name,
+                )
                 return
 
             if set_config_value(section_to_set, key_to_set, value_arg):
-                self.client.add_message(f"Set {section_to_set}.{key_to_set} = {value_arg}", system_color, context_name=active_context_name)
-                self.client.add_message("Note: Some settings may require an application restart to take full effect.", system_color, context_name=active_context_name)
+                self.client.add_message(
+                    f"Set {section_to_set}.{key_to_set} = {value_arg}",
+                    system_color,
+                    context_name=active_context_name,
+                )
+                self.client.add_message(
+                    "Note: Some settings may require an application restart to take full effect.",
+                    system_color,
+                    context_name=active_context_name,
+                )
             else:
-                self.client.add_message(f"Failed to set {section_to_set}.{key_to_set}.", error_color, context_name=active_context_name)
+                self.client.add_message(
+                    f"Failed to set {section_to_set}.{key_to_set}.",
+                    error_color,
+                    context_name=active_context_name,
+                )
             return
 
-        usage_lines = self.COMMAND_USAGE_STRINGS["set"].splitlines()
-        for line in usage_lines:
-            self.client.add_message(line, error_color, context_name=active_context_name)
+        self.client.add_message(
+            usage_msg, error_color, context_name=active_context_name
+        )
 
     def _handle_ignore_command(self, args_str: str):
-        active_context_name = self.client.context_manager.active_context_name or "Status"
-        parts = self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["ignore"])
+        help_data = self.client.script_manager.get_help_text_for_command("ignore")
+        usage_msg = (
+            help_data["help_text"] if help_data else "Usage: /ignore <nick|hostmask>"
+        )
+        active_context_name = (
+            self.client.context_manager.active_context_name or "Status"
+        )
+        parts = self._ensure_args(args_str, usage_msg)
         if not parts:
             return
 
         pattern_to_ignore = parts[0]
-        if '!' not in pattern_to_ignore and '@' not in pattern_to_ignore:
-            if '*' not in pattern_to_ignore and '?' not in pattern_to_ignore:
+        if "!" not in pattern_to_ignore and "@" not in pattern_to_ignore:
+            if "*" not in pattern_to_ignore and "?" not in pattern_to_ignore:
                 pattern_to_ignore = f"{pattern_to_ignore}!*@*"
                 self.client.add_message(
                     f"Interpreting '{parts[0]}' as hostmask pattern: '{pattern_to_ignore}'",
                     self.client.ui.colors["system"],
-                    context_name=active_context_name
+                    context_name=active_context_name,
                 )
 
         if add_ignore_pattern(pattern_to_ignore):
             self.client.add_message(
                 f"Now ignoring: {pattern_to_ignore}",
                 self.client.ui.colors["system"],
-                context_name=active_context_name
+                context_name=active_context_name,
             )
         else:
             self.client.add_message(
                 f"Pattern '{pattern_to_ignore}' is already in the ignore list or is empty.",
                 self.client.ui.colors["warning"],
-                context_name=active_context_name
+                context_name=active_context_name,
             )
 
     def _handle_unignore_command(self, args_str: str):
-        active_context_name = self.client.context_manager.active_context_name or "Status"
-        parts = self._ensure_args(args_str, self.COMMAND_USAGE_STRINGS["unignore"])
+        help_data = self.client.script_manager.get_help_text_for_command("unignore")
+        usage_msg = (
+            help_data["help_text"] if help_data else "Usage: /unignore <nick|hostmask>"
+        )
+        active_context_name = (
+            self.client.context_manager.active_context_name or "Status"
+        )
+        parts = self._ensure_args(args_str, usage_msg)
         if not parts:
             return
 
@@ -634,8 +669,8 @@ class CommandHandler:
         original_pattern_arg = pattern_to_unignore
         attempted_patterns = [pattern_to_unignore.lower()]
 
-        if '!' not in pattern_to_unignore and '@' not in pattern_to_unignore:
-             if '*' not in pattern_to_unignore and '?' not in pattern_to_unignore:
+        if "!" not in pattern_to_unignore and "@" not in pattern_to_unignore:
+            if "*" not in pattern_to_unignore and "?" not in pattern_to_unignore:
                 attempted_patterns.append(f"{pattern_to_unignore.lower()}!*@*")
 
         removed = False
@@ -644,7 +679,7 @@ class CommandHandler:
                 self.client.add_message(
                     f"Removed from ignore list: {p_attempt}",
                     self.client.ui.colors["system"],
-                    context_name=active_context_name
+                    context_name=active_context_name,
                 )
                 removed = True
                 break
@@ -653,34 +688,36 @@ class CommandHandler:
             self.client.add_message(
                 f"Pattern '{original_pattern_arg}' (or its derived hostmask) not found in ignore list.",
                 self.client.ui.colors["error"],
-                context_name=active_context_name
+                context_name=active_context_name,
             )
 
     def _handle_listignores_command(self, args_str: str):
-        active_context_name = self.client.context_manager.active_context_name or "Status"
+        active_context_name = (
+            self.client.context_manager.active_context_name or "Status"
+        )
         if not IGNORED_PATTERNS:
             self.client.add_message(
                 "Ignore list is empty.",
                 self.client.ui.colors["system"],
-                context_name=active_context_name
+                context_name=active_context_name,
             )
             return
 
         self.client.add_message(
             "Current ignore patterns:",
             self.client.ui.colors["system"],
-            context_name=active_context_name
+            context_name=active_context_name,
         )
         for pattern in sorted(list(IGNORED_PATTERNS)):
             self.client.add_message(
                 f"- {pattern}",
                 self.client.ui.colors["system"],
-                context_name=active_context_name
+                context_name=active_context_name,
             )
 
     def _handle_rehash_command(self, args_str: str):
         """Handles the /rehash command."""
-        if hasattr(self.client, 'handle_rehash_config'):
+        if hasattr(self.client, "handle_rehash_config"):
             self.client.handle_rehash_config()
             # Feedback message is handled within IRCClient_Logic.handle_rehash_config
         else:
@@ -688,11 +725,16 @@ class CommandHandler:
             self.client.add_message(
                 "Error: Rehash functionality not fully implemented in client logic.",
                 self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status"
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
 
     def _handle_rawlog_command(self, args_str: str):
         """Handles the /rawlog [on|off|toggle] command."""
+        help_data = self.client.script_manager.get_help_text_for_command("rawlog")
+        usage_msg = (
+            help_data["help_text"] if help_data else "Usage: /rawlog [on|off|toggle]"
+        )
         arg = args_str.strip().lower()
         current_status = self.client.show_raw_log_in_ui
 
@@ -700,33 +742,50 @@ class CommandHandler:
             self.client.show_raw_log_in_ui = True
         elif arg == "off":
             self.client.show_raw_log_in_ui = False
-        elif arg == "toggle" or not arg: # Empty arg also toggles
+        elif arg == "toggle" or not arg:  # Empty arg also toggles
             self.client.show_raw_log_in_ui = not current_status
         else:
             self.client.add_message(
-                self.COMMAND_USAGE_STRINGS["rawlog"], # Assumes "rawlog" will be added to USAGE_STRINGS
+                usage_msg,
                 self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status"
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
 
     def _handle_lastlog_command(self, args_str: str):
         """Handles the /lastlog command."""
+        help_data = self.client.script_manager.get_help_text_for_command("lastlog")
+        usage_msg = help_data["help_text"] if help_data else "Usage: /lastlog <pattern>"
         active_context_obj = self.client.context_manager.get_active_context()
-        active_context_name = self.client.context_manager.active_context_name or "Status"
+        active_context_name = (
+            self.client.context_manager.active_context_name or "Status"
+        )
         system_color = self.client.ui.colors.get("system", 0)
         error_color = self.client.ui.colors.get("error", 0)
 
         if not args_str.strip():
-            self.client.add_message(self.COMMAND_USAGE_STRINGS["lastlog"], error_color, context_name=active_context_name)
+            self.client.add_message(
+                usage_msg,
+                error_color,
+                context_name=active_context_name,
+            )
             return
 
         pattern = args_str.strip()
 
         if not active_context_obj:
-            self.client.add_message("Cannot use /lastlog: No active window.", error_color, context_name="Status")
+            self.client.add_message(
+                "Cannot use /lastlog: No active window.",
+                error_color,
+                context_name="Status",
+            )
             return
 
-        self.client.add_message(f"Searching lastlog for \"{pattern}\" in {active_context_obj.name}...", system_color, context_name=active_context_name)
+        self.client.add_message(
+            f'Searching lastlog for "{pattern}" in {active_context_obj.name}...',
+            system_color,
+            context_name=active_context_name,
+        )
 
         found_matches = False
         # Iterate a copy in case messages are added during iteration
@@ -734,18 +793,28 @@ class CommandHandler:
 
         for msg_text, color_attr in messages_to_search:
             if pattern.lower() in msg_text.lower():
-                self.client.add_message(f"[LastLog] {msg_text}", color_attr, context_name=active_context_name)
+                self.client.add_message(
+                    f"[LastLog] {msg_text}",
+                    color_attr,
+                    context_name=active_context_name,
+                )
                 found_matches = True
 
         if not found_matches:
-            self.client.add_message(f"No matches found for \"{pattern}\" in the current log.", system_color, context_name=active_context_name)
-        self.client.add_message("End of lastlog search.", system_color, context_name=active_context_name)
+            self.client.add_message(
+                f'No matches found for "{pattern}" in the current log.',
+                system_color,
+                context_name=active_context_name,
+            )
+        self.client.add_message(
+            "End of lastlog search.", system_color, context_name=active_context_name
+        )
 
         feedback_action = "enabled" if self.client.show_raw_log_in_ui else "disabled"
         self.client.add_message(
             f"Raw IRC message logging to UI {feedback_action}.",
             self.client.ui.colors["system"],
-            context_name=self.client.context_manager.active_context_name or "Status"
+            context_name=self.client.context_manager.active_context_name or "Status",
         )
 
     def _handle_save_command(self, args_str: str):
@@ -754,11 +823,133 @@ class CommandHandler:
             self.client.add_message(
                 "Configuration saved to pyterm_irc_config.ini.",
                 self.client.ui.colors["system"],
-                context_name=self.client.context_manager.active_context_name or "Status"
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
         else:
             self.client.add_message(
                 "Failed to save configuration.",
                 self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status"
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
+
+    def get_available_commands_for_tab_complete(self) -> List[str]:
+        """
+        Returns a list of commands primarily for tab-completion,
+        dynamically generated from the command_map.
+        """
+        core_cmds = ["/" + cmd for cmd in self.command_map.keys()]
+        script_cmds_data = (
+            self.client.script_manager.get_all_script_commands_with_help()
+        )
+
+        script_cmds_and_aliases = []
+        for scmd_data in script_cmds_data:
+            script_cmds_and_aliases.append("/" + scmd_data["name"])
+            for alias in scmd_data.get("aliases", []):
+                script_cmds_and_aliases.append("/" + alias)
+
+        return sorted(list(set(core_cmds + script_cmds_and_aliases)))
+
+    def _ensure_args(
+        self, args_str: str, usage_message: str, num_expected_parts: int = 1
+    ) -> Optional[List[str]]:
+        """
+        Validates if args_str is present and optionally contains a minimum number of parts.
+        Adds a usage message and returns None if validation fails.
+        Returns a list of parts split appropriately if validation succeeds.
+        - If num_expected_parts is 1, returns [args_str] (if args_str is not empty).
+        - If num_expected_parts > 1, returns args_str.split(" ", num_expected_parts - 1).
+        """
+        if not args_str:
+            self.client.add_message(
+                usage_message,
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
+            )
+            return None
+
+        if num_expected_parts == 1:
+            # For num_expected_parts = 1, we just need args_str to be non-empty (checked above).
+            # Return it as a single-element list, consistent with splitting behavior.
+            return [args_str]
+
+        # For num_expected_parts > 1
+        # Split only up to num_expected_parts - 1 times to get the required initial parts,
+        # with the last element containing the rest of the string.
+        parts = args_str.split(" ", num_expected_parts - 1)
+
+        if len(parts) < num_expected_parts:
+            self.client.add_message(
+                usage_message,
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
+            )
+            return None
+
+        return parts
+
+    def process_user_command(self, line: str) -> bool:
+        """Process a user command (starts with /) or a channel message"""
+        if not line.startswith("/"):
+            # ... (existing message handling)
+            if self.client.context_manager.active_context_name:
+                self.client.handle_text_input(line)
+                return True
+            else:
+                self.client.add_message(
+                    "No active window to send message to.",
+                    self.client.ui.colors["error"],
+                    context_name="Status",
+                )
+                return False
+
+        command_parts = line[1:].split(" ", 1)
+        cmd = command_parts[0].lower()
+        args_str = command_parts[1] if len(command_parts) > 1 else ""
+
+        if cmd in self.command_map:
+            self.command_map[cmd](args_str)
+            return True
+        else:
+            # Check for script-registered commands
+            script_cmd_data = (
+                self.client.script_manager.get_script_command_handler_and_data(cmd)
+            )
+            if script_cmd_data and callable(script_cmd_data.get("handler")):
+                script_handler = script_cmd_data["handler"]
+                # Prepare basic event_data for script command handlers
+                event_data_for_script = {
+                    "client_logic_ref": self.client,  # Allows script to access client logic via API if needed
+                    "raw_line": line,
+                    "command": cmd,
+                    "args_str": args_str,
+                    "client_nick": self.client.nick,
+                    "active_context_name": self.client.context_manager.active_context_name,
+                    "script_name": script_cmd_data.get("script_name", "UnknownScript"),
+                }
+                try:
+                    script_handler(args_str, event_data_for_script)
+                except Exception as e:
+                    logger.error(
+                        f"Error executing script command '/{cmd}' from script '{script_cmd_data.get('script_name')}': {e}",
+                        exc_info=True,
+                    )
+                    self.client.add_message(
+                        f"Error in script command /{cmd}: {e}",
+                        self.client.ui.colors["error"],
+                        context_name=self.client.context_manager.active_context_name
+                        or "Status",
+                    )
+                return True
+            else:
+                self.client.add_message(
+                    f"Unknown command: {cmd}",
+                    self.client.ui.colors["error"],
+                    context_name=self.client.context_manager.active_context_name
+                    or "Status",
+                )
+                return True  # Command was processed (as unknown)

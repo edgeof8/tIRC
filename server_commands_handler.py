@@ -2,12 +2,13 @@ import logging
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from context_manager import ChannelJoinStatus
-from config import DEFAULT_PORT, DEFAULT_SSL_PORT # For _parse_connect_args
+from config import DEFAULT_PORT, DEFAULT_SSL_PORT  # For _parse_connect_args
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.server_commands_handler")
+
 
 class ServerCommandsHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
@@ -16,8 +17,14 @@ class ServerCommandsHandler:
     def _parse_connect_args(self, args_str: str) -> Optional[Tuple[str, int, bool]]:
         conn_args = args_str.split()
         if not conn_args:
+            help_data = self.client.script_manager.get_help_text_for_command("connect")
+            usage_msg = (
+                help_data["help_text"]
+                if help_data
+                else "Usage: /connect <server[:port]> [ssl|nossl]"
+            )
             self.client.add_message(
-                "Usage: /connect <server[:port]> [ssl|nossl]",
+                usage_msg,
                 self.client.ui.colors["error"],
                 context_name=self.client.context_manager.active_context_name,
             )
@@ -77,9 +84,11 @@ class ServerCommandsHandler:
             self.client.context_manager.create_context(
                 ch_name,
                 context_type="channel",
-                initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN
+                initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
             )
-            logger.debug(f"Re-created initial channel context: {ch_name} with PENDING_INITIAL_JOIN status.")
+            logger.debug(
+                f"Re-created initial channel context: {ch_name} with PENDING_INITIAL_JOIN status."
+            )
 
         if self.client.initial_channels_list:
             self.client.context_manager.set_active_context(
@@ -131,20 +140,41 @@ class ServerCommandsHandler:
 
     def handle_quit_command(self, args_str: str):
         """Handle the /quit command"""
-        reason = args_str if args_str else "Leaving"
+        if args_str:
+            reason = args_str
+        else:
+            # Try to get a random quit message from scripts
+            variables = {"nick": self.client.nick, "server": self.client.server}
+            reason = self.client.script_manager.get_random_quit_message_from_scripts(
+                variables
+            )
+            if not reason:
+                reason = "Leaving"  # Fallback if no script provides a message
         self.client.network.disconnect_gracefully(reason)
 
     def handle_raw_command(self, args_str: str):
         """Handle the /raw command"""
-        if not self.client.command_handler._ensure_args(args_str, "Usage: /raw <raw IRC command>"):
+        help_data = self.client.script_manager.get_help_text_for_command("raw")
+        usage_msg = (
+            help_data["help_text"] if help_data else "Usage: /raw <raw IRC command>"
+        )
+        if not self.client.command_handler._ensure_args(args_str, usage_msg):
             return
         self.client.network.send_raw(args_str)
 
     def handle_reconnect_command(self, args_str: str):
         """Handles the /reconnect command."""
         if not self.client.server:
+            help_data = self.client.script_manager.get_help_text_for_command(
+                "reconnect"
+            )
+            usage_msg = (
+                help_data["help_text"]
+                if help_data
+                else "Cannot reconnect: No server configured. Use /connect first."
+            )
             self.client.add_message(
-                "Cannot reconnect: No server configured. Use /connect first.",
+                usage_msg,
                 self.client.ui.colors["error"],
                 context_name="Status",
             )
@@ -155,7 +185,9 @@ class ServerCommandsHandler:
             self.client.ui.colors["system"],
             context_name="Status",
         )
-        logger.info(f"User initiated /reconnect to {self.client.server}:{self.client.port}")
+        logger.info(
+            f"User initiated /reconnect to {self.client.server}:{self.client.port}"
+        )
 
         # Disconnect if currently connected
         if self.client.network.connected:
@@ -173,7 +205,7 @@ class ServerCommandsHandler:
             self.client.server,
             self.client.port,
             self.client.use_ssl,
-            channels_to_join=self.client.network.channels_to_join_on_connect # Use current list
+            channels_to_join=self.client.network.channels_to_join_on_connect,  # Use current list
         )
         # No need to call _reset_contexts_for_new_connection here,
         # as update_connection_params (if it disconnects) or the natural
