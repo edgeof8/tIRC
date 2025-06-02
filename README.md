@@ -139,6 +139,22 @@ PyRC supports a variety of commands, most of which are standard IRC commands. Ty
 - `Ctrl+N`/`Ctrl+P` (or `/nextwindow`, `/prevwindow`): Switch to the next/previous active context (channel/query/status window).
 - `Ctrl+U` (or `/u`, `/userlistscroll [offset]`): Scroll the user list in a channel window.
 
+#### Channel Moderation Commands
+
+These commands are typically used by channel operators to manage users and channel settings.
+
+- `/ban <nick|hostmask>`: Bans the specified nickname or hostmask from the current channel.
+- `/unban <hostmask>`: Removes a ban for the specified hostmask from the current channel.
+- `/mode [<target>] <modes_and_params>`: Sets or views modes on a target (channel or user).
+- If `<target>` is omitted, it defaults to the current channel.
+- Example: `/mode +o someuser` (ops `someuser` in current channel)
+- Example: `/mode #channel -v anotheruser` (devoices `anotheruser` in `#channel`)
+- Example: `/mode #channel +imnt` (sets modes `i`, `m`, `n`, `t` on `#channel`)
+- `/op <nick>` (Alias: `/o <nick>`): Grants channel operator status to `<nick>` in the current channel.
+- `/deop <nick>` (Alias: `/do <nick>`): Removes channel operator status from `<nick>` in the current channel.
+- `/voice <nick>` (Alias: `/v <nick>`): Grants voice status to `<nick>` in the current channel.
+- `/devoice <nick>` (Alias: `/dv <nick>`): Removes voice status from `<nick>` in the current channel.
+
 ### Triggers (`/on` command)
 
 PyRC features a powerful trigger system that allows you to automate responses and actions based on IRC events.

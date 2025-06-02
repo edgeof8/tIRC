@@ -68,6 +68,13 @@ class CommandHandler:
         "ignore": "Usage: /ignore <nick|hostmask> - Ignores messages from the specified user or hostmask. Wildcards * and ? can be used (e.g., *!*@*.someisp.com).",
         "unignore": "Usage: /unignore <nick|hostmask> - Removes an ignore pattern.",
         "listignores": "Usage: /listignores - Lists all current ignore patterns.",
+        "ban": "Usage: /ban <nick|hostmask> - Bans the user/hostmask from the current channel.",
+        "unban": "Usage: /unban <hostmask> - Unbans the hostmask from the current channel.",
+        "mode": "Usage: /mode [<target>] <modes_and_params> - Sets modes. Target is current channel if omitted.",
+        "op": "Usage: /op <nick> (alias: /o) - Ops <nick> in the current channel.",
+        "deop": "Usage: /deop <nick> (alias: /do) - De-ops <nick> in the current channel.",
+        "voice": "Usage: /voice <nick> (alias: /v) - Voices <nick> in the current channel.",
+        "devoice": "Usage: /devoice <nick> (alias: /dv) - De-voices <nick> in the current channel.",
     }
 
 
@@ -144,6 +151,17 @@ class CommandHandler:
             "ignore": self._handle_ignore_command,
             "unignore": self._handle_unignore_command,
             "listignores": self._handle_listignores_command,
+            "ban": self.channel_commands.handle_ban_command,
+            "unban": self.channel_commands.handle_unban_command,
+            "mode": self.channel_commands.handle_mode_command,
+            "op": self.channel_commands.handle_op_command,
+            "o": self.channel_commands.handle_op_command,
+            "deop": self.channel_commands.handle_deop_command,
+            "do": self.channel_commands.handle_deop_command,
+            "voice": self.channel_commands.handle_voice_command,
+            "v": self.channel_commands.handle_voice_command,
+            "devoice": self.channel_commands.handle_devoice_command,
+            "dv": self.channel_commands.handle_devoice_command,
         }
 
         self.command_primary_map = {}
