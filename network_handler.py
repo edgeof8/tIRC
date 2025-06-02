@@ -46,15 +46,11 @@ class NetworkHandler:
         self._should_thread_stop.set()
         if self.client:
             self.client.should_quit = True
-        # No direct socket operations here. Let the network loop handle its own socket.
+        # No direct socket operations here - let the network loop handle its own socket
         logger.info("NetworkHandler.stop() has signaled network thread.")
 
     def disconnect_gracefully(self, quit_message="Client disconnecting"):
-        """Disconnect from the server gracefully with a quit message.
-
-        Args:
-            quit_message: The message to send with the QUIT command
-        """
+        """Disconnect from the server gracefully with a quit message."""
         logger.info(
             f"NetworkHandler.disconnect_gracefully called with message: {quit_message}"
         )
@@ -62,7 +58,7 @@ class NetworkHandler:
             self.client._final_quit_message = (
                 quit_message  # Store for network loop to use
             )
-        self.stop()  # Signal threads to stop; network loop will send QUIT.
+        self.stop()  # Signal threads to stop; network loop will send QUIT
 
     def update_connection_params(
         self,
@@ -557,7 +553,7 @@ class NetworkHandler:
                                     self.client.add_message(
                                         f"Unicode decode error: {e_decode}",
                                         self.client.ui.colors["error"],
-                                        "Status",
+                                        context_name="Status",
                                     )
 
                     except (
@@ -581,7 +577,7 @@ class NetworkHandler:
                                 self.client.add_message(
                                     f"Network error: {e_sock}",
                                     self.client.ui.colors["error"],
-                                    "Status",
+                                    context_name="Status",
                                 )
                         else:
                             logger.info(

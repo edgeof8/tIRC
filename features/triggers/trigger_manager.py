@@ -58,7 +58,11 @@ class TriggerManager:
         self.load_triggers()
 
     def add_trigger(
-        self, event_type_str: str, pattern: str, action_type_str: str, action_content: str
+        self,
+        event_type_str: str,
+        pattern: str,
+        action_type_str: str,
+        action_content: str,
     ) -> Optional[int]:
         """Add a new trigger and return its ID if successful."""
         try:
@@ -135,7 +139,7 @@ class TriggerManager:
             "$target": base_data.get("target", ""),
             "$me": base_data.get("client_nick", ""),
             "$msg": base_data.get("message", ""),
-            "$message": base_data.get("message", ""), # Alias for $msg
+            "$message": base_data.get("message", ""),  # Alias for $msg
             "$reason": base_data.get("reason", ""),
             "$mode": base_data.get("modes_str", ""),
             "$topic": base_data.get("new_topic", ""),
@@ -146,7 +150,7 @@ class TriggerManager:
 
         message_words = base_data.get("message_words", [])
         for i, word in enumerate(message_words, 1):
-            event_data[f"$${i}"] = word # $$1, $$2, etc. for words
+            event_data[f"$${i}"] = word  # $$1, $$2, etc. for words
             if i == 1:
                 event_data["$1-"] = " ".join(message_words[1:])
             elif i == 2:
@@ -156,9 +160,10 @@ class TriggerManager:
         if match:
             event_data["$0"] = match.group(0)  # Full match
             for i, group_val in enumerate(match.groups(), 1):
-                event_data[f"${i}"] = group_val if group_val is not None else "" # $1, $2, etc.
+                event_data[f"${i}"] = (
+                    group_val if group_val is not None else ""
+                )  # $1, $2, etc.
             # For named capture groups, if any: event_data.update(match.groupdict())
-
 
         # Ensure all values are strings for substitution
         for key, value in event_data.items():
@@ -242,49 +247,63 @@ class TriggerManager:
         return field_map.get(trigger_type)
 
     def save_triggers(self):
-        """Save triggers to the JSON file."""
+        """Save triggers to JSON file."""
         try:
-            os.makedirs(self.config_dir, exist_ok=True)
+            triggers_to_save = []
+            for t in self.triggers:
+                t_dict = asdict(t)
+                # Remove compiled_pattern before serialization
+                if "compiled_pattern" in t_dict:
+                    del t_dict["compiled_pattern"]
+                # Convert enums to strings
+                t_dict["event_type"] = t.event_type.name
+                t_dict["action_type"] = t.action_type.name
+                triggers_to_save.append(t_dict)
+
             with open(self.triggers_file, "w") as f:
-                triggers_to_save = []
-                for t in self.triggers:
-                    t_dict = asdict(t)
-                    t_dict["event_type"] = t.event_type.name  # Save enum name
-                    t_dict["action_type"] = t.action_type.name # Save enum name
-                    triggers_to_save.append(t_dict)
                 json.dump(triggers_to_save, f, indent=2)
+            logger.info(
+                f"Saved {len(triggers_to_save)} triggers to {self.triggers_file}"
+            )
         except Exception as e:
-            logger.error(f"Failed to save triggers: {e}")
+            logger.error(f"Failed to save triggers: {e}", exc_info=True)
 
     def load_triggers(self):
-        """Load triggers from the JSON file."""
-        try:
-            if not os.path.exists(self.triggers_file):
-                return
+        """Load triggers from JSON file."""
+        if not os.path.exists(self.triggers_file):
+            logger.info(f"No triggers file found at {self.triggers_file}")
+            return
 
+        try:
             with open(self.triggers_file, "r") as f:
                 triggers_data = json.load(f)
 
-            self.triggers = []
+            max_loaded_id = 0
             for t_data in triggers_data:
                 try:
-                    trigger = Trigger(
-                        id=t_data["id"],
-                        event_type=TriggerType[t_data["event_type"]], # Already a string from save
-                        pattern=t_data["pattern"],
-                        action_content=t_data["action_content"], # New field name
-                        action_type=ActionType[t_data.get("action_type", ActionType.COMMAND.name)], # Default for backward compatibility
-                        is_enabled=t_data["is_enabled"],
+                    # Convert string enums back to enum values
+                    t_data["event_type"] = TriggerType[t_data["event_type"]]
+                    t_data["action_type"] = ActionType[t_data["action_type"]]
+
+                    # Create trigger instance (compiled_pattern will be set in __post_init__)
+                    trigger = Trigger(**t_data)
+                    self.triggers.append(trigger)
+                    max_loaded_id = max(max_loaded_id, trigger.id)
+                except re.error as re_err:
+                    logger.error(
+                        f"Failed to compile pattern for trigger {t_data.get('id', 'unknown')}: {re_err}"
                     )
-                    # Ensure action_type is an enum member if loaded as string
-                    if isinstance(trigger.action_type, str):
-                         trigger.action_type = ActionType[trigger.action_type]
+                    continue
+                except Exception as e:
+                    logger.error(
+                        f"Failed to load trigger {t_data.get('id', 'unknown')}: {e}"
+                    )
+                    continue
 
-                    if trigger.compiled_pattern is not None:
-                        self.triggers.append(trigger)
-                        self.next_id = max(self.next_id, trigger.id + 1)
-                except (KeyError, ValueError) as e:
-                    logger.error(f"Failed to load trigger: {e}")
-
+            # Update next_id to be max_loaded_id + 1
+            self.next_id = max_loaded_id + 1
+            logger.info(
+                f"Loaded {len(self.triggers)} triggers from {self.triggers_file}"
+            )
         except Exception as e:
-            logger.error(f"Failed to load triggers: {e}")
+            logger.error(f"Failed to load triggers: {e}", exc_info=True)

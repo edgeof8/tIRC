@@ -205,17 +205,22 @@ class AiApiTestScript:
             )
 
     def handle_raw_numeric(self, event_data: Dict[str, Any]):
-        self.api.log_info(f"[AI Test] Raw numeric event: {event_data}")
-        self.api.log_info(f"[AI Test] Numeric code: {event_data.get('numeric')}")
+        """Handle RAW_IRC_NUMERIC events."""
+        numeric = event_data.get("numeric")
+        params_list = event_data.get("params_list", [])
+        display_params_list = event_data.get("display_params_list", [])
+
+        logger.info(f"RAW_IRC_NUMERIC {numeric}:")
+        logger.info(f"  params_list: {params_list}")
+        logger.info(f"  display_params_list: {display_params_list}")
+        self.api.log_info(f"[AI Test] Numeric code: {numeric}")
         self.api.log_info(f"[AI Test] Source: {event_data.get('source')}")
-        self.api.log_info(f"[AI Test] Params list: {event_data.get('params_list')}")
-        self.api.log_info(
-            f"[AI Test] Display Params list: {event_data.get('display_params_list')}"
-        )
+        self.api.log_info(f"[AI Test] Params list: {params_list}")
+        self.api.log_info(f"[AI Test] Display Params list: {display_params_list}")
         self.api.log_info(f"[AI Test] Trailing: {event_data.get('trailing')}")
         self.api.log_info(f"[AI Test] Tags: {event_data.get('tags')}")
 
-        if event_data.get("numeric") == 1:  # RPL_WELCOME
+        if numeric == 1:  # RPL_WELCOME
             self.api.log_info(
                 "[AI Test] Received RPL_WELCOME, scheduling nick change sequence in 7s."
             )
