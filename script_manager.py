@@ -6,7 +6,7 @@ import time
 import sys
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set
 import threading
-from config import DISABLED_SCRIPTS
+from config import DISABLED_SCRIPTS, ENABLE_TRIGGER_SYSTEM
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
@@ -30,11 +30,12 @@ class ScriptAPIHandler:
         self,
         client_logic_ref: "IRCClient_Logic",
         script_manager_ref: "ScriptManager",
-        script_module_name: str,
+        script_name: str,
     ):
         self.client_logic = client_logic_ref
         self.script_manager = script_manager_ref
-        self.script_module_name = script_module_name
+        self.script_name = script_name
+        self.logger = logging.getLogger(f"pyrc.script_api.{script_name}")
         self.script_instance = None
         self.registered_commands = {}
         self.registered_events = set()
@@ -109,35 +110,35 @@ class ScriptAPIHandler:
     ):
         if aliases is None:
             aliases = []
-        # Pass self.script_module_name to ScriptManager
+        # Pass self.script_name to ScriptManager
         self.script_manager.register_command_from_script(
             command_name,
             handler_function,
             help_text,
             aliases,
-            script_name=self.script_module_name,
+            script_name=self.script_name,
         )
 
-    # --- Logging methods now use self.script_module_name ---
+    # --- Logging methods now use self.script_name ---
     def log_info(self, message: str):  # Removed script_name param
-        logger.info(f"[{self.script_module_name}] {message}")
+        self.logger.info(message)
 
     def log_warning(self, message: str):  # Removed script_name param
-        logger.warning(f"[{self.script_module_name}] {message}")
+        self.logger.warning(message)
 
     def log_error(self, message: str):  # Removed script_name param
-        logger.error(f"[{self.script_module_name}] {message}")
+        self.logger.error(message)
 
     # --- New method for data file paths ---
     def request_data_file_path(self, data_filename: str) -> str:
         return self.script_manager.get_data_file_path_for_script(
-            self.script_module_name, data_filename
+            self.script_name, data_filename
         )
 
     # --- Event Subscription ---
     def subscribe_to_event(self, event_name: str, handler_function: Callable):
         self.script_manager.subscribe_script_to_event(
-            event_name, handler_function, self.script_module_name
+            event_name, handler_function, self.script_name
         )
 
     # --- Random Messages ---
@@ -182,7 +183,7 @@ class ScriptAPIHandler:
             command_name=command_name,
             help_text=help_text,
             aliases=aliases,
-            script_name=self.script_module_name,
+            script_name=self.script_name,
         )
 
     # --- State Querying Methods ---
@@ -395,89 +396,130 @@ class ScriptAPIHandler:
     def add_trigger(
         self, event_type: str, pattern: str, action_type: str, action_content: str
     ) -> Optional[int]:
-        """Add a new trigger to the trigger manager.
+        """Add a trigger.
 
         Args:
-            event_type: The type of event to trigger on (e.g., "PRIVMSG", "JOIN")
-            pattern: The pattern to match against the event data
-            action_type: The type of action to take (e.g., "say", "command")
-            action_content: The content of the action
+            event_type: Type of event to trigger on (e.g., "TEXT", "JOIN").
+            pattern: Regular expression pattern to match.
+            action_type: Type of action to take (e.g., "COMMAND", "PYTHON").
+            action_content: Content to use in the action.
 
         Returns:
-            The ID of the newly created trigger, or None if creation failed
+            ID of the newly created trigger if successful, None otherwise.
         """
-        if not hasattr(self.client_logic, "trigger_manager"):
-            self.log_error("Trigger manager not available")
+        if not ENABLE_TRIGGER_SYSTEM:
+            self.logger.warning(
+                f"Trigger system is disabled. Cannot add trigger from script '{self.script_name}'."
+            )
+            return None
+
+        trigger_manager = getattr(self.client_logic, "trigger_manager", None)
+        if not trigger_manager:
+            self.logger.warning(
+                f"Trigger manager not available. Cannot add trigger from script '{self.script_name}'."
+            )
             return None
 
         try:
-            trigger_id = self.client_logic.trigger_manager.add_trigger(
+            return trigger_manager.add_trigger(
                 event_type_str=event_type,
                 pattern=pattern,
                 action_type_str=action_type,
                 action_content=action_content,
             )
-            return trigger_id
         except Exception as e:
-            self.log_error(f"Failed to add trigger: {e}")
+            self.logger.error(
+                f"Error adding trigger from script '{self.script_name}': {e}"
+            )
             return None
 
     def remove_trigger(self, trigger_id: int) -> bool:
-        """Remove a trigger by its ID.
+        """Remove a trigger.
 
         Args:
-            trigger_id: The ID of the trigger to remove
+            trigger_id: ID of the trigger to remove.
 
         Returns:
-            True if the trigger was removed successfully, False otherwise
+            True if the trigger was removed successfully, False otherwise.
         """
-        if not hasattr(self.client_logic, "trigger_manager"):
-            self.log_error("Trigger manager not available")
+        if not ENABLE_TRIGGER_SYSTEM:
+            self.logger.warning(
+                f"Trigger system is disabled. Cannot remove trigger from script '{self.script_name}'."
+            )
+            return False
+
+        trigger_manager = getattr(self.client_logic, "trigger_manager", None)
+        if not trigger_manager:
+            self.logger.warning(
+                f"Trigger manager not available. Cannot remove trigger from script '{self.script_name}'."
+            )
             return False
 
         try:
-            return self.client_logic.trigger_manager.remove_trigger(trigger_id)
+            result = trigger_manager.remove_trigger(trigger_id)
+            return bool(result)
         except Exception as e:
-            self.log_error(f"Failed to remove trigger {trigger_id}: {e}")
+            self.logger.error(
+                f"Error removing trigger from script '{self.script_name}': {e}"
+            )
             return False
 
-    def list_triggers(self) -> list:
+    def list_triggers(self) -> List[Dict[str, Any]]:
         """List all triggers.
 
         Returns:
-            A list of dictionaries containing trigger information
+            List of trigger dictionaries.
         """
-        if not hasattr(self.client_logic, "trigger_manager"):
-            self.log_error("Trigger manager not available")
+        if not ENABLE_TRIGGER_SYSTEM:
+            self.logger.warning(
+                f"Trigger system is disabled. Cannot list triggers from script '{self.script_name}'."
+            )
+            return []
+
+        trigger_manager = getattr(self.client_logic, "trigger_manager", None)
+        if not trigger_manager:
+            self.logger.warning(
+                f"Trigger manager not available. Cannot list triggers from script '{self.script_name}'."
+            )
             return []
 
         try:
-            return self.client_logic.trigger_manager.list_triggers()
+            return trigger_manager.list_triggers()
         except Exception as e:
-            self.log_error(f"Failed to list triggers: {e}")
+            self.logger.error(
+                f"Error listing triggers from script '{self.script_name}': {e}"
+            )
             return []
 
     def set_trigger_enabled(self, trigger_id: int, enabled: bool) -> bool:
-        """Enable or disable a trigger.
+        """Set whether a trigger is enabled.
 
         Args:
-            trigger_id: The ID of the trigger to modify
-            enabled: Whether the trigger should be enabled
+            trigger_id: ID of the trigger.
+            enabled: Whether the trigger should be enabled.
 
         Returns:
-            True if the trigger was updated successfully, False otherwise
+            True if the trigger's enabled state was set successfully, False otherwise.
         """
-        if not hasattr(self.client_logic, "trigger_manager"):
-            self.log_error("Trigger manager not available")
+        if not ENABLE_TRIGGER_SYSTEM:
+            self.logger.warning(
+                f"Trigger system is disabled. Cannot set trigger state from script '{self.script_name}'."
+            )
+            return False
+
+        trigger_manager = getattr(self.client_logic, "trigger_manager", None)
+        if not trigger_manager:
+            self.logger.warning(
+                f"Trigger manager not available. Cannot set trigger state from script '{self.script_name}'."
+            )
             return False
 
         try:
-            return self.client_logic.trigger_manager.set_trigger_enabled(
-                trigger_id, enabled
-            )
+            result = trigger_manager.set_trigger_enabled(trigger_id, enabled)
+            return bool(result)
         except Exception as e:
-            self.log_error(
-                f"Failed to {'enable' if enabled else 'disable'} trigger {trigger_id}: {e}"
+            self.logger.error(
+                f"Error setting trigger state from script '{self.script_name}': {e}"
             )
             return False
 
@@ -491,39 +533,45 @@ class ScriptAPIHandler:
 
 
 class ScriptManager:
-    def __init__(self, client_logic_ref: "IRCClient_Logic", base_dir: str):
+    """Manages loading and execution of Python scripts."""
+
+    def __init__(
+        self,
+        client_logic_ref: "IRCClient_Logic",
+        base_dir: str,
+        disabled_scripts: Optional[Set[str]] = None,
+    ):
+        """Initialize the script manager.
+
+        Args:
+            client_logic_ref: Reference to the IRC client logic instance.
+            base_dir: Base directory for script files.
+            disabled_scripts: Optional set of script names to disable.
+        """
         self.client_logic_ref = client_logic_ref
         self.base_dir = base_dir
-        # self.api_handler is no longer a single instance; it's created per script.
-
         self.scripts_dir = os.path.join(self.base_dir, SCRIPTS_DIR_NAME)
-        self.loaded_script_instances: Dict[str, Any] = {}
+        self.scripts = {}
+        self.disabled_scripts = disabled_scripts or set()
+        self.logger = logging.getLogger(__name__)
 
+        # Command and event management
         self.registered_commands: Dict[str, Dict[str, Any]] = {}
         self.command_aliases: Dict[str, str] = {}
-        # Enhanced event subscriptions: event_name -> list of {'handler': callable, 'script_name': str, 'enabled': bool}
         self.event_subscriptions: Dict[str, List[Dict[str, Any]]] = {}
 
         # Help text storage
-        self.ini_help_texts: Dict[str, Dict[str, str]] = (
-            {}
-        )  # Help texts loaded from INI
-        self.registered_help_texts: Dict[str, Dict[str, Any]] = (
-            {}
-        )  # Help texts registered by scripts
+        self.ini_help_texts: Dict[str, Dict[str, str]] = {}
+        self.registered_help_texts: Dict[str, Dict[str, Any]] = {}
 
         # Load help texts from INI file
         self._load_help_texts()
-
-        self.scripts: Dict[str, Any] = {}
-        self.disabled_scripts = set(DISABLED_SCRIPTS)
-        self.script_dir = SCRIPTS_DIR_NAME
 
     def _load_help_texts(self):
         """Load help texts from the command_help.ini file."""
         help_ini_path = os.path.join(self.scripts_dir, HELP_INI_PATH)
         if not os.path.exists(help_ini_path):
-            logger.warning(
+            self.logger.warning(
                 f"Help file '{help_ini_path}' not found. No help texts will be loaded."
             )
             return
@@ -537,22 +585,160 @@ class ScriptManager:
                 for command, help_text in config[section].items():
                     self.ini_help_texts[section][command] = help_text
 
-            logger.info(f"Successfully loaded help texts from '{help_ini_path}'")
+            self.logger.info(f"Successfully loaded help texts from '{help_ini_path}'")
         except Exception as e:
-            logger.error(
+            self.logger.error(
                 f"Error loading help texts from '{help_ini_path}': {e}", exc_info=True
             )
 
+    def get_data_file_path_for_script(
+        self, script_name: str, data_filename: str
+    ) -> str:
+        """Get the path to a data file for a specific script.
+
+        Args:
+            script_name: Name of the script module.
+            data_filename: Name of the data file.
+
+        Returns:
+            Path to the data file.
+        """
+        data_dir = os.path.join(self.scripts_dir, "data", script_name)
+        if not os.path.exists(data_dir):
+            try:
+                os.makedirs(data_dir, exist_ok=True)
+                self.logger.info(
+                    f"Created data directory for script '{script_name}': {data_dir}"
+                )
+            except OSError as e:
+                self.logger.error(
+                    f"Failed to create data directory {data_dir} for script '{script_name}': {e}"
+                )
+        return os.path.join(data_dir, data_filename)
+
+    def load_scripts(self) -> None:
+        """Load all scripts from the scripts directory."""
+        self.logger.info("Loading scripts...")
+
+        if not os.path.exists(self.scripts_dir):
+            self.logger.warning(f"Scripts directory does not exist: {self.scripts_dir}")
+            return
+
+        for script_file in os.listdir(self.scripts_dir):
+            if script_file.endswith(".py") and not script_file.startswith("__"):
+                script_name = script_file[:-3]  # Remove .py extension
+
+                if script_name in self.disabled_scripts:
+                    self.logger.info(f"Skipping disabled script: {script_name}")
+                    continue
+
+                try:
+                    # Import the script module
+                    script_module = importlib.import_module(f"scripts.{script_name}")
+
+                    # Create ScriptAPIHandler instance for this script
+                    api_handler = ScriptAPIHandler(
+                        self.client_logic_ref,
+                        self,
+                        script_name,
+                    )
+
+                    # Get script instance using the correctly initialized api_handler
+                    if hasattr(script_module, "get_script_instance"):
+                        script_instance = script_module.get_script_instance(api_handler)
+                        if script_instance:
+                            self.scripts[script_name] = script_instance
+                            self.logger.info(f"Loaded script: {script_name}")
+
+                            # Call load() if it exists
+                            if hasattr(script_instance, "load"):
+                                script_instance.load()
+                                self.logger.info(
+                                    f"Successfully loaded and initialized script: {script_name}"
+                                )
+                            else:
+                                self.logger.debug(
+                                    f"Script {script_name} instance created, but no 'load' method found."
+                                )
+                    else:
+                        self.logger.warning(
+                            f"Script {script_name} has no get_script_instance function"
+                        )
+                except Exception as e:
+                    self.logger.error(f"Failed to load script {script_name}: {str(e)}")
+                    continue
+
+    def get_script(self, script_name: str) -> Optional[Any]:
+        """Get a loaded script by name.
+
+        Args:
+            script_name: Name of the script to retrieve.
+
+        Returns:
+            The script module if found and enabled, None otherwise.
+        """
+        if script_name in self.disabled_scripts:
+            self.logger.debug(f"Script {script_name} is disabled")
+            return None
+        return self.scripts.get(script_name)
+
+    def is_script_enabled(self, script_name: str) -> bool:
+        """Check if a script is enabled.
+
+        Args:
+            script_name: Name of the script to check.
+
+        Returns:
+            True if the script is enabled, False otherwise.
+        """
+        return script_name not in self.disabled_scripts and script_name in self.scripts
+
+    def register_command_from_script(
+        self,
+        command_name: str,
+        handler: Callable,
+        help_text: str,
+        aliases: List[str],
+        script_name: str,
+    ) -> None:
+        """Register a command from a script.
+
+        Args:
+            command_name: Name of the command.
+            handler: Function to handle the command.
+            help_text: Help text for the command.
+            aliases: List of command aliases.
+            script_name: Name of the script registering the command.
+        """
+        cmd_name_lower = command_name.lower()
+
+        # Store the command
+        self.registered_commands[cmd_name_lower] = {
+            "handler": handler,
+            "help_text": help_text,
+            "aliases": [alias.lower() for alias in aliases],
+            "script_name": script_name,
+        }
+
+        # Store aliases
+        for alias in aliases:
+            alias_lower = alias.lower()
+            self.command_aliases[alias_lower] = cmd_name_lower
+
+        self.logger.info(
+            f"Script '{script_name}' registered command: /{cmd_name_lower}"
+        )
+
     def register_help_text_from_script(
         self, command_name: str, help_text: str, aliases: List[str], script_name: str
-    ):
+    ) -> None:
         """Register help text for a command from a script.
 
         Args:
-            command_name: The name of the command
-            help_text: The help text (usage + description)
-            aliases: List of command aliases
-            script_name: Name of the script registering the help text
+            command_name: The name of the command.
+            help_text: The help text (usage + description).
+            aliases: List of command aliases.
+            script_name: Name of the script registering the help text.
         """
         cmd_name_lower = command_name.lower()
 
@@ -562,7 +748,7 @@ class ScriptManager:
             "aliases": [alias.lower() for alias in aliases],
             "script_name": script_name,
         }
-        logger.info(
+        self.logger.info(
             f"Script '{script_name}' registered help text for command: /{cmd_name_lower}"
         )
 
@@ -577,7 +763,7 @@ class ScriptManager:
                 "is_alias": True,
                 "primary_command": cmd_name_lower,
             }
-            logger.info(
+            self.logger.info(
                 f"Script '{script_name}' registered help text for alias: /{alias_lower}"
             )
 
@@ -585,10 +771,10 @@ class ScriptManager:
         """Get help text for a command, checking both INI-loaded and script-registered help texts.
 
         Args:
-            command_name: The name of the command to get help for
+            command_name: The name of the command to get help for.
 
         Returns:
-            Dict containing help text and metadata, or None if not found
+            Dict containing help text and metadata, or None if not found.
         """
         cmd_lower = command_name.lower()
 
@@ -612,6 +798,12 @@ class ScriptManager:
         """Get all help texts from the specified section.
 
         This combines both INI-loaded and script-registered help texts.
+
+        Args:
+            section: Section to get help texts from.
+
+        Returns:
+            Dictionary of command names to help texts.
         """
         help_texts = {}
 
@@ -626,204 +818,22 @@ class ScriptManager:
 
         return help_texts
 
-    # --- New method to get data file path for a script ---
-    def get_data_file_path_for_script(
-        self, script_module_name: str, data_filename: str
-    ) -> str:
-        # Path will be: <base_dir>/scripts/data/<script_module_name>/<data_filename>
-        data_dir = os.path.join(self.scripts_dir, "data", script_module_name)
-        # Ensure the specific script's data directory exists
-        if not os.path.exists(data_dir):
-            try:
-                os.makedirs(data_dir, exist_ok=True)
-                logger.info(
-                    f"Created data directory for script '{script_module_name}': {data_dir}"
-                )
-            except OSError as e:
-                logger.error(
-                    f"Failed to create data directory {data_dir} for script '{script_module_name}': {e}"
-                )
-                # Fallback or raise error? For now, path will be returned, open() will fail later.
-        return os.path.join(data_dir, data_filename)
+    def get_loaded_scripts(self) -> List[str]:
+        """Get list of currently loaded script names."""
+        return list(self.scripts.keys())
 
-    def load_scripts(self):
-        """Load all scripts from the scripts directory."""
-        logger.info("Loading scripts...")
-
-        if not os.path.exists(self.scripts_dir):
-            logger.warning(f"Scripts directory does not exist: {self.scripts_dir}")
-            return
-
-        for script_file in os.listdir(self.scripts_dir):
-            if script_file.endswith(".py") and not script_file.startswith("__"):
-                script_name = script_file[:-3]  # Remove .py extension
-                if script_name in self.disabled_scripts:
-                    logger.info(f"Skipping disabled script: {script_name}")
-                    continue
-                try:
-                    # Import the script module
-                    script_module = importlib.import_module(f"scripts.{script_name}")
-
-                    # Create ScriptAPIHandler instance for this script
-                    api_handler = ScriptAPIHandler(
-                        self.client_logic_ref,  # Correct: pass the client logic reference
-                        self,  # Correct: pass the script manager reference
-                        script_name,  # Correct: pass the script module name
-                    )
-
-                    # Get script instance using the correctly initialized api_handler
-                    if hasattr(script_module, "get_script_instance"):
-                        script_instance = script_module.get_script_instance(api_handler)
-                        if script_instance:
-                            self.loaded_script_instances[script_name] = script_instance
-                            logger.info(f"Loaded script: {script_name}")
-
-                            # Debug logging
-                            logger.debug(
-                                f"For script '{script_name}', api_handler type is: {type(api_handler)}"
-                            )
-                            logger.debug(
-                                f"Script instance '{script_name}' has api: {hasattr(script_instance, 'api')}"
-                            )
-                            if hasattr(script_instance, "api"):
-                                logger.debug(
-                                    f"script_instance.api type is: {type(script_instance.api)}"
-                                )
-                                logger.debug(
-                                    f"script_instance.api has subscribe_to_event: {hasattr(script_instance.api, 'subscribe_to_event')}"
-                                )
-                                logger.debug(
-                                    f"script_instance.api has register_event: {hasattr(script_instance.api, 'register_event')}"
-                                )
-
-                            # Call load() if it exists
-                            if hasattr(script_instance, "load"):
-                                script_instance.load()
-                                logger.info(
-                                    f"Successfully loaded and initialized script: {script_name}"
-                                )
-                            else:
-                                logger.debug(
-                                    f"Script {script_name} instance created, but no 'load' method found. Ensure registrations happen in __init__ if intended."
-                                )
-                    else:
-                        logger.warning(
-                            f"Script {script_name} has no get_script_instance function"
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to load script {script_name}: {str(e)}")
-                    continue
-
-    # script_name is now reliably passed from ScriptAPIHandler
-    def register_command_from_script(
-        self,
-        command_name: str,
-        handler_function: Callable,
-        help_text: str,
-        aliases: List[str],
-        script_name: str,
-    ):  # script_name is now required
-        cmd_name_lower = command_name.lower()
-
-        # Check for conflicts with core commands (from CommandHandler.command_map)
-        # This requires ScriptManager to have a reference to CommandHandler or for CommandHandler to expose its map.
-        # For now, we'll only check against other script commands.
-        # A more robust system might involve CommandHandler querying ScriptManager.
-        if (
-            cmd_name_lower in self.registered_commands
-            or cmd_name_lower in self.command_aliases
-        ):
-            # Log details about the existing command
-            existing_info = None
-            if cmd_name_lower in self.registered_commands:
-                existing_info = self.registered_commands.get(cmd_name_lower)
-            else:
-                aliased_command_name = self.command_aliases.get(cmd_name_lower)
-                if aliased_command_name:
-                    existing_info = self.registered_commands.get(aliased_command_name)
-
-            existing_script = (
-                existing_info.get("script_name", "another script")
-                if existing_info
-                else "unknown origin"
-            )
-            logger.warning(
-                f"Script command '/{cmd_name_lower}' from script '{script_name}' conflicts with an existing command from '{existing_script}'. Overwriting."
-            )
-
-        self.registered_commands[cmd_name_lower] = {
-            "handler": handler_function,
-            "help": help_text,
-            "aliases": [alias.lower() for alias in aliases],
-            "script_name": script_name,
-        }
-        logger.info(f"Script '{script_name}' registered command: /{cmd_name_lower}")
-
-        for alias_orig_case in aliases:
-            alias = alias_orig_case.lower()
-            if alias in self.registered_commands or alias in self.command_aliases:
-                # Log details about the conflicting alias
-                existing_alias_info = None
-                if alias in self.registered_commands:
-                    existing_alias_info = self.registered_commands.get(alias)
-                else:
-                    aliased_command_name_for_alias = self.command_aliases.get(alias)
-                    if aliased_command_name_for_alias:
-                        existing_alias_info = self.registered_commands.get(
-                            aliased_command_name_for_alias
-                        )
-
-                existing_alias_script = (
-                    existing_alias_info.get("script_name", "another script")
-                    if existing_alias_info
-                    else "unknown origin"
-                )
-                logger.warning(
-                    f"Alias '/{alias}' for script command '/{cmd_name_lower}' (from '{script_name}') conflicts with an existing command/alias from '{existing_alias_script}'. Alias not registered."
-                )
-            else:
-                self.command_aliases[alias] = cmd_name_lower
-                logger.info(
-                    f"Script '{script_name}' registered alias: /{alias} for /{cmd_name_lower}"
-                )
-
-    def get_script_command_handler_and_data(
-        self, command_name: str
-    ) -> Optional[Dict[str, Any]]:
-        cmd_lower = command_name.lower()
-        if cmd_lower in self.registered_commands:
-            return self.registered_commands[cmd_lower]
-        elif cmd_lower in self.command_aliases:
-            primary_cmd_name = self.command_aliases[cmd_lower]
-            return self.registered_commands.get(primary_cmd_name)
-        return None
-
-    def get_all_script_commands_with_help(self) -> List[Dict[str, Any]]:
-        commands = []
-        for cmd_name, data in self.registered_commands.items():
-            commands.append(
-                {
-                    "name": cmd_name,
-                    "help": data["help"],
-                    "aliases": data["aliases"],
-                    "script_name": data["script_name"],
-                }
-            )
-        return commands
-
-    # --- Event System Methods ---
     def subscribe_script_to_event(
         self, event_name: str, handler_function: Callable, script_name: str
-    ):
+    ) -> None:
         """Subscribe a script's handler function to an event.
 
         Args:
-            event_name: The name of the event to subscribe to
-            handler_function: The function to call when the event occurs
-            script_name: The name of the script subscribing to the event
+            event_name: The name of the event to subscribe to.
+            handler_function: The function to call when the event occurs.
+            script_name: The name of the script subscribing to the event.
         """
         if not callable(handler_function):
-            logger.error(
+            self.logger.error(
                 f"Script '{script_name}' attempted to subscribe non-callable handler for event '{event_name}'."
             )
             return
@@ -834,7 +844,7 @@ class ScriptManager:
         # Check if this specific handler from this script is already subscribed
         for sub in self.event_subscriptions[event_name]:
             if sub["handler"] == handler_function and sub["script_name"] == script_name:
-                logger.warning(
+                self.logger.warning(
                     f"Script '{script_name}' handler already subscribed to event '{event_name}'. Ignoring duplicate."
                 )
                 return
@@ -843,19 +853,19 @@ class ScriptManager:
         self.event_subscriptions[event_name].append(
             {"handler": handler_function, "script_name": script_name, "enabled": True}
         )
-        logger.info(
+        self.logger.info(
             f"Script '{script_name}' subscribed to event '{event_name}' with handler '{handler_function.__name__}'."
         )
 
     def unsubscribe_script_from_event(
         self, event_name: str, handler_function: Callable, script_name: str
-    ):
+    ) -> None:
         """Unsubscribe a script's handler function from an event.
 
         Args:
-            event_name: The name of the event to unsubscribe from
-            handler_function: The function to remove from the event's handlers
-            script_name: The name of the script unsubscribing from the event
+            event_name: The name of the event to unsubscribe from.
+            handler_function: The function to remove from the event's handlers.
+            script_name: The name of the script unsubscribing from the event.
         """
         if event_name in self.event_subscriptions:
             self.event_subscriptions[event_name] = [
@@ -866,18 +876,18 @@ class ScriptManager:
                     and sub["script_name"] == script_name
                 )
             ]
-            logger.info(
+            self.logger.info(
                 f"Script '{script_name}' unsubscribed handler '{handler_function.__name__}' from event '{event_name}'."
             )
 
     def dispatch_event(
         self, event_name: str, event_data: Optional[Dict[str, Any]] = None
-    ):
+    ) -> None:
         """Dispatch an event to all subscribed handlers.
 
         Args:
-            event_name: The name of the event to dispatch
-            event_data: Optional dictionary containing event data
+            event_name: The name of the event to dispatch.
+            event_data: Optional dictionary containing event data.
         """
         if event_data is None:
             event_data = {}
@@ -890,7 +900,7 @@ class ScriptManager:
         if "client_nick" not in event_data and hasattr(self.client_logic_ref, "nick"):
             event_data["client_nick"] = self.client_logic_ref.nick
 
-        logger.debug(f"Dispatching event '{event_name}' with data: {event_data}")
+        self.logger.debug(f"Dispatching event '{event_name}' with data: {event_data}")
         if event_name in self.event_subscriptions:
             # Iterate over a copy in case a handler tries to unsubscribe during dispatch
             for subscription in list(self.event_subscriptions[event_name]):
@@ -900,12 +910,12 @@ class ScriptManager:
                 handler = subscription["handler"]
                 script_name = subscription["script_name"]
                 try:
-                    logger.debug(
+                    self.logger.debug(
                         f"Calling handler '{handler.__name__}' from script '{script_name}' for event '{event_name}'."
                     )
                     handler(event_data)
                 except Exception as e:
-                    logger.error(
+                    self.logger.error(
                         f"Error in event handler '{handler.__name__}' from script '{script_name}' for event '{event_name}': {e}",
                         exc_info=True,
                     )
@@ -918,17 +928,24 @@ class ScriptManager:
                     )
                     # Optionally disable the handler to prevent repeated errors
                     subscription["enabled"] = False
-                    logger.warning(
+                    self.logger.warning(
                         f"Disabled event handler '{handler.__name__}' from script '{script_name}' due to error."
                     )
         else:
-            logger.debug(f"No subscriptions found for event '{event_name}'.")
+            self.logger.debug(f"No subscriptions found for event '{event_name}'.")
 
-    # --- Random Message Methods ---
     def get_random_quit_message_from_scripts(
         self, variables: Dict[str, str]
     ) -> Optional[str]:
-        for script_name, instance in self.loaded_script_instances.items():
+        """Get a random quit message from scripts.
+
+        Args:
+            variables: Dictionary of variables to use in the message.
+
+        Returns:
+            A random quit message or None if no scripts provide one.
+        """
+        for script_name, instance in self.scripts.items():
             if hasattr(instance, "get_quit_message") and callable(
                 instance.get_quit_message
             ):
@@ -939,16 +956,16 @@ class ScriptManager:
                     ):  # First script to provide a message wins
                         if isinstance(message_obj, str):
                             message_str = message_obj  # Type is now confirmed as str
-                            logger.info(
+                            self.logger.info(
                                 f"Script '{script_name}' provided quit message: '{message_str[:50]}...'"
                             )
                             return message_str
                         else:
-                            logger.warning(
+                            self.logger.warning(
                                 f"Script '{script_name}' get_quit_message returned non-string type: {type(message_obj)}. Ignoring."
                             )
                 except Exception as e:
-                    logger.error(
+                    self.logger.error(
                         f"Error calling get_quit_message on script '{script_name}': {e}",
                         exc_info=True,
                     )
@@ -957,7 +974,15 @@ class ScriptManager:
     def get_random_part_message_from_scripts(
         self, variables: Dict[str, str]
     ) -> Optional[str]:
-        for script_name, instance in self.loaded_script_instances.items():
+        """Get a random part message from scripts.
+
+        Args:
+            variables: Dictionary of variables to use in the message.
+
+        Returns:
+            A random part message or None if no scripts provide one.
+        """
+        for script_name, instance in self.scripts.items():
             if hasattr(instance, "get_part_message") and callable(
                 instance.get_part_message
             ):
@@ -968,66 +993,132 @@ class ScriptManager:
                     ):  # First script to provide a message wins
                         if isinstance(message_obj, str):
                             message_str = message_obj  # Type is now confirmed as str
-                            logger.info(
+                            self.logger.info(
                                 f"Script '{script_name}' provided part message: '{message_str[:50]}...'"
                             )
                             return message_str
                         else:
-                            logger.warning(
+                            self.logger.warning(
                                 f"Script '{script_name}' get_part_message returned non-string type: {type(message_obj)}. Ignoring."
                             )
                 except Exception as e:
-                    logger.error(
+                    self.logger.error(
                         f"Error calling get_part_message on script '{script_name}': {e}",
                         exc_info=True,
                     )
         return None
 
     def enable_script(self, script_name: str) -> bool:
-        """Enable a previously disabled script."""
+        """Enable a previously disabled script.
+
+        Args:
+            script_name: Name of the script to enable.
+
+        Returns:
+            True if the script was enabled successfully, False otherwise.
+        """
         if script_name in self.disabled_scripts:
             self.disabled_scripts.remove(script_name)
             try:
-                module = importlib.import_module(f"{self.script_dir}.{script_name}")
-                if hasattr(module, "load"):
-                    self.scripts[script_name] = module
-                    logger.info(f"Enabled and loaded script: {script_name}")
-                    return True
+                module = importlib.import_module(f"scripts.{script_name}")
+                if hasattr(module, "get_script_instance"):
+                    api_handler = ScriptAPIHandler(
+                        self.client_logic_ref,
+                        self,
+                        script_name,
+                    )
+                    script_instance = module.get_script_instance(api_handler)
+                    if script_instance:
+                        self.scripts[script_name] = script_instance
+                        self.logger.info(f"Enabled and loaded script: {script_name}")
+                        return True
                 else:
-                    logger.warning(f"Script {script_name} has no 'load' method")
+                    self.logger.warning(
+                        f"Script {script_name} has no 'get_script_instance' method"
+                    )
             except Exception as e:
-                logger.error(f"Failed to enable script {script_name}: {str(e)}")
+                self.logger.error(f"Failed to enable script {script_name}: {str(e)}")
         return False
 
     def disable_script(self, script_name: str) -> bool:
-        """Disable a currently loaded script."""
+        """Disable a currently loaded script.
+
+        Args:
+            script_name: Name of the script to disable.
+
+        Returns:
+            True if the script was disabled successfully, False otherwise.
+        """
         if script_name in self.scripts:
             self.disabled_scripts.add(script_name)
             del self.scripts[script_name]
-            logger.info(f"Disabled script: {script_name}")
+            self.logger.info(f"Disabled script: {script_name}")
             return True
         return False
 
-    def get_script(self, script_name: str) -> Optional[Any]:
-        """Get a loaded script by name."""
-        return self.scripts.get(script_name)
+    def reload_script(self, script_name: str) -> bool:
+        """Reload a script by name.
 
-    def get_loaded_scripts(self) -> List[str]:
-        """Get list of currently loaded script names."""
-        return list(self.scripts.keys())
+        Args:
+            script_name: Name of the script to reload.
+
+        Returns:
+            True if the script was reloaded successfully, False otherwise.
+        """
+        if script_name in self.scripts:
+            try:
+                module = importlib.reload(self.scripts[script_name])
+                if hasattr(module, "get_script_instance"):
+                    api_handler = ScriptAPIHandler(
+                        self.client_logic_ref,
+                        self,
+                        script_name,
+                    )
+                    script_instance = module.get_script_instance(api_handler)
+                    if script_instance:
+                        self.scripts[script_name] = script_instance
+                        self.logger.info(f"Reloaded script: {script_name}")
+                        return True
+            except Exception as e:
+                self.logger.error(f"Failed to reload script {script_name}: {str(e)}")
+        return False
 
     def get_disabled_scripts(self) -> List[str]:
         """Get list of disabled script names."""
         return list(self.disabled_scripts)
 
-    def reload_script(self, script_name: str) -> bool:
-        """Reload a script by name."""
-        if script_name in self.scripts:
-            try:
-                module = importlib.reload(self.scripts[script_name])
-                self.scripts[script_name] = module
-                logger.info(f"Reloaded script: {script_name}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to reload script {script_name}: {str(e)}")
-        return False
+    def get_all_script_commands_with_help(self) -> Dict[str, Dict[str, Any]]:
+        """Get all script commands with their help text and metadata.
+
+        Returns:
+            Dictionary mapping command names to their help text and metadata.
+        """
+        commands = {}
+        for cmd_name, cmd_data in self.registered_commands.items():
+            help_data = self.get_help_text_for_command(cmd_name)
+            if help_data:
+                commands[cmd_name] = {
+                    "help_text": help_data["help_text"],
+                    "aliases": cmd_data["aliases"],
+                    "script_name": cmd_data["script_name"],
+                }
+        return commands
+
+    def get_script_command_handler_and_data(
+        self, command_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get the handler function and metadata for a script command.
+
+        Args:
+            command_name: Name of the command to get handler for.
+
+        Returns:
+            Dictionary containing handler function and metadata, or None if not found.
+        """
+        cmd_name_lower = command_name.lower()
+        if cmd_name_lower in self.registered_commands:
+            return self.registered_commands[cmd_name_lower]
+        elif cmd_name_lower in self.command_aliases:
+            alias_target = self.command_aliases[cmd_name_lower]
+            return self.registered_commands[alias_target]
+        return None

@@ -19,6 +19,8 @@ class ScriptBase:
             api: The ScriptAPIHandler instance for this script
         """
         self.api = api
+        # Get the script name from the API handler
+        self.script_name = api.script_name
 
     def load(self):
         """Called when the script is loaded. Override this method to perform initialization.
@@ -62,7 +64,7 @@ class ScriptBase:
         # To get just the directory, we pass an empty string for data_filename
         # and then remove any trailing separator if present.
         path_with_dummy_file = self.api.script_manager.get_data_file_path_for_script(
-            self.api.script_module_name,
+            self.api.script_name,
             "",  # Pass empty filename to get the directory path
         )
         # get_data_file_path_for_script currently creates the dir <scripts_dir>/data/<script_module_name>

@@ -271,10 +271,11 @@ The context must exist (e.g., a channel, query, or the Status context)."""
                     line, system_color, context_name=active_context_name
                 )
 
-            # Show script name if it's from a script
-            if help_data.get("script_name") and help_data["script_name"] != "core":
+            # Get the script name from the command data
+            script_name = help_data.get("script_name")
+            if script_name and script_name != "core":
                 self.client.add_message(
-                    f"(Help from script: {help_data['script_name']})",
+                    f"(Help from script: {script_name})",
                     system_color,
                     context_name=active_context_name,
                 )
@@ -905,9 +906,9 @@ The context must exist (e.g., a channel, query, or the Status context)."""
         )
 
         script_cmds_and_aliases = []
-        for scmd_data in script_cmds_data:
-            script_cmds_and_aliases.append("/" + scmd_data["name"])
-            for alias in scmd_data.get("aliases", []):
+        for cmd_name, cmd_data in script_cmds_data.items():
+            script_cmds_and_aliases.append("/" + cmd_name)
+            for alias in cmd_data.get("aliases", []):
                 script_cmds_and_aliases.append("/" + alias)
 
         return sorted(list(set(core_cmds + script_cmds_and_aliases)))

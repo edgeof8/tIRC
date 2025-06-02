@@ -127,6 +127,7 @@ class IRCClient_Logic:
     def __init__(
         self,
         stdscr,
+        args,
         server_addr,
         port,
         nick,
@@ -137,6 +138,7 @@ class IRCClient_Logic:
     ):
         self.stdscr = stdscr
         self.is_headless = stdscr is None
+        self.args = args  # Store args for access by other components
         self.server = server_addr
         self.port = port
         self.initial_nick = nick
@@ -163,7 +165,23 @@ class IRCClient_Logic:
         self.echo_sent_to_status: bool = True
         self.show_raw_log_in_ui: bool = False
 
-        self.context_manager = ContextManager(max_history_per_context=MAX_HISTORY)
+        # Set max history based on mode
+        max_hist_to_use = MAX_HISTORY  # Default
+        if self.is_headless:
+            headless_hist_val = HEADLESS_MAX_HISTORY
+            if isinstance(headless_hist_val, int) and headless_hist_val >= 0:
+                max_hist_to_use = headless_hist_val
+                logger.info(
+                    f"Headless mode: Using MAX_HISTORY of {max_hist_to_use} from 'headless_message_history_lines'."
+                )
+            else:
+                logger.info(
+                    f"Headless mode: Using default MAX_HISTORY of {max_hist_to_use} ('headless_message_history_lines' not configured or invalid)."
+                )
+        else:  # UI mode
+            logger.info(f"UI mode: Using MAX_HISTORY of {max_hist_to_use}.")
+
+        self.context_manager = ContextManager(max_history_per_context=max_hist_to_use)
         self.context_manager.create_context("Status", context_type="status")
         self.context_manager.set_active_context("Status")
 
@@ -206,14 +224,37 @@ class IRCClient_Logic:
             self.ui = UIManager(stdscr, self)
             self.input_handler = InputHandler(self)
 
-        self.command_handler = CommandHandler(
-            self
-        )  # CommandHandler needs to be initialized before ScriptManager if ScriptManager interacts with it during load
+        self.command_handler = CommandHandler(self)
 
-        # Initialize ScriptManager
-        # app_config.BASE_DIR should be the root directory where config.py and pyrc.py are.
-        self.script_manager = ScriptManager(self, BASE_DIR)
-        self.script_manager.load_scripts()  # Load scripts after core components are ready
+        # Initialize ScriptManager with disabled scripts from both config and CLI
+        cli_disabled = (
+            set(self.args.disable_script)
+            if hasattr(self.args, "disable_script") and self.args.disable_script
+            else set()
+        )
+        config_disabled = set(DISABLED_SCRIPTS)
+        self.script_manager = ScriptManager(
+            self, BASE_DIR, disabled_scripts=cli_disabled.union(config_disabled)
+        )
+        self.script_manager.load_scripts()
+
+        # Initialize TriggerManager only if enabled
+        if ENABLE_TRIGGER_SYSTEM:
+            config_dir_triggers = os.path.join(BASE_DIR, "config")
+            if not os.path.exists(config_dir_triggers):
+                try:
+                    os.makedirs(config_dir_triggers, exist_ok=True)
+                except OSError as e_mkdir:
+                    logger.error(
+                        f"Could not create config directory for triggers: {e_mkdir}"
+                    )
+            self.trigger_manager = TriggerManager(config_dir_triggers)
+            logger.info("TriggerManager initialized.")
+        else:
+            self.trigger_manager = None
+            logger.info(
+                "TriggerManager is disabled by configuration (ENABLE_TRIGGER_SYSTEM=False)."
+            )
 
         self.cap_negotiator = CapNegotiator(
             network_handler=self.network_handler,
@@ -262,9 +303,6 @@ class IRCClient_Logic:
         else:  # Linux and other Unix-like systems
             config_dir = os.path.join(os.path.expanduser("~"), ".config", "pyrc")
 
-        self.trigger_manager = TriggerManager(os.path.join(BASE_DIR, "config"))
-        self.trigger_manager.load_triggers()
-
         self.channel_log_enabled = CHANNEL_LOG_ENABLED
         self.main_log_dir_path = os.path.join(BASE_DIR, "logs")
         self.channel_log_base_path = self.main_log_dir_path
@@ -308,7 +346,7 @@ class IRCClient_Logic:
             f"IRCClient_Logic initialized for {self.server}:{self.port} as {self.nick}. Channels: {initial_channels_display}"
         )
 
-        self.max_history = HEADLESS_MAX_HISTORY if self.is_headless else MAX_HISTORY
+        self.max_history = max_hist_to_use
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
         self.max_reconnect_delay = RECONNECT_MAX_DELAY
         self.connection_timeout = CONNECTION_TIMEOUT
@@ -816,37 +854,28 @@ class IRCClient_Logic:
             )
             # Optionally, add more detailed error to a specific debug context or log if too verbose for main chat
 
-    def process_trigger_event(self, event_type: str, event_data: dict) -> Optional[str]:
-        """
-        Processes a trigger event.
-        If a COMMAND trigger matches, returns the command string.
-        If a PYTHON trigger matches, executes the Python code and returns None.
-        """
-        processed_action = self.trigger_manager.process_trigger(event_type, event_data)
+    def process_trigger_event(
+        self, event_type: str, event_data: Dict[str, Any]
+    ) -> Optional[str]:
+        """Process a trigger event and return any action to take."""
+        if not ENABLE_TRIGGER_SYSTEM or not self.trigger_manager:
+            return None
 
-        if processed_action:
-            action_type = processed_action.get("type")
+        result = self.trigger_manager.process_trigger(event_type, event_data)
+        if not result:
+            return None
 
-            if action_type == ActionType.COMMAND:
-                return processed_action.get("content")
-            elif action_type == ActionType.PYTHON:
-                code_to_execute = processed_action.get("code")
-                data_for_code = processed_action.get(
-                    "event_data", {}
-                )  # Default to empty dict
-
-                # Construct a string for error reporting, e.g., "event_type matching pattern"
-                # This is a bit simplistic, might need original trigger pattern/id if available in processed_action
-                trigger_info_str = f"Type: PY, Event: {event_type}"
-                if data_for_code.get("$0"):  # If regex match was involved
-                    trigger_info_str += f", Match: \"{data_for_code['$0'][:50]}{'...' if len(data_for_code['$0']) > 50 else ''}\""
-
-                if code_to_execute:
-                    self._execute_python_trigger(
-                        code_to_execute, data_for_code, trigger_info_str
-                    )
-                return None  # Python actions are self-contained
-
+        action_type = result.get("action_type")
+        if action_type == "command":
+            return result.get("content")
+        elif action_type == "python":
+            # Execute Python trigger
+            code = result.get("content")
+            if code:
+                try:
+                    exec(code, {"event_data": event_data})
+                except Exception as e:
+                    logger.error(f"Error executing Python trigger: {e}")
         return None
 
     def handle_text_input(self, text: str):
@@ -1120,12 +1149,19 @@ class IRCClient_Logic:
 
     def process_message(self, message: str) -> Optional[str]:
         """Process an incoming message through triggers."""
-        if not self.trigger_manager or not ENABLE_TRIGGER_SYSTEM:
+        if not ENABLE_TRIGGER_SYSTEM:
             return None
 
-        result = self.trigger_manager.process_trigger("TEXT", {"message": message})
-        if result and result["type"] == ActionType.COMMAND:
-            return result["content"]
+        trigger_manager = self.trigger_manager
+        if not trigger_manager or not hasattr(trigger_manager, "process_trigger"):
+            return None
+
+        try:
+            result = trigger_manager.process_trigger("TEXT", {"message": message})
+            if result and result["type"] == ActionType.COMMAND:
+                return result["content"]
+        except Exception as e:
+            logger.error(f"Error processing trigger: {e}")
         return None
 
     def handle_reconnect(self) -> None:

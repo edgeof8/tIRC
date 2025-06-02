@@ -4,6 +4,7 @@ import time
 import logging
 import logging.handlers  # For RotatingFileHandler
 import os  # For log directory creation
+from typing import List, Optional
 
 from config import (
     IRC_SERVER,
@@ -93,6 +94,7 @@ def main_curses_wrapper(stdscr, args):
         # Initialize the client with the correct parameters
         client = IRCClient_Logic(
             stdscr=stdscr,
+            args=args,
             server_addr=args.server,
             port=args.port,
             nick=args.nick,
@@ -138,104 +140,67 @@ def main_curses_wrapper(stdscr, args):
 
 
 def parse_arguments(
-    cfg_server,
-    cfg_port,
-    cfg_nick,
-    cfg_channels,
-    cfg_password,
-    cfg_nickserv_password,
-    cfg_ssl,
-):
-    parser = argparse.ArgumentParser(
-        description="Simple Terminal IRC Client. Uses pyterm_irc_config.ini for defaults."
-    )
+    default_server: str,
+    default_port: int,
+    default_nick: str,
+    default_channels: List[str],
+    default_password: Optional[str],
+    default_nickserv_password: Optional[str],
+    default_ssl: bool,
+) -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="PyRC IRC Client")
     parser.add_argument(
         "--server",
-        default=None,
-        help=f"IRC server (default: {cfg_server})",
+        default=default_server,
+        help=f"IRC server address (default: {default_server})",
     )
     parser.add_argument(
-        "-p",
         "--port",
         type=int,
-        default=None,  # This default means 'not specified by user'
-        help=f"Server port (default from config: {cfg_port}, or auto-adjusts for SSL)",
+        default=default_port,
+        help=f"IRC server port (default: {default_port})",
     )
     parser.add_argument(
-        "-n", "--nick", default=None, help=f"Nickname (default: {cfg_nick})"
+        "--nick",
+        default=default_nick,
+        help=f"IRC nickname (default: {default_nick})",
     )
-
-    default_channel_display = cfg_channels[0] if cfg_channels else "None"
     parser.add_argument(
-        "-c",
         "--channel",
-        default=None,
-        help=f"Channel to join (e.g., #lobby). Overrides config (default first: {default_channel_display})",
-    )
-    parser.add_argument(
-        "-s",
-        "--ssl",
-        action=argparse.BooleanOptionalAction,  # Allows --ssl and --no-ssl
-        default=None,  # None means user didn't specify, so use config
-        help=f"Use SSL/TLS (default: {cfg_ssl})",
+        action="append",
+        default=default_channels,
+        help="IRC channel to join (can be used multiple times)",
     )
     parser.add_argument(
         "--password",
-        default=None,
-        help="Server password (optional, overrides config)",
+        default=default_password,
+        help="IRC server password (if required)",
     )
-    # Add headless mode argument
+    parser.add_argument(
+        "--nickserv-password",
+        default=default_nickserv_password,
+        help="NickServ password (if required)",
+    )
+    parser.add_argument(
+        "--ssl",
+        action="store_true",
+        default=default_ssl,
+        help="Use SSL/TLS connection",
+    )
     parser.add_argument(
         "--headless",
         action="store_true",
-        help="Run in headless mode without UI (for scripting)",
+        help="Run in headless mode (no UI)",
     )
-    # NickServ password is not exposed as a CLI argument for now, taken from config.
-    # If CLI exposure is desired, add an argument here.
-
-    args = parser.parse_args()
-
-    args.server = args.server if args.server is not None else cfg_server
-    args.nick = args.nick if args.nick is not None else cfg_nick
-
-    # SSL: CLI takes precedence. If not set by CLI (--ssl or --no-ssl), use config.
-    if args.ssl is None:  # User did not specify --ssl or --no-ssl
-        args.ssl = cfg_ssl
-    # Now args.ssl is the final SSL status (True or False)
-
-    # Port determination logic:
-    # 1. If user specified --port via CLI (args.port will not be None), use that value.
-    # 2. Else (user did not specify --port, so args.port is None), use the port from config (cfg_port).
-    # 3. If cfg_port is also None (or invalid, though config.py should handle this),
-    #    then fall back to default based on the final SSL status (args.ssl).
-    if args.port is not None:
-        # User specified a port via CLI, this takes highest precedence.
-        # args.port already has the user-supplied value.
-        pass  # Port is already set from CLI
-    elif cfg_port is not None:
-        # User did not specify port via CLI, so use config port.
-        args.port = cfg_port
-    else:
-        # User did not specify port via CLI, AND config port is not set (or invalid).
-        # Fallback to default based on final SSL status.
-        args.port = DEFAULT_SSL_PORT if args.ssl else DEFAULT_PORT
-
-    # Channel:
-    # If CLI --channel is provided, it becomes the single channel to join.
-    # Otherwise, use the list from config.
-    if args.channel is not None:  # User specified a channel
-        args.channel = [args.channel.lstrip("#")]
-    else:  # User did not specify a channel, use config
-        args.channel = cfg_channels if cfg_channels else []  # Ensure it's a list
-
-    args.password = args.password if args.password is not None else cfg_password
-    args.nickserv_password = cfg_nickserv_password
-
-    # Final check for server (must exist)
-    if not args.server:
-        parser.error("A server must be specified either via CLI or config file.")
-
-    return args
+    parser.add_argument(
+        "--disable-script",
+        action="append",
+        default=[],
+        metavar="SCRIPT_NAME",
+        help="Disable a specific script by its module name (e.g., default_fun_commands). Can be used multiple times.",
+    )
+    return parser.parse_args()
 
 
 def main():
@@ -258,6 +223,7 @@ def main():
         try:
             client = IRCClient_Logic(
                 stdscr=None,
+                args=args,
                 server_addr=args.server,
                 port=args.port,
                 nick=args.nick,
@@ -310,8 +276,11 @@ def main():
                 client.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
             logger.info("PyRC headless mode shutdown sequence complete.")
     else:
-        # UI mode
-        curses.wrapper(main_curses_wrapper, args)
+        # UI mode - create a closure to capture args
+        def curses_wrapper(stdscr):
+            return main_curses_wrapper(stdscr, args)
+
+        curses.wrapper(curses_wrapper)
 
 
 if __name__ == "__main__":

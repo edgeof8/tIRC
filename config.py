@@ -18,6 +18,11 @@ DEFAULT_NICKSERV_PASSWORD = None
 DEFAULT_AUTO_RECONNECT = True
 DEFAULT_VERIFY_SSL_CERT = True
 
+# --- Feature Settings ---
+DEFAULT_ENABLE_TRIGGER_SYSTEM = True
+DEFAULT_DISABLED_SCRIPTS = []
+DEFAULT_HEADLESS_MAX_HISTORY = 50
+
 # --- New Ignore List Settings ---
 DEFAULT_IGNORED_PATTERNS = []
 
@@ -303,9 +308,21 @@ def reload_all_config_values():
     global MAX_HISTORY, UI_COLORSCHEME
     global LOG_ENABLED, LOG_FILE, LOG_LEVEL_STR, LOG_LEVEL, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CHANNEL_LOG_ENABLED
     global IGNORED_PATTERNS  # Though load_ignore_list handles this
+    global ENABLE_TRIGGER_SYSTEM, DISABLED_SCRIPTS, HEADLESS_MAX_HISTORY
 
     logger.info(f"Reloading configuration from {CONFIG_FILE_PATH}")
     config.read(CONFIG_FILE_PATH)
+
+    # --- Feature Settings ---
+    ENABLE_TRIGGER_SYSTEM = get_config_value(
+        "Features", "enable_trigger_system", DEFAULT_ENABLE_TRIGGER_SYSTEM, bool
+    )
+    DISABLED_SCRIPTS = get_config_value(
+        "Scripts", "disabled_scripts", DEFAULT_DISABLED_SCRIPTS, list
+    )
+    HEADLESS_MAX_HISTORY = get_config_value(
+        "UI", "headless_message_history_lines", DEFAULT_HEADLESS_MAX_HISTORY, int
+    )
 
     # --- Connection Settings ---
     IRC_SERVER = get_config_value("Connection", "default_server", DEFAULT_SERVER, str)
@@ -373,6 +390,19 @@ def reload_all_config_values():
 
     # --- Reload Ignore List ---
     load_ignore_list()
+
+    # Feature flags
+    ENABLE_TRIGGER_SYSTEM = config.getboolean(
+        "features", "enable_trigger_system", fallback=True
+    )
+    DISABLED_SCRIPTS = config.get("features", "disabled_scripts", fallback="").split(
+        ","
+    )
+    DISABLED_SCRIPTS = [s.strip() for s in DISABLED_SCRIPTS if s.strip()]
+
+    # Headless mode settings
+    HEADLESS_MAX_HISTORY = config.getint("headless", "max_history", fallback=1000)
+
     logger.info("Configuration values reloaded.")
 
 
@@ -380,14 +410,20 @@ def reload_all_config_values():
 load_ignore_list()
 
 # Core Features
-ENABLE_TRIGGER_SYSTEM = True  # Whether to enable the trigger system
+ENABLE_TRIGGER_SYSTEM = get_config_value(
+    "Features", "enable_trigger_system", DEFAULT_ENABLE_TRIGGER_SYSTEM, bool
+)
 
 # Script Management
-DISABLED_SCRIPTS = []  # List of script module names to disable
+DISABLED_SCRIPTS = get_config_value(
+    "Scripts", "disabled_scripts", DEFAULT_DISABLED_SCRIPTS, list
+)
 
 # UI Settings
 MAX_HISTORY = 500  # Maximum number of messages to keep in history
-HEADLESS_MAX_HISTORY = 50  # Maximum history for headless mode
+HEADLESS_MAX_HISTORY = get_config_value(
+    "UI", "headless_message_history_lines", DEFAULT_HEADLESS_MAX_HISTORY, int
+)
 
 # Connection Settings
 CONNECTION_TIMEOUT = 30  # Socket connection timeout in seconds
