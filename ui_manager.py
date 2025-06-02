@@ -38,6 +38,13 @@ class UIManager:
             None,
             None,
         )
+        # Add split-screen related attributes with proper type hints
+        self.msg_win_top: Optional[curses.window] = None
+        self.msg_win_bottom: Optional[curses.window] = None
+        self.split_mode_active: bool = False
+        self.active_split_pane: str = "top"  # Can be "top" or "bottom"
+        self.top_pane_context_name: str = ""  # Initialize with empty string
+        self.bottom_pane_context_name: str = ""  # Initialize with empty string
         self.sidebar_width = 0
         self.msg_win_height = 0
         self.msg_win_width = 0
@@ -122,9 +129,38 @@ class UIManager:
         )
 
         try:
-            self.msg_win = curses.newwin(self.msg_win_height, self.msg_win_width, 0, 0)
-            self.msg_win.scrollok(True)
-            self.msg_win.idlok(True)
+            if self.split_mode_active:
+                # Calculate heights for split windows (50/50 split)
+                top_height = self.msg_win_height // 2
+                bottom_height = self.msg_win_height - top_height
+
+                # Create top message window
+                self.msg_win_top = curses.newwin(top_height, self.msg_win_width, 0, 0)
+                self.msg_win_top.scrollok(True)
+                self.msg_win_top.idlok(True)
+
+                # Create bottom message window
+                self.msg_win_bottom = curses.newwin(
+                    bottom_height, self.msg_win_width, top_height, 0
+                )
+                self.msg_win_bottom.scrollok(True)
+                self.msg_win_bottom.idlok(True)
+
+                # Set msg_win to the active pane for backward compatibility
+                self.msg_win = (
+                    self.msg_win_top
+                    if self.active_split_pane == "top"
+                    else self.msg_win_bottom
+                )
+            else:
+                # Create single message window
+                self.msg_win = curses.newwin(
+                    self.msg_win_height, self.msg_win_width, 0, 0
+                )
+                self.msg_win.scrollok(True)
+                self.msg_win.idlok(True)
+                self.msg_win_top = self.msg_win
+                self.msg_win_bottom = None
 
             self.sidebar_win = curses.newwin(
                 self.height - 1,
@@ -377,62 +413,75 @@ class UIManager:
         return max(0, available_for_nicks)
 
     def draw_messages(self, current_active_ctx_obj, current_active_ctx_name_str):
-        if not self.msg_win:
-            return
-        self._draw_window_border_and_bkgd(self.msg_win, self.colors.get("default", 0))
-        max_y, max_x = self.msg_win.getmaxyx()
-        if max_y <= 0 or max_x <= 0:
-            return
-
-        active_ctx_obj = current_active_ctx_obj
-
-        if not active_ctx_obj:
-            active_ctx_name = current_active_ctx_name_str
-            error_msg = f"Error: Context '{active_ctx_name if active_ctx_name else "None"}' not found."
-            self._safe_addstr(
-                self.msg_win,
-                0,
-                0,
-                error_msg,
-                self.colors.get("error", 0),
-                "draw_messages_ctx_not_found",
+        """Draw messages in the message window(s)"""
+        if not self.split_mode_active:
+            # Single window mode - use the original behavior
+            self._draw_window_border_and_bkgd(self.msg_win, self.colors["default"])
+            self._draw_messages_in_window(self.msg_win, current_active_ctx_obj)
+        else:
+            # Split window mode
+            # Draw top pane
+            self._draw_window_border_and_bkgd(self.msg_win_top, self.colors["default"])
+            top_ctx = self.client.context_manager.get_context(
+                self.top_pane_context_name
             )
-            try:
-                self.msg_win.noutrefresh()
-            except curses.error as e:
-                logger.warning(
-                    f"curses.error on noutrefresh in draw_messages (ctx not found): {e}"
-                )
-            return
+            if top_ctx:
+                self._draw_messages_in_window(self.msg_win_top, top_ctx)
 
-        current_scroll_offset = active_ctx_obj.scrollback_offset
-        end_idx = len(active_ctx_obj.messages) - current_scroll_offset
-        start_idx = max(0, end_idx - max_y)  # max_y is from msg_win.getmaxyx()
-        lines_to_draw = list(active_ctx_obj.messages)[start_idx:end_idx]
-
-        y_draw_start_offset = 0
-        num_lines_to_draw = len(lines_to_draw)
-
-        # If at the very bottom of scrollback and messages don't fill the window, align to bottom
-        if current_scroll_offset == 0 and num_lines_to_draw < max_y:
-            y_draw_start_offset = max_y - num_lines_to_draw
-
-        for i, (msg_text, color_attr_val) in enumerate(lines_to_draw):
-            draw_y = y_draw_start_offset + i
-            # 'i' is index in lines_to_draw, draw_y is the actual line in the window
-            self._safe_addstr(
-                self.msg_win,
-                draw_y,
-                0,
-                msg_text,
-                color_attr_val,
-                "draw_messages_content",
+            # Draw bottom pane
+            self._draw_window_border_and_bkgd(
+                self.msg_win_bottom, self.colors["default"]
             )
+            bottom_ctx = self.client.context_manager.get_context(
+                self.bottom_pane_context_name
+            )
+            if bottom_ctx:
+                self._draw_messages_in_window(self.msg_win_bottom, bottom_ctx)
+
+    def _draw_messages_in_window(self, window, context_obj):
+        """Helper method to draw messages in a specific window"""
+        if not window or not context_obj:
+            return
 
         try:
-            self.msg_win.noutrefresh()
+            max_y, max_x = window.getmaxyx()
+            messages = list(context_obj.messages)  # Convert to list to support slicing
+            scrollback_offset = context_obj.scrollback_offset
+
+            # Calculate how many messages we can display
+            available_lines = max_y - 2  # Leave room for border
+            if available_lines <= 0:
+                return
+
+            # Calculate start index for messages
+            start_idx = max(0, len(messages) - available_lines - scrollback_offset)
+            end_idx = len(messages)
+
+            # Draw messages
+            for i, msg in enumerate(messages[start_idx:end_idx]):
+                if i >= available_lines:
+                    break
+
+                y = i + 1  # Start below the border
+                # Handle both tuple and dict message formats
+                if isinstance(msg, tuple):
+                    color_attr = msg[1] if len(msg) > 1 else self.colors["default"]
+                    text = msg[0] if len(msg) > 0 else ""
+                else:
+                    color_attr = msg.get("color_attr", self.colors["default"])
+                    text = msg.get("text", "")
+
+                # Truncate text to fit window width
+                max_text_width = max_x - 2  # Leave room for border
+                if len(text) > max_text_width:
+                    text = text[: max_text_width - 3] + "..."
+
+                self._safe_addstr(window, y, 1, text, color_attr, "message")
+
         except curses.error as e:
-            logger.warning(f"curses.error on noutrefresh in draw_messages: {e}")
+            logger.warning(f"Error drawing messages in window: {e}")
+        except Exception as ex:
+            logger.error(f"Unexpected error drawing messages: {ex}", exc_info=True)
 
     def _draw_sidebar_context_list(
         self, max_y: int, max_x: int, current_active_ctx_name_str: str
@@ -732,146 +781,72 @@ class UIManager:
             logger.warning(f"curses.error on noutrefresh in draw_sidebar: {e}")
 
     def draw_status_bar(self, current_active_ctx_obj, current_active_ctx_name_str):
+        """Draw the status bar"""
         if not self.status_win:
             return
 
+        self._draw_window_border_and_bkgd(self.status_win, self.colors["status_bar"])
+
         try:
             max_y, max_x = self.status_win.getmaxyx()
-        except curses.error as e:
-            logger.warning(
-                f"curses.error getting getmaxyx for status_win in draw_status_bar: {e}. Aborting draw."
+            if max_y <= 0 or max_x <= 0:
+                return
+
+            # Build status line components
+            status_parts = []
+
+            # Add split-screen info if active
+            if self.split_mode_active:
+                split_info = f"[Split: {self.active_split_pane}]"
+                status_parts.append(split_info)
+
+            # Add active context info
+            if current_active_ctx_name_str:
+                context_info = f"[{current_active_ctx_name_str}]"
+                status_parts.append(context_info)
+
+            # Add network status if available
+            if hasattr(self.client, "network") and self.client.network:
+                if self.client.network.connected:
+                    status_parts.append("[Connected]")
+                else:
+                    status_parts.append("[Disconnected]")
+
+            # Add server info if available
+            if hasattr(self.client, "network") and self.client.network:
+                server = getattr(self.client.network, "server", None)
+                if server:
+                    server_info = f"[{server}]"
+                    status_parts.append(server_info)
+
+            # Add nick info if available
+            if hasattr(self.client, "network") and self.client.network:
+                nick = getattr(self.client.network, "nick", None)
+                if nick:
+                    nick_info = f"[{nick}]"
+                    status_parts.append(nick_info)
+
+            # Join all parts with spaces
+            status_line = " ".join(status_parts)
+
+            # Truncate if too long
+            if len(status_line) > max_x - 2:
+                status_line = status_line[: max_x - 5] + "..."
+
+            # Draw the status line
+            self._safe_addstr(
+                self.status_win,
+                0,
+                1,
+                status_line,
+                self.colors["status_bar"],
+                "status_bar_content",
             )
-            return
+
+        except curses.error as e:
+            logger.warning(f"Error drawing status bar: {e}")
         except Exception as ex:
-            logger.error(
-                f"Unexpected error getting getmaxyx for status_win in draw_status_bar: {ex}",
-                exc_info=True,
-            )
-            return
-
-        if max_y <= 0 or max_x <= 0:
-            logger.debug(f"Status bar dimensions too small to draw: {max_y}x{max_x}")
-            return
-
-        self._draw_window_border_and_bkgd(
-            self.status_win, self.colors.get("status_bar", 0)
-        )
-        # Re-fetch max_y, max_x after border draw, as it might clear/reset window properties or in case of future changes to border drawing
-        try:
-            max_y, max_x = self.status_win.getmaxyx()
-        except curses.error as e:
-            logger.warning(
-                f"curses.error re-getting getmaxyx for status_win in draw_status_bar: {e}. Aborting draw."
-            )
-            return
-        except Exception as ex:
-            logger.error(
-                f"Unexpected error re-getting getmaxyx for status_win in draw_status_bar: {ex}",
-                exc_info=True,
-            )
-            return
-        if max_y <= 0 or max_x <= 0:
-            return  # Check again
-
-        active_ctx_obj = current_active_ctx_obj
-        active_ctx_name = current_active_ctx_name_str or "N/A"
-
-        topic_display = ""
-        if active_ctx_obj and active_ctx_obj.type == "channel" and active_ctx_obj.topic:
-            topic_str = active_ctx_obj.topic
-            max_topic_len = max_x // 3
-            topic_display = f"Topic: {topic_str[:max_topic_len-7]}"
-            if len(topic_str) > max_topic_len - 7:
-                topic_display += "..."
-
-        channel_join_status_info = ""
-        if (
-            active_ctx_obj
-            and active_ctx_obj.type == "channel"
-            and hasattr(active_ctx_obj, "join_status")
-        ):
-            if active_ctx_obj.join_status not in [
-                ChannelJoinStatus.FULLY_JOINED,
-                ChannelJoinStatus.NOT_JOINED,
-                None,
-            ]:  # Don't show for fully joined or not applicable
-                channel_join_status_info = f" ({active_ctx_obj.join_status.name})"
-
-        status_left = f" {self.client.nick}@{self.client.server}:{self.client.port} [{active_ctx_name}{channel_join_status_info}]"
-        if self.client.use_ssl:
-            status_left += " SSL"
-
-        status_right = "CONNECTED" if self.client.network.connected else "DISCONNECTED"
-        if not self.client.network.connected and not self.client.should_quit:
-            if hasattr(self.client.network, "reconnect_delay"):
-                status_right = f"RETRY({self.client.network.reconnect_delay}s)"
-
-        full_status_text = status_left
-        if topic_display:
-            space_for_topic = max_x - (len(status_left) + len(status_right) + 3)
-            if space_for_topic > 5:
-                actual_topic_display = topic_display[:space_for_topic]
-                full_status_text += f" | {actual_topic_display}"
-
-        status_bar_color = self.colors.get("status_bar", 0)
-        self._safe_addstr(
-            self.status_win,
-            0,
-            0,
-            full_status_text,
-            status_bar_color,
-            "draw_status_bar_left",
-        )
-
-        # Calculate where to put status_right, ensuring it doesn't overwrite status_left
-        # and fits. _safe_addstr will handle truncation of status_right itself.
-        # We need to ensure x_pos_right is valid and leaves space.
-        # The original logic was: full_status_text_truncated = full_status_text[:max_x - len(status_right) -1]
-        # This implied that status_right was placed at `max_x - len(status_right) - 1`.
-        # Let's try to preserve that positioning if it makes sense.
-        # The available space for full_status_text_truncated was `max_x - len(status_right) - 1`.
-        # If full_status_text is shorter than that, status_right can be placed further to the right.
-
-        len_status_left_drawn = len(
-            full_status_text[:max_x]
-        )  # What _safe_addstr would draw for the left part
-
-        if (
-            len_status_left_drawn + len(status_right) + 1 < max_x
-        ):  # +1 for a potential space
-            x_pos_right = max_x - (
-                len(status_right) + 1
-            )  # Position for " " + status_right
-            if x_pos_right > len_status_left_drawn:  # Ensure no overlap
-                self._safe_addstr(
-                    self.status_win,
-                    0,
-                    x_pos_right,
-                    " " + status_right,
-                    status_bar_color,
-                    "draw_status_bar_right",
-                )
-            # else: not enough distinct space for status_right without overlap or being too cramped.
-            # Consider logging or alternative placement if this becomes an issue.
-        elif (
-            len_status_left_drawn < max_x
-        ):  # If there's any space left at all after left part
-            # Fallback: try to append to left part if it didn't fill the line, with a separator
-            remaining_space_for_right = max_x - len_status_left_drawn
-            if len(" | " + status_right) < remaining_space_for_right:
-                self._safe_addstr(
-                    self.status_win,
-                    0,
-                    len_status_left_drawn,
-                    " | " + status_right,
-                    status_bar_color,
-                    "draw_status_bar_right_fallback",
-                )
-
-        try:
-            self.status_win.noutrefresh()
-        except curses.error as e:
-            logger.warning(f"curses.error on noutrefresh in draw_status_bar: {e}")
+            logger.error(f"Unexpected error drawing status bar: {ex}", exc_info=True)
 
     def draw_input_line(self):
         if not self.input_win:
@@ -948,13 +923,13 @@ class UIManager:
             logger.warning(f"curses.error on noutrefresh in draw_input_line: {e}")
 
     def refresh_all_windows(self):
+        """Refresh all windows in the UI"""
         try:
             new_height, new_width = self.stdscr.getmaxyx()
         except curses.error as e:
             logger.error(
                 f"Curses error getting stdscr.getmaxyx() in refresh_all_windows: {e}. UI update aborted."
             )
-            # Potentially can't even clear or show an error if stdscr is fundamentally broken.
             return
 
         resize_occurred = new_height != self.height or new_width != self.width
@@ -968,33 +943,36 @@ class UIManager:
 
             try:
                 # It's crucial that resizeterm is called if dimensions change.
-                # It can fail if the new dimensions are too small (e.g., 0x0).
                 if self.height > 0 and self.width > 0:
                     curses.resizeterm(self.height, self.width)
                     self.stdscr.clearok(
                         True
                     )  # Force clear on next refresh after resize
                 else:
-                    # If terminal is 0x0, resizeterm might error or behave unpredictably.
-                    # We'll likely hit the "Terminal too small" in setup_layout.
                     logger.warning(
                         f"Terminal dimensions are non-positive ({self.height}x{self.width}). Skipping resizeterm."
                     )
 
-                self.stdscr.erase()  # Add erase for more aggressive clearing
+                self.stdscr.erase()
                 self.stdscr.clear()
-                self.stdscr.refresh()  # Refresh stdscr itself after clear before creating subwindows
-                self.setup_layout()  # This might raise "Terminal too small..."
+                self.stdscr.refresh()
+                self.setup_layout()
 
-                # Touch all windows and set clearok to mark them for full redraw after successful layout
+                # Touch all windows and set clearok to mark them for full redraw
                 try:
                     self.stdscr.touchwin()
-                    self.stdscr.clearok(
-                        True
-                    )  # Ensure stdscr is also cleared properly on next refresh cycle
-                    if self.msg_win:
-                        self.msg_win.touchwin()
-                        self.msg_win.clearok(True)
+                    self.stdscr.clearok(True)
+                    if self.split_mode_active:
+                        if self.msg_win_top:
+                            self.msg_win_top.touchwin()
+                            self.msg_win_top.clearok(True)
+                        if self.msg_win_bottom:
+                            self.msg_win_bottom.touchwin()
+                            self.msg_win_bottom.clearok(True)
+                    else:
+                        if self.msg_win:
+                            self.msg_win.touchwin()
+                            self.msg_win.clearok(True)
                     if self.sidebar_win:
                         self.sidebar_win.touchwin()
                         self.sidebar_win.clearok(True)
@@ -1014,17 +992,17 @@ class UIManager:
                         exc_info=True,
                     )
 
-                # Scroll to end of messages on resize to show latest messages
+                # Scroll to end of messages on resize
                 try:
                     self.scroll_messages("end")
-                    logger.debug(f"Called scroll_messages('end') after resize.")
+                    logger.debug("Called scroll_messages('end') after resize.")
                 except Exception as e_scroll_end:
                     logger.error(
                         f"Error calling scroll_messages('end') after resize: {e_scroll_end}",
                         exc_info=True,
                     )
 
-            except Exception as e:  # Catches exceptions from resizeterm or setup_layout
+            except Exception as e:
                 logger.error(
                     f"Error during resize handling sequence: {e}", exc_info=True
                 )
@@ -1037,18 +1015,14 @@ class UIManager:
                     try:
                         self.stdscr.erase()
                         msg = "Terminal too small. Please resize."
-                        # Ensure msg_y and msg_x are valid before trying to draw
                         if self.height > 0 and self.width > 0:
                             msg_y = self.height // 2
                             msg_x = max(0, (self.width - len(msg)) // 2)
-                            if (
-                                msg_x + len(msg) <= self.width
-                            ):  # Check if message can fit
+                            if msg_x + len(msg) <= self.width:
                                 error_attr = self.colors.get(
                                     "error", curses.A_BOLD | curses.color_pair(0)
                                 )
                                 self.stdscr.addstr(msg_y, msg_x, msg, error_attr)
-                        # else: message won't fit, stdscr will be blank
                         self.stdscr.refresh()
                     except curses.error as ce_small_msg:
                         logger.error(
@@ -1059,9 +1033,8 @@ class UIManager:
                             f"Unexpected error displaying 'Terminal too small' message: {ex_small_msg}",
                             exc_info=True,
                         )
-                    return  # Do not proceed to draw other windows
+                    return
                 else:
-                    # Handle other critical resize errors
                     try:
                         self.stdscr.erase()
                         generic_error_msg = "Resize Error!"
@@ -1085,23 +1058,18 @@ class UIManager:
                             f"Unexpected error displaying 'Resize Error!' message: {ex_resize_err}",
                             exc_info=True,
                         )
-                    return  # Do not proceed
+                    return
 
-        # If UI is marked as too small (either from this resize or a previous one)
+        # If UI is too small, show message and return
         if self.ui_is_too_small:
-            # Attempt to re-display the "too small" message if resize didn't just happen,
-            # or ensure stdscr is refreshed if it was already set up by the resize block.
-            # This covers cases where a refresh is called without a resize but the UI is still too small.
-            if (
-                not resize_occurred
-            ):  # If no resize, the message might not have been redrawn
+            if not resize_occurred:
                 try:
-                    self.stdscr.erase()  # Ensure clean slate
+                    self.stdscr.erase()
                     msg = "Terminal too small. Please resize."
                     if self.height > 0 and self.width > 0:
                         msg_y = self.height // 2
                         msg_x = max(0, (self.width - len(msg)) // 2)
-                        if msg_x + len(msg) <= self.width:  # Check if message can fit
+                        if msg_x + len(msg) <= self.width:
                             error_attr = self.colors.get(
                                 "error", curses.A_BOLD | curses.color_pair(0)
                             )
@@ -1116,23 +1084,9 @@ class UIManager:
                         f"Unexpected error re-displaying 'Terminal too small' message: {ex_small_msg_repeat}",
                         exc_info=True,
                     )
-
-            try:
-                # If stdscr was touched, doupdate might be needed, or refresh if only stdscr.
-                # For simplicity, a refresh on stdscr should be safe.
-                self.stdscr.refresh()
-            except curses.error as e_doupdate_small:
-                logger.warning(
-                    f"Curses error during doupdate/refresh when UI is too small: {e_doupdate_small}"
-                )
-            except Exception as ex_doupdate_small:
-                logger.error(
-                    f"Unexpected error during doupdate/refresh when UI is too small: {ex_doupdate_small}",
-                    exc_info=True,
-                )
             return
 
-        # --- Proceed with drawing individual windows only if UI is not too small ---
+        # Get active context info
         active_ctx_name_snapshot = self.client.context_manager.active_context_name
         active_ctx_obj_snapshot = (
             self.client.context_manager.get_context(active_ctx_name_snapshot)
@@ -1141,18 +1095,34 @@ class UIManager:
         )
 
         try:
-            self.stdscr.noutrefresh()  # Prepare stdscr for batched update
+            self.stdscr.noutrefresh()
             self.draw_messages(active_ctx_obj_snapshot, active_ctx_name_snapshot)
             self.draw_sidebar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
             self.draw_status_bar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
             self.draw_input_line()
-            curses.doupdate()  # Perform batched update
+
+            # Refresh all windows
+            if self.split_mode_active:
+                if self.msg_win_top:
+                    self.msg_win_top.noutrefresh()
+                if self.msg_win_bottom:
+                    self.msg_win_bottom.noutrefresh()
+            else:
+                if self.msg_win:
+                    self.msg_win.noutrefresh()
+            if self.sidebar_win:
+                self.sidebar_win.noutrefresh()
+            if self.status_win:
+                self.status_win.noutrefresh()
+            if self.input_win:
+                self.input_win.noutrefresh()
+
+            curses.doupdate()
         except curses.error as e_draw:
             logger.error(
                 f"Curses error during main window drawing phase: {e_draw}",
                 exc_info=True,
             )
-            # Attempt to display a generic UI draw error on stdscr
             try:
                 self.stdscr.erase()
                 draw_error_msg = "UI Draw Error!"
@@ -1176,8 +1146,6 @@ class UIManager:
                     f"Unexpected error displaying 'UI Draw Error!' message: {ex_draw_err_msg}",
                     exc_info=True,
                 )
-            # No return here, let it fall through if displaying the error fails.
-            # The UI might be stuck, but we've logged the core issue.
         except Exception as e_critical_draw:
             logger.critical(
                 f"Unexpected critical error during refresh_all_windows draw phase: {e_critical_draw}",
@@ -1216,31 +1184,46 @@ class UIManager:
             return curses.ERR
 
     def scroll_messages(self, direction):
-        if not self.msg_win:
-            return
-        active_ctx_obj = self.client.context_manager.get_active_context()
-        if not active_ctx_obj:
-            return
+        """Scroll messages in the active window"""
+        if not self.split_mode_active:
+            # Single window mode - scroll the active context
+            active_ctx = self.client.context_manager.get_active_context()
+            if active_ctx:
+                if direction == "up":
+                    active_ctx.scrollback_offset += 1
+                elif direction == "down":
+                    active_ctx.scrollback_offset = max(
+                        0, active_ctx.scrollback_offset - 1
+                    )
+                elif direction == "page_up":
+                    active_ctx.scrollback_offset += self.msg_win_height - 2
+                elif direction == "page_down":
+                    active_ctx.scrollback_offset = max(
+                        0, active_ctx.scrollback_offset - (self.msg_win_height - 2)
+                    )
+        else:
+            # Split window mode - scroll the active pane
+            if self.active_split_pane == "top":
+                ctx = self.client.context_manager.get_context(
+                    self.top_pane_context_name
+                )
+                window = self.msg_win_top
+            else:
+                ctx = self.client.context_manager.get_context(
+                    self.bottom_pane_context_name
+                )
+                window = self.msg_win_bottom
 
-        viewable_lines = self.msg_win_height if self.msg_win_height > 0 else 1
-        history_len = len(active_ctx_obj.messages)
-        current_offset = active_ctx_obj.scrollback_offset
-        new_offset = current_offset
-        max_scroll_offset = max(0, history_len - viewable_lines)
-
-        if direction == "up":
-            new_offset = min(max_scroll_offset, current_offset + viewable_lines // 2)
-        elif direction == "down":
-            new_offset = max(0, current_offset - viewable_lines // 2)
-        elif direction == "home":
-            new_offset = max_scroll_offset
-        elif direction == "end":
-            new_offset = 0
-
-        new_offset = max(0, min(new_offset, max_scroll_offset))
-        if new_offset != current_offset:
-            active_ctx_obj.scrollback_offset = new_offset
-            self.client.ui_needs_update.set()
+            if ctx and window:
+                max_y, _ = window.getmaxyx()
+                if direction == "up":
+                    ctx.scrollback_offset += 1
+                elif direction == "down":
+                    ctx.scrollback_offset = max(0, ctx.scrollback_offset - 1)
+                elif direction == "page_up":
+                    ctx.scrollback_offset += max_y - 2
+                elif direction == "page_down":
+                    ctx.scrollback_offset = max(0, ctx.scrollback_offset - (max_y - 2))
 
     def scroll_user_list(self, direction: str, lines_arg: Optional[int] = None):
         """Scrolls the user list in the sidebar for the active channel context."""

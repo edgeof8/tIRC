@@ -5,6 +5,7 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 ## Key Features
 
 - **Text-based UI:** Clean and navigable interface using the Python `curses` library.
+- **Split-Screen Support:** Horizontal split-screen mode with independent scrolling and context management for each pane.
 - **Channel and Query Windows:** Separate, consistently managed contexts for channels (case-insensitive handling, e.g., #channel and #Channel are treated as the same) and private messages.
 - **mIRC-like UI Flow:** Starts in the "Status" window and automatically switches to a channel upon successful join.
 - **IRCv3 Support:** Robust CAP negotiation (including sasl, multi-prefix, server-time, echo-message, etc.) and SASL PLAIN authentication for secure login.
@@ -166,6 +167,9 @@ PyRC supports a variety of commands. Type `/help` within the client for a list o
 - `/window <name|number>` (Alias: `/win`): Switches to a specific window.
 - `/status`: Switches to the Status window.
 - `/prevchannel` (Alias: `/pc`): Switches to the previously active channel or Status.
+- `/split [on|off|toggle]`: Toggles split-screen mode.
+- `/focus <top|bottom>`: Switches focus between split-screen panes.
+- `/setpane <top|bottom> <context_name>`: Assigns a context to a specific pane.
 - Ctrl+U (or `/u [offset|direction]`, `/userlistscroll [offset|direction]`): Scrolls the user list.
 - `/set [<section.key> [<value>]]` (Alias: `/se`): Views or modifies client configuration.
 - `/rehash`: Reloads pyterm_irc_config.ini.

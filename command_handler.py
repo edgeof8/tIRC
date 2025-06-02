@@ -113,6 +113,9 @@ class CommandHandler:
             "rawlog": self._handle_rawlog_command,
             "save": self._handle_save_command,
             "lastlog": self._handle_lastlog_command,
+            "split": self._handle_split_command,
+            "focus": self._handle_focus_command,
+            "setpane": self._handle_setpane_command,
         }
 
         self.command_primary_map = {}
@@ -183,6 +186,28 @@ class CommandHandler:
                         context_name=active_context_name,
                     )
 
+            # Add split-screen commands help
+            self.client.add_message(
+                "\nSplit-screen commands:",
+                system_color,
+                context_name=active_context_name,
+            )
+            self.client.add_message(
+                "/split: Toggle split-screen mode",
+                system_color,
+                context_name=active_context_name,
+            )
+            self.client.add_message(
+                "/focus <top|bottom>: Switch focus between split panes",
+                system_color,
+                context_name=active_context_name,
+            )
+            self.client.add_message(
+                "/setpane <top|bottom> <context_name>: Set a context in a specific pane",
+                system_color,
+                context_name=active_context_name,
+            )
+
             self.client.add_message(
                 "\nUse /help <command> for detailed help on a specific command.",
                 system_color,
@@ -195,6 +220,39 @@ class CommandHandler:
         help_data = self.client.script_manager.get_help_text_for_command(
             command_name_from_user
         )
+
+        # Add split-screen commands help
+        if command_name_from_user == "split":
+            help_text = """Split-screen mode commands:
+/split - Toggle split-screen mode on/off
+When enabled, the message window is split into two panes that can display different contexts.
+The top pane initially shows the current active context, and the bottom pane shows the Status context.
+Use /focus to switch between panes, and /setpane to change which context is shown in each pane."""
+            for line in help_text.splitlines():
+                self.client.add_message(
+                    line, system_color, context_name=active_context_name
+                )
+            return
+        elif command_name_from_user == "focus":
+            help_text = """Focus command for split-screen mode:
+/focus <top|bottom> - Switch focus between split panes
+When in split-screen mode, this command determines which pane receives scroll commands.
+The focused pane is indicated in the status bar."""
+            for line in help_text.splitlines():
+                self.client.add_message(
+                    line, system_color, context_name=active_context_name
+                )
+            return
+        elif command_name_from_user == "setpane":
+            help_text = """Set pane context command for split-screen mode:
+/setpane <top|bottom> <context_name> - Set a context in a specific pane
+When in split-screen mode, this command assigns a context to either the top or bottom pane.
+The context must exist (e.g., a channel, query, or the Status context)."""
+            for line in help_text.splitlines():
+                self.client.add_message(
+                    line, system_color, context_name=active_context_name
+                )
+            return
 
         if help_data:
             # Check if this is an alias
@@ -953,3 +1011,132 @@ class CommandHandler:
                     or "Status",
                 )
                 return True  # Command was processed (as unknown)
+
+    def _handle_split_command(self, args_str: str):
+        """Handle the /split command to toggle split-screen mode"""
+        ui = self.client.ui
+        if not ui.split_mode_active:
+            # Enable split mode
+            ui.split_mode_active = True
+            ui.active_split_pane = "top"
+            ui.top_pane_context_name = (
+                self.client.context_manager.active_context_name or ""
+            )
+            ui.bottom_pane_context_name = (
+                "Status"  # Default to Status context for bottom pane
+            )
+
+            # Recreate windows with split layout
+            ui.setup_layout()
+
+            self.client.add_message(
+                "Split-screen mode enabled. Use /focus to switch between panes.",
+                self.client.ui.colors["system"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+        else:
+            # Disable split mode
+            ui.split_mode_active = False
+            ui.active_split_pane = "top"
+
+            # Set the active context to the one that was in the active pane
+            active_context = (
+                ui.top_pane_context_name
+                if ui.active_split_pane == "top"
+                else ui.bottom_pane_context_name
+            )
+            if active_context:  # Only set if we have a valid context name
+                self.client.context_manager.set_active_context(active_context)
+
+            # Clear split-related attributes
+            ui.top_pane_context_name = ""
+            ui.bottom_pane_context_name = ""
+
+            # Recreate windows with single layout
+            ui.setup_layout()
+
+            self.client.add_message(
+                "Split-screen mode disabled.",
+                self.client.ui.colors["system"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+
+    def _handle_focus_command(self, args_str: str):
+        """Handle the /focus command to switch between split panes"""
+        if not self.client.ui.split_mode_active:
+            self.client.add_message(
+                "Split-screen mode is not active. Use /split to enable it.",
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+            return
+
+        parts = self._ensure_args(
+            args_str, "Usage: /focus <top|bottom>", num_expected_parts=1
+        )
+        if not parts:
+            return
+
+        pane = parts[0].lower()
+        if pane not in ["top", "bottom"]:
+            self.client.add_message(
+                "Invalid pane. Use 'top' or 'bottom'.",
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+            return
+
+        self.client.ui.active_split_pane = pane
+        self.client.add_message(
+            f"Focus set to {pane} pane.",
+            self.client.ui.colors["system"],
+            context_name=self.client.context_manager.active_context_name,
+        )
+
+    def _handle_setpane_command(self, args_str: str):
+        """Handle the /setpane command to set a context in a specific pane"""
+        if not self.client.ui.split_mode_active:
+            self.client.add_message(
+                "Split-screen mode is not active. Use /split to enable it.",
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+            return
+
+        parts = self._ensure_args(
+            args_str,
+            "Usage: /setpane <top|bottom> <context_name>",
+            num_expected_parts=2,
+        )
+        if not parts:
+            return
+
+        pane, context_name = parts[0].lower(), parts[1]
+        if pane not in ["top", "bottom"]:
+            self.client.add_message(
+                "Invalid pane. Use 'top' or 'bottom'.",
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+            return
+
+        # Verify context exists
+        if not self.client.context_manager.get_context(context_name):
+            self.client.add_message(
+                f"Context '{context_name}' not found.",
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+            return
+
+        # Set the context for the specified pane
+        if pane == "top":
+            self.client.ui.top_pane_context_name = context_name
+        else:
+            self.client.ui.bottom_pane_context_name = context_name
+
+        self.client.add_message(
+            f"Set {pane} pane to context '{context_name}'.",
+            self.client.ui.colors["system"],
+            context_name=self.client.context_manager.active_context_name,
+        )
