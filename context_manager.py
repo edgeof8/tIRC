@@ -31,7 +31,7 @@ class Context:
     def __init__(
         self,
         name: str,
-        context_type: str = "generic",
+        context_type: str = "channel",
         topic: Optional[str] = None,
         max_history: int = MAX_HISTORY,
         initial_join_status: Optional[ChannelJoinStatus] = None,
@@ -39,9 +39,9 @@ class Context:
         self.name: str = name
         self.type: str = context_type
         self.messages: Deque[Tuple[str, Any]] = deque(maxlen=max_history)
-        self.users: Dict[str, str] = (
-            {}
-        )
+        self.users: Dict[str, str] = {}
+        self.user_prefixes: Dict[str, str] = {}
+        self.modes: set = set()
         self.topic: Optional[str] = topic
         self.unread_count: int = 0
         self.scrollback_offset: int = 0
@@ -49,7 +49,11 @@ class Context:
 
         self.join_status: Optional[ChannelJoinStatus]
         if context_type == "channel":
-            self.join_status = initial_join_status if initial_join_status is not None else ChannelJoinStatus.NOT_JOINED
+            self.join_status = (
+                initial_join_status
+                if initial_join_status is not None
+                else ChannelJoinStatus.NOT_JOINED
+            )
         else:
             self.join_status = None
 
@@ -58,7 +62,9 @@ class Context:
 
     def __repr__(self):
         user_count = len(self.users)
-        join_status_repr = f" join_status={self.join_status.name}" if self.join_status else ""
+        join_status_repr = (
+            f" join_status={self.join_status.name}" if self.join_status else ""
+        )
         return f"<Context name='{self.name}' type='{self.type}' users={user_count} unread={self.unread_count}{join_status_repr} scroll_offset={self.scrollback_offset} user_scroll_offset={self.user_list_scroll_offset}>"
 
     def update_join_status(self, new_status: ChannelJoinStatus) -> bool:
@@ -68,7 +74,9 @@ class Context:
         Returns True if status was updated, False otherwise.
         """
         if self.type != "channel":
-            logger.warning(f"Attempted to update join_status for non-channel context '{self.name}' (type: {self.type}) to {new_status.name}. Ignoring.")
+            logger.warning(
+                f"Attempted to update join_status for non-channel context '{self.name}' (type: {self.type}) to {new_status.name}. Ignoring."
+            )
             return False
 
         if self.join_status == new_status:
@@ -76,7 +84,9 @@ class Context:
 
         old_status_name = self.join_status.name if self.join_status else "None"
         self.join_status = new_status
-        logger.info(f"Context '{self.name}': join_status changed from {old_status_name} -> {new_status.name}")
+        logger.info(
+            f"Context '{self.name}': join_status changed from {old_status_name} -> {new_status.name}"
+        )
         return True
 
 
@@ -120,10 +130,18 @@ class ContextManager:
                 context_type=context_type,
                 topic=topic,
                 max_history=self.max_history,
-                initial_join_status=initial_join_status_for_channel if context_type == "channel" else None,
+                initial_join_status=(
+                    initial_join_status_for_channel
+                    if context_type == "channel"
+                    else None
+                ),
             )
             created_context = self.contexts[normalized_name]
-            join_status_name = created_context.join_status.name if created_context.join_status else 'N/A'
+            join_status_name = (
+                created_context.join_status.name
+                if created_context.join_status
+                else "N/A"
+            )
             logger.debug(
                 f"Created context: '{normalized_name}' (original: '{original_passed_name}') of type {context_type} with join_status: {join_status_name}"
             )
@@ -222,9 +240,7 @@ class ContextManager:
         context = self.contexts.get(normalized_name)
         if context:
             if context.type in ["channel", "query"]:
-                context.users[user] = (
-                    prefix
-                )
+                context.users[user] = prefix
                 logger.debug(
                     f"Added/updated user '{user}' with prefix '{prefix}' in context '{context.name}' (original passed: '{original_passed_name}')"
                 )
@@ -319,7 +335,9 @@ class ContextManager:
             return True
         return False
 
-    def set_channel_join_status(self, channel_name: str, new_status: ChannelJoinStatus) -> bool:
+    def set_channel_join_status(
+        self, channel_name: str, new_status: ChannelJoinStatus
+    ) -> bool:
         """
         Sets the join status for a specific channel context.
         Returns True if the status was successfully updated, False otherwise.
@@ -328,11 +346,15 @@ class ContextManager:
         context = self.contexts.get(normalized_name)
 
         if not context:
-            logger.warning(f"set_channel_join_status: Context '{normalized_name}' (original: '{channel_name}') not found.")
+            logger.warning(
+                f"set_channel_join_status: Context '{normalized_name}' (original: '{channel_name}') not found."
+            )
             return False
 
         if context.type != "channel":
-            logger.warning(f"set_channel_join_status: Context '{normalized_name}' (original: '{channel_name}') is not a channel (type: {context.type}). Cannot set join status.")
+            logger.warning(
+                f"set_channel_join_status: Context '{normalized_name}' (original: '{channel_name}') is not a channel (type: {context.type}). Cannot set join status."
+            )
             return False
 
         return context.update_join_status(new_status)

@@ -53,7 +53,7 @@ class ChannelCommandsHandler:
             )
             return
 
-        self.client.network.send_raw(f"JOIN {target_channel_name}")
+        self.client.network_handler.send_raw(f"JOIN {target_channel_name}")
 
     def handle_part_command(self, args_str: str):
         """Handle the /part command"""
@@ -89,7 +89,7 @@ class ChannelCommandsHandler:
             if not reason:
                 reason = "Leaving"  # Fallback if no script provides a message
 
-        self.client.network.send_raw(f"PART {channel_to_part} :{reason}")
+        self.client.network_handler.send_raw(f"PART {channel_to_part} :{reason}")
 
     def handle_topic_command(self, args_str: str):
         topic_parts = args_str.split(" ", 1)
@@ -137,11 +137,11 @@ class ChannelCommandsHandler:
             )
 
         if new_topic is not None:
-            self.client.network.send_raw(
+            self.client.network_handler.send_raw(
                 f"TOPIC {target_channel_ctx_name} :{new_topic}"
             )
         else:
-            self.client.network.send_raw(f"TOPIC {target_channel_ctx_name}")
+            self.client.network_handler.send_raw(f"TOPIC {target_channel_ctx_name}")
 
     def handle_invite_command(self, args_str: str):
         """Handle the /invite command"""
@@ -180,7 +180,7 @@ class ChannelCommandsHandler:
             )
             return
 
-        self.client.network.send_raw(f"INVITE {nick} {channel_to_invite_to}")
+        self.client.network_handler.send_raw(f"INVITE {nick} {channel_to_invite_to}")
 
     def handle_kick_command(self, args_str: str):
         """Handle the /kick command"""
@@ -210,11 +210,13 @@ class ChannelCommandsHandler:
             )
             return
         if reason:
-            self.client.network.send_raw(
+            self.client.network_handler.send_raw(
                 f"KICK {current_context.name} {target} :{reason}"
             )
         else:
-            self.client.network.send_raw(f"KICK {current_context.name} {target}")
+            self.client.network_handler.send_raw(
+                f"KICK {current_context.name} {target}"
+            )
 
     def handle_cycle_channel_command(self, args_str: str):
         """Handle the /cycle command"""
@@ -230,8 +232,8 @@ class ChannelCommandsHandler:
             )
             return
         channel = current_context.name
-        self.client.network.send_raw(f"PART {channel}")
-        self.client.network.send_raw(f"JOIN {channel}")
+        self.client.network_handler.send_raw(f"PART {channel}")
+        self.client.network_handler.send_raw(f"JOIN {channel}")
 
     def handle_ban_command(self, args_str: str):
         """Handle the /ban command"""
@@ -254,7 +256,7 @@ class ChannelCommandsHandler:
             return
         target_spec = parts[0]
 
-        self.client.network.send_raw(f"MODE {channel_name} +b {target_spec}")
+        self.client.network_handler.send_raw(f"MODE {channel_name} +b {target_spec}")
         self.client.add_message(
             f"Banning {target_spec} from {channel_name}...",
             self.client.ui.colors["system"],
@@ -280,7 +282,7 @@ class ChannelCommandsHandler:
             return
         target_spec = parts[0]
 
-        self.client.network.send_raw(f"MODE {channel_name} -b {target_spec}")
+        self.client.network_handler.send_raw(f"MODE {channel_name} -b {target_spec}")
         self.client.add_message(
             f"Unbanning {target_spec} from {channel_name}...",
             self.client.ui.colors["system"],
@@ -372,7 +374,9 @@ class ChannelCommandsHandler:
         ):  # if target is a nick, feedback might go to active window or status
             target_context_for_feedback = active_ctx.name
 
-        self.client.network.send_raw(f"MODE {target} {modes_and_params}".strip())
+        self.client.network_handler.send_raw(
+            f"MODE {target} {modes_and_params}".strip()
+        )
         self.client.add_message(
             f"Setting mode '{modes_and_params}' on {target}...",
             self.client.ui.colors["system"],
@@ -407,7 +411,9 @@ class ChannelCommandsHandler:
             return
         nick = parts[0]
 
-        self.client.network.send_raw(f"MODE {channel_name} {action}{mode_char} {nick}")
+        self.client.network_handler.send_raw(
+            f"MODE {channel_name} {action}{mode_char} {nick}"
+        )
         self.client.add_message(
             f"{feedback_verb} {nick} in {channel_name}...",
             self.client.ui.colors["system"],

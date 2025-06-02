@@ -19,6 +19,12 @@ from config import (
     BASE_DIR,
     is_source_ignored,
     reload_all_config_values,  # For /rehash
+    ENABLE_TRIGGER_SYSTEM,
+    DISABLED_SCRIPTS,
+    HEADLESS_MAX_HISTORY,
+    RECONNECT_INITIAL_DELAY,
+    RECONNECT_MAX_DELAY,
+    CONNECTION_TIMEOUT,
 )
 
 # Import the config module itself to access its updated globals after reload
@@ -186,8 +192,8 @@ class IRCClient_Logic:
             "invite-notify",
         }
 
-        self.network = NetworkHandler(self)
-        self.network.channels_to_join_on_connect = self.initial_channels_list[:]
+        self.network_handler = NetworkHandler(self)
+        self.network_handler.channels_to_join_on_connect = self.initial_channels_list[:]
 
         # Initialize UI based on mode
         if self.is_headless:
@@ -203,25 +209,25 @@ class IRCClient_Logic:
 
         # Initialize ScriptManager
         # app_config.BASE_DIR should be the root directory where config.py and pyrc.py are.
-        self.script_manager = ScriptManager(self, app_config.BASE_DIR)
+        self.script_manager = ScriptManager(self, BASE_DIR)
         self.script_manager.load_scripts()  # Load scripts after core components are ready
 
         self.cap_negotiator = CapNegotiator(
-            network_handler=self.network,
+            network_handler=self.network_handler,
             desired_caps=self.desired_caps_config,
             registration_handler=None,
             client_logic_ref=self,
         )
 
         self.sasl_authenticator = SaslAuthenticator(
-            network_handler=self.network,
+            network_handler=self.network_handler,
             cap_negotiator=self.cap_negotiator,
             password=self.nickserv_password,
             client_logic_ref=self,
         )
 
         self.registration_handler = RegistrationHandler(
-            network_handler=self.network,
+            network_handler=self.network_handler,
             command_handler=self.command_handler,
             initial_nick=self.initial_nick,
             username=self.initial_nick,
@@ -253,7 +259,8 @@ class IRCClient_Logic:
         else:  # Linux and other Unix-like systems
             config_dir = os.path.join(os.path.expanduser("~"), ".config", "pyrc")
 
-        self.trigger_manager = TriggerManager(config_dir)
+        self.trigger_manager = TriggerManager(os.path.join(BASE_DIR, "config"))
+        self.trigger_manager.load_triggers()
 
         self.channel_log_enabled = CHANNEL_LOG_ENABLED
         self.main_log_dir_path = os.path.join(BASE_DIR, "logs")
@@ -297,6 +304,11 @@ class IRCClient_Logic:
         logger.info(
             f"IRCClient_Logic initialized for {self.server}:{self.port} as {self.nick}. Channels: {initial_channels_display}"
         )
+
+        self.max_history = HEADLESS_MAX_HISTORY if self.is_headless else MAX_HISTORY
+        self.reconnect_delay = RECONNECT_INITIAL_DELAY
+        self.max_reconnect_delay = RECONNECT_MAX_DELAY
+        self.connection_timeout = CONNECTION_TIMEOUT
 
     def _add_status_message(self, text: str, color_key: str = "system"):
         color_attr = self.ui.colors.get(color_key, self.ui.colors["system"])
@@ -854,7 +866,7 @@ class IRCClient_Logic:
 
         if active_ctx.type == "channel":
             if active_ctx.join_status == ChannelJoinStatus.FULLY_JOINED:
-                self.network.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
+                self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
                 if "echo-message" not in self.get_enabled_caps():
                     self.add_message(
                         f"<{self.nick}> {text}",
@@ -874,7 +886,7 @@ class IRCClient_Logic:
                     context_name=active_ctx_name,
                 )
         elif active_ctx.type == "query":
-            self.network.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
+            self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
             if "echo-message" not in self.get_enabled_caps():
                 self.add_message(
                     f"<{self.nick}> {text}",
@@ -947,7 +959,7 @@ class IRCClient_Logic:
         try:
             # Start network connection in headless mode
             if self.is_headless:
-                self.network.start()
+                self.network_handler.start()
                 logger.info("Started network connection in headless mode")
 
             while not self.should_quit:
@@ -980,19 +992,17 @@ class IRCClient_Logic:
                 if random_msg:
                     quit_message_to_send = random_msg
 
-            if self.network:
-                self.network.stop(
-                    send_quit=self.network.connected, quit_message=quit_message_to_send
-                )  # Call stop first
+            if self.network_handler:
+                self.network_handler.disconnect_gracefully(quit_message_to_send)
                 if (
-                    self.network.network_thread
-                    and self.network.network_thread.is_alive()
+                    self.network_handler.network_thread
+                    and self.network_handler.network_thread.is_alive()
                 ):
                     logger.debug(
                         "Joining network thread in main_curses_wrapper finally."
                     )
-                    self.network.network_thread.join(timeout=2.0)  # Then join
-                    if self.network.network_thread.is_alive():
+                    self.network_handler.network_thread.join(timeout=2.0)  # Then join
+                    if self.network_handler.network_thread.is_alive():
                         logger.warning(
                             "Network thread did not join in time from main_curses_wrapper."
                         )
@@ -1004,3 +1014,67 @@ class IRCClient_Logic:
             # Dispatch final shutdown event
             if hasattr(self, "script_manager") and self.script_manager:
                 self.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
+
+    def initialize(self) -> bool:
+        """Initialize the client components."""
+        try:
+            # Initialize network handler
+            self.network_handler = NetworkHandler(self)
+
+            # Initialize script manager with disabled scripts
+            self.script_manager = ScriptManager(self, BASE_DIR)
+            self.script_manager.disabled_scripts = set(DISABLED_SCRIPTS)
+            self.script_manager.load_scripts()
+
+            # Initialize trigger manager if enabled
+            if ENABLE_TRIGGER_SYSTEM:
+                self.trigger_manager = TriggerManager(os.path.join(BASE_DIR, "config"))
+                self.trigger_manager.load_triggers()
+            else:
+                logger.info("Trigger system is disabled")
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize client: {str(e)}")
+            return False
+
+    def connect(self, server: str, port: int, use_ssl: bool = False) -> bool:
+        """Connect to an IRC server."""
+        if not self.network_handler:
+            logger.error("Network handler not initialized")
+            return False
+
+        try:
+            self.network_handler.update_connection_params(
+                server=server, port=port, use_ssl=use_ssl
+            )
+            self.network_handler.start()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to connect: {str(e)}")
+            return False
+
+    def disconnect(self, quit_message: str = "Client disconnecting") -> None:
+        """Disconnect from the server."""
+        if self.network_handler:
+            self.network_handler.disconnect_gracefully(quit_message)
+
+    def process_message(self, message: str) -> Optional[str]:
+        """Process an incoming message through triggers."""
+        if not self.trigger_manager or not ENABLE_TRIGGER_SYSTEM:
+            return None
+
+        result = self.trigger_manager.process_trigger("TEXT", {"message": message})
+        if result and result["type"] == ActionType.COMMAND:
+            return result["content"]
+        return None
+
+    def handle_reconnect(self) -> None:
+        """Handle reconnection with exponential backoff."""
+        if self.reconnect_delay < self.max_reconnect_delay:
+            self.reconnect_delay *= 2
+        logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
+
+    def reset_reconnect_delay(self) -> None:
+        """Reset the reconnect delay to initial value."""
+        self.reconnect_delay = RECONNECT_INITIAL_DELAY

@@ -1,14 +1,14 @@
 # PyRC - Python Terminal IRC Client
 
-PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It aims to provide a feature-rich, yet lightweight and user-friendly experience for IRC users who prefer the command line.
+PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It aims to provide a feature-rich, yet lightweight and user-friendly experience for IRC users who prefer the command line, and is increasingly being adapted for programmatic use and AI integration.
 
 ## Key Features
 
-- **Text-based UI:** Clean and navigable interface using the Python `curses` library.
+- **Text-based UI:** Clean and navigable interface using the Python `curses` library (optional for headless operation).
 - **Split-Screen Support:** Horizontal split-screen mode with independent scrolling and context management for each pane.
 - **Channel and Query Windows:** Separate, consistently managed contexts for channels (case-insensitive handling, e.g., #channel and #Channel are treated as the same) and private messages.
-- **mIRC-like UI Flow:** Starts in the "Status" window and automatically switches to a channel upon successful join.
-- **IRCv3 Support:** Robust CAP negotiation (including sasl, multi-prefix, server-time, echo-message, etc.) and SASL PLAIN authentication for secure login.
+- **mIRC-like UI Flow:** Starts in the "Status" window and automatically switches to a channel upon successful join (when UI is active).
+- **IRCv3 Support:** Robust CAP negotiation (including sasl, multi-prefix, server-time, echo-message, message-tags, etc.) and SASL PLAIN authentication for secure login.
 - **Comprehensive Command Set:** Supports a wide array of standard IRC commands and client-specific utility commands, many now managed via the scripting system.
 - **Dynamic Configuration:** View and modify client settings on-the-fly using the `/set` command. Changes are saved to `pyterm_irc_config.ini`. Reload configuration with `/rehash`.
 - **Ignore System:** Powerful ignore list for users/hostmasks with wildcard support, managed via `/ignore`, `/unignore`, `/listignores`.
@@ -16,18 +16,20 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
   - Define custom actions based on IRC events (TEXT, ACTION, JOIN, PART, QUIT, KICK, MODE, TOPIC, NICK, NOTICE, INVITE, CTCP, RAW).
   - Actions can be standard client commands or arbitrary Python code snippets.
   - Utilize regex capture groups ($0, $1, etc.) and extensive event-specific variables ($nick, $channel, $$1, $1-, etc.) in both command and Python actions.
-  - _(Note: This system coexists with the new script-based event handling.)_
-- **Extensible Scripting System:**
+  - Fully manageable via the Scripting API.
+- **Extensible Scripting System (Python):**
   - Load custom Python scripts from a `scripts/` directory to add new commands, respond to IRC/client events, and modify client behavior.
   - Default features like "fun" commands (`/slap`, `/8ball`), randomized quit/part messages, and the client exit screen are implemented as default scripts.
-  - Scripts have access to a controlled API (`ScriptAPIHandler`) for safe interaction with the client.
+  - Scripts have access to a rich `ScriptAPIHandler` for safe and powerful interaction with the client.
+- **Headless Operation:**
+  - Can be run with a `--headless` flag, disabling the `curses` UI for use as an IRC backend or for AI agents. Core logic and scripting remain fully functional.
 - **Logging:**
   - Comprehensive main log file for debugging and session history.
   - Optional per-channel logging to separate files.
   - Raw IRC message logging to UI toggleable with `/rawlog`.
 - **Code Modularity:** Significantly improved structure and maintainability of core components:
   - Specialized handlers for IRC protocol parsing, numeric replies, command groups (now partially script-based), connection lifecycle (CAP, SASL, registration).
-- **Tab Completion:** For commands (including script-added commands) and nicks in the current context.
+- **Tab Completion:** For commands (including script-added commands) and nicks in the current context (UI mode only).
 - **SSL/TLS Encryption:** Secure connections, with an option (`verify_ssl_cert` in config) to allow connections to servers with self-signed certificates.
 - **Color Themes:** Basic support, with potential for expansion.
 
@@ -367,3 +369,39 @@ For major changes, please open an issue first to discuss your ideas.
 ## License
 
 This project is licensed under the MIT License.
+
+## Recent Changes and Bug Fixes
+
+### Latest Updates
+
+- Fixed Pylance type checking errors related to network attribute access
+- Improved code consistency by standardizing on `network_handler` attribute name
+- Enhanced type safety in script management system
+- Fixed attribute access in network-related operations
+- Added support for headless operation mode
+- Enhanced ScriptAPIHandler for AI integration
+- Added new IRCv3 message-tags support
+- Improved event data structure with consistent fields
+
+### Known Issues
+
+- None currently reported
+
+## Headless Operation
+
+PyRC can be run in a headless mode, without the curses user interface. This is useful for bots, automated scripts, or AI integrations where a visual UI is not needed.
+
+To run in headless mode, use the `--headless` command-line flag:
+
+```bash
+python pyrc.py --server irc.example.com --nick MyHeadlessBot --headless
+```
+
+In headless mode:
+
+- No UI is drawn
+- All core IRC logic, including connection, CAP/SASL, event processing, and the scripting system, remains fully functional
+- Scripts can interact with the IRC server using the ScriptAPIHandler
+- Logging continues as configured
+- The client can be shut down via SIGINT (Ctrl+C) or programmatically by a script calling a quit/disconnect API function
+- The `headless_message_history_lines` config option can be used to set a different message history size for contexts in headless mode, potentially reducing memory usage

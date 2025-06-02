@@ -30,8 +30,8 @@ DEFAULT_LOG_BACKUP_COUNT = 3
 DEFAULT_CHANNEL_LOG_ENABLED = True
 
 MAX_HISTORY = 500
-RECONNECT_INITIAL_DELAY = 5  # seconds
-RECONNECT_MAX_DELAY = 300  # seconds
+RECONNECT_INITIAL_DELAY = 1  # seconds
+RECONNECT_MAX_DELAY = 60  # seconds
 CONNECTION_TIMEOUT = 30  # seconds
 
 # Global variable to hold current ignore patterns
@@ -378,3 +378,29 @@ def reload_all_config_values():
 
 # --- Load initial ignore list at startup ---
 load_ignore_list()
+
+# Core Features
+ENABLE_TRIGGER_SYSTEM = True  # Whether to enable the trigger system
+
+# Script Management
+DISABLED_SCRIPTS = []  # List of script module names to disable
+
+# UI Settings
+MAX_HISTORY = 500  # Maximum number of messages to keep in history
+HEADLESS_MAX_HISTORY = 50  # Maximum history for headless mode
+
+# Connection Settings
+CONNECTION_TIMEOUT = 30  # Socket connection timeout in seconds
+RECONNECT_INITIAL_DELAY = 1  # Initial delay between reconnection attempts in seconds
+RECONNECT_MAX_DELAY = 60  # Maximum delay between reconnection attempts in seconds
+
+# SSL Settings
+VERIFY_SSL_CERT = True  # Whether to verify SSL certificates
+
+# Logging Settings
+LOG_LEVEL = "INFO"  # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+LOG_TO_FILE = True  # Whether to log to file
+LOG_DIR = "logs"  # Directory for log files
+LOG_FORMAT = (
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # Log message format
+)

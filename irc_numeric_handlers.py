@@ -298,7 +298,7 @@ def _handle_err_nicknameinuse(
 
     is_our_nick_colliding = client.nick and client.nick.lower() == failed_nick.lower()
 
-    if is_our_nick_colliding and not client.network.is_handling_nick_collision:
+    if is_our_nick_colliding and not client.network_handler.is_handling_nick_collision:
         if hasattr(client, "registration_handler") and client.registration_handler:
             current_nick_for_logic = client.nick
             initial_nick_for_logic = client.initial_nick
@@ -318,15 +318,15 @@ def _handle_err_nicknameinuse(
                 f"Trying {new_try_nick} instead.", client.ui.colors["system"], "Status"
             )
 
-            client.network.is_handling_nick_collision = True
-            client.network.send_raw(f"NICK {new_try_nick}")
+            client.network_handler.is_handling_nick_collision = True
+            client.network_handler.send_raw(f"NICK {new_try_nick}")
             client.nick = new_try_nick
             client.registration_handler.update_nick_for_registration(new_try_nick)
         else:
             logger.warning(
                 "ERR_NICKNAMEINUSE for our nick, but no registration_handler to manage retry."
             )
-    elif is_our_nick_colliding and client.network.is_handling_nick_collision:
+    elif is_our_nick_colliding and client.network_handler.is_handling_nick_collision:
         logger.info(
             f"ERR_NICKNAMEINUSE for {failed_nick}, but already handling a nick collision. Manual /NICK needed if this fails."
         )
@@ -753,103 +753,30 @@ NUMERIC_HANDLERS = {
 
 
 def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
-    """Handles numeric commands from the server."""
+    """Handles numeric commands."""
     code = int(parsed_msg.command)
     params = parsed_msg.params
     trailing = parsed_msg.trailing
 
-    # Create display_params by removing client nick if present
-    display_params = list(params)
-    if (
-        display_params
-        and client.nick
-        and display_params[0].lower() == client.nick.lower()
-    ):
-        display_params.pop(0)
+    # Remove client's nick from params for display purposes
+    display_params = [p for p in params if p.lower() != client.nick.lower()]
 
-    # Dispatch RAW_IRC_NUMERIC event before specific handlers
+    # Dispatch RAW_IRC_NUMERIC event
     if hasattr(client, "script_manager"):
         numeric_event_data = {
             "numeric": code,
             "source": parsed_msg.prefix,
             "params_list": list(params),
-            "display_params_list": display_params,
+            "display_params_list": list(display_params),
             "trailing": trailing,
             "raw_line": raw_line,
             "tags": parsed_msg.get_all_tags(),
         }
         client.script_manager.dispatch_event("RAW_IRC_NUMERIC", numeric_event_data)
 
-    # Handle specific numeric commands
+    # Handle specific numeric replies
     if code == 1:  # RPL_WELCOME
         _handle_rpl_welcome(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 251:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 252:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 253:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 254:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 255:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 265:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 266:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 311:  # RPL_WHOISUSER
-        _handle_rpl_whoisuser(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 318:  # RPL_ENDOFWHOIS
-        _handle_rpl_endofwhois(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 331:  # RPL_NOTOPIC
         _handle_rpl_notopic(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 332:  # RPL_TOPIC
@@ -858,99 +785,55 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
         _handle_rpl_namreply(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 366:  # RPL_ENDOFNAMES
         _handle_rpl_endofnames(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 372:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 375:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
-    elif code == 376:  # MOTD and server info
-        _handle_motd_and_server_info(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
-        )
     elif code == 401:  # ERR_NOSUCHNICK
         _handle_err_nosuchnick(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 403:  # ERR_NOSUCHCHANNEL
         _handle_err_nosuchchannel(
             client, parsed_msg, raw_line, display_params, trailing
         )
+    elif code in (471, 472, 473, 474, 475):  # Channel join errors
+        _handle_err_channel_join_group(
+            client, parsed_msg, raw_line, display_params, trailing
+        )
     elif code == 433:  # ERR_NICKNAMEINUSE
         _handle_err_nicknameinuse(
             client, parsed_msg, raw_line, display_params, trailing
         )
-    elif code == 471:  # ERR_CHANNEL_JOIN_GROUP
-        _handle_err_channel_join_group(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 473:  # ERR_CHANNEL_JOIN_GROUP
-        _handle_err_channel_join_group(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 474:  # ERR_CHANNEL_JOIN_GROUP
-        _handle_err_channel_join_group(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 475:  # ERR_CHANNEL_JOIN_GROUP
-        _handle_err_channel_join_group(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 900:  # RPL_LOGGEDIN
+    elif code == 903:  # RPL_SASLLOGGEDIN
         _handle_sasl_loggedin_success(
             client, parsed_msg, raw_line, display_params, trailing
         )
-    elif code == 902:  # RPL_SASLMECHS
+    elif code == 908:  # RPL_SASLMECHS
         _handle_sasl_mechanisms(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 903:  # RPL_SASLSUCCESS
-        _handle_sasl_loggedin_success(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 904:  # ERR_SASLFAIL
-        _handle_sasl_fail_errors(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 905:  # ERR_SASLTOOLONG
-        _handle_sasl_fail_errors(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 906:  # ERR_SASLABORTED
+    elif code in (904, 905, 906, 907):  # SASL failure errors
         _handle_sasl_fail_errors(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 907:  # ERR_SASLALREADY
         _handle_err_saslalready(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 908:  # ERR_SASLMECHS
-        _handle_sasl_mechanisms(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 314:  # RPL_WHOWASUSER
-        _handle_rpl_whowasuser(client, parsed_msg, raw_line, display_params, trailing)
+    elif code == 311:  # RPL_WHOISUSER
+        _handle_rpl_whoisuser(client, parsed_msg, raw_line, display_params, trailing)
+    elif code == 318:  # RPL_ENDOFWHOIS
+        _handle_rpl_endofwhois(client, parsed_msg, raw_line, display_params, trailing)
+    elif code in (375, 372, 376):  # MOTD and server info
+        _handle_motd_and_server_info(
+            client, parsed_msg, raw_line, display_params, trailing, trailing
+        )
+    elif code == 352:  # RPL_WHOREPLY
+        _handle_rpl_whoreply(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 315:  # RPL_ENDOFWHO
         _handle_rpl_endofwho(client, parsed_msg, raw_line, display_params, trailing)
+    elif code == 314:  # RPL_WHOWASUSER
+        _handle_rpl_whowasuser(client, parsed_msg, raw_line, display_params, trailing)
+    elif code == 369:  # RPL_ENDOFWHOWAS
+        _handle_rpl_endofwhowas(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 321:  # RPL_LISTSTART
         _handle_rpl_liststart(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 322:  # RPL_LIST
         _handle_rpl_list(client, parsed_msg, raw_line, display_params, trailing)
     elif code == 323:  # RPL_LISTEND
         _handle_rpl_listend(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 352:  # RPL_WHOREPLY
-        _handle_rpl_whoreply(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 369:  # RPL_ENDOFWHOWAS
-        _handle_rpl_endofwhowas(client, parsed_msg, raw_line, display_params, trailing)
     else:
+        # Generic numeric reply
+        generic_msg = trailing if trailing else " ".join(display_params)
         _handle_generic_numeric(
-            client,
-            parsed_msg,
-            raw_line,
-            display_params,
-            trailing,
-            display_params[0] if display_params else "",
+            client, parsed_msg, raw_line, display_params, trailing, generic_msg
         )

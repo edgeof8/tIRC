@@ -6,6 +6,7 @@ import time
 import sys
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set
 import threading
+from config import DISABLED_SCRIPTS
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
@@ -25,7 +26,6 @@ HELP_INI_PATH = os.path.join("data", "default_help", HELP_INI_FILENAME)
 
 
 class ScriptAPIHandler:
-    # Added script_module_name to constructor
     def __init__(
         self,
         client_logic_ref: "IRCClient_Logic",
@@ -34,34 +34,35 @@ class ScriptAPIHandler:
     ):
         self.client_logic = client_logic_ref
         self.script_manager = script_manager_ref
-        self.script_module_name = script_module_name  # Store the script's module name
+        self.script_module_name = script_module_name
         self.script_instance = None
         self.registered_commands = {}
         self.registered_events = set()
-        self.registered_triggers = {}
         self.help_texts = {}
         self.quit_messages = []
-        self.trigger_conditions = {}
-        self.trigger_actions = {}
-        self.trigger_cooldowns = {}
-        self.last_trigger_time = {}
-        self.trigger_enabled = {}
-        self.trigger_counters = {}
-        self.trigger_thresholds = {}
-        self.trigger_reset_times = {}
-        self.trigger_reset_timers = {}
-        self.trigger_reset_threads = {}
-        self.trigger_reset_events = {}
-        self.trigger_reset_lock = threading.Lock()
-        self.trigger_reset_condition = threading.Condition(self.trigger_reset_lock)
-        self.trigger_reset_running = True
-        self.trigger_reset_thread = threading.Thread(
-            target=self._trigger_reset_loop, daemon=True
-        )
-        self.trigger_reset_thread.start()
+        # Temporarily comment out trigger-related code for debugging
+        # self.registered_triggers = {}
+        # self.trigger_conditions = {}
+        # self.trigger_actions = {}
+        # self.trigger_cooldowns = {}
+        # self.last_trigger_time = {}
+        # self.trigger_enabled = {}
+        # self.trigger_counters = {}
+        # self.trigger_thresholds = {}
+        # self.trigger_reset_times = {}
+        # self.trigger_reset_timers = {}
+        # self.trigger_reset_threads = {}
+        # self.trigger_reset_events = {}
+        # self.trigger_reset_lock = threading.Lock()
+        # self.trigger_reset_condition = threading.Condition(self.trigger_reset_lock)
+        # self.trigger_reset_running = True
+        # self.trigger_reset_thread = threading.Thread(
+        #     target=self._trigger_reset_loop, daemon=True
+        # )
+        # self.trigger_reset_thread.start()
 
     def send_raw(self, command_string: str):
-        self.client_logic.network.send_raw(command_string)
+        self.client_logic.network_handler.send_raw(command_string)
 
     # Added send_action based on plan
     def send_action(self, target: str, action_text: str):
@@ -70,7 +71,7 @@ class ScriptAPIHandler:
                 f"send_action called with empty target ('{target}') or action_text ('{action_text}')."
             )
             return
-        self.client_logic.network.send_raw(
+        self.client_logic.network_handler.send_raw(
             f"PRIVMSG {target} :\x01ACTION {action_text}\x01"
         )
 
@@ -247,7 +248,7 @@ class ScriptAPIHandler:
         Returns:
             True if connected, False otherwise
         """
-        return self.client_logic.network.connected
+        return self.client_logic.network_handler.connected
 
     def get_context_info(self, context_name: str) -> Optional[Dict[str, Any]]:
         """Get detailed information about a specific context.
@@ -486,24 +487,7 @@ class ScriptAPIHandler:
 
     def _trigger_reset_loop(self):
         """Background thread to handle trigger resets."""
-        while self.trigger_reset_running:
-            with self.trigger_reset_lock:
-                current_time = time.time()
-                triggers_to_reset = []
-
-                # Check which triggers need resetting
-                for trigger_id, reset_time in self.trigger_reset_times.items():
-                    if current_time >= reset_time:
-                        triggers_to_reset.append(trigger_id)
-
-                # Reset triggers
-                for trigger_id in triggers_to_reset:
-                    if trigger_id in self.trigger_counters:
-                        self.trigger_counters[trigger_id] = 0
-                        logger.debug(f"Reset counter for trigger {trigger_id}")
-
-                # Wait for next check or shutdown
-                self.trigger_reset_condition.wait(timeout=1.0)  # Check every second
+        pass  # Temporarily disabled for debugging
 
 
 class ScriptManager:
@@ -530,6 +514,10 @@ class ScriptManager:
 
         # Load help texts from INI file
         self._load_help_texts()
+
+        self.scripts: Dict[str, Any] = {}
+        self.disabled_scripts = set(DISABLED_SCRIPTS)
+        self.script_dir = SCRIPTS_DIR_NAME
 
     def _load_help_texts(self):
         """Load help texts from the command_help.ini file."""
@@ -661,55 +649,70 @@ class ScriptManager:
     def load_scripts(self):
         """Load all scripts from the scripts directory."""
         logger.info("Loading scripts...")
+
         if not os.path.exists(self.scripts_dir):
-            logger.warning(f"Scripts directory {self.scripts_dir} does not exist.")
+            logger.warning(f"Scripts directory does not exist: {self.scripts_dir}")
             return
 
-        for script_name in os.listdir(self.scripts_dir):
-            if script_name.endswith(".py") and not script_name.startswith("__"):
+        for script_file in os.listdir(self.scripts_dir):
+            if script_file.endswith(".py") and not script_file.startswith("__"):
+                script_name = script_file[:-3]  # Remove .py extension
+                if script_name in self.disabled_scripts:
+                    logger.info(f"Skipping disabled script: {script_name}")
+                    continue
                 try:
                     # Import the script module
-                    script_module_name = script_name[:-3]  # Remove .py extension
-                    script_module = importlib.import_module(
-                        f"scripts.{script_module_name}"
-                    )
+                    script_module = importlib.import_module(f"scripts.{script_name}")
 
                     # Create ScriptAPIHandler instance for this script
-                    script_api = ScriptAPIHandler(
-                        client_logic_ref=self.client_logic_ref,
-                        script_manager_ref=self,
-                        script_module_name=script_module_name,
+                    api_handler = ScriptAPIHandler(
+                        self.client_logic_ref,  # Correct: pass the client logic reference
+                        self,  # Correct: pass the script manager reference
+                        script_name,  # Correct: pass the script module name
                     )
 
-                    # Get script instance
+                    # Get script instance using the correctly initialized api_handler
                     if hasattr(script_module, "get_script_instance"):
-                        script_instance = script_module.get_script_instance(script_api)
-                        self.loaded_script_instances[script_module_name] = (
-                            script_instance
-                        )
+                        script_instance = script_module.get_script_instance(api_handler)
+                        if script_instance:
+                            self.loaded_script_instances[script_name] = script_instance
+                            logger.info(f"Loaded script: {script_name}")
 
-                        # Call load() if it exists
-                        if hasattr(script_instance, "load"):
-                            try:
+                            # Debug logging
+                            logger.debug(
+                                f"For script '{script_name}', api_handler type is: {type(api_handler)}"
+                            )
+                            logger.debug(
+                                f"Script instance '{script_name}' has api: {hasattr(script_instance, 'api')}"
+                            )
+                            if hasattr(script_instance, "api"):
+                                logger.debug(
+                                    f"script_instance.api type is: {type(script_instance.api)}"
+                                )
+                                logger.debug(
+                                    f"script_instance.api has subscribe_to_event: {hasattr(script_instance.api, 'subscribe_to_event')}"
+                                )
+                                logger.debug(
+                                    f"script_instance.api has register_event: {hasattr(script_instance.api, 'register_event')}"
+                                )
+
+                            # Call load() if it exists
+                            if hasattr(script_instance, "load"):
                                 script_instance.load()
                                 logger.info(
-                                    f"Script {script_name} loaded successfully."
+                                    f"Successfully loaded and initialized script: {script_name}"
                                 )
-                            except Exception as e:
-                                logger.error(
-                                    f"Error in script {script_name} load() method: {e}"
+                            else:
+                                logger.debug(
+                                    f"Script {script_name} instance created, but no 'load' method found. Ensure registrations happen in __init__ if intended."
                                 )
-                        else:
-                            # Only log as debug since the script might be using a different initialization method
-                            logger.debug(
-                                f"Script {script_name} loaded but has no 'load' method (this is normal if using a different initialization approach)."
-                            )
                     else:
                         logger.warning(
-                            f"Script {script_name} is missing required get_script_instance() function"
+                            f"Script {script_name} has no get_script_instance function"
                         )
                 except Exception as e:
-                    logger.error(f"Failed to load script {script_name}: {e}")
+                    logger.error(f"Failed to load script {script_name}: {str(e)}")
+                    continue
 
     # script_name is now reliably passed from ScriptAPIHandler
     def register_command_from_script(
@@ -979,3 +982,52 @@ class ScriptManager:
                         exc_info=True,
                     )
         return None
+
+    def enable_script(self, script_name: str) -> bool:
+        """Enable a previously disabled script."""
+        if script_name in self.disabled_scripts:
+            self.disabled_scripts.remove(script_name)
+            try:
+                module = importlib.import_module(f"{self.script_dir}.{script_name}")
+                if hasattr(module, "load"):
+                    self.scripts[script_name] = module
+                    logger.info(f"Enabled and loaded script: {script_name}")
+                    return True
+                else:
+                    logger.warning(f"Script {script_name} has no 'load' method")
+            except Exception as e:
+                logger.error(f"Failed to enable script {script_name}: {str(e)}")
+        return False
+
+    def disable_script(self, script_name: str) -> bool:
+        """Disable a currently loaded script."""
+        if script_name in self.scripts:
+            self.disabled_scripts.add(script_name)
+            del self.scripts[script_name]
+            logger.info(f"Disabled script: {script_name}")
+            return True
+        return False
+
+    def get_script(self, script_name: str) -> Optional[Any]:
+        """Get a loaded script by name."""
+        return self.scripts.get(script_name)
+
+    def get_loaded_scripts(self) -> List[str]:
+        """Get list of currently loaded script names."""
+        return list(self.scripts.keys())
+
+    def get_disabled_scripts(self) -> List[str]:
+        """Get list of disabled script names."""
+        return list(self.disabled_scripts)
+
+    def reload_script(self, script_name: str) -> bool:
+        """Reload a script by name."""
+        if script_name in self.scripts:
+            try:
+                module = importlib.reload(self.scripts[script_name])
+                self.scripts[script_name] = module
+                logger.info(f"Reloaded script: {script_name}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to reload script {script_name}: {str(e)}")
+        return False

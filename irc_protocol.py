@@ -204,142 +204,78 @@ def _handle_cap_message(client, parsed_msg: IRCMessage, raw_line: str):
         )
 
 
-def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
+def _handle_nick_message(client, parsed_msg: IRCMessage, raw_line: str):
     """Handles NICK messages."""
-    src_nick = parsed_msg.source_nick
-    params = parsed_msg.params
-    trailing = parsed_msg.trailing
+    old_nick = parsed_msg.source_nick
+    new_nick = parsed_msg.trailing
+    source_full_ident = parsed_msg.prefix
 
-    new_nick = trailing if trailing else (params[0] if params else None)
-
-    if not new_nick or not src_nick:
-        client.add_message(
-            f"[INVALID NICK] Raw: {raw_line.strip()}",
-            client.ui.colors["error"],
-            context_name="Status",
-        )
-        logger.warning(
-            f"Invalid NICK message (missing new_nick or src_nick): {raw_line.strip()}"
-        )
+    if not old_nick or not new_nick:
+        logger.warning(f"Malformed NICK message: {raw_line.strip()}")
         return
 
-    nick_change_message = f"{src_nick} is now known as {new_nick}"
-    active_context_before_nick_change = client.context_manager.active_context_name
-    renamed_query_context_new_name = None
+    # Check if this is our own nick change
+    is_our_nick_change = old_nick.lower() == client.nick.lower()
 
-    # Check if this is our own nick change before updating contexts
-    is_self_nick_change = src_nick.lower() == (
-        client.nick.lower() if client.nick else ""
-    )
-    old_client_nick_for_event = client.nick if is_self_nick_change else None
-
-    for ctx_name in list(client.context_manager.contexts.keys()):
-        ctx_obj = client.context_manager.get_context(ctx_name)
-        if not ctx_obj:
-            continue
-
-        if ctx_obj.type == "channel":
-            if src_nick in ctx_obj.users:
-                prefix = ctx_obj.users.get(src_nick, "")
-                client.context_manager.remove_user(ctx_name, src_nick)
-                client.context_manager.add_user(ctx_name, new_nick, prefix)
-                client.add_message(
-                    nick_change_message,
-                    client.ui.colors["nick_change"],
-                    context_name=ctx_name,
-                )
-        elif ctx_obj.type == "query" and ctx_name == f"Query:{src_nick}":
-            new_query_ctx_name = f"Query:{new_nick}"
-            logger.info(
-                f"Renaming query context from {ctx_name} to {new_query_ctx_name} for NICK change."
-            )
-
-            if client.context_manager.create_context(
-                new_query_ctx_name, context_type="query", topic=ctx_obj.topic
-            ):
-                new_query_ctx_obj = client.context_manager.get_context(
-                    new_query_ctx_name
-                )
-                if new_query_ctx_obj:
-                    new_query_ctx_obj.messages = deque(
-                        list(ctx_obj.messages),
-                        maxlen=client.context_manager.max_history,
-                    )
-                    new_query_ctx_obj.users = ctx_obj.users.copy()
-                    new_query_ctx_obj.unread_count = ctx_obj.unread_count
-                    new_query_ctx_obj.scrollback_offset = ctx_obj.scrollback_offset
-                    new_query_ctx_obj.user_list_scroll_offset = (
-                        ctx_obj.user_list_scroll_offset
-                    )
-
-                    was_active = active_context_before_nick_change == ctx_name
-                    client.context_manager.remove_context(ctx_name)
-                    logger.info(
-                        f"Successfully renamed query context from {ctx_name} to {new_query_ctx_name}."
-                    )
-                    if was_active:
-                        renamed_query_context_new_name = new_query_ctx_name
-                else:
-                    logger.error(
-                        f"Failed to get new query context {new_query_ctx_name} after creation during NICK rename."
-                    )
-                    client.add_message(
-                        nick_change_message,
-                        client.ui.colors["nick_change"],
-                        context_name=ctx_name,
-                    )
-            else:
-                logger.error(
-                    f"Failed to create new query context {new_query_ctx_name} during NICK rename."
-                )
-                client.add_message(
-                    nick_change_message,
-                    client.ui.colors["nick_change"],
-                    context_name=ctx_name,
-                )
-
-    if renamed_query_context_new_name:
-        client.context_manager.set_active_context(renamed_query_context_new_name)
-
-    if is_self_nick_change:
-        logger.info(f"Received NICK change for our own nick: {src_nick} -> {new_nick}")
+    if is_our_nick_change:
+        # Update our nick
+        old_nick = client.nick
         client.nick = new_nick
+        logger.info(f"Our nick changed from {old_nick} to {new_nick}")
+
+        # Update nick in all contexts
+        for context in client.context_manager.contexts.values():
+            if context.type == "channel":
+                if old_nick in context.users:
+                    context.users[new_nick] = context.users.pop(old_nick)
+                    if old_nick in context.user_prefixes:
+                        context.user_prefixes[new_nick] = context.user_prefixes.pop(
+                            old_nick
+                        )
+
+        # Add message to status
         client.add_message(
-            f"You are now known as {new_nick}",
+            f"Nick changed from {old_nick} to {new_nick}",
             client.ui.colors["system"],
             context_name="Status",
         )
+
         # Dispatch CLIENT_NICK_CHANGED event
         if hasattr(client, "script_manager"):
-            nick_changed_event_data = {
-                "old_nick": old_client_nick_for_event,
+            event_data = {
+                "old_nick": old_nick,
                 "new_nick": new_nick,
                 "raw_line": raw_line,
+                "tags": parsed_msg.get_all_tags(),
             }
-            client.script_manager.dispatch_event(
-                "CLIENT_NICK_CHANGED", nick_changed_event_data
-            )
+            client.script_manager.dispatch_event("CLIENT_NICK_CHANGED", event_data)
     else:
-        logger.info(f"User {src_nick} changed nick to {new_nick}")
-        for ctx_name, ctx_obj in client.context_manager.contexts.items():
-            if ctx_obj.type == "channel" and src_nick in ctx_obj.users:
-                client.context_manager.remove_user(ctx_name, src_nick)
-                client.context_manager.add_user(ctx_name, new_nick)
-                client.add_message(
-                    f"{src_nick} is now known as {new_nick}",
-                    client.ui.colors["system"],
-                    context_name=ctx_name,
-                )
+        # Handle other users' nick changes
+        for context in client.context_manager.contexts.values():
+            if context.type == "channel":
+                if old_nick in context.users:
+                    context.users[new_nick] = context.users.pop(old_nick)
+                    if old_nick in context.user_prefixes:
+                        context.user_prefixes[new_nick] = context.user_prefixes.pop(
+                            old_nick
+                        )
 
-    # Dispatch NICK event for all nick changes
+                    # Add message to channel
+                    client.add_message(
+                        f"{old_nick} is now known as {new_nick}",
+                        client.ui.colors["system"],
+                        context_name=context.name,
+                    )
+
+    # Dispatch general NICK event
     if hasattr(client, "script_manager"):
         event_data = {
-            "old_nick": src_nick,
+            "old_nick": old_nick,
             "new_nick": new_nick,
-            "userhost": parsed_msg.prefix,
-            "is_self": is_self_nick_change,
-            "client_nick": client.nick,
+            "source_userhost": source_full_ident,
+            "is_our_nick_change": is_our_nick_change,
             "raw_line": raw_line,
+            "tags": parsed_msg.get_all_tags(),
         }
         client.script_manager.dispatch_event("NICK", event_data)
 
@@ -382,8 +318,8 @@ def _handle_join_event(client, parsed_msg: IRCMessage, raw_line: str):
         else:
             logger.error(f"Context for {joined_channel} not found after self-JOIN.")
 
-        client.network.send_raw(f"NAMES {joined_channel}")
-        client.network.send_raw(f"MODE {joined_channel}")
+        client.network_handler.send_raw(f"NAMES {joined_channel}")
+        client.network_handler.send_raw(f"MODE {joined_channel}")
         client.add_message(
             f"Joining {joined_channel}...",
             client.ui.colors["join_part"],
@@ -604,146 +540,110 @@ def _handle_membership_changes(client, parsed_msg: IRCMessage, raw_line: str):
 
 def _handle_mode_message(client, parsed_msg: IRCMessage, raw_line: str):
     """Handles MODE messages."""
+    source_nick = parsed_msg.source_nick
+    source_full_ident = parsed_msg.prefix
     params = parsed_msg.params
-    trailing = parsed_msg.trailing
-    src_nick = parsed_msg.source_nick
 
-    mode_target = params[0] if params else None
-    if not mode_target:
-        logger.warning(f"Malformed MODE message (no target): {raw_line.strip()}")
+    if not params:
+        logger.warning(f"MODE without parameters: {raw_line.strip()}")
         return
 
-    mode_changes_str = " ".join(params[1:])
-    if trailing:
-        mode_changes_str += f" :{trailing}"
+    target = params[0]
+    mode_string = params[1] if len(params) > 1 else ""
+    mode_params = params[2:] if len(params) > 2 else []
 
-    display_src = (
-        src_nick if src_nick else (parsed_msg.prefix if parsed_msg.prefix else "SERVER")
-    )
-    logger.info(
-        f"MODE received: By: {display_src}, Target: {mode_target}, Changes: {mode_changes_str.strip()}"
-    )
+    # Parse mode changes
+    parsed_modes = []
+    current_operation = None
+    param_index = 0
 
-    context_for_mode_message = "Status"
-    target_is_channel = mode_target.startswith(("#", "&", "+", "!"))
+    for char in mode_string:
+        if char in ("+", "-"):
+            current_operation = char
+            continue
 
-    if target_is_channel:
-        if client.context_manager.create_context(mode_target, context_type="channel"):
-            logger.debug(f"Ensured channel context exists for MODE: {mode_target}")
-        context_for_mode_message = mode_target
-    elif mode_target and client.nick and mode_target.lower() == client.nick.lower():
-        context_for_mode_message = "Status"
+        mode_info = {"operation": current_operation, "mode": char, "param": None}
 
-    client.add_message(
-        f"[MODE {mode_target}] by {display_src}: {mode_changes_str.strip()}",
-        client.ui.colors["system"],
-        context_name=context_for_mode_message,
-    )
+        # Check if this mode requires a parameter
+        if char in ("b", "k", "l", "v", "h", "o", "a", "q"):
+            if param_index < len(mode_params):
+                mode_info["param"] = mode_params[param_index]
+                param_index += 1
 
-    if target_is_channel and len(params) > 1:
-        actual_mode_str = params[1]
-        mode_args = params[2:]
+        parsed_modes.append(mode_info)
 
-        current_op = None
-        arg_idx = 0
-        parsed_modes = []
+    # Handle channel modes
+    if target.startswith(("#", "&", "!", "+")):
+        context = client.context_manager.get_context(target)
+        if context and context.type == "channel":
+            # Update channel modes
+            for mode in parsed_modes:
+                if mode["operation"] == "+":
+                    context.modes.add(mode["mode"])
+                elif mode["operation"] == "-":
+                    context.modes.discard(mode["mode"])
 
-        for char_mode in actual_mode_str:
-            if char_mode == "+":
-                current_op = "+"
-            elif char_mode == "-":
-                current_op = "-"
-            elif current_op:
-                user_affecting_modes = {"o": "@", "v": "+", "h": "%"}
+            # Format mode string for display
+            mode_str = mode_string
+            if mode_params:
+                mode_str += " " + " ".join(mode_params)
 
-                if char_mode in user_affecting_modes:
-                    if arg_idx < len(mode_args):
-                        nick_affected = mode_args[arg_idx]
-                        new_prefix_for_user = ""
+            # Add message to channel
+            client.add_message(
+                f"Mode {target} [{mode_str}] by {source_nick}",
+                client.ui.colors["system"],
+                context_name=target,
+            )
 
-                        current_user_prefix_obj = client.context_manager.get_context(
-                            mode_target
-                        )
-                        current_actual_prefix = ""
-                        if current_user_prefix_obj:
-                            current_actual_prefix = current_user_prefix_obj.users.get(
-                                nick_affected, ""
-                            )
+            # Dispatch CHANNEL_MODE_APPLIED event
+            if hasattr(client, "script_manager"):
+                event_data = {
+                    "channel": target,
+                    "setter": source_nick,
+                    "setter_userhost": source_full_ident,
+                    "mode_changes": parsed_modes,
+                    "current_modes": list(context.modes),  # Include current modes
+                    "raw_line": raw_line,
+                    "tags": parsed_msg.get_all_tags(),
+                }
+                client.script_manager.dispatch_event("CHANNEL_MODE_APPLIED", event_data)
 
-                        if current_op == "+":
-                            new_prefix_candidate = user_affecting_modes[char_mode]
-                            if (
-                                new_prefix_candidate == "+"
-                                and current_actual_prefix in ["@", "%"]
-                            ):
-                                new_prefix_for_user = current_actual_prefix
-                            else:
-                                new_prefix_for_user = new_prefix_candidate
-                        elif current_op == "-":
-                            if current_actual_prefix == user_affecting_modes[char_mode]:
-                                new_prefix_for_user = ""
-                            else:
-                                new_prefix_for_user = current_actual_prefix
+    # Handle user modes
+    elif target.lower() == client.nick.lower():
+        # Update user modes
+        for mode in parsed_modes:
+            if mode["operation"] == "+":
+                if mode["mode"] not in client.user_modes:
+                    client.user_modes.append(mode["mode"])
+            elif mode["operation"] == "-":
+                if mode["mode"] in client.user_modes:
+                    client.user_modes.remove(mode["mode"])
 
-                        client.context_manager.update_user_prefix(
-                            mode_target, nick_affected, new_prefix_for_user
-                        )
-                        logger.info(
-                            f"MODE {current_op}{char_mode} for {nick_affected} in {mode_target}. New prefix: '{new_prefix_for_user}' (Old: '{current_actual_prefix}')"
-                        )
-                        parsed_modes.append(
-                            {
-                                "operation": current_op,
-                                "mode": char_mode,
-                                "param": nick_affected,
-                                "new_prefix": new_prefix_for_user,
-                                "old_prefix": current_actual_prefix,
-                            }
-                        )
-                        arg_idx += 1
-                    else:
-                        logger.warning(
-                            f"MODE: Not enough arguments for mode {current_op}{char_mode} in {mode_target}. Args: {mode_args}"
-                        )
-                elif char_mode in ["k", "l", "b", "e", "I"]:
-                    if arg_idx < len(mode_args):
-                        param = mode_args[arg_idx]
-                        parsed_modes.append(
-                            {"operation": current_op, "mode": char_mode, "param": param}
-                        )
-                        arg_idx += 1
-                    else:
-                        logger.warning(
-                            f"MODE: Not enough arguments for mode {current_op}{char_mode} in {mode_target}. Args: {mode_args}"
-                        )
-                else:
-                    # Handle modes without parameters
-                    parsed_modes.append({"operation": current_op, "mode": char_mode})
+        # Format mode string for display
+        mode_str = mode_string
+        if mode_params:
+            mode_str += " " + " ".join(mode_params)
 
-    # Dispatch MODE event
+        # Add message to status
+        client.add_message(
+            f"Mode {client.nick} [{mode_str}] by {source_nick}",
+            client.ui.colors["system"],
+            context_name="Status",
+        )
+
+    # Dispatch general MODE event
     if hasattr(client, "script_manager"):
         event_data = {
-            "nick": src_nick,
-            "target": mode_target,
-            "modes_and_params": mode_changes_str.strip(),
-            "client_nick": client.nick,
+            "target": target,
+            "setter": source_nick,
+            "setter_userhost": source_full_ident,
+            "mode_string": mode_string,
+            "mode_params": mode_params,
+            "parsed_modes": parsed_modes,
             "raw_line": raw_line,
-            "parsed_modes": parsed_modes if target_is_channel else None,
+            "tags": parsed_msg.get_all_tags(),
         }
         client.script_manager.dispatch_event("MODE", event_data)
-
-        # Dispatch CHANNEL_MODE_APPLIED event for channel modes
-        if target_is_channel and parsed_modes:
-            mode_event_data = {
-                "channel": mode_target,
-                "setter_nick": src_nick,
-                "setter_userhost": parsed_msg.prefix,
-                "mode_changes": parsed_modes,
-                "raw_line": raw_line,
-            }
-            client.script_manager.dispatch_event(
-                "CHANNEL_MODE_APPLIED", mode_event_data
-            )
 
 
 def handle_server_message(client, line: str):  # raw_line is 'line' here
@@ -790,7 +690,7 @@ def handle_server_message(client, line: str):  # raw_line is 'line' here
             if parsed_msg.trailing
             else (parsed_msg.params[0] if parsed_msg.params else "")
         )
-        client.network.send_raw(f"PONG :{ping_param}")
+        client.network_handler.send_raw(f"PONG :{ping_param}")
         logger.debug(f"Responded to PING with PONG {ping_param}")
     elif cmd == "AUTHENTICATE":
         payload = parsed_msg.params[0] if parsed_msg.params else ""
@@ -817,7 +717,7 @@ def handle_server_message(client, line: str):  # raw_line is 'line' here
     elif cmd in ["JOIN", "PART", "QUIT", "KICK"]:
         _handle_membership_changes(client, parsed_msg, line)
     elif cmd == "NICK":
-        _handle_nick_change(client, parsed_msg, line)
+        _handle_nick_message(client, parsed_msg, line)
     elif cmd.isdigit():
         _handle_numeric_command(client, parsed_msg, line)
     elif cmd == "MODE":

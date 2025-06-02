@@ -296,7 +296,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
             return
         target = parts[0]
         message = parts[1]
-        self.client.network.send_raw(f"PRIVMSG {target} :{message}")
+        self.client.network_handler.send_raw(f"PRIVMSG {target} :{message}")
 
     def _handle_query_command(self, args_str: str):
         """Handle the /query command"""
@@ -313,7 +313,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
         self.client.context_manager.create_context(target_nick, context_type="query")
         self.client.context_manager.set_active_context(target_nick)
         if message:
-            self.client.network.send_raw(f"PRIVMSG {target_nick} :{message}")
+            self.client.network_handler.send_raw(f"PRIVMSG {target_nick} :{message}")
 
     def _handle_nick_command(self, args_str: str):
         """Handle the /nick command"""
@@ -323,7 +323,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
         if not parts:
             return
         new_nick = parts[0]
-        self.client.network.send_raw(f"NICK {new_nick}")
+        self.client.network_handler.send_raw(f"NICK {new_nick}")
 
     def _handle_whois_command(self, args_str: str):
         """Handle the /whois command"""
@@ -333,7 +333,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
         if not parts:
             return
         target = parts[0]
-        self.client.network.send_raw(f"WHOIS {target}")
+        self.client.network_handler.send_raw(f"WHOIS {target}")
 
     def _handle_me_command(self, args_str: str):
         """Handle the /me command"""
@@ -356,7 +356,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
                 hasattr(current_context_obj, "join_status")
                 and current_context_obj.join_status == ChannelJoinStatus.FULLY_JOINED
             ):
-                self.client.network.send_raw(
+                self.client.network_handler.send_raw(
                     f"PRIVMSG {current_context_obj.name} :\x01ACTION {action_text}\x01"
                 )
             else:
@@ -366,7 +366,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
                     context_name=current_context_obj.name,
                 )
         elif current_context_obj.type == "query":
-            self.client.network.send_raw(
+            self.client.network_handler.send_raw(
                 f"PRIVMSG {current_context_obj.name} :\x01ACTION {action_text}\x01"
             )
         else:
@@ -379,9 +379,9 @@ The context must exist (e.g., a channel, query, or the Status context)."""
     def _handle_away_command(self, args_str: str):
         """Handle the /away command"""
         if not args_str:
-            self.client.network.send_raw("AWAY")
+            self.client.network_handler.send_raw("AWAY")
         else:
-            self.client.network.send_raw(f"AWAY :{args_str}")
+            self.client.network_handler.send_raw(f"AWAY :{args_str}")
 
     def _handle_clear_command(self, args_str: str):
         """Handle the /clear command"""
@@ -423,7 +423,9 @@ The context must exist (e.g., a channel, query, or the Status context)."""
         if not part_message:
             part_message = "Leaving"  # Fallback if no script provides a message
 
-        self.client.network.send_raw(f"PART {channel_context.name} :{part_message}")
+        self.client.network_handler.send_raw(
+            f"PART {channel_context.name} :{part_message}"
+        )
         self.client.add_message(
             f"Parting {channel_context.name}...",
             self.client.ui.colors["system"],
@@ -525,7 +527,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
             return
         target = parts[0]
         message = parts[1]
-        self.client.network.send_raw(f"NOTICE {target} :{message}")
+        self.client.network_handler.send_raw(f"NOTICE {target} :{message}")
 
     def _handle_set_command(self, args_str: str):
         """Handle the /set command"""

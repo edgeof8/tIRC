@@ -111,16 +111,16 @@ def main_curses_wrapper(stdscr, args):
         if client:
             client.should_quit = True
             if (
-                client.network.network_thread
-                and client.network.network_thread.is_alive()
+                client.network_handler.network_thread
+                and client.network_handler.network_thread.is_alive()
             ):
                 logger.debug("Joining network thread.")
-                client.network.network_thread.join(timeout=1.0)
+                client.network_handler.network_thread.join(timeout=1.0)
                 logger.debug("Network thread joined.")
-            if client.network.sock:
+            if client.network_handler.sock:
                 try:
                     logger.debug("Closing network socket.")
-                    client.network.sock.close()
+                    client.network_handler.sock.close()
                     logger.debug("Network socket closed.")
                 except Exception as e:
                     logger.error(f"Error closing socket: {e}")
@@ -309,16 +309,16 @@ def main():
             if client:
                 client.should_quit = True
                 if (
-                    client.network.network_thread
-                    and client.network.network_thread.is_alive()
+                    client.network_handler.network_thread
+                    and client.network_handler.network_thread.is_alive()
                 ):
                     logger.debug("Joining network thread.")
-                    client.network.network_thread.join(timeout=1.0)
+                    client.network_handler.network_thread.join(timeout=1.0)
                     logger.debug("Network thread joined.")
-                if client.network.sock:
+                if client.network_handler.sock:
                     try:
                         logger.debug("Closing network socket.")
-                        client.network.sock.close()
+                        client.network_handler.sock.close()
                         logger.debug("Network socket closed.")
                     except Exception as e:
                         logger.error(f"Error closing socket: {e}")

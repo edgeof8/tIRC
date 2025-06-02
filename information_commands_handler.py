@@ -32,7 +32,7 @@ class InformationCommandsHandler:
                 return
 
         if target:
-            self.client.network.send_raw(f"WHO {target}")
+            self.client.network_handler.send_raw(f"WHO {target}")
         else:
             # This case should ideally be caught by the logic above,
             # but as a fallback, show usage if no target could be determined.
@@ -91,7 +91,7 @@ class InformationCommandsHandler:
             # For now, we'll send as parsed.
             command_parts.append(target_server_arg)
 
-        self.client.network.send_raw(" ".join(command_parts))
+        self.client.network_handler.send_raw(" ".join(command_parts))
 
     def handle_list_command(self, args_str: str):
         pattern = args_str.strip()
@@ -153,13 +153,13 @@ class InformationCommandsHandler:
                 usage_msg, self.client.ui.colors["error"], context_name="Status"
             )
 
-        self.client.network.send_raw(f"LIST {pattern}" if pattern else "LIST")
+        self.client.network_handler.send_raw(f"LIST {pattern}" if pattern else "LIST")
 
     def handle_names_command(self, args_str: str):
         channel_arg = args_str.strip()
 
         if channel_arg:
-            self.client.network.send_raw(f"NAMES {channel_arg}")
+            self.client.network_handler.send_raw(f"NAMES {channel_arg}")
             # Determine context for feedback message
             feedback_context_name = "Status"
             target_channel_context = self.client.context_manager.get_context(
@@ -174,4 +174,4 @@ class InformationCommandsHandler:
                 context_name=feedback_context_name,
             )
         else:
-            self.client.network.send_raw("NAMES")
+            self.client.network_handler.send_raw("NAMES")

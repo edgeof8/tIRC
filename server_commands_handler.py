@@ -108,8 +108,8 @@ class ServerCommandsHandler:
 
         new_server_host, new_port, new_ssl = parsed_args
 
-        if self.client.network.connected:
-            self.client.network.disconnect_gracefully("Changing servers")
+        if self.client.network_handler.connected:
+            self.client.network_handler.disconnect_gracefully("Changing servers")
 
         self.client.server = new_server_host
         self.client.port = new_port
@@ -129,14 +129,14 @@ class ServerCommandsHandler:
         logger.info(
             f"ServerCommandsHandler: Before update_connection_params. Server: {self.client.server}, Port: {self.client.port}, SSL: {self.client.use_ssl}, Verify SSL: {self.client.verify_ssl_cert}"
         )
-        self.client.network.update_connection_params(
+        self.client.network_handler.update_connection_params(
             self.client.server, self.client.port, self.client.use_ssl
         )
 
     def handle_disconnect_command(self, args_str: str):
         """Handle the /disconnect command"""
         reason = args_str if args_str else "Disconnecting"
-        self.client.network.disconnect_gracefully(reason)
+        self.client.network_handler.disconnect_gracefully(reason)
 
     def handle_quit_command(self, args_str: str):
         """Handle the /quit command"""
@@ -150,7 +150,7 @@ class ServerCommandsHandler:
             )
             if not reason:
                 reason = "Leaving"  # Fallback if no script provides a message
-        self.client.network.disconnect_gracefully(reason)
+        self.client.network_handler.disconnect_gracefully(reason)
 
     def handle_raw_command(self, args_str: str):
         """Handle the /raw command"""
@@ -160,7 +160,7 @@ class ServerCommandsHandler:
         )
         if not self.client.command_handler._ensure_args(args_str, usage_msg):
             return
-        self.client.network.send_raw(args_str)
+        self.client.network_handler.send_raw(args_str)
 
     def handle_reconnect_command(self, args_str: str):
         """Handles the /reconnect command."""
@@ -190,8 +190,8 @@ class ServerCommandsHandler:
         )
 
         # Disconnect if currently connected
-        if self.client.network.connected:
-            self.client.network.disconnect_gracefully("Reconnecting")
+        if self.client.network_handler.connected:
+            self.client.network_handler.disconnect_gracefully("Reconnecting")
 
         # The network loop will attempt to reconnect using existing parameters.
         # We can ensure it does so by calling update_connection_params,
@@ -201,11 +201,11 @@ class ServerCommandsHandler:
         # and the loop would naturally try to reconnect.
         # Calling update_connection_params makes this more explicit and handles
         # the case where the network thread might not be running.
-        self.client.network.update_connection_params(
+        self.client.network_handler.update_connection_params(
             self.client.server,
             self.client.port,
             self.client.use_ssl,
-            channels_to_join=self.client.network.channels_to_join_on_connect,  # Use current list
+            channels_to_join=self.client.network_handler.channels_to_join_on_connect,  # Use current list
         )
         # No need to call _reset_contexts_for_new_connection here,
         # as update_connection_params (if it disconnects) or the natural

@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, TYPE_CHECKING
+from typing import Dict, Any, TYPE_CHECKING, Optional
 import time
 import threading
 
@@ -9,189 +9,315 @@ if TYPE_CHECKING:
 logger = logging.getLogger("pyrc.script.ai_api_test")
 
 
-class AIAPITestScript:
-    def __init__(self, api: "ScriptAPIHandler"):
-        self.api = api
-        self.api.register_command(
-            "aitest", self.handle_aitest_command, "Test various API methods", ["at"]
-        )
+class AiApiTestScript:
+    def __init__(self, api_handler: "ScriptAPIHandler"):
+        self.api = api_handler
+        self.original_nick_for_test: Optional[str] = None
+        self.initial_original_nick_for_test: Optional[str] = None
+        logger.info("AIAPITestScript initialized")
 
-        # Subscribe to events
+    def load(self):
+        self.api.log_info("[AI Test] AiApiTestScript Loading...")
+        self.api.register_command(
+            "aitest",
+            self.handle_aitest_command,
+            help_text="Usage: /aitest <subcommand> [args] - Tests AI API features.",
+            aliases=["at"],
+        )
         self.api.subscribe_to_event("CLIENT_CONNECTED", self.handle_client_connected)
         self.api.subscribe_to_event("JOIN", self.handle_join)
         self.api.subscribe_to_event("PRIVMSG", self.handle_privmsg)
         self.api.subscribe_to_event("NOTICE", self.handle_notice)
         self.api.subscribe_to_event("RAW_IRC_NUMERIC", self.handle_raw_numeric)
-        self.api.subscribe_to_event("CHANNEL_MODE_APPLIED", self.handle_channel_mode)
-        self.api.subscribe_to_event("CLIENT_NICK_CHANGED", self.handle_nick_change)
+        self.api.subscribe_to_event(
+            "CHANNEL_MODE_APPLIED", self.handle_channel_mode_applied
+        )
+        self.api.subscribe_to_event(
+            "CLIENT_NICK_CHANGED", self.handle_client_nick_changed
+        )
+        self.api.log_info(
+            "[AI Test] AiApiTestScript Loaded and events/commands registered."
+        )
 
-    def handle_aitest_command(self, args: list) -> None:
-        """Handle the /aitest command with various subcommands."""
-        if not args:
-            self.api.send_message(
-                "Status",
-                "Usage: /aitest [info|channels|users|capabilities|triggers|addtrigger|removetrigger|enabletrigger]",
+    def handle_client_connected(self, event_data: Dict[str, Any]):
+        self.api.log_info(
+            f"[AI Test] Client connected to server. Event data: {event_data}"
+        )
+        server_info = self.api.get_server_info()
+        self.api.log_info(f"[AI Test] Server info: {server_info}")
+        capabilities = self.api.get_server_capabilities()
+        self.api.log_info(f"[AI Test] Server capabilities (on connect): {capabilities}")
+        self.original_nick_for_test = self.api.get_client_nick()
+        self.initial_original_nick_for_test = self.api.get_client_nick()
+
+    def _test_nick_change_sequence(self):
+        if not self.original_nick_for_test:
+            self.api.log_error(
+                "[AI Test] Original nick not captured for nick change test."
             )
             return
 
-        subcommand = args[0].lower()
-        if subcommand == "info":
-            server_info = self.api.get_server_info()
-            self.api.send_message("Status", f"Server Info: {server_info}")
-        elif subcommand == "channels":
-            channels = self.api.get_joined_channels()
-            self.api.send_message("Status", f"Joined Channels: {channels}")
-        elif subcommand == "users":
-            if len(args) < 2:
-                self.api.send_message("Status", "Usage: /aitest users <channel>")
-                return
-            channel = args[1]
-            users = self.api.get_channel_users(channel)
-            self.api.send_message("Status", f"Users in {channel}: {users}")
-        elif subcommand == "capabilities":
-            caps = self.api.get_server_capabilities()
-            self.api.send_message("Status", f"Server Capabilities: {caps}")
-        elif subcommand == "triggers":
+        new_nick = f"{self.original_nick_for_test}_test"
+        self.api.log_info(f"[AI Test] Attempting to change nick to: {new_nick}")
+        self.api.set_nick(new_nick)
+
+        # Schedule revert after a delay
+        threading.Timer(5.0, self._revert_nick_change).start()
+
+    def _revert_nick_change(self):
+        if self.initial_original_nick_for_test:
+            self.api.log_info(
+                f"[AI Test] Attempting to revert nick to initial: {self.initial_original_nick_for_test}"
+            )
+            self.api.set_nick(self.initial_original_nick_for_test)
+        else:
+            self.api.log_error(
+                "[AI Test] Cannot revert nick, initial_original_nick_for_test was not set."
+            )
+
+    def _test_message_tags_and_triggers(self, channel_name: str):
+        test_msg = "Testing message tags with echo-message capability from PyRC"
+        self.api.log_info(
+            f"[AI Test] Sending test message to {channel_name}: {test_msg}"
+        )
+        self.api.send_message(channel_name, test_msg)
+
+        # Test trigger API
+        self.api.log_info("[AI Test] Testing trigger API...")
+        trigger_pattern = f"secret word {int(time.time())}"  # Unique pattern
+        trigger_id = self.api.add_trigger(
+            event_type="TEXT",  # Using TEXT for text-based triggers
+            pattern=rf".*{trigger_pattern}.*",  # Regex to match anywhere
+            action_type="COMMAND",  # Using COMMAND to match ActionType enum
+            action_content=f"/msg {channel_name} Trigger for '{trigger_pattern}' fired!",
+        )
+        if trigger_id is not None:
+            self.api.log_info(
+                f"[AI Test] Added trigger with ID: {trigger_id}, pattern: '{trigger_pattern}'"
+            )
             triggers = self.api.list_triggers()
-            self.api.send_message("Status", f"Configured Triggers: {triggers}")
-        elif subcommand == "addtrigger":
-            if len(args) < 4:
-                self.api.send_message(
-                    "Status",
-                    "Usage: /aitest addtrigger <event_type> <pattern> <action_type> <action_content>",
+            self.api.log_info(f"[AI Test] Current triggers: {triggers}")
+            self.api.send_message(
+                channel_name, f"The {trigger_pattern} has been spoken."
+            )
+
+            # Test disable/enable
+            time.sleep(1)  # Give time for first trigger
+            self.api.set_trigger_enabled(trigger_id, False)
+            self.api.log_info(
+                f"[AI Test] Disabled trigger {trigger_id}. Sending message again (should not trigger)."
+            )
+            self.api.send_message(
+                channel_name,
+                f"Another message with {trigger_pattern}, should be ignored.",
+            )
+            time.sleep(1)
+            self.api.set_trigger_enabled(trigger_id, True)
+            self.api.log_info(
+                f"[AI Test] Enabled trigger {trigger_id}. Sending message again (should trigger)."
+            )
+            self.api.send_message(
+                channel_name, f"Final message with {trigger_pattern} to test re-enable."
+            )
+
+            time.sleep(1)
+            if self.api.remove_trigger(trigger_id):
+                self.api.log_info(f"[AI Test] Removed trigger {trigger_id}")
+            else:
+                self.api.log_error(f"[AI Test] Failed to remove trigger {trigger_id}")
+        else:
+            self.api.log_error("[AI Test] Failed to add trigger via API.")
+
+    def _test_channel_modes(self, channel_name: str):
+        if not self.original_nick_for_test:
+            self.api.log_error("[AI Test] Original nick not captured for mode test.")
+            return
+        self.api.log_info(
+            f"[AI Test] Testing mode changes on {channel_name} for {self.original_nick_for_test}"
+        )
+        self.api.set_channel_mode(channel_name, "+v", str(self.original_nick_for_test))
+        threading.Timer(
+            2.0,
+            lambda: self.api.set_channel_mode(
+                channel_name, "-v", str(self.original_nick_for_test)
+            ),
+        ).start()
+
+    def handle_join(self, event_data: Dict[str, Any]):
+        self.api.log_info(f"[AI Test] Join event: {event_data}")
+        channel = event_data.get("channel")
+        if event_data.get("is_self") and channel:
+            self.api.log_info(
+                f"[AI Test] Self joined channel {channel}, scheduling tests."
+            )
+            # Schedule tests with delays to allow server processing
+            threading.Timer(
+                2.0, lambda: self._test_message_tags_and_triggers(channel)
+            ).start()
+            threading.Timer(
+                15.0, lambda: self._test_channel_modes(channel)
+            ).start()  # Run mode test after potential nick changes
+
+    def handle_privmsg(self, event_data: Dict[str, Any]):
+        self.api.log_info(f"[AI Test] PRIVMSG event: {event_data}")
+        tags = event_data.get("tags", {})
+        self.api.log_info(f"[AI Test] Message tags: {tags}")
+
+    def handle_notice(self, event_data: Dict[str, Any]):
+        self.api.log_info(f"[AI Test] NOTICE event: {event_data}")
+        tags = event_data.get("tags", {})
+        self.api.log_info(f"[AI Test] Message tags: {tags}")
+
+    def handle_channel_mode_applied(self, event_data: Dict[str, Any]):
+        self.api.log_info(f"[AI Test] CHANNEL_MODE_APPLIED event: {event_data}")
+        self.api.log_info(f"[AI Test] Channel: {event_data.get('channel')}")
+        self.api.log_info(
+            f"[AI Test] Setter: {event_data.get('setter')} ({event_data.get('setter_userhost')})"
+        )
+        self.api.log_info(f"[AI Test] Mode changes: {event_data.get('mode_changes')}")
+        self.api.log_info(
+            f"[AI Test] Current channel modes: {event_data.get('current_modes')}"
+        )
+
+    def handle_client_nick_changed(self, event_data: Dict[str, Any]):
+        self.api.log_info(f"[AI Test] CLIENT_NICK_CHANGED event: {event_data}")
+        self.api.log_info(
+            f"[AI Test] Old nick: {event_data.get('old_nick')}, New nick: {event_data.get('new_nick')}"
+        )
+        # If our nick changed, update original_nick_for_test if it was the one that changed
+        if (
+            self.original_nick_for_test
+            and event_data.get("old_nick") == self.original_nick_for_test
+        ):
+            self.original_nick_for_test = event_data.get("new_nick")
+            self.api.log_info(
+                f"[AI Test] Updated original_nick_for_test to {self.original_nick_for_test}"
+            )
+        elif (
+            self.original_nick_for_test
+            and event_data.get("old_nick") == f"{self.original_nick_for_test}_test"
+        ):
+            self.original_nick_for_test = event_data.get(
+                "new_nick"
+            )  # Should be back to original
+            self.api.log_info(
+                f"[AI Test] Updated original_nick_for_test to {self.original_nick_for_test} after revert."
+            )
+
+    def handle_raw_numeric(self, event_data: Dict[str, Any]):
+        self.api.log_info(f"[AI Test] Raw numeric event: {event_data}")
+        self.api.log_info(f"[AI Test] Numeric code: {event_data.get('numeric')}")
+        self.api.log_info(f"[AI Test] Source: {event_data.get('source')}")
+        self.api.log_info(f"[AI Test] Params list: {event_data.get('params_list')}")
+        self.api.log_info(
+            f"[AI Test] Display Params list: {event_data.get('display_params_list')}"
+        )
+        self.api.log_info(f"[AI Test] Trailing: {event_data.get('trailing')}")
+        self.api.log_info(f"[AI Test] Tags: {event_data.get('tags')}")
+
+        if event_data.get("numeric") == 1:  # RPL_WELCOME
+            self.api.log_info(
+                "[AI Test] Received RPL_WELCOME, scheduling nick change sequence in 7s."
+            )
+            if (
+                not self.original_nick_for_test
+            ):  # Capture if not already set by CLIENT_CONNECTED
+                self.original_nick_for_test = self.api.get_client_nick()
+            threading.Timer(7.0, self._test_nick_change_sequence).start()
+
+    def handle_aitest_command(self, args_str: str, event_data_command: Dict[str, Any]):
+        args = args_str.split()
+        if not args:
+            self.api.add_message_to_context(
+                event_data_command["active_context_name"],
+                "Usage: /aitest <info|channels|users <channel>|capabilities|triggers|addtrigger|removetrigger|enabletrigger>",
+                "error",
+            )
+            return
+
+        sub_command = args[0].lower()
+        cmd_args = args[1:]
+        active_ctx = event_data_command["active_context_name"] or "Status"
+
+        if sub_command == "info":
+            server_info = self.api.get_server_info()
+            connected = self.api.is_connected()
+            self.api.add_message_to_context(
+                active_ctx,
+                f"Server Info: {server_info}, Connected: {connected}",
+                "system",
+            )
+        elif sub_command == "triggers":
+            triggers = self.api.list_triggers()
+            if triggers:
+                self.api.add_message_to_context(
+                    active_ctx, "Configured Triggers:", "system"
                 )
-                return
-            event_type = args[1]
-            pattern = args[2]
-            action_type = args[3]
-            action_content = " ".join(args[4:]) if len(args) > 4 else ""
+                for t in triggers:
+                    self.api.add_message_to_context(
+                        active_ctx,
+                        f"  ID: {t['id']}, Event: {t['event_type']}, Pattern: '{t['pattern']}', "
+                        f"Action: {t['action_type']} '{t['action_content']}', Enabled: {t['is_enabled']}",
+                        "system",
+                    )
+            else:
+                self.api.add_message_to_context(
+                    active_ctx, "No triggers configured.", "system"
+                )
+        elif sub_command == "addtrigger" and len(cmd_args) >= 4:
+            event_type, pattern, action_type, *action_content_parts = cmd_args
+            action_content = " ".join(action_content_parts)
             trigger_id = self.api.add_trigger(
-                event_type, pattern, action_type, action_content
+                event_type.upper(), pattern, action_type.upper(), action_content
             )
-            self.api.send_message("Status", f"Added trigger with ID: {trigger_id}")
-        elif subcommand == "removetrigger":
-            if len(args) < 2:
-                self.api.send_message("Status", "Usage: /aitest removetrigger <id>")
-                return
-            try:
-                trigger_id = int(args[1])
-                self.api.remove_trigger(trigger_id)
-                self.api.send_message("Status", f"Removed trigger {trigger_id}")
-            except ValueError:
-                self.api.send_message("Status", "Error: Trigger ID must be a number")
-        elif subcommand == "enabletrigger":
-            if len(args) < 3:
-                self.api.send_message(
-                    "Status", "Usage: /aitest enabletrigger <id> <true|false>"
+            if trigger_id is not None:
+                self.api.add_message_to_context(
+                    active_ctx, f"Trigger added with ID: {trigger_id}", "system"
                 )
-                return
-            try:
-                trigger_id = int(args[1])
-                enabled = args[2].lower() == "true"
-                self.api.set_trigger_enabled(trigger_id, enabled)
-                self.api.send_message(
-                    "Status",
-                    f"{'Enabled' if enabled else 'Disabled'} trigger {trigger_id}",
+            else:
+                self.api.add_message_to_context(
+                    active_ctx, "Failed to add trigger.", "error"
                 )
+        elif sub_command == "removetrigger" and len(cmd_args) == 1:
+            try:
+                trigger_id = int(cmd_args[0])
+                if self.api.remove_trigger(trigger_id):
+                    self.api.add_message_to_context(
+                        active_ctx, f"Trigger {trigger_id} removed.", "system"
+                    )
+                else:
+                    self.api.add_message_to_context(
+                        active_ctx, f"Failed to remove trigger {trigger_id}.", "error"
+                    )
             except ValueError:
-                self.api.send_message("Status", "Error: Trigger ID must be a number")
+                self.api.add_message_to_context(
+                    active_ctx, "Invalid trigger ID.", "error"
+                )
+        elif sub_command == "enabletrigger" and len(cmd_args) == 2:
+            try:
+                trigger_id = int(cmd_args[0])
+                enabled = cmd_args[1].lower() == "true"
+                if self.api.set_trigger_enabled(trigger_id, enabled):
+                    self.api.add_message_to_context(
+                        active_ctx,
+                        f"Trigger {trigger_id} {'enabled' if enabled else 'disabled'}.",
+                        "system",
+                    )
+                else:
+                    self.api.add_message_to_context(
+                        active_ctx, f"Failed to update trigger {trigger_id}.", "error"
+                    )
+            except ValueError:
+                self.api.add_message_to_context(
+                    active_ctx, "Invalid trigger ID for enable/disable.", "error"
+                )
         else:
-            self.api.send_message("Status", f"Unknown subcommand: {subcommand}")
-
-    def handle_client_connected(self, event_data: Dict[str, Any]) -> None:
-        """Handle CLIENT_CONNECTED event."""
-        logger.info(f"Client connected to server. Event data: {event_data}")
-        server_info = self.api.get_server_info()
-        logger.info(f"Server info: {server_info}")
-        caps = self.api.get_server_capabilities()
-        logger.info(f"Server capabilities: {caps}")
-
-    def handle_join(self, event_data: Dict[str, Any]) -> None:
-        """Handle JOIN events."""
-        logger.info(f"Join event: {event_data}")
-
-        # Test message tags by sending a message after joining
-        if event_data.get("nick") == self.api.get_nick():
-            logger.info("Self joined channel, sending test message...")
-
-            # Schedule message after 2 seconds
-            def send_test_message():
-                time.sleep(2)  # Wait 2 seconds
-                channel = event_data.get("channel")
-                if channel:
-                    test_msg = "Testing message tags with echo-message capability"
-                    logger.info(f"Sending test message to {channel}: {test_msg}")
-                    self.api.send_message(channel, test_msg)
-
-            # Start message sending in a separate thread to avoid blocking
-            threading.Thread(target=send_test_message, daemon=True).start()
-
-    def handle_privmsg(self, event_data: Dict[str, Any]) -> None:
-        """Handle PRIVMSG events."""
-        logger.info(f"PRIVMSG event: {event_data}")
-        # Log message tags specifically
-        if "tags" in event_data:
-            logger.info(f"Message tags: {event_data['tags']}")
-        else:
-            logger.info("No message tags present")
-
-    def handle_notice(self, event_data: Dict[str, Any]) -> None:
-        """Handle NOTICE event."""
-        logger.info(f"NOTICE event: {event_data}")
-        # Log message tags if present
-        if "tags" in event_data:
-            logger.info(f"Message tags: {event_data['tags']}")
-
-    def handle_raw_numeric(self, event_data: Dict[str, Any]) -> None:
-        """Handle RAW_IRC_NUMERIC event."""
-        logger.info(f"Raw numeric event: {event_data}")
-        # Log numeric code, source, parameters, and trailing data
-        logger.info(f"Numeric code: {event_data.get('numeric')}")
-        logger.info(f"Source: {event_data.get('source')}")
-        logger.info(f"Parameters: {event_data.get('parameters')}")
-        logger.info(f"Trailing: {event_data.get('trailing')}")
-
-        # Test nick change after successful connection (001)
-        if event_data["numeric"] == 1:  # RPL_WELCOME
-            logger.info("Connection successful, scheduling nick change test...")
-
-            # Schedule nick change after 5 seconds
-            def change_nick():
-                time.sleep(5)  # Wait 5 seconds
-                new_nick = f"{self.api.get_nick()}_test"
-                logger.info(f"Attempting to change nick to: {new_nick}")
-                self.api.set_nick(new_nick)
-
-            # Start nick change in a separate thread to avoid blocking
-            threading.Thread(target=change_nick, daemon=True).start()
-
-    def handle_channel_mode(self, event_data: Dict[str, Any]) -> None:
-        """Handle CHANNEL_MODE_APPLIED event."""
-        logger.info(f"Channel mode event: {event_data}")
-        # Log channel, setter, and mode changes
-        logger.info(f"Channel: {event_data.get('channel')}")
-        logger.info(f"Setter: {event_data.get('setter')}")
-        logger.info(f"Mode changes: {event_data.get('mode_changes')}")
-
-    def handle_nick_change(self, event_data: Dict[str, Any]) -> None:
-        """Handle CLIENT_NICK_CHANGED event."""
-        logger.info(f"Nick change event: {event_data}")
-        # Log old and new nicknames
-        logger.info(f"Old nick: {event_data.get('old_nick')}")
-        logger.info(f"New nick: {event_data.get('new_nick')}")
-
-    def handle_client_nick_changed(self, event_data):
-        """Handle client nick change events."""
-        logger.info(f"Client nick changed event: {event_data}")
-        # Verify the event data structure
-        if "old_nick" in event_data and "new_nick" in event_data:
-            logger.info(
-                f"Nick change confirmed: {event_data['old_nick']} -> {event_data['new_nick']}"
+            self.api.add_message_to_context(
+                active_ctx,
+                f"Unknown /aitest subcommand or wrong arguments: {sub_command}",
+                "error",
             )
-        else:
-            logger.warning("Nick change event missing expected fields")
 
 
-def get_script_instance(api: "ScriptAPIHandler") -> AIAPITestScript:
-    """Factory function to create an instance of the script."""
-    return AIAPITestScript(api)
+def get_script_instance(api_handler: "ScriptAPIHandler"):
+    return AiApiTestScript(api_handler)
