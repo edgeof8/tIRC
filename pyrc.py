@@ -25,6 +25,7 @@ from config import (
     CHANNEL_LOG_ENABLED,
 )
 from irc_client_logic import IRCClient_Logic
+from ui_manager import UIManager
 
 logger = logging.getLogger("pyrc")
 
@@ -87,79 +88,75 @@ def setup_logging():
 
 def main_curses_wrapper(stdscr, args):
     logger.info("Starting PyRC curses wrapper.")
-    h, w = stdscr.getmaxyx()
-    curses.resize_term(h, w)
-    stdscr.clear()
-    stdscr.refresh()
-    # Ensure args.channel is a list, as expected by IRCClient_Logic
-    channels_to_join = args.channel
-    if isinstance(channels_to_join, str):
-        channels_to_join = [channels_to_join]
-    elif not channels_to_join:  # If it's None or empty list from config
-        channels_to_join = []  # Default to empty list if no channels specified
-
-    client = IRCClient_Logic(
-        stdscr,
-        args.server,
-        args.port,
-        args.nick,
-        channels_to_join,
-        args.password,
-        args.nickserv_password,
-        args.ssl,
-    )
+    client = None
     try:
+        # Initialize the client with the correct parameters
+        client = IRCClient_Logic(
+            stdscr=stdscr,
+            server_addr=args.server,
+            port=args.port,
+            nick=args.nick,
+            initial_channels_raw=args.channel if args.channel else [],
+            password=args.password,
+            nickserv_password=args.nickserv_password,
+            use_ssl=args.ssl,
+        )
         client.run_main_loop()
     except Exception as e:
-        logger.exception("Unhandled exception in main_curses_wrapper run_main_loop.")
-        raise  # Re-raise the exception to be caught by the outer try-except
+        logger.critical(f"Critical error in main loop: {e}", exc_info=True)
+        if client:
+            client.should_quit = True
     finally:
         logger.info("Shutting down PyRC.")
-        client.should_quit = True
-        if client.network.network_thread and client.network.network_thread.is_alive():
-            logger.debug("Joining network thread.")
-            client.network.network_thread.join(timeout=1.0)
-            logger.debug("Network thread joined.")
-        if client.network.sock:
-            try:
-                logger.debug("Closing network socket.")
-                client.network.sock.close()
-                logger.debug("Network socket closed.")
-            except Exception as e:
-                logger.error(f"Error closing socket: {e}")
-                pass
-        # Final screen clear - more robust attempt
-        try:
-            if stdscr:
+        if client:
+            client.should_quit = True
+            if (
+                client.network.network_thread
+                and client.network.network_thread.is_alive()
+            ):
+                logger.debug("Joining network thread.")
+                client.network.network_thread.join(timeout=1.0)
+                logger.debug("Network thread joined.")
+            if client.network.sock:
                 try:
-                    curses.curs_set(1)  # Ensure cursor is visible
-                except curses.error:
-                    logger.warning(
-                        "Curses error trying to make cursor visible. endwin() will attempt."
-                    )
-                    pass  # Ignore if it fails, endwin will try
+                    logger.debug("Closing network socket.")
+                    client.network.sock.close()
+                    logger.debug("Network socket closed.")
+                except Exception as e:
+                    logger.error(f"Error closing socket: {e}")
+                    pass
+            # Final screen clear - more robust attempt
+            try:
+                if stdscr:
+                    try:
+                        curses.curs_set(1)  # Ensure cursor is visible
+                    except curses.error:
+                        logger.warning(
+                            "Curses error trying to make cursor visible. endwin() will attempt."
+                        )
+                        pass  # Ignore if it fails, endwin will try
 
-                stdscr.clear()  # Clear the entire screen content more thoroughly
-                stdscr.refresh()  # Apply the clear operation immediately
-                logger.debug("Final screen clear and refresh completed.")
-            else:
-                logger.warning("stdscr was not available for final screen clear.")
-        except curses.error as e:
-            logger.error(f"Curses error during final screen clear: {e}")
-        except Exception as e:
-            logger.error(
-                f"Unexpected error during final screen clear: {e}", exc_info=True
-            )
+                    stdscr.clear()  # Clear the entire screen content more thoroughly
+                    stdscr.refresh()  # Apply the clear operation immediately
+                    logger.debug("Final screen clear and refresh completed.")
+                else:
+                    logger.warning("stdscr was not available for final screen clear.")
+            except curses.error as e:
+                logger.error(f"Curses error during final screen clear: {e}")
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error during final screen clear: {e}", exc_info=True
+                )
 
-        # Dispatch the CLIENT_SHUTDOWN_FINAL event after curses.endwin()
-        try:
-            curses.endwin()
-            client.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
-        except Exception as e:
-            logger.error(
-                f"Error during final shutdown event dispatch: {e}", exc_info=True
-            )
-            print("Error during final shutdown. Exiting...")
+            # Dispatch the CLIENT_SHUTDOWN_FINAL event after curses.endwin()
+            try:
+                curses.endwin()
+                client.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
+            except Exception as e:
+                logger.error(
+                    f"Error during final shutdown event dispatch: {e}", exc_info=True
+                )
+                print("Error during final shutdown. Exiting...")
 
 
 def parse_arguments(
@@ -256,82 +253,6 @@ def parse_arguments(
         parser.error("A server must be specified either via CLI or config file.")
 
     return args
-
-
-def print_full_screen_exit_message(width=80, height=24):
-    border_char = "*"
-    title = "PyRC - Python Terminal IRC Client"
-    repo_url = "https://github.com/edgeof8/PyRC"  # Derived from context
-
-    lines = []
-    lines.append(border_char * width)  # Top border
-
-    # Centered Title
-    title_padding_total = width - 2 - len(title)
-    title_pad_left = title_padding_total // 2
-    title_pad_right = title_padding_total - title_pad_left
-    lines.append(
-        f"{border_char}{' ' * title_pad_left}{title}{' ' * title_pad_right}{border_char}"
-    )
-
-    lines.append(
-        f"{border_char}{' ' * (width - 2)}{border_char}"
-    )  # Empty line with border
-
-    content_messages = [
-        "Thank you for using PyRC!",
-        "We hope this terminal-based IRC client served you well.",
-        "",
-        "For more information, updates, or to contribute, please visit:",
-        repo_url,
-        "",
-        "PyRC - Happy Chatting!",
-        "Exiting application now...",
-    ]
-
-    content_width = width - 4  # Allow for border and one space padding on each side
-
-    for msg in content_messages:
-        if not msg:  # Handle empty lines for spacing
-            lines.append(f"{border_char}{' ' * (width - 2)}{border_char}")
-            continue
-
-        # Simple word wrapping for content messages
-        words = msg.split(" ")
-        current_line_content = ""
-        for word in words:
-            if not current_line_content:
-                current_line_content = word
-            elif len(current_line_content) + 1 + len(word) <= content_width:
-                current_line_content += " " + word
-            else:
-                # Print current line and start new one
-                pad_total = content_width - len(current_line_content)
-                pad_left = pad_total // 2
-                pad_right = pad_total - pad_left
-                lines.append(
-                    f"{border_char} {' ' * pad_left}{current_line_content}{' ' * pad_right} {border_char}"
-                )
-                current_line_content = word
-
-        # Print any remaining part of the message
-        if current_line_content:
-            pad_total = content_width - len(current_line_content)
-            pad_left = pad_total // 2
-            pad_right = pad_total - pad_left
-            lines.append(
-                f"{border_char} {' ' * pad_left}{current_line_content}{' ' * pad_right} {border_char}"
-            )
-
-    # Fill remaining lines to reach height
-    # Subtract 1 for the bottom border that will be added
-    while len(lines) < height - 1:
-        lines.append(f"{border_char}{' ' * (width - 2)}{border_char}")
-
-    lines.append(border_char * width)  # Bottom border
-
-    for line_to_print in lines:
-        print(line_to_print)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ class EventTestScript:
         self.api.subscribe_to_event("NOTICE", self.handle_notice)
         self.api.subscribe_to_event("MODE", self.handle_mode)
         self.api.subscribe_to_event("TOPIC", self.handle_topic)
+        self.api.subscribe_to_event("CHGHOST", self.handle_chghost)
 
         self.api.log_info("EventTestScript loaded and subscribed to events.")
 
@@ -125,6 +126,13 @@ class EventTestScript:
         channel = event_data.get("channel", "unknown")
         topic = event_data.get("topic", "")
         self.api.log_info(f"Topic change by {nick} in {channel}: {topic}")
+
+    def handle_chghost(self, event_data: Dict[str, Any]):
+        """Handle CHGHOST event."""
+        nick = event_data.get("nick", "unknown")
+        new_ident = event_data.get("new_ident", "?")
+        new_host = event_data.get("new_host", "?")
+        self.api.log_info(f"CHGHOST: {nick} is now {new_ident}@{new_host}")
 
 
 # Entry point for ScriptManager

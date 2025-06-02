@@ -7,6 +7,7 @@ from typing import Optional, Any, List, Set, Dict, Tuple
 import logging
 import logging.handlers
 import os
+import platform
 
 from config import (
     MAX_HISTORY,
@@ -159,9 +160,20 @@ class IRCClient_Logic:
         self.registration_handler.set_sasl_authenticator(self.sasl_authenticator)
 
         self.input_handler = InputHandler(self)
-        self.trigger_manager = TriggerManager(
-            os.path.join(os.path.expanduser("~"), ".config", "pyrc")
-        )
+
+        # Determine platform-specific config directory
+        if platform.system() == "Windows":
+            config_dir = os.path.join(
+                os.getenv("APPDATA", os.path.expanduser("~")), "PyRC"
+            )
+        elif platform.system() == "Darwin":
+            config_dir = os.path.join(
+                os.path.expanduser("~"), "Library", "Application Support", "PyRC"
+            )
+        else:  # Linux and other Unix-like systems
+            config_dir = os.path.join(os.path.expanduser("~"), ".config", "pyrc")
+
+        self.trigger_manager = TriggerManager(config_dir)
 
         self.channel_log_enabled = CHANNEL_LOG_ENABLED
         self.main_log_dir_path = os.path.join(BASE_DIR, "logs")

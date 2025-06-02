@@ -1,6 +1,6 @@
 import logging
 from typing import TYPE_CHECKING, Optional, List
-from enum import Enum # Added for isinstance check
+from enum import Enum  # Added for isinstance check
 from .trigger_manager import TriggerType, ActionType
 
 if TYPE_CHECKING:
@@ -37,59 +37,13 @@ class TriggerCommands:
             self._show_usage()
             return True
 
-    # This block starting from _parse_args_for_subcommand up to the second handle_on_command is the duplicated section to be removed.
-    # def _parse_args_for_subcommand(self, args_str: str, num_expected: int) -> List[str]:
-    #     """Helper to parse arguments for subcommands, expecting a certain number or more for the last arg."""
-    #     if not args_str:
-    #         return []
-    #
-    #     # If num_expected is 4 (event, pattern, type, action_content)
-    #     # We want to split event, pattern, type, and keep action_content as one piece
-    #     # So, split by space 3 times.
-    #     if num_expected > 0:
-    #         return args_str.split(" ", num_expected -1)
-    #     return [args_str] # Should not happen if num_expected is well-defined
-    #
-    #
-    # def handle_on_command(self, args_str: str) -> bool: # THIS IS THE DUPLICATE TO REMOVE
-    #     """Handle the /on command and its subcommands."""
-    #     if not args_str:
-    #         self._show_usage()
-    #         return True
-    #
-    #     parts = args_str.split(" ", 1)
-    #     sub_command = parts[0].lower()
-    #     sub_command_args = parts[1] if len(parts) > 1 else ""
-    #
-    #
-    #     if sub_command == "add":
-    #         # Expecting: <event_type> <pattern> <action_type_str> <action_content_str>
-    #         # Split into 4 parts, the last part (action_content_str) can contain spaces.
-    #         parsed_args = self._parse_args_for_subcommand(sub_command_args, 4)
-    #         return self._handle_add(parsed_args)
-    #     elif sub_command == "list":
-    #         parsed_args = self._parse_args_for_subcommand(sub_command_args, 1)
-    #         return self._handle_list(parsed_args)
-    #     elif sub_command == "remove":
-    #         parsed_args = self._parse_args_for_subcommand(sub_command_args, 1)
-    #         return self._handle_list(parts[1:]) # This was also a bug, should be _handle_remove
-    #     elif sub_command == "remove": # Duplicate check
-    #         return self._handle_remove(parts[1:])
-    #     elif sub_command == "enable":
-    #         return self._handle_enable(parts[1:])
-    #     elif sub_command == "disable":
-    #         return self._handle_disable(parts[1:])
-    #     else:
-    #         self._show_usage()
-    #         return True
-
     def _show_usage(self):
         """Show usage information for the /on command."""
         usage = (
             "Usage:\n"
             "  /on add <event> <pattern> <CMD|PY> <action_content>\n"
             "    - Adds a new trigger. CMD for client command, PY for Python code.\n"
-            "    - Example CMD: /on add TEXT \"hello there\" CMD /say General Kenobi!\n"
+            '    - Example CMD: /on add TEXT "hello there" CMD /say General Kenobi!\n'
             "    - Example PY:  /on add TEXT \"calc (.*)\" PY client.add_message(f\"Result: {eval(event_data['$1'])}\", client.ui.colors['system'])\n"
             "  /on list [event]\n"
             "    - Lists triggers, optionally filtered by event type.\n"
@@ -111,13 +65,16 @@ class TriggerCommands:
         """Handle /on add <event> <pattern> <TYPE> <action_content>."""
         usage_msg = "Usage: /on add <event> <pattern> <CMD|PY> <action_content>"
 
-        args = args_str.split(" ", 3) # event, pattern, type, action_content (action_content can have spaces)
+        args = args_str.split(
+            " ", 3
+        )  # event, pattern, type, action_content (action_content can have spaces)
 
         if len(args) < 4:
             self.client.add_message(
                 usage_msg,
                 self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status",
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
             return True
 
@@ -128,7 +85,8 @@ class TriggerCommands:
             self.client.add_message(
                 f"Invalid action type '{action_type_input}'. Must be CMD or PY.\n{usage_msg}",
                 self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status",
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
             return True
 
@@ -147,7 +105,8 @@ class TriggerCommands:
             self.client.add_message(
                 f"Failed to add trigger. Check event type ('{event_type_str}'), pattern, or action type ('{action_type_str_upper}').",
                 self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name or "Status",
+                context_name=self.client.context_manager.active_context_name
+                or "Status",
             )
         return True
 
@@ -175,8 +134,10 @@ class TriggerCommands:
                 f"Pattern: \"{trigger['pattern']}\" | Action: \"{trigger['action_content']}\" | {status}"
             )
             # Ensure event_type from trigger dict is string for display
-            event_type_display = trigger['event_type']
-            if isinstance(event_type_display, Enum): # Should be string from manager, but defensive
+            event_type_display = trigger["event_type"]
+            if isinstance(
+                event_type_display, Enum
+            ):  # Should be string from manager, but defensive
                 event_type_display = event_type_display.name
 
             trigger_info = (

@@ -1,5 +1,5 @@
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from script_manager import ScriptAPIHandler
@@ -70,3 +70,72 @@ class ScriptBase:
         # So, if data_filename is "", it returns <scripts_dir>/data/<script_module_name>
         # This is already the directory path.
         return path_with_dummy_file
+
+    def load_list_from_data_file(self, filename: str, default_items: list) -> list:
+        """Load a list of items from a data file or return default items if file not found/empty.
+
+        Args:
+            filename: The name of the data file to load
+            default_items: List of default items to return if file not found/empty
+
+        Returns:
+            list: The loaded items or default_items if file not found/empty
+        """
+        items = []
+        try:
+            file_path = self.api.request_data_file_path(filename)
+            if not os.path.exists(file_path):
+                self.api.log_warning(
+                    f"Data file '{filename}' not found at '{file_path}'. Using default items."
+                )
+                return default_items.copy()
+
+            with open(file_path, "r", encoding="utf-8") as f:
+                items = [line.strip() for line in f if line.strip()]
+
+            if not items:
+                self.api.log_warning(
+                    f"Data file '{filename}' is empty. Using default items."
+                )
+                return default_items.copy()
+
+            self.api.log_info(
+                f"Successfully loaded {len(items)} items from '{filename}'."
+            )
+            return items
+        except Exception as e:
+            self.api.log_error(
+                f"Error loading data file '{filename}': {e}. Using default items."
+            )
+            return default_items.copy()
+
+    def ensure_command_args(
+        self, args_str: str, command_name: str, num_expected_parts: int = 1
+    ) -> Optional[List[str]]:
+        """Helper method to validate command arguments and display usage message if needed.
+
+        Args:
+            args_str: The raw arguments string from the command
+            command_name: The name of the command (used to fetch help text)
+            num_expected_parts: The number of space-separated parts expected in args_str
+
+        Returns:
+            Optional[List[str]]: List of argument parts if valid, None if invalid
+        """
+        # Get help text for the command
+        help_data = self.api.script_manager.get_help_text_for_command(command_name)
+        usage_msg = (
+            help_data.get("help_text", f"Usage: /{command_name}")
+            if help_data
+            else f"Usage: /{command_name}"
+        )
+
+        # Split args and check count
+        parts = args_str.strip().split()
+        if len(parts) < num_expected_parts:
+            self.api.add_message_to_context(
+                self.api.get_current_context_name() or "Status", usage_msg, "error"
+            )
+            return None
+
+        return parts

@@ -1,72 +1,53 @@
 import random
-import os
-from typing import Dict, List
+import logging
+from typing import TYPE_CHECKING, List, Optional
 from script_base import ScriptBase
+
+if TYPE_CHECKING:
+    from script_manager import ScriptAPIHandler
+
+# Use a logger specific to this script for better traceability
+script_logger = logging.getLogger("pyrc.scripts.default_random_messages")
 
 
 class RandomMessagesScript(ScriptBase):
-    def __init__(self, api):
-        super().__init__(api)
+    def __init__(self, api_handler: "ScriptAPIHandler"):
+        super().__init__(api_handler)
         self.quit_messages: List[str] = []
         self.part_messages: List[str] = []
-        self.api.log_info("RandomMessagesScript initialized.")
 
     def load(self):
-        """Load quit and part messages from data files."""
-        try:
-            # Load quit messages
-            quit_messages_path = os.path.join(
-                self.get_script_data_dir(), "quit_messages.txt"
-            )
-            if os.path.exists(quit_messages_path):
-                with open(quit_messages_path, "r", encoding="utf-8") as f:
-                    self.quit_messages = [line.strip() for line in f if line.strip()]
-                self.api.log_info(f"Loaded {len(self.quit_messages)} quit messages.")
-            else:
-                self.api.log_warning(
-                    f"Quit messages file not found: {quit_messages_path}"
-                )
+        self.api.log_info("RandomMessagesScript loading data...")
+        self.quit_messages = self.load_list_from_data_file(
+            "quit_messages.txt", ["Goodbye, cruel world!", "See you later!", "Bye bye!"]
+        )
+        self.part_messages = self.load_list_from_data_file(
+            "part_messages.txt", ["Leaving the channel!", "See you later!", "Bye bye!"]
+        )
 
-            # Load part messages
-            part_messages_path = os.path.join(
-                self.get_script_data_dir(), "part_messages.txt"
-            )
-            if os.path.exists(part_messages_path):
-                with open(part_messages_path, "r", encoding="utf-8") as f:
-                    self.part_messages = [line.strip() for line in f if line.strip()]
-                self.api.log_info(f"Loaded {len(self.part_messages)} part messages.")
-            else:
-                self.api.log_warning(
-                    f"Part messages file not found: {part_messages_path}"
-                )
+        self.api.subscribe_to_event("CLIENT_SHUTDOWN", self.handle_client_shutdown)
+        self.api.subscribe_to_event("CHANNEL_PART", self.handle_channel_part)
+        self.api.log_info("RandomMessagesScript loaded and event handlers registered.")
 
-        except Exception as e:
-            self.api.log_error(f"Error loading random messages: {e}")
-
-    def _substitute_variables(self, message: str, variables: Dict[str, str]) -> str:
-        """Substitute variables in a message template."""
-        result = message
-        for key, value in variables.items():
-            result = result.replace(f"${key}", str(value))
-        return result
-
-    def get_random_quit_message(self, variables: Dict[str, str]) -> str:
-        """Get a random quit message with variables substituted."""
+    def handle_client_shutdown(self, event_data: dict):
+        """Handle client shutdown by sending a random quit message."""
         if not self.quit_messages:
-            return "Client shutting down"
-        import random
+            return
 
-        template = random.choice(self.quit_messages)
-        return self._substitute_variables(template, variables)
+        message = random.choice(self.quit_messages)
+        self.api.send_raw(f"QUIT :{message}")
 
-    def get_random_part_message(self, variables: Dict[str, str]) -> str:
-        """Get a random part message with variables substituted."""
+    def handle_channel_part(self, event_data: dict):
+        """Handle channel part by sending a random part message."""
         if not self.part_messages:
-            return "Leaving"
-        import random
+            return
 
-        template = random.choice(self.part_messages)
-        return self._substitute_variables(template, variables)
+        channel = event_data.get("channel")
+        if not channel:
+            return
+
+        message = random.choice(self.part_messages)
+        self.api.send_raw(f"PART {channel} :{message}")
 
 
 def get_script_instance(api):

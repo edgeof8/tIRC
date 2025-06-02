@@ -134,20 +134,6 @@ class IRCProtocolHandler:
             source_full_ident=source_full_ident,
             is_privmsg_or_notice=True,
         )
-        client.process_trigger_event(
-            "NOTICE",
-            {
-                "nick": nick if nick else "",
-                "userhost": source_full_ident if source_full_ident else "",
-                "target": target,
-                "channel": target if is_channel_notice else "",
-                "message": message_body,
-                "message_words": message_body.split(),
-                "client_nick": client.nick,
-                "raw_line": raw_line,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            },
-        )
 
         # Dispatch NOTICE event
         if hasattr(client, "script_manager"):
@@ -798,6 +784,18 @@ def handle_server_message(client, line: str):  # raw_line is 'line' here
             client.add_message(
                 message, client.ui.colors["system"], context_name=channel
             )
+
+            # Dispatch TOPIC event
+            if hasattr(client, "script_manager"):
+                event_data = {
+                    "nick": parsed_msg.source_nick,
+                    "userhost": parsed_msg.prefix,
+                    "channel": channel,
+                    "topic": new_topic if new_topic is not None else "",
+                    "client_nick": client.nick,
+                    "raw_line": line,
+                }
+                client.script_manager.dispatch_event("TOPIC", event_data)
         else:
             logger.warning(f"Malformed TOPIC message (no channel): {line.strip()}")
     elif cmd == "NOTICE":
@@ -816,6 +814,18 @@ def handle_server_message(client, line: str):  # raw_line is 'line' here
                     # The user's presence in the channel is already tracked,
                     # we just need to update their ident/host if needed
                     pass
+
+            # Dispatch CHGHOST event
+            if hasattr(client, "script_manager"):
+                event_data_chghost = {
+                    "nick": src_nick,
+                    "new_ident": new_ident,
+                    "new_host": new_host,
+                    "userhost": parsed_msg.prefix,  # The original full userhost before change
+                    "client_nick": client.nick,
+                    "raw_line": line,
+                }
+                client.script_manager.dispatch_event("CHGHOST", event_data_chghost)
     else:
         display_p_parts = list(parsed_msg.params)
         if parsed_msg.trailing is not None:
