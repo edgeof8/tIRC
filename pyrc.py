@@ -107,56 +107,34 @@ def main_curses_wrapper(stdscr, args):
         if client:
             client.should_quit = True
     finally:
-        logger.info("Shutting down PyRC.")
+        logger.info("Shutting down PyRC (UI mode).")
         if client:
-            client.should_quit = True
-            if (
-                client.network_handler.network_thread
-                and client.network_handler.network_thread.is_alive()
-            ):
-                logger.debug("Joining network thread.")
-                client.network_handler.network_thread.join(timeout=1.0)
-                logger.debug("Network thread joined.")
-            if client.network_handler.sock:
-                try:
-                    logger.debug("Closing network socket.")
-                    client.network_handler.sock.close()
-                    logger.debug("Network socket closed.")
-                except Exception as e:
-                    logger.error(f"Error closing socket: {e}")
-                    pass
-            # Final screen clear - more robust attempt
-            try:
-                if stdscr:
-                    try:
-                        curses.curs_set(1)  # Ensure cursor is visible
-                    except curses.error:
-                        logger.warning(
-                            "Curses error trying to make cursor visible. endwin() will attempt."
-                        )
-                        pass  # Ignore if it fails, endwin will try
+            client.should_quit = True  # Ensure it's set
+            # Network thread joining is now handled inside client.run_main_loop's finally
+            # or by the network_handler.stop() if called explicitly.
+            # We just ensure client.run_main_loop() has completed.
 
-                    stdscr.clear()  # Clear the entire screen content more thoroughly
-                    stdscr.refresh()  # Apply the clear operation immediately
-                    logger.debug("Final screen clear and refresh completed.")
-                else:
-                    logger.warning("stdscr was not available for final screen clear.")
-            except curses.error as e:
-                logger.error(f"Curses error during final screen clear: {e}")
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error during final screen clear: {e}", exc_info=True
-                )
-
-            # Dispatch the CLIENT_SHUTDOWN_FINAL event after curses.endwin()
+        # UI cleanup FIRST
+        if stdscr:
             try:
+                curses.curs_set(1)
+                stdscr.clear()
+                stdscr.refresh()
                 curses.endwin()
-                client.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
-            except Exception as e:
-                logger.error(
-                    f"Error during final shutdown event dispatch: {e}", exc_info=True
+                logger.debug("Curses UI shut down.")
+            except Exception as e_curses_end:
+                logger.error(f"Error during curses.endwin(): {e_curses_end}")
+
+        # THEN dispatch final shutdown event if client was initialized
+        if client and hasattr(client, "script_manager"):
+            try:
+                logger.info(
+                    "Dispatching CLIENT_SHUTDOWN_FINAL from main_curses_wrapper."
                 )
-                print("Error during final shutdown. Exiting...")
+                client.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
+            except Exception as e_dispatch:
+                logger.error(f"Error dispatching CLIENT_SHUTDOWN_FINAL: {e_dispatch}")
+        logger.info("PyRC UI mode shutdown sequence complete.")
 
 
 def parse_arguments(
@@ -275,11 +253,9 @@ def main():
     )
 
     if args.headless:
-        # Run in headless mode
         logger.info("Starting PyRC in headless mode.")
         client = None
         try:
-            # Initialize the client with stdscr=None for headless mode
             client = IRCClient_Logic(
                 stdscr=None,
                 server_addr=args.server,
@@ -290,50 +266,51 @@ def main():
                 nickserv_password=args.nickserv_password,
                 use_ssl=args.ssl,
             )
-            client.run_main_loop()
+            client.run_main_loop()  # This loop now blocks until should_quit
 
-            # Keep the main thread alive until client.should_quit is True
-            while not client.should_quit:
-                try:
-                    time.sleep(1)
-                except KeyboardInterrupt:
-                    logger.info("Keyboard interrupt received in headless mode.")
-                    client.should_quit = True
-                    break
+            # The main thread in headless mode simply waits for run_main_loop to finish
+            # (which happens when client.should_quit is True)
+            # The network thread joining is handled within run_main_loop's finally.
+
+        except (
+            KeyboardInterrupt
+        ):  # This might catch Ctrl+C if run_main_loop itself doesn't
+            logger.info(
+                "Keyboard interrupt received in headless main(). Signaling client to quit."
+            )
+            if client:
+                client.should_quit = True
+                # Wait for the client's own shutdown mechanisms to run
+                if (
+                    client.network_handler
+                    and client.network_handler.network_thread
+                    and client.network_handler.network_thread.is_alive()
+                ):
+                    client.network_handler.network_thread.join(timeout=3.0)
         except Exception as e:
             logger.critical(f"Critical error in headless mode: {e}", exc_info=True)
             if client:
                 client.should_quit = True
         finally:
             logger.info("Shutting down PyRC headless mode.")
-            if client:
-                client.should_quit = True
+            if client and hasattr(client, "script_manager"):
+                # Ensure network thread is stopped and joined if not already
                 if (
-                    client.network_handler.network_thread
+                    client.network_handler
+                    and client.network_handler.network_thread
                     and client.network_handler.network_thread.is_alive()
                 ):
-                    logger.debug("Joining network thread.")
-                    client.network_handler.network_thread.join(timeout=1.0)
-                    logger.debug("Network thread joined.")
-                if client.network_handler.sock:
-                    try:
-                        logger.debug("Closing network socket.")
-                        client.network_handler.sock.close()
-                        logger.debug("Network socket closed.")
-                    except Exception as e:
-                        logger.error(f"Error closing socket: {e}")
-                        pass
-                # Dispatch the CLIENT_SHUTDOWN_FINAL event
-                try:
-                    client.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
-                except Exception as e:
-                    logger.error(
-                        f"Error during final shutdown event dispatch: {e}",
-                        exc_info=True,
+                    logger.debug(
+                        "Headless main: Ensuring network thread is stopped and joined."
                     )
-                    print("Error during final shutdown. Exiting...")
+                    client.network_handler.stop()  # Signal again just in case
+                    client.network_handler.network_thread.join(timeout=2.0)
+
+                logger.info("Dispatching CLIENT_SHUTDOWN_FINAL from headless main().")
+                client.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
+            logger.info("PyRC headless mode shutdown sequence complete.")
     else:
-        # Run in normal mode with curses
+        # UI mode
         curses.wrapper(main_curses_wrapper, args)
 
 

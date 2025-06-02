@@ -17,15 +17,16 @@ class NetworkHandler:
     def __init__(self, client_ref):
         self.client = client_ref
         logger.debug("NetworkHandler initialized.")
-        self.sock = None
-        self.connected = False
-        self.reconnect_delay = RECONNECT_INITIAL_DELAY
-        self.network_thread = None
-        self._should_thread_stop = threading.Event()
+        self.sock: Optional[socket.socket] = None
+        self.connected: bool = False
+        self.reconnect_delay: int = RECONNECT_INITIAL_DELAY
+        self.network_thread: Optional[threading.Thread] = None
+        self._should_thread_stop: threading.Event = threading.Event()
         self.channels_to_join_on_connect: List[str] = []
         self.is_handling_nick_collision: bool = False
         self.running = True
-        self.buffer = b""  # Initialize the buffer for message processing
+        self.buffer: bytes = b""
+        self._disconnect_event_sent_for_current_session = False
 
     def start(self):
         if self.network_thread and self.network_thread.is_alive():
@@ -45,6 +46,8 @@ class NetworkHandler:
         self._should_thread_stop.set()
         if self.client:
             self.client.should_quit = True
+        # No direct socket operations here. Let the network loop handle its own socket.
+        logger.info("NetworkHandler.stop() has signaled network thread.")
 
     def disconnect_gracefully(self, quit_message="Client disconnecting"):
         """Disconnect from the server gracefully with a quit message.
@@ -59,10 +62,7 @@ class NetworkHandler:
             self.client._final_quit_message = (
                 quit_message  # Store for network loop to use
             )
-            self.client.should_quit = (
-                True  # This will make the network loop send QUIT and exit
-            )
-        self._should_thread_stop.set()  # Also signal the thread directly
+        self.stop()  # Signal threads to stop; network loop will send QUIT.
 
     def update_connection_params(
         self,
@@ -208,17 +208,59 @@ class NetworkHandler:
         logger.debug(f"Sending AUTHENTICATE {payload[:20]}...")
         self.send_raw(f"AUTHENTICATE {payload}")
 
-    def _reset_connection_state(self):
+    def _reset_connection_state(self, dispatch_event: bool = True):
         """Reset the connection state and clean up resources."""
-        logger.debug("Resetting connection state...")
+        logger.debug(
+            f"Resetting connection state. Dispatch disconnect event: {dispatch_event}"
+        )
+
+        # Socket closure is now primarily handled by the network loop's finally block
+        # or when a socket error occurs within the loop.
+        # This method focuses on resetting logical state.
         if self.sock:
+            # It's possible this is called when the socket is already bad or closed by the loop.
+            # Attempting a close here again is mostly for safety if called from an unexpected path.
             try:
                 self.sock.close()
-            except Exception as e:
-                logger.error(f"Error closing socket during reset: {e}")
-            finally:
-                self.sock = None
+                logger.debug(
+                    "Socket closed by _reset_connection_state (might be redundant)."
+                )
+            except (OSError, socket.error):
+                pass  # Ignore errors if already closed
+            self.sock = None
+
+        was_connected = self.connected
         self.connected = False
+        self.is_handling_nick_collision = False  # Reset this too
+
+        if self.client:
+            if hasattr(self.client, "cap_negotiator") and self.client.cap_negotiator:
+                self.client.cap_negotiator.reset_negotiation_state()
+            if (
+                hasattr(self.client, "registration_handler")
+                and self.client.registration_handler
+            ):
+                self.client.registration_handler.reset_registration_state()
+
+            if (
+                dispatch_event
+                and was_connected
+                and not self._disconnect_event_sent_for_current_session
+            ):
+                if hasattr(self.client, "script_manager"):
+                    current_server = self.client.server
+                    current_port = self.client.port
+                    logger.info(
+                        f"Dispatching CLIENT_DISCONNECTED event from _reset_connection_state for {current_server}:{current_port}"
+                    )
+                    self.client.script_manager.dispatch_event(
+                        "CLIENT_DISCONNECTED",
+                        {"server": current_server, "port": current_port},
+                    )
+                    self._disconnect_event_sent_for_current_session = (
+                        True  # Mark as sent for this session
+                    )
+
         self.buffer = b""
         logger.debug("Connection state reset complete")
 
@@ -424,90 +466,173 @@ class NetworkHandler:
             self.client.ui_needs_update.set()
 
     def _network_loop(self):
-        """Main network loop that handles reading from the socket."""
         logger.debug("Network loop starting.")
-        try:
-            while self.running:
-                if not self.connected:
-                    logger.debug("Not connected, attempting to connect...")
-                    if not self._connect_socket():
-                        logger.debug("Connection failed, waiting before retry...")
-                        time.sleep(self.reconnect_delay)
-                        self.reconnect_delay = min(
-                            self.reconnect_delay * 2, RECONNECT_MAX_DELAY
+        self.buffer = b""  # Ensure buffer is reset for each connection attempt cycle
+
+        while not self._should_thread_stop.is_set():  # Loop for reconnection attempts
+            if self.client and self.client.should_quit:  # Check global quit flag
+                logger.info(
+                    "Network loop: client.should_quit is true. Exiting network loop."
+                )
+                break
+
+            if not self.connected:
+                self._disconnect_event_sent_for_current_session = (
+                    False  # Reset for new connection attempt
+                )
+                if self.client and self.client.should_quit:
+                    break  # Exit if quitting
+                logger.debug("Network loop: Not connected. Attempting to connect.")
+                if self._connect_socket():
+                    logger.info(
+                        "Network loop: Connection successful, CAP negotiation initiated."
+                    )
+                    self.is_handling_nick_collision = (
+                        False  # Reset on successful connection
+                    )
+                else:
+                    logger.warning("Network loop: Connection attempt failed.")
+                    if self.client:
+                        self.client.add_message(
+                            f"Retrying in {self.reconnect_delay} seconds...",
+                            self.client.ui.colors["system"],
+                            context_name="Status",
                         )
-                        continue
+                        if not self.client.is_headless:
+                            self.client.ui_needs_update.set()
 
-                if not self.sock:
-                    logger.error("Socket is None after connection attempt")
-                    self.connected = False
-                    continue
+                    interrupted = self._should_thread_stop.wait(self.reconnect_delay)
+                    if interrupted or (self.client and self.client.should_quit):
+                        logger.debug(
+                            "Network loop: Reconnect wait interrupted or client quitting. Exiting loop."
+                        )
+                        break
+                    self.reconnect_delay = min(
+                        self.reconnect_delay * 2, RECONNECT_MAX_DELAY
+                    )
+                    logger.debug(
+                        f"Network loop: Increased reconnect delay to {self.reconnect_delay}s."
+                    )
+                    continue  # Retry connection
 
-                try:
-                    data = self.sock.recv(4096)
-                    if not data:
-                        logger.info("Connection closed by server")
-                        self.connected = False
+            # Inner loop for processing data once connected
+            try:
+                while (
+                    self.connected
+                    and not self._should_thread_stop.is_set()
+                    and not (self.client and self.client.should_quit)
+                ):
+                    current_sock_for_loop = self.sock
+                    if not current_sock_for_loop:
+                        logger.error(
+                            "Network loop: self.sock is None while connected. Resetting."
+                        )
+                        self._reset_connection_state(dispatch_event=True)
+                        break  # Break inner loop to attempt reconnect
+
+                    try:
+                        data = current_sock_for_loop.recv(4096)
+                        if not data:
+                            logger.info(
+                                "Network loop: Connection closed by server (recv returned empty)."
+                            )
+                            self._reset_connection_state(dispatch_event=True)
+                            break  # Break inner loop
+
+                        self.buffer += data
+                        while b"\r\n" in self.buffer:
+                            line_bytes, self.buffer = self.buffer.split(b"\r\n", 1)
+                            try:
+                                decoded_line = line_bytes.decode(
+                                    "utf-8", errors="replace"
+                                )
+                                if self.client:
+                                    self.client.handle_server_message(decoded_line)
+                            except UnicodeDecodeError as e_decode:
+                                logger.error(
+                                    f"Unicode decode error: {e_decode} on line: {line_bytes.hex()}",
+                                    exc_info=True,
+                                )
+                                if self.client:
+                                    self.client.add_message(
+                                        f"Unicode decode error: {e_decode}",
+                                        self.client.ui.colors["error"],
+                                        "Status",
+                                    )
+
+                    except (
+                        socket.timeout
+                    ):  # Should not happen with blocking sockets unless set_timeout is used
+                        logger.debug("Network loop: Socket recv timed out.")
                         continue
-                    self._process_data(data)
-                except socket.timeout:
-                    continue
-                except socket.error as e:
-                    if self.running:  # Only log if we're still supposed to be running
-                        logger.error(f"Socket error in network loop: {e}")
-                    self.connected = False
-                    continue
-        except Exception as e:
-            logger.error(f"Unexpected error in network loop: {e}", exc_info=True)
-        finally:
-            logger.info("Network loop is exiting its main processing (finally block).")
-            if (
-                self.connected and self.sock
-            ):  # If we were connected when loop terminates
-                # Send QUIT if client is quitting and QUIT hasn't been sent by another mechanism
-                quit_msg = getattr(
+                    except ssl.SSLWantReadError:  # For non-blocking SSL sockets
+                        time.sleep(0.01)
+                        continue
+                    except (
+                        OSError,
+                        socket.error,
+                        ssl.SSLError,
+                    ) as e_sock:  # Includes ConnectionResetError, BrokenPipeError
+                        if not self._should_thread_stop.is_set():
+                            logger.error(
+                                f"Network loop: Socket error: {e_sock}", exc_info=False
+                            )
+                            if self.client:
+                                self.client.add_message(
+                                    f"Network error: {e_sock}",
+                                    self.client.ui.colors["error"],
+                                    "Status",
+                                )
+                        else:
+                            logger.info(
+                                f"Network loop: Socket error during planned shutdown: {e_sock}"
+                            )
+                        self._reset_connection_state(dispatch_event=True)
+                        break  # Break inner loop to attempt reconnect
+            except Exception as e_inner_loop:
+                logger.critical(
+                    f"Network loop: Unexpected critical error in inner loop: {e_inner_loop}",
+                    exc_info=True,
+                )
+                self._reset_connection_state(dispatch_event=True)
+                # Potentially break outer loop too if error is severe
+                # For now, it will try to reconnect
+            finally:
+                if (
+                    not self.connected and self.client and not self.client.is_headless
+                ):  # If disconnected from inner loop
+                    self.client.ui_needs_update.set()
+
+        # This finally block is for the outer `while not self._should_thread_stop.is_set():`
+        logger.info("Network loop's outer while loop is ending.")
+        if (
+            self.sock
+        ):  # If a socket still exists (e.g. loop broken by should_quit while connected)
+            if self.connected and self.client and self.client.should_quit:
+                # Send QUIT if we are quitting and were connected
+                quit_message = getattr(
                     self.client, "_final_quit_message", "Client shutting down"
                 )
-                logger.info(f"Network loop: Sending QUIT: {quit_msg}")
+                logger.info(f"Network loop (finally): Sending QUIT: {quit_message}")
                 try:
                     self.sock.sendall(
-                        f"QUIT :{quit_msg}\r\n".encode("utf-8", errors="replace")
+                        f"QUIT :{quit_message}\r\n".encode("utf-8", errors="replace")
                     )
-                except Exception as e:
-                    logger.warning(f"Network loop: Error sending QUIT in finally: {e}")
-
-            if self.sock:
-                logger.info("Network loop performing final socket close.")
-                try:
-                    self.sock.close()
-                except Exception as e_close:
-                    logger.error(
-                        f"Error closing socket in network loop finally: {e_close}"
+                except Exception as e_quit:
+                    logger.warning(
+                        f"Network loop (finally): Error sending QUIT: {e_quit}"
                     )
-                self.sock = None
-            self.connected = False
-            logger.info("Network loop has fully finished and cleaned up.")
-            # Dispatch disconnect event if it wasn't a clean client-initiated quit that already dispatched it
-            if (
-                self.client
-                and hasattr(self.client, "script_manager")
-                and not getattr(self.client, "_clean_disconnect_event_sent", False)
-            ):
-                current_server = self.client.server if self.client else "unknown"
-                current_port = self.client.port if self.client else 0
-                logger.info(
-                    f"Network loop dispatching CLIENT_DISCONNECTED for {current_server}:{current_port}"
-                )
-                self.client.script_manager.dispatch_event(
-                    "CLIENT_DISCONNECTED",
-                    {"server": current_server, "port": current_port},
-                )
 
-    def _process_data(self, data: bytes):
-        """Process received data and handle message parsing."""
-        self.buffer += data
-        while b"\n" in self.buffer:
-            line, self.buffer = self.buffer.split(b"\n", 1)
-            line = line.decode("utf-8", errors="replace").strip()
-            if line:
-                self.client.handle_server_message(line)
+            logger.info("Network loop (finally): Closing socket.")
+            try:
+                self.sock.close()
+            except Exception as e_close:
+                logger.error(f"Error closing socket in network loop finally: {e_close}")
+            self.sock = None
+
+        if self.connected:  # If we were connected when the loop ended
+            self._reset_connection_state(
+                dispatch_event=True
+            )  # Ensure state is fully reset and event dispatched
+
+        logger.info("Network loop has fully terminated.")

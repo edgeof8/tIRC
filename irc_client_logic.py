@@ -121,6 +121,9 @@ class DummyUI:
 
 
 class IRCClient_Logic:
+    # Class-level flag to track if exit screen has been shown
+    exit_screen_shown = False
+
     def __init__(
         self,
         stdscr,
@@ -808,7 +811,8 @@ class IRCClient_Logic:
             self.add_message(
                 error_message,
                 self.ui.colors["error"],
-                context_name=current_context_name,  # Or a specific error context
+                prefix_time=True,
+                context_name="Status",
             )
             # Optionally, add more detailed error to a specific debug context or log if too verbose for main chat
 
@@ -956,64 +960,119 @@ class IRCClient_Logic:
 
     def run_main_loop(self):
         """Main loop for the IRC client."""
-        try:
-            # Start network connection in headless mode
-            if self.is_headless:
-                self.network_handler.start()
+        logger.info(f"Starting main client loop (headless={self.is_headless}).")
+        if not self.is_headless:
+            self.ui.refresh_all_windows()  # Initial draw
+
+        # Start network operations if not already started
+        if (
+            not self.network_handler.network_thread
+            or not self.network_handler.network_thread.is_alive()
+        ):
+            self.network_handler.start()
+            if self.is_headless:  # Specific log for headless start after network
                 logger.info("Started network connection in headless mode")
 
+        try:
             while not self.should_quit:
-                if not self.is_headless and self.input_handler is not None:
-                    # Only handle input in non-headless mode and if input_handler exists
-                    try:
-                        char = self.ui.get_input_char()
-                        if char != curses.ERR:
-                            self.input_handler.handle_key_press(char)
-                    except curses.error:
-                        pass  # Ignore curses errors
-
-                # Check if UI needs update
-                if self.ui_needs_update.is_set():
-                    if not self.is_headless:
+                if not self.is_headless and self.input_handler and self.ui:
+                    key_code = self.ui.get_input_char()
+                    if key_code != curses.ERR:
+                        self.input_handler.handle_key_press(key_code)
+                    if self.ui_needs_update.is_set() or key_code != curses.ERR:
                         self.ui.refresh_all_windows()
-                    self.ui_needs_update.clear()
+                        if self.ui_needs_update.is_set():
+                            self.ui_needs_update.clear()
+                else:  # Headless mode or UI not fully up
+                    if self.ui_needs_update.is_set():  # Scripts might still set this
+                        if not self.is_headless and self.ui:  # Refresh if UI exists
+                            self.ui.refresh_all_windows()
+                        self.ui_needs_update.clear()
 
-                time.sleep(0.1)  # Prevent high CPU usage
+                time.sleep(0.05)  # Main loop sleep
+
+        except KeyboardInterrupt:
+            logger.info(
+                "Keyboard interrupt received in main client loop. Initiating quit."
+            )
+            self.should_quit = True
+        except curses.error as e:
+            if not self.is_headless:  # Only relevant if curses is active
+                logger.error(f"Curses error in main loop: {e}", exc_info=True)
+                try:
+                    self.add_message(
+                        f"Curses error: {e}. Quitting.",
+                        self.ui.colors["error"],
+                        prefix_time=True,
+                        context_name="Status",
+                    )
+                except:
+                    pass
+            else:
+                logger.error(
+                    f"Curses-related error in headless main loop (should not happen often): {e}",
+                    exc_info=True,
+                )
+            self.should_quit = True
+        except Exception as e:
+            logger.critical(
+                f"Unhandled exception in main client loop: {e}", exc_info=True
+            )
+            try:
+                self.add_message(
+                    f"CRITICAL ERROR: {e}. Attempting to quit.",
+                    self.ui.colors["error"],
+                    prefix_time=True,
+                    context_name="Status",
+                )
+            except:
+                pass
+            self.should_quit = True
         finally:
-            logger.info("Shutting down PyRC.")
-            self.should_quit = True  # Ensure it's set
+            logger.info("IRCClient_Logic.run_main_loop() finally block executing.")
+            self.should_quit = True  # Ensure this is set
 
-            # Get quit message before stopping network, as network stop might clear client nick
-            quit_message_to_send = "PyRC - Exiting"  # Default
+            quit_message_to_send = "PyRC - Exiting"
             if hasattr(self, "script_manager") and self.script_manager:
+                # Allow scripts to provide a quit message
+                temp_nick_for_quit = self.nick
+                temp_server_for_quit = self.server
                 random_msg = self.script_manager.get_random_quit_message_from_scripts(
-                    {}
+                    {"nick": temp_nick_for_quit, "server": temp_server_for_quit}
                 )
                 if random_msg:
                     quit_message_to_send = random_msg
 
+            # Store the quit message for NetworkHandler to use
+            self._final_quit_message = quit_message_to_send
+
             if self.network_handler:
-                self.network_handler.disconnect_gracefully(quit_message_to_send)
+                logger.debug(
+                    "Calling network_handler.stop() from IRCClient_Logic.run_main_loop finally."
+                )
+                self.network_handler.disconnect_gracefully(
+                    quit_message=quit_message_to_send
+                )
+
                 if (
                     self.network_handler.network_thread
                     and self.network_handler.network_thread.is_alive()
                 ):
                     logger.debug(
-                        "Joining network thread in main_curses_wrapper finally."
+                        "Waiting for network thread to join in IRCClient_Logic.run_main_loop finally."
                     )
-                    self.network_handler.network_thread.join(timeout=2.0)  # Then join
+                    self.network_handler.network_thread.join(
+                        timeout=2.0
+                    )  # Increased timeout slightly
                     if self.network_handler.network_thread.is_alive():
                         logger.warning(
-                            "Network thread did not join in time from main_curses_wrapper."
+                            "Network thread did not join in time from IRCClient_Logic."
                         )
                     else:
                         logger.debug(
-                            "Network thread joined successfully from main_curses_wrapper."
+                            "Network thread joined successfully from IRCClient_Logic."
                         )
-
-            # Dispatch final shutdown event
-            if hasattr(self, "script_manager") and self.script_manager:
-                self.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
+            logger.info("IRCClient_Logic.run_main_loop() completed.")
 
     def initialize(self) -> bool:
         """Initialize the client components."""

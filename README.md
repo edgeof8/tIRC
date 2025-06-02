@@ -23,6 +23,12 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
   - Scripts have access to a rich `ScriptAPIHandler` for safe and powerful interaction with the client.
 - **Headless Operation:**
   - Can be run with a `--headless` flag, disabling the `curses` UI for use as an IRC backend or for AI agents. Core logic and scripting remain fully functional.
+  - No UI is drawn
+  - All core IRC logic, including connection, CAP/SASL, event processing, and the scripting system, remains fully functional
+  - Scripts can interact with the IRC server using the ScriptAPIHandler
+  - Logging continues as configured
+  - The client can be shut down via SIGINT (Ctrl+C) or programmatically by a script calling a quit/disconnect API function
+  - The `headless_message_history_lines` config option can be used to set a different message history size for contexts in headless mode, potentially reducing memory usage
 - **Logging:**
   - Comprehensive main log file for debugging and session history.
   - Optional per-channel logging to separate files.
@@ -116,6 +122,12 @@ python pyrc.py <server> -p <port> -n <nick> -c <#channel> [--ssl | --no-ssl]
 ```
 
 Example: `python pyrc.py irc.example.com -p 6667 -n MyPyRCNick -c #chat --no-ssl`
+
+For headless operation:
+
+```bash
+python pyrc.py --server irc.example.com --nick MyHeadlessBot --headless
+```
 
 ## Basic Commands
 
@@ -386,22 +398,3 @@ This project is licensed under the MIT License.
 ### Known Issues
 
 - None currently reported
-
-## Headless Operation
-
-PyRC can be run in a headless mode, without the curses user interface. This is useful for bots, automated scripts, or AI integrations where a visual UI is not needed.
-
-To run in headless mode, use the `--headless` command-line flag:
-
-```bash
-python pyrc.py --server irc.example.com --nick MyHeadlessBot --headless
-```
-
-In headless mode:
-
-- No UI is drawn
-- All core IRC logic, including connection, CAP/SASL, event processing, and the scripting system, remains fully functional
-- Scripts can interact with the IRC server using the ScriptAPIHandler
-- Logging continues as configured
-- The client can be shut down via SIGINT (Ctrl+C) or programmatically by a script calling a quit/disconnect API function
-- The `headless_message_history_lines` config option can be used to set a different message history size for contexts in headless mode, potentially reducing memory usage
