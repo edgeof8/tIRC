@@ -172,8 +172,7 @@ def parse_arguments(
         description="Simple Terminal IRC Client. Uses pyterm_irc_config.ini for defaults."
     )
     parser.add_argument(
-        "server",
-        nargs="?",
+        "--server",
         default=None,
         help=f"IRC server (default: {cfg_server})",
     )
@@ -206,6 +205,12 @@ def parse_arguments(
         "--password",
         default=None,
         help="Server password (optional, overrides config)",
+    )
+    # Add headless mode argument
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run in headless mode without UI (for scripting)",
     )
     # NickServ password is not exposed as a CLI argument for now, taken from config.
     # If CLI exposure is desired, add an argument here.
@@ -255,13 +260,11 @@ def parse_arguments(
     return args
 
 
-if __name__ == "__main__":
-    setup_logging()  # Initialize logging first
-    logger.info("PyRC application started.")
+def main():
+    setup_logging()
+    logger.info("Starting PyRC.")
 
-    # Pass loaded config values to parse_arguments
-    # This makes them available as defaults if not overridden by CLI args
-    cli_args = parse_arguments(
+    args = parse_arguments(
         IRC_SERVER,
         IRC_PORT,
         IRC_NICK,
@@ -271,19 +274,68 @@ if __name__ == "__main__":
         IRC_SSL,
     )
 
-    try:
-        logger.debug(f"Parsed CLI arguments: {cli_args}")
-        curses.wrapper(main_curses_wrapper, cli_args)
-    except curses.error as e:
-        logger.error(f"Curses initialization error: {e}", exc_info=True)
-        print(f"Curses initialization error: {e}")
-        print("Ensure your terminal supports curses and is large enough.")
-        print("(e.g., Windows Terminal, or cmd.exe with 'pip install windows-curses')")
-    except Exception as e:
-        logger.critical(f"An unexpected critical error occurred: {e}", exc_info=True)
-        print(f"An unexpected error occurred: {e}")
-        import traceback
+    if args.headless:
+        # Run in headless mode
+        logger.info("Starting PyRC in headless mode.")
+        client = None
+        try:
+            # Initialize the client with stdscr=None for headless mode
+            client = IRCClient_Logic(
+                stdscr=None,
+                server_addr=args.server,
+                port=args.port,
+                nick=args.nick,
+                initial_channels_raw=args.channel if args.channel else [],
+                password=args.password,
+                nickserv_password=args.nickserv_password,
+                use_ssl=args.ssl,
+            )
+            client.run_main_loop()
 
-        traceback.print_exc()  # Still print to console for immediate visibility
-    finally:
-        logger.info("PyRC exited.")
+            # Keep the main thread alive until client.should_quit is True
+            while not client.should_quit:
+                try:
+                    time.sleep(1)
+                except KeyboardInterrupt:
+                    logger.info("Keyboard interrupt received in headless mode.")
+                    client.should_quit = True
+                    break
+        except Exception as e:
+            logger.critical(f"Critical error in headless mode: {e}", exc_info=True)
+            if client:
+                client.should_quit = True
+        finally:
+            logger.info("Shutting down PyRC headless mode.")
+            if client:
+                client.should_quit = True
+                if (
+                    client.network.network_thread
+                    and client.network.network_thread.is_alive()
+                ):
+                    logger.debug("Joining network thread.")
+                    client.network.network_thread.join(timeout=1.0)
+                    logger.debug("Network thread joined.")
+                if client.network.sock:
+                    try:
+                        logger.debug("Closing network socket.")
+                        client.network.sock.close()
+                        logger.debug("Network socket closed.")
+                    except Exception as e:
+                        logger.error(f"Error closing socket: {e}")
+                        pass
+                # Dispatch the CLIENT_SHUTDOWN_FINAL event
+                try:
+                    client.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})
+                except Exception as e:
+                    logger.error(
+                        f"Error during final shutdown event dispatch: {e}",
+                        exc_info=True,
+                    )
+                    print("Error during final shutdown. Exiting...")
+    else:
+        # Run in normal mode with curses
+        curses.wrapper(main_curses_wrapper, args)
+
+
+if __name__ == "__main__":
+    main()

@@ -43,6 +43,77 @@ from registration_handler import RegistrationHandler
 logger = logging.getLogger("pyrc.logic")
 
 
+class DummyUI:
+    """A dummy UI class for headless mode that provides no-op implementations of UI methods."""
+
+    def __init__(self):
+        self.colors = {
+            "default": 0,
+            "system": 0,
+            "join_part": 0,
+            "nick_change": 0,
+            "my_message": 0,
+            "other_message": 0,
+            "highlight": 0,
+            "error": 0,
+            "status_bar": 0,
+            "sidebar_header": 0,
+            "sidebar_item": 0,
+            "sidebar_user": 0,
+            "input": 0,
+            "pm": 0,
+            "user_prefix": 0,
+            "warning": 0,
+            "info": 0,
+            "debug": 0,
+            "timestamp": 0,
+            "nick": 0,
+            "channel": 0,
+            "query": 0,
+            "status": 0,
+            "list": 0,
+            "list_selected": 0,
+            "list_header": 0,
+            "list_footer": 0,
+            "list_highlight": 0,
+            "list_selected_highlight": 0,
+            "list_selected_header": 0,
+            "list_selected_footer": 0,
+            "list_selected_highlight_header": 0,
+            "list_selected_highlight_footer": 0,
+        }
+        self.split_mode_active = False
+        self.active_split_pane = "top"
+        self.top_pane_context_name = ""
+        self.bottom_pane_context_name = ""
+        self.msg_win_width = 80  # Default width for message window
+        self.msg_win_height = 24  # Default height for message window
+        self.user_list_width = 20  # Default width for user list
+        self.user_list_height = 24  # Default height for user list
+        self.status_win_height = 1  # Default height for status window
+        self.input_win_height = 1  # Default height for input window
+        self.msg_win = None
+        self.user_list_win = None
+        self.status_win = None
+        self.input_win = None
+        self.stdscr = None
+
+    def refresh_all_windows(self):
+        pass
+
+    def scroll_messages(self, direction: str, lines: int = 1):
+        pass
+
+    def get_input_char(self) -> int:
+        return curses.ERR
+
+    def setup_layout(self):
+        pass
+
+    def scroll_user_list(self, direction: str, lines_arg: int = 1):
+        pass
+
+
 class IRCClient_Logic:
     def __init__(
         self,
@@ -56,6 +127,7 @@ class IRCClient_Logic:
         use_ssl,
     ):
         self.stdscr = stdscr
+        self.is_headless = stdscr is None
         self.server = server_addr
         self.port = port
         self.initial_nick = nick
@@ -77,7 +149,7 @@ class IRCClient_Logic:
         self.use_ssl = use_ssl
         self.verify_ssl_cert = VERIFY_SSL_CERT
         logger.info(
-            f"IRCClient_Logic.__init__: server='{server_addr}', port={port}, use_ssl={self.use_ssl}, verify_ssl_cert={self.verify_ssl_cert}"
+            f"IRCClient_Logic.__init__: server='{server_addr}', port={port}, use_ssl={self.use_ssl}, verify_ssl_cert={self.verify_ssl_cert}, headless={self.is_headless}"
         )
         self.echo_sent_to_status: bool = True
         self.show_raw_log_in_ui: bool = False
@@ -117,7 +189,14 @@ class IRCClient_Logic:
         self.network = NetworkHandler(self)
         self.network.channels_to_join_on_connect = self.initial_channels_list[:]
 
-        self.ui = UIManager(stdscr, self)
+        # Initialize UI based on mode
+        if self.is_headless:
+            self.ui = DummyUI()
+            self.input_handler = None
+        else:
+            self.ui = UIManager(stdscr, self)
+            self.input_handler = InputHandler(self)
+
         self.command_handler = CommandHandler(
             self
         )  # CommandHandler needs to be initialized before ScriptManager if ScriptManager interacts with it during load
@@ -137,7 +216,6 @@ class IRCClient_Logic:
         self.sasl_authenticator = SaslAuthenticator(
             network_handler=self.network,
             cap_negotiator=self.cap_negotiator,
-            # nick=self.nick, # Removed as SaslAuthenticator now fetches from client_logic_ref
             password=self.nickserv_password,
             client_logic_ref=self,
         )
@@ -159,7 +237,9 @@ class IRCClient_Logic:
         self.cap_negotiator.set_sasl_authenticator(self.sasl_authenticator)
         self.registration_handler.set_sasl_authenticator(self.sasl_authenticator)
 
-        self.input_handler = InputHandler(self)
+        # Only initialize input handler in non-headless mode
+        if not self.is_headless:
+            self.input_handler = InputHandler(self)
 
         # Determine platform-specific config directory
         if platform.system() == "Windows":
@@ -863,103 +943,64 @@ class IRCClient_Logic:
             self.ui_needs_update.set()
 
     def run_main_loop(self):
-        # 1. Trigger: Called by `pyrc.py` after `IRCClient_Logic` is initialized, to start the client's operation.
-        # 2. Expected State Before:
-        #    - All handlers (`NetworkHandler`, `CapNegotiator`, `SaslAuthenticator`, `RegistrationHandler`, `UIManager`, etc.)
-        #      are initialized but the network connection is not yet active.
-        #    - `self.should_quit` is False.
-        # 3. Key Actions:
-        #    - Calls `self.network.start()`:
-        #        - This is a CRITICAL step that initiates the entire connection sequence.
-        #        - `NetworkHandler.start()` creates and starts a new thread for `NetworkHandler._network_loop()`.
-        #        - Inside `_network_loop()`, if not connected, `NetworkHandler._connect_socket()` is called.
-        #        - `_connect_socket()` establishes the TCP/IP (and SSL if enabled) connection.
-        #        - Upon successful socket connection, `_connect_socket()` calls `self.cap_negotiator.start_negotiation()`.
-        #        - `CapNegotiator.start_negotiation()` sends the initial "CAP LS" command, formally starting the IRC handshake.
-        #    - Enters the main client loop which continues as long as `self.should_quit` is False:
-        #        - Fetches user input using `self.ui.get_input_char()`.
-        #        - If input is received, passes it to `self.input_handler.handle_key_press()`.
-        #        - If the UI needs an update (signaled by `self.ui_needs_update.is_set()` or if input was received),
-        #          calls `self.ui.refresh_all_windows()`.
-        #        - Sleeps briefly to prevent high CPU usage.
-        #        - Handles `curses.error`, `KeyboardInterrupt` (Ctrl+C), and other exceptions to gracefully set `self.should_quit = True`.
-        #    - After the loop exits (due to `self.should_quit` becoming True):
-        #        - Ensures `self.should_quit` is True.
-        #        - Calls `self.network.stop()` to gracefully close the network connection (sending QUIT) and stop the network thread.
-        #        - Waits for the network thread to join.
-        # 4. Expected State After (Loop Exit):
-        #    - `self.should_quit` is True.
-        #    - The network connection is closed or being closed.
-        #    - The network thread is stopped or being stopped.
-        #    - The application is shutting down.
-        #
-        # Connection Sequence Initiation Summary within this method:
-        # `run_main_loop()` -> `self.network.start()` -> `NetworkHandler._network_loop()` (new thread)
-        # -> `NetworkHandler._connect_socket()` -> `self.cap_negotiator.start_negotiation()` -> Sends "CAP LS".
-        # This kicks off the chain: CAP LS -> CAP ACK/NAK -> (SASL AUTHENTICATE if enabled) -> CAP END -> NICK/USER -> RPL_WELCOME.
-        logger.info("Starting main client loop.")
-        self.network.start()
-        while not self.should_quit:
-            try:
-                key_code = self.ui.get_input_char()
-                if key_code != curses.ERR:
-                    self.input_handler.handle_key_press(key_code)
+        """Main loop for the IRC client."""
+        try:
+            # Start network connection in headless mode
+            if self.is_headless:
+                self.network.start()
+                logger.info("Started network connection in headless mode")
 
-                if self.ui_needs_update.is_set() or key_code != curses.ERR:
-                    self.ui.refresh_all_windows()
-                    if self.ui_needs_update.is_set():
-                        self.ui_needs_update.clear()
+            while not self.should_quit:
+                if not self.is_headless and self.input_handler is not None:
+                    # Only handle input in non-headless mode and if input_handler exists
+                    try:
+                        char = self.ui.get_input_char()
+                        if char != curses.ERR:
+                            self.input_handler.handle_key_press(char)
+                    except curses.error:
+                        pass  # Ignore curses errors
 
-                time.sleep(0.05)
-            except curses.error as e:
-                logger.error(f"Curses error in main loop: {e}", exc_info=True)
-                try:
-                    self.add_message(
-                        f"Curses error: {e}. Quitting.",
-                        self.ui.colors["error"],
-                        context_name="Status",
-                    )
-                except:
-                    pass
-                self.should_quit = True
-                break
-            except KeyboardInterrupt:
-                logger.info("KeyboardInterrupt received. Initiating quit.")
-                self.add_message(
-                    "Ctrl+C pressed. Quitting...",
-                    self.ui.colors["system"],
-                    context_name="Status",
+                # Check if UI needs update
+                if self.ui_needs_update.is_set():
+                    if not self.is_headless:
+                        self.ui.refresh_all_windows()
+                    self.ui_needs_update.clear()
+
+                time.sleep(0.1)  # Prevent high CPU usage
+        finally:
+            logger.info("Shutting down PyRC.")
+            self.should_quit = True  # Ensure it's set
+
+            # Get quit message before stopping network, as network stop might clear client nick
+            quit_message_to_send = "PyRC - Exiting"  # Default
+            if hasattr(self, "script_manager") and self.script_manager:
+                random_msg = self.script_manager.get_random_quit_message_from_scripts(
+                    {}
                 )
-                self.should_quit = True
-                break
-            except Exception as e:
-                logger.critical(
-                    f"Unhandled exception in main client loop: {e}", exc_info=True
-                )
-                try:
-                    self.add_message(
-                        f"CRITICAL ERROR: {e}. Attempting to quit.",
-                        self.ui.colors["error"],
-                        context_name="Status",
+                if random_msg:
+                    quit_message_to_send = random_msg
+
+            if self.network:
+                self.network.stop(
+                    send_quit=self.network.connected, quit_message=quit_message_to_send
+                )  # Call stop first
+                if (
+                    self.network.network_thread
+                    and self.network.network_thread.is_alive()
+                ):
+                    logger.debug(
+                        "Joining network thread in main_curses_wrapper finally."
                     )
-                except:
-                    pass
-                self.should_quit = True
-                break
+                    self.network.network_thread.join(timeout=2.0)  # Then join
+                    if self.network.network_thread.is_alive():
+                        logger.warning(
+                            "Network thread did not join in time from main_curses_wrapper."
+                        )
+                    else:
+                        logger.debug(
+                            "Network thread joined successfully from main_curses_wrapper."
+                        )
 
-        logger.info("Main client loop ended.")
-        self.should_quit = True
-
-        # Get a random quit message from the script system
-        quit_message = self.script_manager.get_random_quit_message_from_scripts({})
-        if not quit_message:
-            quit_message = "PyRC - https://github.com/edgeof8/PyRC"  # Fallback message
-
-        self.network.stop(send_quit=self.network.connected, quit_message=quit_message)
-        if self.network.network_thread and self.network.network_thread.is_alive():
-            logger.debug("Waiting for network thread to join...")
-            self.network.network_thread.join(timeout=2.0)
-            if self.network.network_thread.is_alive():
-                logger.warning("Network thread did not join in time.")
-            else:
-                logger.debug("Network thread joined successfully.")
+            # Dispatch final shutdown event
+            if hasattr(self, "script_manager") and self.script_manager:
+                self.script_manager.dispatch_event("CLIENT_SHUTDOWN_FINAL", {})

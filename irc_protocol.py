@@ -73,6 +73,7 @@ class IRCProtocolHandler:
                 "client_nick": client.nick,
                 "raw_line": raw_line,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "tags": parsed_msg.get_all_tags(),
             },
         )
 
@@ -86,6 +87,7 @@ class IRCProtocolHandler:
                 "is_channel_msg": is_channel_msg,
                 "client_nick": client.nick,
                 "raw_line": raw_line,
+                "tags": parsed_msg.get_all_tags(),
             }
             client.script_manager.dispatch_event("PRIVMSG", event_data)
 
@@ -145,6 +147,7 @@ class IRCProtocolHandler:
                 "is_channel_notice": is_channel_notice,
                 "client_nick": client.nick,
                 "raw_line": raw_line,
+                "tags": parsed_msg.get_all_tags(),
             }
             client.script_manager.dispatch_event("NOTICE", event_data)
 
@@ -224,6 +227,12 @@ def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
     active_context_before_nick_change = client.context_manager.active_context_name
     renamed_query_context_new_name = None
 
+    # Check if this is our own nick change before updating contexts
+    is_self_nick_change = src_nick.lower() == (
+        client.nick.lower() if client.nick else ""
+    )
+    old_client_nick_for_event = client.nick if is_self_nick_change else None
+
     for ctx_name in list(client.context_manager.contexts.keys()):
         ctx_obj = client.context_manager.get_context(ctx_name)
         if not ctx_obj:
@@ -292,7 +301,7 @@ def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
     if renamed_query_context_new_name:
         client.context_manager.set_active_context(renamed_query_context_new_name)
 
-    if src_nick.lower() == (client.nick.lower() if client.nick else ""):
+    if is_self_nick_change:
         logger.info(f"Received NICK change for our own nick: {src_nick} -> {new_nick}")
         client.nick = new_nick
         client.add_message(
@@ -300,6 +309,16 @@ def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
             client.ui.colors["system"],
             context_name="Status",
         )
+        # Dispatch CLIENT_NICK_CHANGED event
+        if hasattr(client, "script_manager"):
+            nick_changed_event_data = {
+                "old_nick": old_client_nick_for_event,
+                "new_nick": new_nick,
+                "raw_line": raw_line,
+            }
+            client.script_manager.dispatch_event(
+                "CLIENT_NICK_CHANGED", nick_changed_event_data
+            )
     else:
         logger.info(f"User {src_nick} changed nick to {new_nick}")
         for ctx_name, ctx_obj in client.context_manager.contexts.items():
@@ -312,12 +331,13 @@ def _handle_nick_change(client, parsed_msg: IRCMessage, raw_line: str):
                     context_name=ctx_name,
                 )
 
-    # Dispatch NICK event
+    # Dispatch NICK event for all nick changes
     if hasattr(client, "script_manager"):
         event_data = {
             "old_nick": src_nick,
             "new_nick": new_nick,
-            "is_self": src_nick.lower() == (client.nick.lower() if client.nick else ""),
+            "userhost": parsed_msg.prefix,
+            "is_self": is_self_nick_change,
             "client_nick": client.nick,
             "raw_line": raw_line,
         }
@@ -626,6 +646,7 @@ def _handle_mode_message(client, parsed_msg: IRCMessage, raw_line: str):
 
         current_op = None
         arg_idx = 0
+        parsed_modes = []
 
         for char_mode in actual_mode_str:
             if char_mode == "+":
@@ -670,6 +691,15 @@ def _handle_mode_message(client, parsed_msg: IRCMessage, raw_line: str):
                         logger.info(
                             f"MODE {current_op}{char_mode} for {nick_affected} in {mode_target}. New prefix: '{new_prefix_for_user}' (Old: '{current_actual_prefix}')"
                         )
+                        parsed_modes.append(
+                            {
+                                "operation": current_op,
+                                "mode": char_mode,
+                                "param": nick_affected,
+                                "new_prefix": new_prefix_for_user,
+                                "old_prefix": current_actual_prefix,
+                            }
+                        )
                         arg_idx += 1
                     else:
                         logger.warning(
@@ -677,7 +707,18 @@ def _handle_mode_message(client, parsed_msg: IRCMessage, raw_line: str):
                         )
                 elif char_mode in ["k", "l", "b", "e", "I"]:
                     if arg_idx < len(mode_args):
+                        param = mode_args[arg_idx]
+                        parsed_modes.append(
+                            {"operation": current_op, "mode": char_mode, "param": param}
+                        )
                         arg_idx += 1
+                    else:
+                        logger.warning(
+                            f"MODE: Not enough arguments for mode {current_op}{char_mode} in {mode_target}. Args: {mode_args}"
+                        )
+                else:
+                    # Handle modes without parameters
+                    parsed_modes.append({"operation": current_op, "mode": char_mode})
 
     # Dispatch MODE event
     if hasattr(client, "script_manager"):
@@ -687,8 +728,22 @@ def _handle_mode_message(client, parsed_msg: IRCMessage, raw_line: str):
             "modes_and_params": mode_changes_str.strip(),
             "client_nick": client.nick,
             "raw_line": raw_line,
+            "parsed_modes": parsed_modes if target_is_channel else None,
         }
         client.script_manager.dispatch_event("MODE", event_data)
+
+        # Dispatch CHANNEL_MODE_APPLIED event for channel modes
+        if target_is_channel and parsed_modes:
+            mode_event_data = {
+                "channel": mode_target,
+                "setter_nick": src_nick,
+                "setter_userhost": parsed_msg.prefix,
+                "mode_changes": parsed_modes,
+                "raw_line": raw_line,
+            }
+            client.script_manager.dispatch_event(
+                "CHANNEL_MODE_APPLIED", mode_event_data
+            )
 
 
 def handle_server_message(client, line: str):  # raw_line is 'line' here

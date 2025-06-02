@@ -3,7 +3,9 @@ import importlib.util
 import logging
 import configparser
 import time
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any
+import sys
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set
+import threading
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
@@ -33,6 +35,30 @@ class ScriptAPIHandler:
         self.client_logic = client_logic_ref
         self.script_manager = script_manager_ref
         self.script_module_name = script_module_name  # Store the script's module name
+        self.script_instance = None
+        self.registered_commands = {}
+        self.registered_events = set()
+        self.registered_triggers = {}
+        self.help_texts = {}
+        self.quit_messages = []
+        self.trigger_conditions = {}
+        self.trigger_actions = {}
+        self.trigger_cooldowns = {}
+        self.last_trigger_time = {}
+        self.trigger_enabled = {}
+        self.trigger_counters = {}
+        self.trigger_thresholds = {}
+        self.trigger_reset_times = {}
+        self.trigger_reset_timers = {}
+        self.trigger_reset_threads = {}
+        self.trigger_reset_events = {}
+        self.trigger_reset_lock = threading.Lock()
+        self.trigger_reset_condition = threading.Condition(self.trigger_reset_lock)
+        self.trigger_reset_running = True
+        self.trigger_reset_thread = threading.Thread(
+            target=self._trigger_reset_loop, daemon=True
+        )
+        self.trigger_reset_thread.start()
 
     def send_raw(self, command_string: str):
         self.client_logic.network.send_raw(command_string)
@@ -157,6 +183,327 @@ class ScriptAPIHandler:
             aliases=aliases,
             script_name=self.script_module_name,
         )
+
+    # --- State Querying Methods ---
+    def get_channel_users(self, channel_name: str) -> Optional[Dict[str, str]]:
+        """Get the user list for a channel.
+
+        Args:
+            channel_name: The name of the channel to get users from
+
+        Returns:
+            Dictionary mapping nicknames to prefixes (e.g., '@', '+', etc.) or None if channel doesn't exist
+        """
+        context = self.client_logic.context_manager.get_context(channel_name)
+        if not context or context.type != "channel":
+            return None
+        return context.users if hasattr(context, "users") else None
+
+    def get_channel_topic(self, channel_name: str) -> Optional[str]:
+        """Get the topic for a channel.
+
+        Args:
+            channel_name: The name of the channel to get the topic from
+
+        Returns:
+            The channel topic or None if channel doesn't exist
+        """
+        context = self.client_logic.context_manager.get_context(channel_name)
+        if not context or context.type != "channel":
+            return None
+        return context.topic if hasattr(context, "topic") else None
+
+    def get_joined_channels(self) -> List[str]:
+        """Get a list of channels the client is currently joined to.
+
+        Returns:
+            List of channel names
+        """
+        return list(self.client_logic.currently_joined_channels)
+
+    def get_server_capabilities(self) -> Set[str]:
+        """Get the set of currently enabled server capabilities.
+
+        Returns:
+            Set of enabled capability names
+        """
+        return self.client_logic.get_enabled_caps()
+
+    def get_server_info(self) -> Dict[str, Any]:
+        """Get information about the current server connection.
+
+        Returns:
+            Dictionary containing server, port, and SSL status
+        """
+        return {
+            "server": self.client_logic.server,
+            "port": self.client_logic.port,
+            "ssl": self.client_logic.use_ssl,
+        }
+
+    def is_connected(self) -> bool:
+        """Check if the client is currently connected to the server.
+
+        Returns:
+            True if connected, False otherwise
+        """
+        return self.client_logic.network.connected
+
+    def get_context_info(self, context_name: str) -> Optional[Dict[str, Any]]:
+        """Get detailed information about a specific context.
+
+        Args:
+            context_name: The name of the context to get info for
+
+        Returns:
+            Dictionary containing context information or None if context doesn't exist
+        """
+        context = self.client_logic.context_manager.get_context(context_name)
+        if not context:
+            return None
+
+        info = {
+            "name": context.name,
+            "type": context.type,
+            "unread_count": (
+                context.unread_count if hasattr(context, "unread_count") else 0
+            ),
+        }
+
+        if context.type == "channel":
+            info.update(
+                {
+                    "topic": context.topic if hasattr(context, "topic") else None,
+                    "user_count": (
+                        len(context.users) if hasattr(context, "users") else 0
+                    ),
+                    "join_status": (
+                        context.join_status.name
+                        if hasattr(context, "join_status")
+                        and context.join_status is not None
+                        else None
+                    ),
+                }
+            )
+
+        return info
+
+    # --- Action Methods ---
+    def join_channel(self, channel_name: str, key: Optional[str] = None):
+        """Join a channel.
+
+        Args:
+            channel_name: The channel to join
+            key: Optional channel key/password
+        """
+        if not channel_name.startswith(("#", "&", "+", "!")):
+            channel_name = "#" + channel_name
+
+        cmd = f"JOIN {channel_name}"
+        if key:
+            cmd += f" {key}"
+        self.send_raw(cmd)
+
+    def part_channel(self, channel_name: str, reason: Optional[str] = None):
+        """Leave a channel.
+
+        Args:
+            channel_name: The channel to leave
+            reason: Optional part message
+        """
+        if not channel_name.startswith(("#", "&", "+", "!")):
+            channel_name = "#" + channel_name
+
+        cmd = f"PART {channel_name}"
+        if reason:
+            cmd += f" :{reason}"
+        self.send_raw(cmd)
+
+    def send_message(self, target: str, message: str):
+        """Send a message to a channel or user.
+
+        Args:
+            target: Channel or user to send to
+            message: The message to send
+        """
+        self.send_raw(f"PRIVMSG {target} :{message}")
+
+    def set_nick(self, new_nick: str):
+        """Change your nickname.
+
+        Args:
+            new_nick: The new nickname to use
+        """
+        self.send_raw(f"NICK {new_nick}")
+
+    def set_topic(self, channel_name: str, new_topic: str):
+        """Set the topic for a channel.
+
+        Args:
+            channel_name: The channel to set the topic for
+            new_topic: The new topic
+        """
+        if not channel_name.startswith(("#", "&", "+", "!")):
+            channel_name = "#" + channel_name
+        self.send_raw(f"TOPIC {channel_name} :{new_topic}")
+
+    def set_channel_mode(self, channel_name: str, modes: str, *mode_params: str):
+        """Set channel modes.
+
+        Args:
+            channel_name: The channel to set modes for
+            modes: The mode string (e.g., "+o", "+v", etc.)
+            mode_params: Optional parameters for the modes
+        """
+        if not channel_name.startswith(("#", "&", "+", "!")):
+            channel_name = "#" + channel_name
+
+        cmd = f"MODE {channel_name} {modes}"
+        if mode_params:
+            cmd += " " + " ".join(mode_params)
+        self.send_raw(cmd)
+
+    def kick_user(self, channel_name: str, nick: str, reason: Optional[str] = None):
+        """Kick a user from a channel.
+
+        Args:
+            channel_name: The channel to kick from
+            nick: The user to kick
+            reason: Optional kick reason
+        """
+        if not channel_name.startswith(("#", "&", "+", "!")):
+            channel_name = "#" + channel_name
+
+        cmd = f"KICK {channel_name} {nick}"
+        if reason:
+            cmd += f" :{reason}"
+        self.send_raw(cmd)
+
+    def invite_user(self, nick: str, channel_name: str):
+        """Invite a user to a channel.
+
+        Args:
+            nick: The user to invite
+            channel_name: The channel to invite to
+        """
+        if not channel_name.startswith(("#", "&", "+", "!")):
+            channel_name = "#" + channel_name
+        self.send_raw(f"INVITE {nick} {channel_name}")
+
+    # --- Trigger Management Methods ---
+    def add_trigger(
+        self, event_type: str, pattern: str, action_type: str, action_content: str
+    ) -> Optional[int]:
+        """Add a new trigger to the trigger manager.
+
+        Args:
+            event_type: The type of event to trigger on (e.g., "PRIVMSG", "JOIN")
+            pattern: The pattern to match against the event data
+            action_type: The type of action to take (e.g., "say", "command")
+            action_content: The content of the action
+
+        Returns:
+            The ID of the newly created trigger, or None if creation failed
+        """
+        if not hasattr(self.client_logic, "trigger_manager"):
+            self.log_error("Trigger manager not available")
+            return None
+
+        try:
+            trigger_id = self.client_logic.trigger_manager.add_trigger(
+                event_type_str=event_type,
+                pattern=pattern,
+                action_type_str=action_type,
+                action_content=action_content,
+            )
+            return trigger_id
+        except Exception as e:
+            self.log_error(f"Failed to add trigger: {e}")
+            return None
+
+    def remove_trigger(self, trigger_id: int) -> bool:
+        """Remove a trigger by its ID.
+
+        Args:
+            trigger_id: The ID of the trigger to remove
+
+        Returns:
+            True if the trigger was removed successfully, False otherwise
+        """
+        if not hasattr(self.client_logic, "trigger_manager"):
+            self.log_error("Trigger manager not available")
+            return False
+
+        try:
+            return self.client_logic.trigger_manager.remove_trigger(trigger_id)
+        except Exception as e:
+            self.log_error(f"Failed to remove trigger {trigger_id}: {e}")
+            return False
+
+    def list_triggers(self) -> list:
+        """List all triggers.
+
+        Returns:
+            A list of dictionaries containing trigger information
+        """
+        if not hasattr(self.client_logic, "trigger_manager"):
+            self.log_error("Trigger manager not available")
+            return []
+
+        try:
+            return self.client_logic.trigger_manager.list_triggers()
+        except Exception as e:
+            self.log_error(f"Failed to list triggers: {e}")
+            return []
+
+    def set_trigger_enabled(self, trigger_id: int, enabled: bool) -> bool:
+        """Enable or disable a trigger.
+
+        Args:
+            trigger_id: The ID of the trigger to modify
+            enabled: Whether the trigger should be enabled
+
+        Returns:
+            True if the trigger was updated successfully, False otherwise
+        """
+        if not hasattr(self.client_logic, "trigger_manager"):
+            self.log_error("Trigger manager not available")
+            return False
+
+        try:
+            return self.client_logic.trigger_manager.set_trigger_enabled(
+                trigger_id, enabled
+            )
+        except Exception as e:
+            self.log_error(
+                f"Failed to {'enable' if enabled else 'disable'} trigger {trigger_id}: {e}"
+            )
+            return False
+
+    def get_nick(self) -> str:
+        """Get the current nick of the client."""
+        return self.client_logic.nick if self.client_logic else "Unknown"
+
+    def _trigger_reset_loop(self):
+        """Background thread to handle trigger resets."""
+        while self.trigger_reset_running:
+            with self.trigger_reset_lock:
+                current_time = time.time()
+                triggers_to_reset = []
+
+                # Check which triggers need resetting
+                for trigger_id, reset_time in self.trigger_reset_times.items():
+                    if current_time >= reset_time:
+                        triggers_to_reset.append(trigger_id)
+
+                # Reset triggers
+                for trigger_id in triggers_to_reset:
+                    if trigger_id in self.trigger_counters:
+                        self.trigger_counters[trigger_id] = 0
+                        logger.debug(f"Reset counter for trigger {trigger_id}")
+
+                # Wait for next check or shutdown
+                self.trigger_reset_condition.wait(timeout=1.0)  # Check every second
 
 
 class ScriptManager:
@@ -312,90 +659,57 @@ class ScriptManager:
         return os.path.join(data_dir, data_filename)
 
     def load_scripts(self):
-        logger.info(f"ScriptManager: Loading scripts from {self.scripts_dir}")
-        if not os.path.isdir(self.scripts_dir):
-            logger.warning(
-                f"Scripts directory '{self.scripts_dir}' not found. No scripts will be loaded."
-            )
-            # Optional: Create scripts/ directory if it doesn't exist
-            try:
-                os.makedirs(
-                    self.scripts_dir, exist_ok=True
-                )  # exist_ok=True means no error if it exists
-                logger.info(f"Ensured scripts directory exists: {self.scripts_dir}")
-            except OSError as e:
-                logger.error(
-                    f"Failed to create scripts directory {self.scripts_dir}: {e}"
-                )
-                return  # Cannot proceed if scripts dir cannot be accessed/created
-            # Also ensure scripts/data/ directory exists
-            scripts_data_main_dir = os.path.join(self.scripts_dir, "data")
-            if not os.path.isdir(scripts_data_main_dir):
+        """Load all scripts from the scripts directory."""
+        logger.info("Loading scripts...")
+        if not os.path.exists(self.scripts_dir):
+            logger.warning(f"Scripts directory {self.scripts_dir} does not exist.")
+            return
+
+        for script_name in os.listdir(self.scripts_dir):
+            if script_name.endswith(".py") and not script_name.startswith("__"):
                 try:
-                    os.makedirs(scripts_data_main_dir, exist_ok=True)
-                    logger.info(
-                        f"Ensured main script data directory exists: {scripts_data_main_dir}"
+                    # Import the script module
+                    script_module_name = script_name[:-3]  # Remove .py extension
+                    script_module = importlib.import_module(
+                        f"scripts.{script_module_name}"
                     )
-                except OSError as e:
-                    logger.error(
-                        f"Failed to create main script data directory {scripts_data_main_dir}: {e}"
+
+                    # Create ScriptAPIHandler instance for this script
+                    script_api = ScriptAPIHandler(
+                        client_logic_ref=self.client_logic_ref,
+                        script_manager_ref=self,
+                        script_module_name=script_module_name,
                     )
-                    # Scripts might still load but fail if they need data dirs.
 
-        for filename in os.listdir(self.scripts_dir):
-            if filename.endswith(".py") and not filename.startswith("_"):
-                script_name = filename[:-3]  # This is the module name
-                script_path = os.path.join(self.scripts_dir, filename)
-                logger.debug(
-                    f"Attempting to load script: {script_name} from {script_path}"
-                )
-                try:
-                    spec = importlib.util.spec_from_file_location(
-                        script_name, script_path
-                    )
-                    if spec and spec.loader:
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
+                    # Get script instance
+                    if hasattr(script_module, "get_script_instance"):
+                        script_instance = script_module.get_script_instance(script_api)
+                        self.loaded_script_instances[script_module_name] = (
+                            script_instance
+                        )
 
-                        if hasattr(module, "get_script_instance"):
-                            # Instantiate ScriptAPIHandler per script, passing the script_name (module name)
-                            script_specific_api_handler = ScriptAPIHandler(
-                                self.client_logic_ref, self, script_name
-                            )
-                            script_instance = module.get_script_instance(
-                                script_specific_api_handler
-                            )
-
-                            if hasattr(script_instance, "load"):
+                        # Call load() if it exists
+                        if hasattr(script_instance, "load"):
+                            try:
                                 script_instance.load()
-                                self.loaded_script_instances[script_name] = (
-                                    script_instance
-                                )
                                 logger.info(
-                                    f"Successfully loaded and initialized script: {script_name}"
+                                    f"Script {script_name} loaded successfully."
                                 )
-                            else:
-                                logger.warning(
-                                    f"Script {script_name} loaded but has no 'load' method."
+                            except Exception as e:
+                                logger.error(
+                                    f"Error in script {script_name} load() method: {e}"
                                 )
                         else:
-                            logger.warning(
-                                f"Script {script_name} has no 'get_script_instance' function."
+                            # Only log as debug since the script might be using a different initialization method
+                            logger.debug(
+                                f"Script {script_name} loaded but has no 'load' method (this is normal if using a different initialization approach)."
                             )
                     else:
-                        logger.error(
-                            f"Could not create spec for script {script_name} at {script_path}"
+                        logger.warning(
+                            f"Script {script_name} is missing required get_script_instance() function"
                         )
                 except Exception as e:
-                    logger.error(
-                        f"Error loading script {script_name}: {e}", exc_info=True
-                    )
-                    # Use client_logic_ref directly to add message if API handler instantiation failed
-                    self.client_logic_ref.add_message(
-                        f"Error loading script '{script_name}': {e}",
-                        self.client_logic_ref.ui.colors["error"],
-                        context_name="Status",
-                    )
+                    logger.error(f"Failed to load script {script_name}: {e}")
 
     # script_name is now reliably passed from ScriptAPIHandler
     def register_command_from_script(
@@ -565,8 +879,13 @@ class ScriptManager:
         if event_data is None:
             event_data = {}
 
-        # Add timestamp to event data
-        event_data["timestamp"] = time.time()
+        # Ensure consistent event data structure
+        if "timestamp" not in event_data:
+            event_data["timestamp"] = time.time()
+        if "raw_line" not in event_data:
+            event_data["raw_line"] = ""  # Empty string if no raw line available
+        if "client_nick" not in event_data and hasattr(self.client_logic_ref, "nick"):
+            event_data["client_nick"] = self.client_logic_ref.nick
 
         logger.debug(f"Dispatching event '{event_name}' with data: {event_data}")
         if event_name in self.event_subscriptions:
