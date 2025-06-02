@@ -377,6 +377,9 @@ class NetworkHandler:
 
                 logger.debug(f"C >> {log_data}")
 
+                if hasattr(self.client, 'show_raw_log_in_ui') and self.client.show_raw_log_in_ui:
+                    self.client.add_message(f"C >> {log_data}", self.client.ui.colors.get("system", 0), context_name="Status", prefix_time=True)
+
                 if data.upper().startswith("NICK "):
                     self.is_handling_nick_collision = False
             except Exception as e:

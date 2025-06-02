@@ -2,6 +2,8 @@ import configparser
 import os
 import logging
 import fnmatch
+
+logger = logging.getLogger("pyrc.config")
 from typing import Type, Any, List, Union, Set
 
 # --- Default Fallback Settings (if not in INI or INI is missing) ---
@@ -272,6 +274,81 @@ LEAVE_MESSAGE = get_config_value(
 # - Optional parameters: sequence of non-colon, non-\r\n chars
 # - Optional trailing part: starts with a space and then a colon, followed by any non-\r\n chars
 IRC_MSG_REGEX_PATTERN = r"^(?:@(?:[^ ]+) )?(?:[:]([^ ]+) )?([A-Z0-9]+|\d{3})(?: ([^:\r\n]*))?(?: ?:([^\r\n]*))?$"
+
+
+def reload_all_config_values():
+    """
+    Reloads all configuration values from the INI file and updates
+    the global variables in this module.
+    """
+    global config, CONFIG_FILE_PATH
+    global IRC_SERVER, IRC_PORT, IRC_SSL, IRC_NICK, IRC_CHANNELS, IRC_PASSWORD, NICKSERV_PASSWORD
+    global AUTO_RECONNECT, VERIFY_SSL_CERT
+    global MAX_HISTORY, UI_COLORSCHEME
+    global LOG_ENABLED, LOG_FILE, LOG_LEVEL_STR, LOG_LEVEL, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CHANNEL_LOG_ENABLED
+    global LEAVE_MESSAGE
+    global IGNORED_PATTERNS # Though load_ignore_list handles this
+
+    logger.info(f"Reloading configuration from {CONFIG_FILE_PATH}")
+    config.read(CONFIG_FILE_PATH)
+
+    # --- Connection Settings ---
+    IRC_SERVER = get_config_value("Connection", "default_server", DEFAULT_SERVER, str)
+    IRC_SSL = get_config_value("Connection", "default_ssl", DEFAULT_SSL, bool)
+    IRC_PORT = get_config_value(
+        "Connection", "default_port", DEFAULT_SSL_PORT if IRC_SSL else DEFAULT_PORT, int
+    )
+    IRC_NICK = get_config_value("Connection", "default_nick", DEFAULT_NICK, str)
+    IRC_CHANNELS = get_config_value(
+        "Connection", "default_channels", DEFAULT_CHANNELS, list
+    )
+    _raw_password_reload = get_config_value("Connection", "password", DEFAULT_PASSWORD, str)
+    IRC_PASSWORD = _raw_password_reload if _raw_password_reload and _raw_password_reload.strip() else None
+
+    _raw_nickserv_password_reload = get_config_value(
+        "Connection", "nickserv_password", DEFAULT_NICKSERV_PASSWORD, str
+    )
+    NICKSERV_PASSWORD = (
+        _raw_nickserv_password_reload
+        if _raw_nickserv_password_reload and _raw_nickserv_password_reload.strip()
+        else None
+    )
+    AUTO_RECONNECT = get_config_value(
+        "Connection", "auto_reconnect", DEFAULT_AUTO_RECONNECT, bool
+    )
+    VERIFY_SSL_CERT = get_config_value(
+        "Connection", "verify_ssl_cert", DEFAULT_VERIFY_SSL_CERT, bool
+    )
+
+    # --- UI Settings ---
+    _max_history_val_reload = get_config_value("UI", "message_history_lines", MAX_HISTORY, int)
+    MAX_HISTORY = (
+        int(_max_history_val_reload) if isinstance(_max_history_val_reload, int) else int(MAX_HISTORY)
+    )
+    UI_COLORSCHEME = get_config_value("UI", "colorscheme", "default", str)
+
+    # --- Logging Settings ---
+    LOG_ENABLED = get_config_value("Logging", "log_enabled", DEFAULT_LOG_ENABLED, bool)
+    LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
+    LOG_LEVEL_STR = get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
+    LOG_MAX_BYTES = get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
+    LOG_BACKUP_COUNT = get_config_value(
+        "Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int
+    )
+    CHANNEL_LOG_ENABLED = get_config_value(
+        "Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool
+    )
+    LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO) # Update log level based on new string
+
+    # --- General Settings ---
+    LEAVE_MESSAGE = get_config_value(
+        "General", "leave_message", DEFAULT_LEAVE_MESSAGE, str
+    )
+
+    # --- Reload Ignore List ---
+    load_ignore_list()
+    logger.info("Configuration values reloaded.")
+
 
 # --- Load initial ignore list at startup ---
 load_ignore_list()

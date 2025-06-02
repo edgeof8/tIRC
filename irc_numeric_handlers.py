@@ -240,6 +240,115 @@ def _handle_motd_and_server_info(client, parsed_msg: IRCMessage, raw_line: str, 
     client.add_message(f"[{parsed_msg.command}] {generic_numeric_msg}", client.ui.colors["system"], "Status")
 
 
+def _handle_rpl_whoreply(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
+    """Handles RPL_WHOREPLY (352). <client_nick> <channel> <user> <host> <server> <nick> <H|G>[*][@|+] :<hopcount> <real_name>"""
+    # Params from server: <your_nick> <channel> <user> <host> <server> <nick> <flags> :<hops> <real_name>
+    # display_params removes <your_nick>
+
+    channel = display_params[0] if len(display_params) > 0 else "N/A"
+    user = display_params[1] if len(display_params) > 1 else "N/A"
+    host = display_params[2] if len(display_params) > 2 else "N/A"
+    server_name = display_params[3] if len(display_params) > 3 else "N/A"
+    nick = display_params[4] if len(display_params) > 4 else "N/A"
+    flags = display_params[5] if len(display_params) > 5 else ""
+    # trailing contains "<hopcount> <real_name>"
+
+    message_to_add = f"[WHO {channel}] {nick} ({user}@{host} on {server_name}) Flags: {flags} - {trailing if trailing else ''}"
+    client.add_message(message_to_add, client.ui.colors["system"], "Status")
+
+def _handle_rpl_endofwho(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
+    """Handles RPL_ENDOFWHO (315). <client_nick> <name> :End of WHO list"""
+    # display_params[0] is <name> (the target of the WHO)
+    who_target = display_params[0] if display_params else "N/A"
+    message_to_add = f"[WHO {who_target}] {trailing if trailing else 'End of WHO list.'}"
+    client.add_message(message_to_add, client.ui.colors["system"], "Status")
+
+def _handle_rpl_whowasuser(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
+    """Handles RPL_WHOWASUSER (314). <client_nick> <nick> <user> <host> * :<real_name>"""
+    # display_params[0] is <nick>
+    # display_params[1] is <user>
+    # display_params[2] is <host>
+    # trailing is <real_name>
+
+    nick = display_params[0] if len(display_params) > 0 else "N/A"
+    user = display_params[1] if len(display_params) > 1 else "N/A"
+    host = display_params[2] if len(display_params) > 2 else "N/A"
+    real_name = trailing if trailing else "N/A"
+
+    message_to_add = f"[WHOWAS {nick}] User: {user}@{host} Realname: {real_name}"
+    client.add_message(message_to_add, client.ui.colors["system"], "Status")
+
+def _handle_rpl_endofwhowas(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
+    """Handles RPL_ENDOFWHOWAS (369). <client_nick> <nick> :End of WHOWAS list"""
+    # display_params[0] is <nick>
+    whowas_nick = display_params[0] if display_params else "N/A"
+    message_to_add = f"[WHOWAS {whowas_nick}] {trailing if trailing else 'End of WHOWAS list.'}"
+    client.add_message(message_to_add, client.ui.colors["system"], "Status")
+
+def _handle_rpl_liststart(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
+    """Handles RPL_LISTSTART (321). <client_nick> Channels :Users Name"""
+    # display_params might be empty or contain "Channels"
+    # trailing might be "Users Name" or absent
+
+    # Check if this LIST sequence is tied to an active /list command
+    # For now, we still direct to "Status", but acknowledge the active_list_context_name.
+    # A future step could involve creating a temporary context using this name.
+    active_list_id = getattr(client, 'active_list_context_name', None)
+    target_context_name = "Status"
+
+    prefix = "[List]"
+    if active_list_id:
+        logger.debug(f"RPL_LISTSTART: Active list operation detected (ID: {active_list_id}).")
+        # prefix = f"[List-{active_list_id.split('-')[-1][:4]}]" # Example of using part of the ID
+
+    message = f"{prefix} {trailing if trailing else 'Channel List Start'}"
+    if display_params and display_params[0] == "Channels" and not trailing: # Some servers send "Channels" as a param
+        message = f"[List] Channel List (Users Name)" # Generic start
+    elif not display_params and not trailing : # e.g. Bahamut just sends 321 :
+         message = f"[List] Channel List Start"
+
+    client.add_message(message, client.ui.colors["system"], target_context_name)
+
+def _handle_rpl_list(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
+    """Handles RPL_LIST (322). <client_nick> <channel> <#_visible> :<topic>"""
+    # display_params[0] is <channel>
+    # display_params[1] is <#_visible>
+    # trailing is <topic>
+
+    active_list_id = getattr(client, 'active_list_context_name', None)
+    target_context_name = "Status"
+
+    prefix = "[List]"
+    if active_list_id:
+        logger.debug(f"RPL_LIST: Active list operation detected (ID: {active_list_id}).")
+        # prefix = f"[List-{active_list_id.split('-')[-1][:4]}]"
+
+    channel = display_params[0] if len(display_params) > 0 else "N/A"
+    visible_users = display_params[1] if len(display_params) > 1 else "N/A"
+    topic = trailing if trailing else "No topic"
+
+    message_to_add = f"{prefix} {channel}: {visible_users} users - {topic}"
+    client.add_message(message_to_add, client.ui.colors["system"], target_context_name)
+
+def _handle_rpl_listend(client, parsed_msg: IRCMessage, raw_line: str, display_params: list, trailing: Optional[str]):
+    """Handles RPL_LISTEND (323). <client_nick> :End of LIST"""
+    active_list_id = getattr(client, 'active_list_context_name', None)
+    target_context_name = "Status"
+
+    prefix = "[List]"
+    if active_list_id:
+        logger.debug(f"RPL_LISTEND: Active list operation detected (ID: {active_list_id}). Clearing active_list_context_name.")
+        # prefix = f"[List-{active_list_id.split('-')[-1][:4]}]"
+
+    message_to_add = f"{prefix} {trailing if trailing else 'End of channel list.'}"
+    client.add_message(message_to_add, client.ui.colors["system"], target_context_name)
+
+    # Clear active list context if it was used
+    if hasattr(client, 'active_list_context_name') and client.active_list_context_name is not None:
+        client.active_list_context_name = None
+        logger.debug("Cleared active_list_context_name.")
+
+
 NUMERIC_HANDLERS = {
     1: _handle_rpl_welcome,
     251: _handle_motd_and_server_info,
@@ -273,6 +382,14 @@ NUMERIC_HANDLERS = {
     906: _handle_sasl_fail_errors,
     907: _handle_err_saslalready,
     908: _handle_sasl_mechanisms,
+    # New handlers for WHO, WHOWAS, LIST
+    314: _handle_rpl_whowasuser,
+    315: _handle_rpl_endofwho,
+    321: _handle_rpl_liststart,
+    322: _handle_rpl_list,
+    323: _handle_rpl_listend,
+    352: _handle_rpl_whoreply,
+    369: _handle_rpl_endofwhowas,
 }
 
 

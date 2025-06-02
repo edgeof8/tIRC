@@ -18,7 +18,11 @@ from config import (
     LOG_BACKUP_COUNT,
     BASE_DIR,
     is_source_ignored,
+    reload_all_config_values, # For /rehash
 )
+# Import the config module itself to access its updated globals after reload
+import config as app_config
+
 from context_manager import ContextManager, ChannelJoinStatus
 
 from ui_manager import UIManager
@@ -72,6 +76,7 @@ class IRCClient_Logic:
         self.verify_ssl_cert = VERIFY_SSL_CERT
         logger.info(f"IRCClient_Logic.__init__: server='{server_addr}', port={port}, use_ssl={self.use_ssl}, verify_ssl_cert={self.verify_ssl_cert}")
         self.echo_sent_to_status: bool = True
+        self.show_raw_log_in_ui: bool = False
 
         self.context_manager = ContextManager(max_history_per_context=MAX_HISTORY)
         self.context_manager.create_context("Status", context_type="status")
@@ -149,6 +154,7 @@ class IRCClient_Logic:
         self.log_formatter = logging.Formatter(
              "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
+        self.active_list_context_name: Optional[str] = None # For /list command output
 
         if self.channel_log_enabled and not os.path.exists(self.main_log_dir_path):
             try:
@@ -363,16 +369,20 @@ class IRCClient_Logic:
         #      may have been updated based on the message.
         #    - Subsequent step: Depends on the message; could be sending another command, updating UI, or just listening.
         #      This function is central to the client's reaction to server events during the handshake and beyond.
+        if self.show_raw_log_in_ui:
+            self.add_message(f"S << {line.strip()}", self.ui.colors.get("system", 0), context_name="Status", prefix_time=True)
+
         parsed_msg = IRCMessage.parse(line)
         if parsed_msg and parsed_msg.command in ["PRIVMSG", "NOTICE"] and \
            parsed_msg.params and parsed_msg.params[0].startswith(("#", "&", "+", "!")):
             target_channel = parsed_msg.params[0]
             channel_logger = self.get_channel_logger(target_channel)
             if channel_logger:
-                log_line_content = f"RAW << {line}"
-                if parsed_msg.trailing:
-                    log_line_content = f"{parsed_msg.prefix if parsed_msg.prefix else ''} {parsed_msg.command} {target_channel} :{parsed_msg.trailing}"
-                channel_logger.debug(log_line_content)
+                # The raw line is already being logged to general log if enabled,
+                # and channel specific log for PRIVMSG/NOTICE to channels if enabled.
+                # No need to duplicate raw log here specifically unless desired for a different format.
+                # The S << line above handles UI display.
+                pass # Placeholder if specific raw logging to file for this flag was intended beyond UI
 
         irc_protocol.handle_server_message(self, line)
 
@@ -636,6 +646,50 @@ class IRCClient_Logic:
                  self.add_message(f"To {active_ctx_name}: <{self.nick}> {text}", self.ui.colors["my_message"], context_name="Status")
         else:
             self.add_message(f"Cannot send messages to '{active_ctx_name}' (type: {active_ctx.type}). Try a command like /msg.", self.ui.colors["error"], context_name="Status")
+
+    def handle_rehash_config(self):
+        """Handles the /rehash command by reloading configuration."""
+        logger.info("Attempting to reload configuration via /rehash...")
+        try:
+            app_config.reload_all_config_values()
+
+            # Update IRCClient_Logic's attributes from the now-reloaded config module's globals
+            self.verify_ssl_cert = app_config.VERIFY_SSL_CERT
+            self.channel_log_enabled = app_config.CHANNEL_LOG_ENABLED
+            self.channel_log_level = app_config.LOG_LEVEL # LOG_LEVEL in config.py is the actual level object
+            self.channel_log_max_bytes = app_config.LOG_MAX_BYTES
+            self.channel_log_backup_count = app_config.LOG_BACKUP_COUNT
+
+            # Update ContextManager's default max_history for new contexts
+            # This will apply to newly created contexts.
+            # Existing contexts will retain their original max_history unless explicitly updated.
+            if hasattr(self.context_manager, 'max_history'):
+                 self.context_manager.max_history = app_config.MAX_HISTORY
+            # elif hasattr(self.context_manager, 'max_history_per_context'): # Check for older name if necessary
+            #      self.context_manager.max_history_per_context = app_config.MAX_HISTORY
+
+            # Note: For logging changes like LOG_FILE or root logger level/handlers,
+            # a full application restart is generally required for them to take effect
+            # on the existing logging setup. This rehash primarily updates config values
+            # that the application logic can adapt to at runtime.
+            # Channel loggers created *after* this rehash for *new* channels will use the new settings.
+
+            self.add_message(
+                "Configuration reloaded. Some changes (like main log file settings or server connection details if manually edited in INI) may require a /reconnect or client restart to fully apply.",
+                self.ui.colors["system"],
+                context_name="Status"
+            )
+            logger.info("Configuration successfully reloaded and applied where possible.")
+            self.ui_needs_update.set() # Ensure UI reflects any changes if necessary
+
+        except Exception as e:
+            logger.error(f"Error during /rehash: {e}", exc_info=True)
+            self.add_message(
+                f"Error reloading configuration: {e}",
+                self.ui.colors["error"],
+                context_name="Status"
+            )
+            self.ui_needs_update.set()
 
 
     def run_main_loop(self):

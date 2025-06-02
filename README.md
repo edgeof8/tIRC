@@ -21,6 +21,7 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
     - `FunCommandsHandler` (`fun_commands_handler.py`) for commands like `/slap`, `/8ball`.
     - `ChannelCommandsHandler` (`channel_commands_handler.py`) for commands like `/join`, `/part`, `/topic`.
     - `ServerCommandsHandler` (`server_commands_handler.py`) for commands like `/connect`, `/quit`.
+    - `InformationCommandsHandler` (`information_commands_handler.py`) for commands like `/who`, `/whowas`, `/list`, `/names`.
   - **Connection & Registration Logic:** The `irc_client_logic.py` module has been refactored to delegate core connection, capability negotiation (CAP), SASL authentication, and post-registration tasks to specialized handlers:
     - `CapNegotiator` (`cap_negotiator.py`): Manages the CAP negotiation lifecycle.
     - `SaslAuthenticator` (`sasl_authenticator.py`): Handles SASL PLAIN authentication. It has been refactored to dynamically fetch the client's current nickname from `IRCClient_Logic` at the time of authentication, ensuring the most up-to-date nick is used even if changes occurred shortly before SASL credential transmission.
@@ -134,10 +135,20 @@ PyRC supports a variety of commands, most of which are standard IRC commands. Ty
 - `/ignore <nick|hostmask>`: Ignores messages from the specified user or hostmask (e.g., `*!*@some.host`).
 - `/unignore <nick|hostmask>`: Removes an ignore pattern.
 - `/listignores`: Lists all current ignore patterns.
+- `/who [<target>]`: Retrieves WHO information for `<target>` (nick, channel, mask). Defaults to current channel if active and no target given.
+- `/whowas <nick> [count [target_server]]`: Retrieves information about a nickname that is no longer in use.
+- `/list [pattern]`: Lists channels on the server, optionally matching `[pattern]`. Output is currently shown in the Status window.
+- `/names [channel]`: Lists users in `[channel]` or all joined channels if `[channel]` is omitted. Updates the user list in the channel window.
 - `/help [command]`: Displays general help or help for a specific command.
 - `PageUp`/`PageDown`: Scroll through the message buffer in the current window.
 - `Ctrl+N`/`Ctrl+P` (or `/nextwindow`, `/prevwindow`): Switch to the next/previous active context (channel/query/status window).
 - `Ctrl+U` (or `/u`, `/userlistscroll [offset]`): Scroll the user list in a channel window.
+
+#### Client Management Commands
+
+- `/reconnect`: Disconnects from the current server and attempts to reconnect using the same server settings.
+- `/rehash`: Reloads the `pyterm_irc_config.ini` configuration file. Note that some changes (especially to core logging setup or server connection details if manually edited in the INI) may require a client restart or a `/reconnect` to take full effect.
+- `/rawlog [on|off|toggle]`: Toggles or sets the display of raw IRC messages (both sent `C >>` and received `S <<`) in the Status window. Useful for debugging.
 
 #### Channel Moderation Commands
 

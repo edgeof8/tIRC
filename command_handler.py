@@ -5,6 +5,7 @@ from context_manager import ChannelJoinStatus, Context
 from fun_commands_handler import FunCommandsHandler
 from channel_commands_handler import ChannelCommandsHandler
 from server_commands_handler import ServerCommandsHandler
+from information_commands_handler import InformationCommandsHandler
 from config import (
     get_all_settings, set_config_value, get_config_value, config as global_config_parser,
     add_ignore_pattern, remove_ignore_pattern, IGNORED_PATTERNS
@@ -75,6 +76,13 @@ class CommandHandler:
         "deop": "Usage: /deop <nick> (alias: /do) - De-ops <nick> in the current channel.",
         "voice": "Usage: /voice <nick> (alias: /v) - Voices <nick> in the current channel.",
         "devoice": "Usage: /devoice <nick> (alias: /dv) - De-voices <nick> in the current channel.",
+        "who": "Usage: /who <target> - Retrieves WHO information for <target> (nick, channel, mask). Defaults to current channel if active and no target given.",
+        "whowas": "Usage: /whowas <nick> [count [target_server]] - Retrieves information about a nickname that is no longer in use.",
+        "list": "Usage: /list [pattern] - Lists channels, optionally matching [pattern].",
+        "names": "Usage: /names [channel] - Lists users in [channel] or all joined channels if omitted.",
+        "reconnect": "Usage: /reconnect - Disconnects and reconnects to the current server.",
+        "rehash": "Usage: /rehash - Reloads the pyterm_irc_config.ini configuration file. Some changes may require a reconnect or restart.",
+        "rawlog": "Usage: /rawlog [on|off|toggle] - Toggles or sets display of raw IRC messages in the Status window.",
     }
 
 
@@ -84,6 +92,7 @@ class CommandHandler:
         self.fun_commands = FunCommandsHandler(client_logic)
         self.channel_commands = ChannelCommandsHandler(client_logic)
         self.server_commands = ServerCommandsHandler(client_logic)
+        self.info_commands = InformationCommandsHandler(client_logic)
 
         self.command_map = {
             "join": self.channel_commands.handle_join_command,
@@ -162,6 +171,14 @@ class CommandHandler:
             "v": self.channel_commands.handle_voice_command,
             "devoice": self.channel_commands.handle_devoice_command,
             "dv": self.channel_commands.handle_devoice_command,
+            "who": self.info_commands.handle_who_command,
+            "whowas": self.info_commands.handle_whowas_command,
+            "list": self.info_commands.handle_list_command,
+            "names": self.info_commands.handle_names_command,
+            # New commands
+            "reconnect": self.server_commands.handle_reconnect_command,
+            "rehash": self._handle_rehash_command,
+            "rawlog": self._handle_rawlog_command,
         }
 
         self.command_primary_map = {}
@@ -656,3 +673,42 @@ class CommandHandler:
                 self.client.ui.colors["system"],
                 context_name=active_context_name
             )
+
+    def _handle_rehash_command(self, args_str: str):
+        """Handles the /rehash command."""
+        if hasattr(self.client, 'handle_rehash_config'):
+            self.client.handle_rehash_config()
+            # Feedback message is handled within IRCClient_Logic.handle_rehash_config
+        else:
+            logger.error("IRCClient_Logic does not have handle_rehash_config method.")
+            self.client.add_message(
+                "Error: Rehash functionality not fully implemented in client logic.",
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name or "Status"
+            )
+
+    def _handle_rawlog_command(self, args_str: str):
+        """Handles the /rawlog [on|off|toggle] command."""
+        arg = args_str.strip().lower()
+        current_status = self.client.show_raw_log_in_ui
+
+        if arg == "on":
+            self.client.show_raw_log_in_ui = True
+        elif arg == "off":
+            self.client.show_raw_log_in_ui = False
+        elif arg == "toggle" or not arg: # Empty arg also toggles
+            self.client.show_raw_log_in_ui = not current_status
+        else:
+            self.client.add_message(
+                self.COMMAND_USAGE_STRINGS["rawlog"], # Assumes "rawlog" will be added to USAGE_STRINGS
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name or "Status"
+            )
+            return
+
+        feedback_action = "enabled" if self.client.show_raw_log_in_ui else "disabled"
+        self.client.add_message(
+            f"Raw IRC message logging to UI {feedback_action}.",
+            self.client.ui.colors["system"],
+            context_name=self.client.context_manager.active_context_name or "Status"
+        )
