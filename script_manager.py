@@ -4,7 +4,7 @@ import logging
 import configparser
 import time
 import sys
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set, Tuple
 import threading
 from config import DISABLED_SCRIPTS, ENABLE_TRIGGER_SYSTEM
 
@@ -530,6 +530,28 @@ class ScriptAPIHandler:
     def _trigger_reset_loop(self):
         """Background thread to handle trigger resets."""
         pass  # Temporarily disabled for debugging
+
+    def get_context_messages(
+        self, context_name: str, count: Optional[int] = None
+    ) -> Optional[List[Tuple[str, Any]]]:
+        """
+        Retrieves messages from a specified context's buffer via the API.
+
+        Args:
+            context_name: The name of the context.
+            count: If provided, retrieve only the last 'count' messages. Otherwise, all messages.
+
+        Returns:
+            A list of (message_text, color_attribute) tuples, or None if context not found.
+        """
+        if not self.client_logic or not hasattr(self.client_logic, "context_manager"):
+            self.log_error(
+                "Context manager not available in client_logic for get_context_messages."
+            )
+            return None
+        return self.client_logic.context_manager.get_context_messages_raw(
+            context_name, count
+        )
 
 
 class ScriptManager:

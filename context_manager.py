@@ -358,3 +358,43 @@ class ContextManager:
             return False
 
         return context.update_join_status(new_status)
+
+    def get_context_messages_raw(
+        self, context_name: str, count: Optional[int] = None
+    ) -> Optional[List[Tuple[str, Any]]]:
+        """
+        Retrieves messages from a specified context's buffer.
+
+        Args:
+            context_name: The name of the context.
+            count: If provided, retrieve only the last 'count' messages. Otherwise, all messages.
+
+        Returns:
+            A list of (message_text, color_attribute) tuples, or None if context not found.
+            Returns an empty list if the context exists but has no messages.
+        """
+        context = self.get_context(context_name)
+        if not context:
+            logger.warning(
+                f"get_context_messages_raw: Context '{context_name}' not found."
+            )
+            return None
+
+        if not hasattr(context, "messages") or not isinstance(context.messages, deque):
+            logger.warning(
+                f"get_context_messages_raw: Context '{context_name}' has no valid 'messages' deque."
+            )
+            return []
+
+        # Return a copy of the messages
+        all_messages = list(context.messages)
+        if count is None:
+            return all_messages
+        else:
+            # Ensure count is positive
+            if not isinstance(count, int) or count <= 0:
+                logger.warning(
+                    f"get_context_messages_raw: Invalid count '{count}' provided. Returning all messages."
+                )
+                return all_messages
+            return all_messages[-count:]  # Get the last 'count' messages

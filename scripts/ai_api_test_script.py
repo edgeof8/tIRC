@@ -1,7 +1,8 @@
 import logging
-from typing import Dict, Any, TYPE_CHECKING, Optional
+from typing import Dict, Any, TYPE_CHECKING, Optional, List, Tuple
 import time
 import threading
+from config import HEADLESS_MAX_HISTORY
 
 if TYPE_CHECKING:
     from script_manager import ScriptAPIHandler
@@ -143,6 +144,47 @@ class AiApiTestScript:
             ),
         ).start()
 
+    def _test_history_limit(self, channel_name: str):
+        """
+        Tests the message history limit functionality by sending messages and verifying the buffer size.
+
+        Args:
+            channel_name: The channel to test with.
+        """
+        # Get the configured history limit
+        history_limit = HEADLESS_MAX_HISTORY
+        self.api.log_info(
+            f"Testing history limit of {history_limit} messages in {channel_name}"
+        )
+
+        # Send more messages than the limit
+        test_messages = history_limit + 2
+        for i in range(test_messages):
+            self.api.send_message(
+                channel_name, f"Test message {i+1} for history limit testing"
+            )
+            time.sleep(0.1)  # Small delay between messages
+
+        # Get messages and verify count
+        messages = self.api.get_context_messages(channel_name)
+        if messages is None:
+            self.api.log_error(f"Failed to get messages for {channel_name}")
+            return
+
+        actual_count = len(messages)
+        self.api.log_info(
+            f"Channel {channel_name} has {actual_count} messages in buffer"
+        )
+
+        if actual_count > history_limit:
+            self.api.log_warning(
+                f"Buffer size {actual_count} exceeds configured limit {history_limit}"
+            )
+        else:
+            self.api.log_info(
+                f"Buffer size {actual_count} is within configured limit {history_limit}"
+            )
+
     def handle_join(self, event_data: Dict[str, Any]):
         self.api.log_info(f"[AI Test] Join event: {event_data}")
         channel = event_data.get("channel")
@@ -157,6 +199,7 @@ class AiApiTestScript:
             threading.Timer(
                 15.0, lambda: self._test_channel_modes(channel)
             ).start()  # Run mode test after potential nick changes
+            threading.Timer(2.0, self._test_history_limit, args=[channel]).start()
 
     def handle_privmsg(self, event_data: Dict[str, Any]):
         self.api.log_info(f"[AI Test] PRIVMSG event: {event_data}")
