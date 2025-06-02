@@ -149,6 +149,8 @@ PyRC supports a variety of commands, most of which are standard IRC commands. Ty
 - `/reconnect`: Disconnects from the current server and attempts to reconnect using the same server settings.
 - `/rehash`: Reloads the `pyterm_irc_config.ini` configuration file. Note that some changes (especially to core logging setup or server connection details if manually edited in the INI) may require a client restart or a `/reconnect` to take full effect.
 - `/rawlog [on|off|toggle]`: Toggles or sets the display of raw IRC messages (both sent `C >>` and received `S <<`) in the Status window. Useful for debugging.
+- `/save`: Saves the current client configuration (e.g., settings modified by `/set`, ignore list) to `pyterm_irc_config.ini`.
+- `/lastlog <pattern>`: Searches the message history of the currently active window for the specified `<pattern>` (case-insensitive) and displays matching lines.
 
 #### Channel Moderation Commands
 

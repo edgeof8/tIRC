@@ -8,7 +8,7 @@ from server_commands_handler import ServerCommandsHandler
 from information_commands_handler import InformationCommandsHandler
 from config import (
     get_all_settings, set_config_value, get_config_value, config as global_config_parser,
-    add_ignore_pattern, remove_ignore_pattern, IGNORED_PATTERNS
+    add_ignore_pattern, remove_ignore_pattern, IGNORED_PATTERNS, save_current_config
 )
 
 if TYPE_CHECKING:
@@ -83,6 +83,8 @@ class CommandHandler:
         "reconnect": "Usage: /reconnect - Disconnects and reconnects to the current server.",
         "rehash": "Usage: /rehash - Reloads the pyterm_irc_config.ini configuration file. Some changes may require a reconnect or restart.",
         "rawlog": "Usage: /rawlog [on|off|toggle] - Toggles or sets display of raw IRC messages in the Status window.",
+        "save": "Usage: /save - Saves the current configuration to pyterm_irc_config.ini.",
+        "lastlog": "Usage: /lastlog <pattern> - Searches message history of the active window for <pattern> (case-insensitive).",
     }
 
 
@@ -179,6 +181,8 @@ class CommandHandler:
             "reconnect": self.server_commands.handle_reconnect_command,
             "rehash": self._handle_rehash_command,
             "rawlog": self._handle_rawlog_command,
+            "save": self._handle_save_command,
+            "lastlog": self._handle_lastlog_command,
         }
 
         self.command_primary_map = {}
@@ -704,7 +708,38 @@ class CommandHandler:
                 self.client.ui.colors["error"],
                 context_name=self.client.context_manager.active_context_name or "Status"
             )
+
+    def _handle_lastlog_command(self, args_str: str):
+        """Handles the /lastlog command."""
+        active_context_obj = self.client.context_manager.get_active_context()
+        active_context_name = self.client.context_manager.active_context_name or "Status"
+        system_color = self.client.ui.colors.get("system", 0)
+        error_color = self.client.ui.colors.get("error", 0)
+
+        if not args_str.strip():
+            self.client.add_message(self.COMMAND_USAGE_STRINGS["lastlog"], error_color, context_name=active_context_name)
             return
+
+        pattern = args_str.strip()
+
+        if not active_context_obj:
+            self.client.add_message("Cannot use /lastlog: No active window.", error_color, context_name="Status")
+            return
+
+        self.client.add_message(f"Searching lastlog for \"{pattern}\" in {active_context_obj.name}...", system_color, context_name=active_context_name)
+
+        found_matches = False
+        # Iterate a copy in case messages are added during iteration
+        messages_to_search = list(active_context_obj.messages)
+
+        for msg_text, color_attr in messages_to_search:
+            if pattern.lower() in msg_text.lower():
+                self.client.add_message(f"[LastLog] {msg_text}", color_attr, context_name=active_context_name)
+                found_matches = True
+
+        if not found_matches:
+            self.client.add_message(f"No matches found for \"{pattern}\" in the current log.", system_color, context_name=active_context_name)
+        self.client.add_message("End of lastlog search.", system_color, context_name=active_context_name)
 
         feedback_action = "enabled" if self.client.show_raw_log_in_ui else "disabled"
         self.client.add_message(
@@ -712,3 +747,18 @@ class CommandHandler:
             self.client.ui.colors["system"],
             context_name=self.client.context_manager.active_context_name or "Status"
         )
+
+    def _handle_save_command(self, args_str: str):
+        """Handles the /save command."""
+        if save_current_config():
+            self.client.add_message(
+                "Configuration saved to pyterm_irc_config.ini.",
+                self.client.ui.colors["system"],
+                context_name=self.client.context_manager.active_context_name or "Status"
+            )
+        else:
+            self.client.add_message(
+                "Failed to save configuration.",
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name or "Status"
+            )

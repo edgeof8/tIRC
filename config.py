@@ -123,6 +123,16 @@ def get_all_settings() -> dict:
     return all_settings
 
 
+def save_current_config():
+    global config, CONFIG_FILE_PATH
+    try:
+        with open(CONFIG_FILE_PATH, "w") as configfile:
+            config.write(configfile)
+        logging.info("Configuration explicitly saved by /save command.")
+        return True
+    except Exception as e:
+        logging.error(f"Error writing to config file '{CONFIG_FILE_PATH}' during /save: {e}")
+        return False
 # --- Functions to manage the ignore list in the config file ---
 def load_ignore_list():
     """Loads ignore patterns from the config file into the global IGNORED_PATTERNS set."""

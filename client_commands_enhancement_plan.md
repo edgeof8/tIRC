@@ -1,158 +1,148 @@
-# Plan: Implement Client Management and Reconnection Commands
+# Plan: Implement /lastlog and /save Client Commands
 
-This document outlines the plan to add commands for client configuration reloading, server reconnection, and managing raw log display.
+**Source:** User feedback.
+**Goal:** Add commands for searching message history and saving the current configuration.
 
-## Phase 1: Core Logic and Flags
+## Affected Files (Likely):
 
-### 1. `/rawlog` Flag and Basic Handling:
+- `command_handler.py`: To add command map entries and handlers.
+- `irc_client_logic.py` or `context_manager.py`: For understanding `/lastlog` logic (message storage).
+- `config.py`: For `/save` logic.
 
-- In [`irc_client_logic.py`](irc_client_logic.py):
-  - Add a boolean attribute `self.show_raw_log_in_ui = False` to the `IRCClient_Logic` class.
-  - Modify `IRCClient_Logic.handle_server_message()`:
-    - Before the call to `irc_protocol.handle_server_message(self, line)`, add a check:
-      ```python
-      if self.show_raw_log_in_ui:
-          self.add_message(f"S << {line.strip()}", self.ui.colors["system"], context_name="Status") # Or a dedicated color
-      ```
-  - Modify `NetworkHandler.send_raw()` in [`network_handler.py`](network_handler.py):
-    - After encoding the data and before sending (using the `log_data` variable that redacts sensitive info), if `self.client.show_raw_log_in_ui` is true, add a message to the "Status" window:
-      ```python
-      if self.client.show_raw_log_in_ui:
-          self.client.add_message(f"C >> {log_data}", self.client.ui.colors["system"], context_name="Status")
-      ```
+## Phase 1: Implement `/save` Command
 
-### 2. `/rehash` Configuration Reload Function:
+1.  **Modify `config.py`:**
 
-- In [`config.py`](config.py):
-
-  - Create a new function `reload_all_config_values()`:
-
-    - This function will re-execute all the `get_config_value(...)` calls that assign to the global configuration variables (e.g., `IRC_SERVER`, `IRC_PORT`, `LOG_ENABLED`, `LOG_LEVEL`, etc.).
-    - It should re-call `load_ignore_list()`.
-    - It must re-read the config file at the beginning: `config.read(CONFIG_FILE_PATH)`.
-    - Example snippet:
+    - Add a new function `save_current_config()`:
 
       ```python
-      global IRC_SERVER, IRC_PORT, IRC_SSL, LOG_LEVEL, LOG_ENABLED # and all others
-      config.read(CONFIG_FILE_PATH) # Re-read the INI file
+      # In config.py
+      import logging # Ensure logging is imported if not already at the top
 
-      IRC_SERVER = get_config_value("Connection", "default_server", DEFAULT_SERVER, str)
-      IRC_SSL = get_config_value("Connection", "default_ssl", DEFAULT_SSL, bool)
-      IRC_PORT = get_config_value(
-          "Connection", "default_port", DEFAULT_SSL_PORT if IRC_SSL else DEFAULT_PORT, int
-      )
-      # ... repeat for ALL global config variables ...
-      LOG_ENABLED = get_config_value("Logging", "log_enabled", DEFAULT_LOG_ENABLED, bool)
-      LOG_LEVEL_STR = get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
-      LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO)
+      # ... (other code)
 
-      load_ignore_list() # Reload ignore patterns
+      def save_current_config():
+          global config, CONFIG_FILE_PATH
+          try:
+              with open(CONFIG_FILE_PATH, "w") as configfile:
+                  config.write(configfile)
+              logging.info("Configuration explicitly saved by /save command.")
+              return True
+          except Exception as e:
+              logging.error(f"Error writing to config file '{CONFIG_FILE_PATH}' during /save: {e}")
+              return False
       ```
 
-- In `IRCClient_Logic` ([`irc_client_logic.py`](irc_client_logic.py)):
-  - Add a new method, e.g., `handle_rehash_config()`:
-    - This method will call `config.reload_all_config_values()`.
-    - It will then update internal `IRCClient_Logic` state derived from config values (e.g., `self.verify_ssl_cert`, `self.channel_log_enabled`, `self.context_manager.max_history`).
-    - **Logging Changes Note**: For complex logging settings, the initial approach is to update `config.py` values and advise users that a restart might be needed for these to fully apply to the active logging handlers. `IRCClient_Logic` can update its own logging-related attributes for future actions.
+2.  **Modify `command_handler.py`:**
+    - **Add Import:**
+      - Ensure `config` module is accessible. This might involve adding `import config` at the top of `command_handler.py` or ensuring `save_current_config` is imported via an existing `from config import ...` statement. The handler will call `config.save_current_config()`.
+        ```python
+        # Example: At the top of command_handler.py
+        import config
+        # ... other imports
+        from config import (
+            get_all_settings, set_config_value, get_config_value, # other existing imports
+            # save_current_config # if not importing 'config' directly
+        )
+        ```
+    - **Add Usage String:**
+      - In the `COMMAND_USAGE_STRINGS` dictionary, add:
+        ```python
+        "save": "Usage: /save - Saves the current configuration to pyterm_irc_config.ini.",
+        ```
+    - **Implement Handler Method:**
+      - Add a new method to the `CommandHandler` class:
+        ```python
+        # In CommandHandler class
+        def _handle_save_command(self, args_str: str):
+            """Handles the /save command."""
+            if config.save_current_config(): # Call via imported config module
+                self.client.add_message(
+                    "Configuration saved to pyterm_irc_config.ini.",
+                    self.client.ui.colors["system"],
+                    context_name=self.client.context_manager.active_context_name or "Status"
+                )
+            else:
+                self.client.add_message(
+                    "Failed to save configuration.",
+                    self.client.ui.colors["error"],
+                    context_name=self.client.context_manager.active_context_name or "Status"
+                )
+        ```
+    - **Update Command Map:**
+      - In the `command_map` dictionary, add:
+        ```python
+        "save": self._handle_save_command,
+        ```
 
-## Phase 2: Command Handlers
+## Phase 2: Implement `/lastlog <pattern>` Command
 
-### 1. `/reconnect` Command:
+1.  **Modify `command_handler.py`:**
 
-- In [`server_commands_handler.py`](server_commands_handler.py):
-  - Add `handle_reconnect_command(self, args_str: str)`:
-    - Check if `self.client.server` is configured.
-    - Call `self.client.network.disconnect_gracefully("Reconnecting...")`.
-    - Add UI message: `"Reconnecting to server..."`
-    - Call `self.client.network.update_connection_params(self.client.server, self.client.port, self.client.use_ssl)`.
+    - **Add Usage String:**
+      - In `COMMAND_USAGE_STRINGS`, add:
+        ```python
+        "lastlog": "Usage: /lastlog <pattern> - Searches message history of the active window for <pattern> (case-insensitive).",
+        ```
+    - **Implement Handler Method:**
 
-### 2. `/rehash` Command:
+      - Add a new method to the `CommandHandler` class:
 
-- In [`command_handler.py`](command_handler.py):
-  - Add `_handle_rehash_command(self, args_str: str)`:
-    - Call `self.client.handle_rehash_config()`.
-    - Add UI message: `"Configuration reloaded. Some changes (like logging or server connection details if modified directly in the file) may require a /reconnect or client restart."`
+        ```python
+        # In CommandHandler class
+        def _handle_lastlog_command(self, args_str: str):
+            """Handles the /lastlog command."""
+            active_context_obj = self.client.context_manager.get_active_context()
+            active_context_name = self.client.context_manager.active_context_name or "Status"
+            system_color = self.client.ui.colors.get("system", 0)
+            error_color = self.client.ui.colors.get("error", 0)
 
-### 3. `/rawlog` Command:
+            if not args_str.strip():
+                self.client.add_message(self.COMMAND_USAGE_STRINGS["lastlog"], error_color, context_name=active_context_name)
+                return
 
-- In [`command_handler.py`](command_handler.py):
-  - Add `_handle_rawlog_command(self, args_str: str)`:
-    - Parse `args_str` for "on", "off", or "toggle".
-    - Update `self.client.show_raw_log_in_ui` in `IRCClient_Logic`.
-    - Add UI feedback: "Raw IRC message logging to UI enabled/disabled."
+            pattern = args_str.strip()
 
-## Phase 3: Registration and Usage Strings
+            if not active_context_obj:
+                self.client.add_message("Cannot use /lastlog: No active window.", error_color, context_name="Status")
+                return
 
-- In [`command_handler.py`](command_handler.py):
-  - Add to `COMMAND_USAGE_STRINGS`:
-    - `"reconnect": "Usage: /reconnect - Disconnects and reconnects to the current server."`
-    - `"rehash": "Usage: /rehash - Reloads the pyterm_irc_config.ini configuration file. Some changes may require a reconnect or restart."`
-    - `"rawlog": "Usage: /rawlog [on|off|toggle] - Toggles or sets display of raw IRC messages in the Status window."`
-  - Add to `command_map`:
-    - `"reconnect": self.server_commands.handle_reconnect_command,`
-    - `"rehash": self._handle_rehash_command,`
-    - `"rawlog": self._handle_rawlog_command,`
+            self.client.add_message(f"Searching lastlog for \"{pattern}\" in {active_context_obj.name}...", system_color, context_name=active_context_name)
 
-## Visual Plan (Mermaid Diagram)
+            found_matches = False
+            # Iterate a copy in case messages are added during iteration
+            messages_to_search = list(active_context_obj.messages)
+
+            for msg_text, color_attr in messages_to_search:
+                if pattern.lower() in msg_text.lower():
+                    self.client.add_message(f"[LastLog] {msg_text}", color_attr, context_name=active_context_name)
+                    found_matches = True
+
+            if not found_matches:
+                self.client.add_message(f"No matches found for \"{pattern}\" in the current log.", system_color, context_name=active_context_name)
+            self.client.add_message("End of lastlog search.", system_color, context_name=active_context_name)
+        ```
+
+    - **Update Command Map:**
+      - In `command_map`, add:
+        ```python
+        "lastlog": self._handle_lastlog_command,
+        ```
+
+## Visual Plan (Mermaid Diagram):
 
 ```mermaid
 graph TD
-    subgraph User Input
-        A[/command] --> B{CommandHandler.process_user_command}
-    end
+    A[User Input: /save] --> B{CommandHandler};
+    B -- Calls --> C(config.save_current_config);
+    C -- Writes to --> D([pyterm_irc_config.ini]);
+    C -- Returns status --> B;
+    B -- Displays feedback --> E[UI];
 
-    subgraph Command Dispatch
-        B -- "/reconnect" --> C[ServerCommandsHandler.handle_reconnect_command]
-        B -- "/rehash" --> D[CommandHandler._handle_rehash_command]
-        B -- "/rawlog" --> E[CommandHandler._handle_rawlog_command]
-    end
-
-    subgraph Reconnect Logic
-        C --> F[NetworkHandler.disconnect_gracefully]
-        C --> G{NetworkHandler.update_connection_params}
-        G --> H[NetworkHandler._network_loop triggers _connect_socket]
-    end
-
-    subgraph Rehash Logic
-        D --> I[IRCClient_Logic.handle_rehash_config]
-        I --> J[config.reload_all_config_values]
-        J --> K[config.config.read INI]
-        J --> L[config.py globals updated]
-        I --> M[IRCClient_Logic internal state updated]
-        M --> N((Advise restart for some changes))
-    end
-
-    subgraph Rawlog Logic
-        E --> O[IRCClient_Logic.show_raw_log_in_ui toggled]
-        subgraph Message Handling
-            P[Incoming Server Msg] --> Q[IRCClient_Logic.handle_server_message]
-            Q -- Check flag --> R{Display S << line if true}
-            Q --> S[irc_protocol.handle_server_message]
-
-            T[Outgoing Client Msg via /raw or other] --> U[NetworkHandler.send_raw]
-            U -- Check flag --> V{Display C >> line if true}
-            U --> W[Socket Send]
-        end
-    end
-
-    subgraph Configuration
-        Z1[pyterm_irc_config.ini]
-        K -.-> Z1
-    end
-
-    subgraph UI Feedback
-        C --> X[UI: "Reconnecting..."]
-        D --> Y[UI: "Configuration reloaded..."]
-        E --> Z[UI: "Rawlog enabled/disabled"]
-        R --> UI_StatusWindow["Status Window"]
-        V --> UI_StatusWindow
-    end
+    F[User Input: /lastlog <pattern>] --> G{CommandHandler};
+    G -- Gets active context --> H(ContextManager);
+    H -- Returns Context obj --> G;
+    G -- Iterates Context.messages --> G;
+    G -- Filters messages by pattern --> G;
+    G -- Displays matching messages & feedback --> E;
 ```
-
-## Affected Files Summary:
-
-- [`command_handler.py`](command_handler.py)
-- [`server_commands_handler.py`](server_commands_handler.py)
-- [`config.py`](config.py)
-- [`irc_client_logic.py`](irc_client_logic.py)
-- [`network_handler.py`](network_handler.py)
