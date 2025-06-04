@@ -8,6 +8,36 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.commands.user.ignore")
 
+COMMAND_DEFINITIONS = [
+    {
+        "name": "ignore",
+        "handler": "handle_ignore_command",
+        "help": {
+            "usage": "/ignore <nick|hostmask>",
+            "description": "Adds a user/hostmask to the ignore list. Simple nicks are converted to nick!*@*.",
+            "aliases": []
+        }
+    },
+    {
+        "name": "unignore",
+        "handler": "handle_unignore_command",
+        "help": {
+            "usage": "/unignore <nick|hostmask>",
+            "description": "Removes a user/hostmask from the ignore list. Tries to match exact pattern or derived nick!*@*.",
+            "aliases": []
+        }
+    },
+    {
+        "name": "listignores",
+        "handler": "handle_listignores_command",
+        "help": {
+            "usage": "/listignores",
+            "description": "Lists all currently ignored patterns.",
+            "aliases": ["ignores"]
+        }
+    }
+]
+
 def handle_ignore_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /ignore command."""
     help_data = client.script_manager.get_help_text_for_command("ignore")
@@ -23,22 +53,19 @@ def handle_ignore_command(client: "IRCClient_Logic", args_str: str):
         return
 
     pattern_to_ignore = parts[0]
-    # Ensure client.command_handler._ensure_args is used correctly
-    # If it's just ensuring args_str is present, this is fine.
-    # If it modifies pattern_to_ignore, ensure that's intended.
+    original_arg = pattern_to_ignore # Keep original for messages
 
-    # Logic for interpreting as hostmask pattern
     if "!" not in pattern_to_ignore and "@" not in pattern_to_ignore:
         if "*" not in pattern_to_ignore and "?" not in pattern_to_ignore:
             interpreted_pattern = f"{pattern_to_ignore}!*@*"
             client.add_message(
-                f"Interpreting '{pattern_to_ignore}' as hostmask pattern: '{interpreted_pattern}'",
+                f"Interpreting '{original_arg}' as hostmask pattern: '{interpreted_pattern}'",
                 system_color_key,
                 context_name=active_context_name,
             )
-            pattern_to_ignore = interpreted_pattern # Use the interpreted pattern
+            pattern_to_ignore = interpreted_pattern
 
-    if add_ignore_pattern(pattern_to_ignore):
+    if add_ignore_pattern(pattern_to_ignore): # add_ignore_pattern now handles lowercasing
         client.add_message(
             f"Now ignoring: {pattern_to_ignore}",
             system_color_key,
@@ -66,23 +93,29 @@ def handle_unignore_command(client: "IRCClient_Logic", args_str: str):
         return
 
     pattern_to_unignore_arg = parts[0]
-    attempted_patterns = [pattern_to_unignore_arg.lower()]
-
-    # Logic for deriving hostmask pattern if simple nick provided
-    if "!" not in pattern_to_unignore_arg and "@" not in pattern_to_unignore_arg:
-        if "*" not in pattern_to_unignore_arg and "?" not in pattern_to_unignore_arg:
-            attempted_patterns.append(f"{pattern_to_unignore_arg.lower()}!*@*")
+    # remove_ignore_pattern handles lowercasing.
+    # We attempt to remove the exact arg, and if that fails, a derived hostmask.
 
     removed = False
-    for p_attempt in attempted_patterns:
-        if remove_ignore_pattern(p_attempt):
-            client.add_message(
-                f"Removed from ignore list: {p_attempt}",
-                system_color_key,
-                context_name=active_context_name,
-            )
-            removed = True
-            break
+    if remove_ignore_pattern(pattern_to_unignore_arg):
+        client.add_message(
+            f"Removed from ignore list: {pattern_to_unignore_arg.lower()}", # Show what was actually removed
+            system_color_key,
+            context_name=active_context_name,
+        )
+        removed = True
+    else:
+        # If simple nick and not a pattern, try derived hostmask
+        if "!" not in pattern_to_unignore_arg and "@" not in pattern_to_unignore_arg and \
+           "*" not in pattern_to_unignore_arg and "?" not in pattern_to_unignore_arg:
+            derived_pattern = f"{pattern_to_unignore_arg.lower()}!*@*"
+            if remove_ignore_pattern(derived_pattern):
+                client.add_message(
+                    f"Removed derived hostmask from ignore list: {derived_pattern}",
+                    system_color_key,
+                    context_name=active_context_name,
+                )
+                removed = True
 
     if not removed:
         client.add_message(
@@ -109,7 +142,7 @@ def handle_listignores_command(client: "IRCClient_Logic", args_str: str):
         system_color_key,
         context_name=active_context_name,
     )
-    for pattern in sorted(list(IGNORED_PATTERNS)): # Ensure it's a list for sorting
+    for pattern in sorted(list(IGNORED_PATTERNS)):
         client.add_message(
             f"- {pattern}",
             system_color_key,

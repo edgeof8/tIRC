@@ -7,6 +7,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.commands.rawlog")
 
+COMMAND_DEFINITIONS = [
+    {
+        "name": "rawlog",
+        "handler": "handle_rawlog_command",
+        "help": {
+            "usage": "/rawlog [on|off|toggle]",
+            "description": "Toggles or sets the display of raw IRC messages in the Status window.",
+            "aliases": []
+        }
+    }
+]
+
 def handle_rawlog_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /rawlog [on|off|toggle] command."""
     help_data = client.script_manager.get_help_text_for_command("rawlog")
@@ -21,19 +33,19 @@ def handle_rawlog_command(client: "IRCClient_Logic", args_str: str):
         client.show_raw_log_in_ui = True
     elif arg == "off":
         client.show_raw_log_in_ui = False
-    elif arg == "toggle" or not arg:  # Empty arg also toggles
+    elif arg == "toggle" or not arg:
         client.show_raw_log_in_ui = not current_status
     else:
         client.add_message(
             usage_msg,
-            "error", # Semantic color key
+            "error",
             context_name=active_context_name,
         )
-        return # Return early if invalid arg
+        return
 
     feedback_action = "enabled" if client.show_raw_log_in_ui else "disabled"
     client.add_message(
         f"Raw IRC message logging to UI {feedback_action}.",
-        "system", # Semantic color key
+        "system",
         context_name=active_context_name,
     )

@@ -33,109 +33,121 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
             context_name=active_context_name,
         )
 
-        # Get all help texts from scripts
-        help_texts_from_scripts = client.script_manager.get_all_help_texts()
+        commands_by_group: Dict[str, List[tuple[str, str]]] = {}
 
-        # Group commands by script
-        commands_by_script: Dict[str, List[tuple[str, str]]] = {}
-        for cmd, help_text_data in help_texts_from_scripts.items():
-            if isinstance(help_text_data, dict):
-                script_name_original = help_text_data.get("script_name", "UnknownScript")
-                help_text_str = help_text_data.get("help_text", "")
-            else: # Should ideally not happen if script_manager always returns dicts
-                script_name_original = "script" # Fallback
-                help_text_str = str(help_text_data)
-
-            # If script_name_original is a generic fallback, group under 'core'
-            # This helps avoid "Commands from script 'Script':" or "Commands from script 'UnknownScript':"
-            # for INI-defined help entries not associated with a specific loaded script module.
-            effective_group_name = script_name_original
-            if script_name_original.lower() in ["script", "unknownscript", "core_ini_commands"]: # "core_ini_commands" could be a convention from script_manager
-                effective_group_name = "core"
-
-
-            if effective_group_name not in commands_by_script:
-                commands_by_script[effective_group_name] = []
-            commands_by_script[effective_group_name].append((cmd, help_text_str))
-
-        # --- Merge help from registered_command_help (core commands) ---
-        core_help_from_modules = {}
-        # Access registered_command_help via client.command_handler
+        # 1. Process commands from CommandHandler.registered_command_help (dynamically loaded core modules)
         for cmd_name, help_data_val in client.command_handler.registered_command_help.items():
-            if not help_data_val.get("is_alias"):
-                usage = help_data_val["help_text"].split('\n')[0]
-                desc_parts = help_data_val["help_text"].split('\n  ', 1)
-                summary = usage
-                if len(desc_parts) > 1 and desc_parts[1]:
-                    summary = desc_parts[1].split('\n')[0]
+            if help_data_val.get("is_alias"):
+                continue
 
-                core_help_from_modules[cmd_name] = {
-                    "help_text": summary,
-                    "script_name": help_data_val.get("module_path", "core") # Use module_path if available
-                }
+            module_path = help_data_val.get("module_path", "core")
+            group_key = "core"  # Default
+            if module_path.startswith("commands."):
+                parts = module_path.split('.')
+                if len(parts) > 1:  # commands.CATEGORY.module
+                    group_key = parts[1].lower()  # "utility", "ui", "user", etc.
 
-        if "core" not in commands_by_script:
-            commands_by_script["core"] = []
+            full_help_text = help_data_val["help_text"]
+            usage_line = full_help_text.split('\n')[0]
+            description_part = ""
+            if '\n  ' in full_help_text:
+                description_parts = full_help_text.split('\n  ', 1)
+                if len(description_parts) > 1:
+                    description_part = description_parts[1].split('\n')[0]
 
-        for cmd, h_data in core_help_from_modules.items():
-            # Avoid duplicating if already added (e.g. if help was also in an old ini)
-            if not any(c[0] == cmd for c in commands_by_script.get(h_data["script_name"], [])) and \
-               not any(c[0] == cmd for c in commands_by_script.get("core", [])): # Check general core too
+            summary = description_part if description_part else usage_line
 
-                # Decide where to put it. If module_path suggests a specific "script" group, use it.
-                group_key = "core"
-                if h_data["script_name"] != "core" and h_data["script_name"].startswith("commands."):
-                    # Attempt to create a more user-friendly group name from module_path
-                    # e.g., commands.utility.set_command -> utility
-                    try:
-                        group_key = h_data["script_name"].split('.')[1] # commands.CATEGORY.module -> CATEGORY
-                    except IndexError:
-                        group_key = "core_modules" # Fallback if structure is different
-
-                if group_key not in commands_by_script:
-                    commands_by_script[group_key] = []
-                commands_by_script[group_key].append((cmd, h_data["help_text"]))
+            if group_key not in commands_by_group:
+                commands_by_group[group_key] = []
+            # Avoid adding if already present from a script that might have registered it (less likely for core)
+            if not any(c[0] == cmd_name for c in commands_by_group[group_key]):
+                 commands_by_group[group_key].append((cmd_name, summary))
 
 
-        # Display commands grouped by script/category
-        sorted_group_names = sorted(commands_by_script.keys(), key=lambda x: (x != "core", x != "core_modules", x))
+        # 2. Process commands from ScriptManager (scripts)
+        script_cmds_data = client.script_manager.get_all_script_commands_with_help()
+        for cmd_name, cmd_data_val in script_cmds_data.items():
+            script_module_name = cmd_data_val.get("script_name", "UnknownScript")
 
-        for group_name in sorted_group_names:
-            commands = commands_by_script[group_name]
+            help_text_from_script = cmd_data_val.get("help_text", "No description.")
+            usage_line_script = help_text_from_script.split('\n')[0]
+            description_part_script = ""
+            if '\n' in help_text_from_script:
+                 parts = help_text_from_script.split('\n', 1)
+                 if len(parts) > 1:
+                     if parts[1].startswith("  "): # Respect "  " for description indent
+                         description_part_script = parts[1].lstrip().split('\n')[0]
+                     else: # Assume next line is description start
+                         description_part_script = parts[1].split('\n')[0]
+            summary_script = description_part_script if description_part_script else usage_line_script
+
+            # Ensure script commands are grouped under their script name
+            # And don't override core commands if a script defines a command with the same name
+            # by checking if cmd_name is already in any of the core category groups.
+            is_core_cmd_already = False
+            core_category_keys = ["core", "channel", "information", "server", "ui", "user", "utility", "core_modules"]
+            for core_cat_key in core_category_keys:
+                if any(c[0] == cmd_name for c in commands_by_group.get(core_cat_key, [])):
+                    is_core_cmd_already = True
+                    logger.debug(f"Help: Command '{cmd_name}' from script '{script_module_name}' conflicts with a core command. Script help summary not added to general list.")
+                    break
+
+            if not is_core_cmd_already:
+                if script_module_name not in commands_by_group:
+                    commands_by_group[script_module_name] = []
+                commands_by_group[script_module_name].append((cmd_name, summary_script))
+
+        # Display logic
+        category_display_titles = {
+            "core": "Core Commands",
+            "channel": "Channel Commands",
+            "information": "Information Commands",
+            "server": "Server Commands",
+            "ui": "Ui Commands",
+            "user": "User Commands",
+            "utility": "Utility Commands",
+            "core_modules": "Core Modules Commands"
+        }
+
+        all_group_keys_from_data = list(commands_by_group.keys())
+
+        ordered_category_keys_to_display = []
+        processed_keys_for_ordering = set()
+
+        for cat_key_lower in ["core", "channel", "information", "server", "ui", "user", "utility", "core_modules"]:
+            if cat_key_lower in all_group_keys_from_data and cat_key_lower not in processed_keys_for_ordering:
+                ordered_category_keys_to_display.append(cat_key_lower)
+                processed_keys_for_ordering.add(cat_key_lower)
+
+        script_group_keys_to_display = sorted([
+            key for key in all_group_keys_from_data
+            if key not in processed_keys_for_ordering
+        ], key=lambda k: k.lower())
+
+        final_sorted_group_keys_for_display = ordered_category_keys_to_display + script_group_keys_to_display
+
+        for group_key_actual in final_sorted_group_keys_for_display:
+            commands = commands_by_group[group_key_actual]
             if not commands:
                 continue
 
-            display_group_name_final = group_name.replace("_", " ").title()
+            header_text = ""
+            group_key_lookup = group_key_actual.lower()
 
-            if group_name == "core": # For /help itself
-                 client.add_message(
-                    "\nCore Commands:", system_color, context_name=active_context_name
-                )
-            # Check if group_name is one of our known command categories (derived from commands.* modules)
-            # These categories are like "utility", "ui", "channel", "information", "server", "user".
-            # "core_modules" is a fallback if category extraction fails for a commands.* module.
-            known_core_categories = ["utility", "ui", "channel", "information", "server", "core_modules", "user"]
-            if group_name in known_core_categories:
-                 client.add_message(
-                    f"\n{display_group_name_final} Commands:", system_color, context_name=active_context_name
-                )
-            # If not 'core' and not a known core category, it's assumed to be an actual script name
-            # (e.g., "Default Fun Commands", "Ai Api Test Script")
+            if group_key_lookup in category_display_titles:
+                header_text = f"\n{category_display_titles[group_key_lookup]}:"
             else:
-                 client.add_message(
-                    f"\nCommands from script '{display_group_name_final}':", system_color, context_name=active_context_name
-                )
+                script_display_name = group_key_actual.replace("_", " ").title()
+                header_text = f"\nCommands from script {script_display_name}:"
 
-            for cmd, help_text in sorted(commands):
-                summary = help_text.split("\n")[0] # Ensure it's a summary
+            client.add_message(header_text, system_color, context_name=active_context_name)
+
+            for cmd, help_text_summary in sorted(commands, key=lambda x: x[0]):
                 client.add_message(
-                    f"/{cmd}: {summary}",
+                    f"/{cmd}: {help_text_summary}",
                     system_color,
                     context_name=active_context_name,
                 )
-
-        # Split-screen command help is now dynamically loaded.
-        # The hardcoded section listing them has been removed.
 
         client.add_message(
             "\nUse /help <command> for detailed help on a specific command.",
@@ -144,26 +156,20 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         )
         return
 
-    # Show help for specific command
+    # Specific command help logic (remains largely the same)
     command_name_from_user = args_str.strip().lower()
-
-    # Access registered_command_help via client.command_handler
     help_data = client.command_handler.registered_command_help.get(command_name_from_user)
 
-    if not help_data: # If not a registered core command, check scripts
+    if not help_data:
         help_data_script = client.script_manager.get_help_text_for_command(command_name_from_user)
-        if help_data_script: # Ensure it's not None before trying to use it
-             # Adapt script help data to a common format if necessary, or use as is
+        if help_data_script:
             help_data = {
                 "help_text": help_data_script.get("help_text", "No description available."),
                 "is_alias": help_data_script.get("is_alias", False),
                 "primary_command": help_data_script.get("primary_command"),
-                "script_name": help_data_script.get("script_name", "script") # Default to "script"
+                "script_name": help_data_script.get("script_name", "script"),
+                "module_path": help_data_script.get("module_path")
             }
-
-
-    # Removed hardcoded if/elif for "split", "focus", "setpane"
-    # Generic logic below will handle them via registered_command_help.
 
     if help_data:
         if help_data.get("is_alias"):
@@ -184,16 +190,16 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         module_path_info = help_data.get("module_path")
 
         if module_path_info and module_path_info.startswith("commands."):
-             # Try to get category like "utility" from "commands.utility.set_command"
-            category = module_path_info.split('.')[1] if len(module_path_info.split('.')) > 1 else "core"
+            category = module_path_info.split('.')[1].title() if len(module_path_info.split('.')) > 1 else "Core"
             client.add_message(
-                f"(Core command from: {category.title()})",
+                f"(Core command from: {category})",
                 system_color,
                 context_name=active_context_name,
             )
-        elif script_name_info and script_name_info not in ["core", "UnknownScript"]:
-            client.add_message(
-                f"(Help from script: {script_name_info})",
+        elif script_name_info and script_name_info not in ["core", "UnknownScript", "script"]:
+             script_display_name = script_name_info.replace("_", " ").title()
+             client.add_message(
+                f"(Help from script: {script_display_name})",
                 system_color,
                 context_name=active_context_name,
             )

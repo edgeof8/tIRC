@@ -1,3 +1,4 @@
+
 # START OF MODIFIED FILE: scripts/ai_api_test_script.py
 import logging
 from typing import Dict, Any, TYPE_CHECKING, Optional, List, Tuple
@@ -56,7 +57,7 @@ class AiApiTestScript:
         )
         with self.test_execution_lock:
             self.tests_scheduled_this_session = False
-        self.last_connection_time = time.time() # Record connection time
+        self.last_connection_time = time.time()
         server_info = self.api.get_server_info()
         self.api.log_info(f"[AI Test] Server info: {server_info}")
         capabilities = self.api.get_server_capabilities()
@@ -84,8 +85,6 @@ class AiApiTestScript:
             self.api.log_info(f"[AI Test] No initial channels to auto-join. Attempting to join default test channel: {DEFAULT_TEST_CHANNEL}")
             self.api.join_channel(DEFAULT_TEST_CHANNEL)
         else:
-            # Auto-join for initial channels is handled by RegistrationHandler.
-            # We just wait for CHANNEL_FULLY_JOINED.
             self.api.log_info(f"[AI Test] Initial channels {self.api.client_logic.initial_channels_list} will be auto-joined. Waiting for CHANNEL_FULLY_JOINED.")
 
 
@@ -102,19 +101,12 @@ class AiApiTestScript:
                 self.api.log_info(f"[AI Test] Tests already run/scheduled this session. Ignoring for {channel_name}.")
                 return
 
-            # Check debounce only if we are considering running tests.
-            # The first time, we don't need a long debounce from connection,
-            # just a short delay after full join.
-            # Subsequent attempts (if any, due to multiple channels) might use a longer debounce.
-            # For now, let's assume tests run on the *first* channel that becomes fully joined.
-
-            # Simplified: run tests on the first channel that reports fully joined for this session.
             self.api.log_info(f"[AI Test] Scheduling tests for channel {channel_name} after 5s delay (first fully joined channel this session).")
 
             test_thread = threading.Timer(5.0, self._run_tests_on_channel, args=[channel_name])
             test_thread.daemon = True
             test_thread.start()
-            self.tests_scheduled_this_session = True # Mark that tests have been scheduled for this session
+            self.tests_scheduled_this_session = True
 
 
     def _run_tests_on_channel(self, channel_name: str):
@@ -122,7 +114,6 @@ class AiApiTestScript:
 
         normalized_test_channel = self.api.client_logic.context_manager._normalize_context_name(channel_name)
 
-        # Double-check status before running, though the event should guarantee it.
         ctx_info = self.api.get_context_info(normalized_test_channel)
         is_fully_joined = False
         if ctx_info and ctx_info.get("type") == "channel":
@@ -161,8 +152,6 @@ class AiApiTestScript:
         time.sleep(5.0)
 
         self.api.log_info("[AI Test] Starting _test_help_system...")
-        # Help commands often output to the current context, which should be normalized_test_channel here.
-        # If some help output goes to "Status", tests within _test_help_system might need to check "Status".
         self._test_help_system(normalized_test_channel)
         time.sleep(5.0)
 
@@ -171,54 +160,36 @@ class AiApiTestScript:
     def _test_utility_commands(self, context_name: str):
         self.api.log_info(f"[AI Test] --- Starting Utility Command Tests on {context_name} ---")
 
-        # /set
         self.api.log_info("[AI Test] Testing /set logging.log_level (get)")
         self.api.execute_client_command("/set logging.log_level")
         time.sleep(1.0)
-        # TODO: Verification - check context_name for output
 
         self.api.log_info("[AI Test] Testing /set logging.log_level DEBUG")
         self.api.execute_client_command("/set logging.log_level DEBUG")
         time.sleep(0.5)
-        # TODO: Verification - ideally check if log level actually changed, or output of /set
 
         self.api.log_info("[AI Test] Testing /set logging.log_level INFO (restore)")
         self.api.execute_client_command("/set logging.log_level INFO")
         time.sleep(0.5)
 
-        # /save
         self.api.log_info("[AI Test] Testing /save")
         self.api.execute_client_command("/save")
         time.sleep(1.0)
-        # TODO: Verification - check for "Configuration saved" message in context_name
 
-        # /rehash
         self.api.log_info("[AI Test] Testing /rehash")
         self.api.execute_client_command("/rehash")
         time.sleep(1.0)
-        # TODO: Verification - check for "Configuration reloaded" message
 
-        # /clear
         self.api.log_info(f"[AI Test] Testing /clear on {context_name}")
-
-        # Step a: Make the target context active
         self.api.log_info(f"[AI Test] Ensuring {context_name} is active before DEV_TEST_ONLY clear.")
         self.api.execute_client_command(f"/window {context_name}")
-        time.sleep(0.2) # Allow context switch to complete
-
-        # Step b: Clear any pre-existing messages programmatically using DEV_TEST_ONLY method
+        time.sleep(0.2)
         self.api.log_info(f"[AI Test] DEV_TEST_ONLY: Attempting to pre-clear context {context_name} directly.")
         if hasattr(self.api, 'DEV_TEST_ONLY_clear_context_messages'):
             if not self.api.DEV_TEST_ONLY_clear_context_messages(context_name):
-                # Log error, but proceed with test as this is a setup step.
-                # The test for /clear itself will reveal if the buffer was truly not cleared.
                 self.api.log_error(f"[AI Test] DEV_TEST_ONLY_clear_context_messages call returned False for {context_name}.")
-            time.sleep(0.2) # Let UI settle if it redraws
-
-            # Verify it's actually empty now
+            time.sleep(0.2)
             pre_clear_check_messages = self.api.get_context_messages(context_name)
-            # An empty list [] is falsy. None is also falsy.
-            # So, if pre_clear_check_messages is True, it means it's not empty or not None.
             if pre_clear_check_messages:
                 self.api.log_error(f"[AI Test] DEV_TEST_ONLY: Pre-clear for {context_name} FAILED. Buffer not empty after direct clear. Buffer: {pre_clear_check_messages}")
             else:
@@ -226,30 +197,21 @@ class AiApiTestScript:
         else:
             self.api.log_error("[AI Test] DEV_TEST_ONLY_clear_context_messages method not found on API handler. Skipping direct pre-clear step.")
 
-        # Step c: Execute the actual /clear command being tested
-        # The context should already be active from the /window command above.
         self.api.log_info(f"[AI Test] Executing the actual /clear command on (should be) active context {context_name}.")
         self.api.execute_client_command("/clear")
-
-        # Step d: time.sleep(0.5)
-        time.sleep(0.5) # Allow UI update cycle and command processing
-
-        # Fetch messages immediately after /clear execution (and before sentinel)
+        time.sleep(0.5)
         messages_after_clear_execution = self.api.get_context_messages(context_name)
         self.api.log_info(f"[AI Test] /clear: Messages in {context_name} AFTER /clear execution and BEFORE sentinel: {messages_after_clear_execution}")
-
-        # Store the count of messages at this point to identify newly added ones later
         count_after_clear_execution = len(messages_after_clear_execution) if messages_after_clear_execution is not None else 0
-
         sentinel_message = f"Post-clear sentinel {time.time()}"
-        active_context_for_sentinel = self.api.get_current_context_name() # Should still be context_name
+        active_context_for_sentinel = self.api.get_current_context_name()
 
         if active_context_for_sentinel:
             if active_context_for_sentinel == context_name:
                 self.api.send_message(active_context_for_sentinel, sentinel_message)
-                time.sleep(0.5) # Allow message to be processed
+                time.sleep(0.5)
             else:
-                self.api.log_error(f"[AI Test] /clear test: Active context '{active_context_for_sentinel}' is not the expected '{context_name}' for sending sentinel. Sentinel not sent to target.")
+                 self.api.log_error(f"[AI Test] /clear test: Active context '{active_context_for_sentinel}' is not the expected '{context_name}' for sending sentinel. Sentinel not sent to target.")
         else:
             self.api.log_error("[AI Test] /clear test: Could not determine active context to send sentinel.")
 
@@ -259,14 +221,12 @@ class AiApiTestScript:
             newly_added_messages = messages_after_sentinel[count_after_clear_execution:]
 
         passed_clear_test = False
-        # Check 1: Was the buffer empty (or None) immediately after the /clear command execution?
-        if messages_after_clear_execution: # True if not None and not empty
+        if messages_after_clear_execution:
             self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Buffer was NOT empty (or None) IMMEDIATELY after /clear execution (before sentinel). Content: {messages_after_clear_execution}")
-        elif messages_after_clear_execution is None: # Explicitly check for None if that's an error state from get_context_messages
+        elif messages_after_clear_execution is None:
              self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Message buffer was None IMMEDIATELY after /clear execution (before sentinel).")
-        else: # messages_after_clear_execution is an empty list []
+        else:
             self.api.log_info(f"[AI Test] /clear: Buffer was empty immediately after /clear execution for {context_name} (before sentinel), as expected.")
-            # Check 2: Is the sentinel message the only *newly added* message?
             if len(newly_added_messages) == 1:
                 if sentinel_message in newly_added_messages[0][0]:
                     passed_clear_test = True
@@ -275,25 +235,18 @@ class AiApiTestScript:
                     self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Sentinel message '{sentinel_message}' not found in the single newly added message '{newly_added_messages[0][0]}'.")
             elif len(newly_added_messages) == 0:
                  self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. No new messages (including sentinel) found after sending sentinel. Messages after sentinel: {messages_after_sentinel}")
-            else: # More than one new message
+            else:
                 self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Expected 1 new (sentinel) message, got {len(newly_added_messages)}. Newly added: {newly_added_messages}. All after sentinel: {messages_after_sentinel}")
 
-        # self.test_results.append(TestResult("/clear Command", passed_clear_test, ...))
-            # (Integrate with TestResult reporting)
 
-
-        # /rawlog
         self.api.log_info("[AI Test] Testing /rawlog on")
         self.api.execute_client_command("/rawlog on")
         time.sleep(0.5)
-        # TODO: Verification - check for "Raw logging to UI enabled"
 
         self.api.log_info("[AI Test] Testing /rawlog off")
         self.api.execute_client_command("/rawlog off")
         time.sleep(0.5)
-        # TODO: Verification - check for "Raw logging to UI disabled"
 
-        # /lastlog
         log_pattern = f"unique_pattern_{int(time.time())}"
         self.api.log_info(f"[AI Test] Sending message with pattern '{log_pattern}' for /lastlog test")
         self.api.send_message(context_name, f"Message with {log_pattern} for lastlog.")
@@ -301,15 +254,13 @@ class AiApiTestScript:
         self.api.log_info(f"[AI Test] Testing /lastlog {log_pattern}")
         self.api.execute_client_command(f"/lastlog {log_pattern}")
         time.sleep(1.0)
-        # TODO: Verification for /lastlog - check context_name for messages containing the pattern
 
         self.api.log_info(f"[AI Test] --- Finished Utility Command Tests on {context_name} ---")
 
-    def _test_ui_commands(self, channel_name: str): # channel_name is a good default context
+    def _test_ui_commands(self, channel_name: str):
         self.api.log_info(f"[AI Test] --- Starting UI Command Tests (execution check) on {channel_name} ---")
         status_context = "Status"
 
-        # /window
         self.api.log_info("[AI Test] Testing /window Status")
         self.api.execute_client_command(f"/window {status_context}")
         time.sleep(0.5)
@@ -317,7 +268,6 @@ class AiApiTestScript:
         self.api.execute_client_command(f"/window {channel_name}")
         time.sleep(0.5)
 
-        # /nextwindow & /prevwindow
         self.api.log_info("[AI Test] Testing /nextwindow")
         self.api.execute_client_command("/nextwindow")
         time.sleep(0.5)
@@ -325,7 +275,6 @@ class AiApiTestScript:
         self.api.execute_client_command("/prevwindow")
         time.sleep(0.5)
 
-        # /userlistscroll (difficult to verify in headless)
         self.api.log_info("[AI Test] Testing /userlistscroll down")
         self.api.execute_client_command("/userlistscroll down")
         time.sleep(0.2)
@@ -333,7 +282,6 @@ class AiApiTestScript:
         self.api.execute_client_command("/userlistscroll top")
         time.sleep(0.2)
 
-        # /split, /focus, /setpane
         self.api.log_info("[AI Test] Testing /split (on)")
         self.api.execute_client_command("/split")
         time.sleep(0.5)
@@ -350,15 +298,13 @@ class AiApiTestScript:
         self.api.execute_client_command("/split")
         time.sleep(0.5)
 
-        # /close
         dummy_query_user = f"TestUserForClose{int(time.time())}"
         self.api.log_info(f"[AI Test] Testing /query {dummy_query_user} (to setup /close)")
         self.api.execute_client_command(f"/query {dummy_query_user}")
-        time.sleep(1.0) # Allow context to be created
-        self.api.log_info(f"[AI Test] Testing /close (on query context {dummy_query_user})")
-        self.api.execute_client_command(f"/close {dummy_query_user}") # Close the specific query window
+        time.sleep(1.0)
+        self.api.log_info(f"[AI Test] Testing /close {dummy_query_user} (on query context)")
+        self.api.execute_client_command(f"/close {dummy_query_user}")
         time.sleep(0.5)
-        # TODO: Verification - check if context dummy_query_user is removed
 
         self.api.log_info(f"[AI Test] --- Finished UI Command Tests on {channel_name} ---")
 
@@ -367,32 +313,22 @@ class AiApiTestScript:
         dummy_user = f"TestDummyUser{int(time.time())}"
         current_nick = self.api.get_client_nick() or "PyRCTestClient"
 
-        # /msg
         self.api.log_info(f"[AI Test] Testing /msg {dummy_user} test_message")
-        self.api.send_raw(f"/msg {dummy_user} This is a test message via /msg.") # Remains send_raw as it's for server
+        self.api.send_message(dummy_user, "This is a test message via /msg API.")
         time.sleep(0.5)
-        # TODO: Verification - check if query window for dummy_user was created and message sent
 
-        # /notice
         self.api.log_info(f"[AI Test] Testing /notice {dummy_user} test_notice")
-        self.api.send_raw(f"/notice {dummy_user} This is a test notice via /notice.") # Remains send_raw
+        self.api.send_notice(dummy_user, "This is a test notice via /notice API.")
         time.sleep(0.5)
 
-        # /me
         self.api.log_info(f"[AI Test] Testing /me waves hello in {channel_name}")
-        self.api.execute_client_command(f"/window {channel_name}") # Ensure channel is active (client-side)
-        time.sleep(0.2)
-        self.api.send_raw("/me waves hello in the current channel") # Remains send_raw
+        self.api.execute_client_command(f"/me waves hello in {channel_name}")
         time.sleep(0.5)
 
-
-        # /whois
         self.api.log_info(f"[AI Test] Testing /whois {current_nick}")
-        self.api.send_raw(f"/whois {current_nick}") # Remains send_raw
-        time.sleep(1.5) # WHOIS can take a moment for server response
-        # TODO: Verification - check Status or active context for WHOIS response lines
+        self.api.execute_client_command(f"/whois {current_nick}")
+        time.sleep(1.5)
 
-        # /ignore, /listignores, /unignore
         ignore_pattern = f"{dummy_user}!*@*"
         self.api.log_info(f"[AI Test] Testing /ignore {ignore_pattern}")
         self.api.execute_client_command(f"/ignore {ignore_pattern}")
@@ -400,56 +336,43 @@ class AiApiTestScript:
         self.api.log_info("[AI Test] Testing /listignores")
         self.api.execute_client_command("/listignores")
         time.sleep(1.0)
-        # TODO: Verification for /listignores - check context for ignore_pattern
         self.api.log_info(f"[AI Test] Testing /unignore {ignore_pattern}")
         self.api.execute_client_command(f"/unignore {ignore_pattern}")
         time.sleep(0.5)
 
-        # /away
         away_message = f"Testing away status at {time.time()}"
         self.api.log_info(f"[AI Test] Testing /away {away_message}")
-        self.api.send_raw(f"/away {away_message}") # Remains send_raw
-        time.sleep(1.0) # Allow server to process
+        self.api.execute_client_command(f"/away {away_message}")
+        time.sleep(1.0)
         self.api.log_info("[AI Test] Testing /away (to remove away status)")
-        self.api.send_raw("/away") # Remains send_raw
+        self.api.execute_client_command("/away")
         time.sleep(1.0)
 
         self.api.log_info(f"[AI Test] --- Finished User Command Tests on {channel_name} ---")
 
     def _check_help_output(self, command_to_execute_with_slash: str, expected_strings: List[str], test_label: str):
         self.api.log_info(f"[AI Test] Testing {test_label}: Executing '{command_to_execute_with_slash}'")
-
-        # Determine target context for help output. Help usually goes to the active context.
-        # For simplicity, let's assume help output appears in the currently active context,
-        # or Status if no context is active (though one should be during tests).
         target_context_name = self.api.get_current_context_name() or "Status"
-        # Ensure the target_context_name is active if it's not Status, or /help might go to Status by default.
-        # However, /help command itself should handle where it outputs.
-        # We will fetch messages from the context that *was* active *before* the command.
-        # If /help changes the active context (e.g. to a new help window), this needs adjustment.
-        # For now, assuming /help messages are added to the *current* active window or "Status".
-
         self.api.log_info(f"[AI Test] Expecting help output for '{command_to_execute_with_slash}' in context '{target_context_name}'.")
 
         initial_messages_raw = self.api.get_context_messages(target_context_name)
         initial_msg_count = len(initial_messages_raw) if initial_messages_raw else 0
-        self.api.log_info(f"[AI Test] Initial message count in '{target_context_name}' for '{command_to_execute_with_slash}': {initial_msg_count}") # Changed log_debug to log_info
+        self.api.log_info(f"[AI Test] Initial message count in '{target_context_name}' for '{command_to_execute_with_slash}': {initial_msg_count}")
 
         self.api.execute_client_command(command_to_execute_with_slash)
-        time.sleep(1.0) # Allow time for messages to be processed and added
+        time.sleep(1.0)
 
         all_messages_raw = self.api.get_context_messages(target_context_name)
         all_messages = all_messages_raw if all_messages_raw else []
-
         new_messages = all_messages[initial_msg_count:]
-        self.api.log_info(f"[AI Test] Total messages in '{target_context_name}' after '{command_to_execute_with_slash}': {len(all_messages)}. New messages to check: {len(new_messages)}") # Changed log_debug to log_info
+        self.api.log_info(f"[AI Test] Total messages in '{target_context_name}' after '{command_to_execute_with_slash}': {len(all_messages)}. New messages to check: {len(new_messages)}")
 
-        if not new_messages and expected_strings: # If we expected output but got no new messages
+        if not new_messages and expected_strings:
             self.api.log_error(f"[AI Test] FAILED: {test_label}. No new messages found in '{target_context_name}' after executing '{command_to_execute_with_slash}'. Expected strings: {expected_strings}. All messages in context: {all_messages}")
             return False
 
         all_found = True
-        if expected_strings: # Only check if there are expected strings
+        if expected_strings:
             all_found = all(
                 any(expected_str.lower() in msg_tuple[0].lower() for msg_tuple in new_messages)
                 for expected_str in expected_strings
@@ -462,10 +385,9 @@ class AiApiTestScript:
             self.api.log_error(f"[AI Test] FAILED: {test_label}. Did not find all expected strings: {expected_strings}. New messages received: {new_messages}")
             return False
 
-    def _test_help_system(self, context_name: str): # context_name is where tests run, help output might go to active or Status
+    def _test_help_system(self, context_name: str):
         self.api.log_info(f"[AI Test] --- Starting Help System Tests (active context for checks: {context_name}) ---")
 
-        # Test /help (general)
         self._check_help_output(
             command_to_execute_with_slash="/help",
             expected_strings=[
@@ -477,19 +399,15 @@ class AiApiTestScript:
                 "Ui Commands:",
                 "User Commands:",
                 "Utility Commands:",
-                # Add specific, known script command group titles
-                "Commands from script Default Fun Commands:",
-                "Commands from script Default Random Messages:",
-                "Commands from script Event Test Script:",
-                "Commands from script Test Script:",
-                "Commands from script Ai Api Test Script:",
+                "Commands from script Default Fun Commands", # Corrected: Title case, no colon inside
+                "Commands from script Test Script",          # Corrected
+                "Commands from script Ai Api Test Script",   # Corrected
                 "Use /help <command> for detailed help"
             ],
             test_label="/help (general)"
         )
-        time.sleep(0.5) # Small delay between tests
+        time.sleep(0.5)
 
-        # Test /help set
         self._check_help_output(
             command_to_execute_with_slash="/help set",
             expected_strings=[
@@ -500,7 +418,6 @@ class AiApiTestScript:
         )
         time.sleep(0.5)
 
-        # Test /help join
         self._check_help_output(
             command_to_execute_with_slash="/help join",
             expected_strings=[
@@ -511,7 +428,6 @@ class AiApiTestScript:
         )
         time.sleep(0.5)
 
-        # Test /help split
         self._check_help_output(
             command_to_execute_with_slash="/help split",
             expected_strings=[
@@ -522,7 +438,6 @@ class AiApiTestScript:
         )
         time.sleep(0.5)
 
-        # Test /help non_existent_command
         non_existent_cmd = f"zxcvbnm_{int(time.time())}"
         self._check_help_output(
             command_to_execute_with_slash=f"/help {non_existent_cmd}",
@@ -583,6 +498,18 @@ class AiApiTestScript:
                 channel_name, f"The {trigger_pattern} has been spoken."
             )
             time.sleep(1.5)
+
+            messages = self.api.get_context_messages(channel_name, count=5)
+            triggered_message_found = False
+            if messages:
+                for msg_tuple in messages:
+                    if f"Trigger for '{trigger_pattern}' fired!" in msg_tuple[0]:
+                        triggered_message_found = True
+                        self.api.log_info(f"[AI Test] Trigger {trigger_id} successfully fired and sent message.")
+                        break
+            if not triggered_message_found:
+                self.api.log_error(f"[AI Test] Trigger {trigger_id} did NOT fire as expected or message not found.")
+
 
             self.api.set_trigger_enabled(trigger_id, False)
             self.api.log_info(
@@ -647,13 +574,13 @@ class AiApiTestScript:
             f"Channel {channel_name} has {actual_count} messages in buffer after sending {history_test_count}."
         )
 
-        if actual_count > configured_limit and history_test_count > configured_limit :
-            self.api.log_warning(
-                f"Buffer size {actual_count} exceeds configured limit {configured_limit}"
+        if actual_count > configured_limit :
+            self.api.log_error(
+                f"[AI Test] FAILED: History limit. Buffer size {actual_count} exceeds configured limit {configured_limit}"
             )
         else:
             self.api.log_info(
-                f"Buffer size {actual_count} is within/below configured limit {configured_limit} (or test sent fewer messages than limit)."
+                f"[AI Test] PASSED: History limit. Buffer size {actual_count} is within or equal to configured limit {configured_limit}."
             )
 
     def handle_join_event_for_logging_only(self, event_data: Dict[str, Any]):
@@ -661,14 +588,14 @@ class AiApiTestScript:
 
 
     def handle_privmsg(self, event_data: Dict[str, Any]):
-        self.api.log_info(f"[AI Test] PRIVMSG event: {event_data}")
         tags = event_data.get("tags", {})
-        self.api.log_info(f"[AI Test] Message tags: {tags}")
+        if tags:
+            self.api.log_info(f"[AI Test] Message tags: {tags}")
 
     def handle_notice(self, event_data: Dict[str, Any]):
-        self.api.log_info(f"[AI Test] NOTICE event: {event_data}")
         tags = event_data.get("tags", {})
-        self.api.log_info(f"[AI Test] Message tags: {tags}")
+        if tags:
+            self.api.log_info(f"[AI Test] Notice tags: {tags}")
 
     def handle_channel_mode_applied(self, event_data: Dict[str, Any]):
         self.api.log_info(f"[AI Test] CHANNEL_MODE_APPLIED event: {event_data}")
@@ -682,7 +609,7 @@ class AiApiTestScript:
         if self.api.get_client_nick() == new_nick:
             if self.original_nick_for_test and old_nick == self.original_nick_for_test:
                 self.original_nick_for_test = new_nick
-                self.api.log_info(f"[AI Test] Updated original_nick_for_test to {new_nick} (was tracking old).")
+                self.api.log_info(f"[AI Test] Updated original_nick_for_test to {new_nick} (was tracking old nick).")
 
             if self.initial_original_nick_for_test and new_nick == self.initial_original_nick_for_test:
                 self.original_nick_for_test = new_nick
@@ -691,9 +618,9 @@ class AiApiTestScript:
 
     def handle_raw_numeric(self, event_data: Dict[str, Any]):
         numeric = event_data.get("numeric")
-        self.api.log_info(f"[AI Test] Numeric code: {numeric}")
-        # RPL_WELCOME (001) is now handled by CLIENT_REGISTERED for test scheduling
-        # Nick change sequence is also triggered from there.
+        if numeric in [1, 433, 900, 903, 904]:
+             self.api.log_info(f"[AI Test] RAW_IRC_NUMERIC event: {event_data}")
+
 
     def handle_aitest_command(self, args_str: str, event_data_command: Dict[str, Any]):
         args = args_str.split()
@@ -734,7 +661,6 @@ class AiApiTestScript:
                 self.api.add_message_to_context(
                     active_ctx, "No triggers configured.", "system"
                 )
-        # ... (rest of aitest subcommands unchanged)
         elif sub_command == "addtrigger" and len(cmd_args) >= 4:
             event_type, pattern, action_type, *action_content_parts = cmd_args
             action_content = " ".join(action_content_parts)

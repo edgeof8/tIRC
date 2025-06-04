@@ -7,6 +7,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.commands.lastlog")
 
+COMMAND_DEFINITIONS = [
+    {
+        "name": "lastlog",
+        "handler": "handle_lastlog_command",
+        "help": {
+            "usage": "/lastlog <pattern>",
+            "description": "Searches the message history of the active window for lines containing <pattern>.",
+            "aliases": []
+        }
+    }
+]
+
 def handle_lastlog_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /lastlog command."""
     help_data = client.script_manager.get_help_text_for_command("lastlog")
@@ -14,7 +26,6 @@ def handle_lastlog_command(client: "IRCClient_Logic", args_str: str):
     active_context_obj = client.context_manager.get_active_context()
     active_context_name = client.context_manager.active_context_name or "Status"
 
-    # Use semantic color keys
     system_color_key = "system"
     error_color_key = "error"
 
@@ -32,38 +43,31 @@ def handle_lastlog_command(client: "IRCClient_Logic", args_str: str):
         client.add_message(
             "Cannot use /lastlog: No active window.",
             error_color_key,
-            context_name="Status",
+            context_name="Status", # Error regarding no active window goes to Status
         )
         return
 
     client.add_message(
         f'Searching lastlog for "{pattern}" in {active_context_obj.name}...',
         system_color_key,
-        context_name=active_context_name,
+        context_name=active_context_name, # Feedback in the window being searched
     )
 
     found_matches = False
-    # Iterate a copy in case messages are added during iteration
-    # Ensure messages are tuples of (text, color_key_or_tuple)
     messages_to_search = list(active_context_obj.messages)
 
     for msg_data in messages_to_search:
-        # Ensure msg_data is a tuple and has at least two elements
         if isinstance(msg_data, tuple) and len(msg_data) >= 2:
             msg_text, color_info = msg_data[0], msg_data[1]
-            # msg_text should be a string
             if isinstance(msg_text, str) and pattern.lower() in msg_text.lower():
-                # Pass the original color_info (could be a key or a tuple)
                 client.add_message(
                     f"[LastLog] {msg_text}",
-                    color_info, # Use the original color info
+                    color_info,
                     context_name=active_context_name,
                 )
                 found_matches = True
         else:
-            # Log if a message in the buffer is not in the expected format
-            logger.warning(f"Unexpected message format in log buffer: {msg_data}")
-
+            logger.warning(f"Unexpected message format in log buffer for {active_context_name}: {msg_data}")
 
     if not found_matches:
         client.add_message(

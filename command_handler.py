@@ -1,7 +1,8 @@
+# command_handler.py
 import logging
-import os # Added for dynamic loading
-import importlib # Added for dynamic loading
-from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Callable, Any # Added Any
+import os
+import importlib
+from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Callable, Any
 from features.triggers.trigger_commands import TriggerCommands
 from context_manager import ChannelJoinStatus, Context
 from config import (
@@ -17,8 +18,7 @@ from config import (
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
-    # Define a type for our command handlers
-    CommandHandlerCallable = Callable[[IRCClient_Logic, str], Any] # Changed None to Any
+    CommandHandlerCallable = Callable[[IRCClient_Logic, str], Any]
 
 from context_manager import Context as CTX_Type
 
@@ -29,34 +29,38 @@ class CommandHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client = client_logic
         self.trigger_commands = TriggerCommands(client_logic)
+        self.registered_command_help = {}
 
-        self.registered_command_help = {} # New dictionary to store help info
-
-        # Explicitly type command_map and ensure all entries conform to CommandHandlerCallable
         self.command_map: Dict[str, "CommandHandlerCallable"] = {
-            # Wrap methods that don't match (client, args_str) signature
             "on": lambda client, args_str: self.trigger_commands.handle_on_command(args_str),
-            # Dynamically loaded commands from modules are expected to have the (client, args_str) signature.
-            # Old direct entries for server and info commands are removed as they are now dynamically loaded.
         }
 
-        # --- Dynamic command loading from 'commands/' directory ---
         commands_dir_path = os.path.join(self.client.script_manager.base_dir, "commands")
         logger.info(f"Starting dynamic command loading from: {commands_dir_path}")
+
+        all_py_files_found = []
+        for root, _, files in os.walk(commands_dir_path):
+            for filename in files:
+                if filename.endswith(".py") and filename != "__init__.py":
+                    full_path = os.path.join(root, filename)
+                    all_py_files_found.append(full_path)
+        logger.debug(f"All .py files discovered by os.walk for command loading: {all_py_files_found}")
+
 
         for root, _, files in os.walk(commands_dir_path):
             for filename in files:
                 if filename.endswith(".py") and filename != "__init__.py":
                     module_path_on_disk = os.path.join(root, filename)
-                    # Construct Python module name (e.g., commands.utility.set_command)
-                    relative_path_from_commands_dir = os.path.relpath(module_path_on_disk, commands_dir_path)
+                    logger.debug(f"Processing potential command module: {module_path_on_disk}")
 
+                    relative_path_from_commands_dir = os.path.relpath(module_path_on_disk, commands_dir_path)
                     module_name_parts = relative_path_from_commands_dir[:-3].split(os.sep)
                     python_module_name = "commands." + ".".join(module_name_parts)
 
                     try:
                         logger.debug(f"Attempting to import module: {python_module_name}")
                         module = importlib.import_module(python_module_name)
+                        logger.debug(f"Successfully imported module: {python_module_name}")
 
                         if hasattr(module, 'COMMAND_DEFINITIONS'):
                             logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}")
@@ -95,15 +99,14 @@ class CommandHandler:
                                     logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}.")
                                 else:
                                     logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
-                        # else:
-                            # logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
+                        else:
+                             logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
 
                     except ImportError as e:
                         logger.error(f"Failed to import module {python_module_name}: {e}", exc_info=True)
                     except Exception as e:
                         logger.error(f"Error processing module {python_module_name}: {e}", exc_info=True)
         logger.info("Finished dynamic command loading.")
-        # --- End of dynamic command loading ---
 
         self.command_primary_map = {}
         seen_handlers = {}
@@ -117,155 +120,28 @@ class CommandHandler:
             else:
                 seen_handlers[handler_func] = cmd_name
 
-    # _handle_help_command method removed. Its logic is now in commands/core/help_command.py
-
-    def _handle_query_command(self, args_str: str):
-        """Handle the /query command"""
-        help_data = self.client.script_manager.get_help_text_for_command("query")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /query <nick> [message]"
-        )
-        parts = self._ensure_args(args_str, usage_msg, num_expected_parts=1)
-        if not parts:
-            return
-        query_parts = args_str.split(" ", 1)
-        target_nick = query_parts[0]
-        message = query_parts[1] if len(query_parts) > 1 else None
-        self.client.context_manager.create_context(target_nick, context_type="query")
-        self.client.context_manager.set_active_context(target_nick)
-        if message:
-            self.client.network_handler.send_raw(f"PRIVMSG {target_nick} :{message}")
-
-    def _handle_prev_channel_command(self, args_str: str):
-        """Handle the /prevchannel command"""
-        self.client.switch_active_channel("prev")
-
-    def _handle_ignore_command(self, args_str: str):
-        help_data = self.client.script_manager.get_help_text_for_command("ignore")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /ignore <nick|hostmask>"
-        )
-        active_context_name = (
-            self.client.context_manager.active_context_name or "Status"
-        )
-        parts = self._ensure_args(args_str, usage_msg)
-        if not parts:
-            return
-
-        pattern_to_ignore = parts[0]
-        if "!" not in pattern_to_ignore and "@" not in pattern_to_ignore:
-            if "*" not in pattern_to_ignore and "?" not in pattern_to_ignore:
-                pattern_to_ignore = f"{pattern_to_ignore}!*@*"
-                self.client.add_message(
-                    f"Interpreting '{parts[0]}' as hostmask pattern: '{pattern_to_ignore}'",
-                    self.client.ui.colors["system"],
-                    context_name=active_context_name,
-            )
-
-        if add_ignore_pattern(pattern_to_ignore):
-            self.client.add_message(
-                f"Now ignoring: {pattern_to_ignore}",
-                self.client.ui.colors["system"],
-                context_name=active_context_name,
-            )
-        else:
-            self.client.add_message(
-                f"Pattern '{pattern_to_ignore}' is already in the ignore list or is empty.",
-                self.client.ui.colors["warning"],
-                context_name=active_context_name,
-            )
-
-    def _handle_unignore_command(self, args_str: str):
-        help_data = self.client.script_manager.get_help_text_for_command("unignore")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /unignore <nick|hostmask>"
-        )
-        active_context_name = (
-            self.client.context_manager.active_context_name or "Status"
-        )
-        parts = self._ensure_args(args_str, usage_msg)
-        if not parts:
-            return
-
-        pattern_to_unignore = parts[0]
-        original_pattern_arg = pattern_to_unignore
-        attempted_patterns = [pattern_to_unignore.lower()]
-
-        if "!" not in pattern_to_unignore and "@" not in pattern_to_unignore:
-            if "*" not in pattern_to_unignore and "?" not in pattern_to_unignore:
-                attempted_patterns.append(f"{pattern_to_unignore.lower()}!*@*")
-
-        removed = False
-        for p_attempt in attempted_patterns:
-            if remove_ignore_pattern(p_attempt):
-                self.client.add_message(
-                    f"Removed from ignore list: {p_attempt}",
-                    self.client.ui.colors["system"],
-                    context_name=active_context_name,
-            )
-                removed = True
-                break
-
-        if not removed:
-            self.client.add_message(
-                f"Pattern '{original_pattern_arg}' (or its derived hostmask) not found in ignore list.",
-                self.client.ui.colors["error"],
-                context_name=active_context_name,
-            )
-
-    def _handle_listignores_command(self, args_str: str):
-        active_context_name = (
-            self.client.context_manager.active_context_name or "Status"
-        )
-        if not IGNORED_PATTERNS:
-            self.client.add_message(
-                "Ignore list is empty.",
-                self.client.ui.colors["system"],
-                context_name=active_context_name,
-            )
-            return
-
-        self.client.add_message(
-            "Current ignore patterns:",
-            self.client.ui.colors["system"],
-            context_name=active_context_name,
-            )
-        for pattern in sorted(list(IGNORED_PATTERNS)):
-            self.client.add_message(
-                f"- {pattern}",
-                self.client.ui.colors["system"],
-                context_name=active_context_name,
-            )
 
     def get_available_commands_for_tab_complete(self) -> List[str]:
-        """
-        Returns a list of commands primarily for tab-completion,
-        dynamically generated from the command_map.
-        """
         core_cmds = ["/" + cmd for cmd in self.command_map.keys()]
         script_cmds_data = (
             self.client.script_manager.get_all_script_commands_with_help()
         )
-
         script_cmds_and_aliases = []
         for cmd_name, cmd_data in script_cmds_data.items():
             script_cmds_and_aliases.append("/" + cmd_name)
             for alias in cmd_data.get("aliases", []):
                 script_cmds_and_aliases.append("/" + alias)
-
         return sorted(list(set(core_cmds + script_cmds_and_aliases)))
 
     def _ensure_args(
         self, args_str: str, usage_message: str, num_expected_parts: int = 1
     ) -> Optional[List[str]]:
-        """
-        Validates if args_str is present and optionally contains a minimum number of parts.
-        Adds a usage message and returns None if validation fails.
-        Returns a list of parts split appropriately if validation succeeds.
-        - If num_expected_parts is 1, returns [args_str] (if args_str is not empty).
-        - If num_expected_parts > 1, returns args_str.split(" ", num_expected_parts - 1).
-        """
-        if not args_str:
+        # If no arguments are expected, and none are given, it's fine.
+        if num_expected_parts == 0 and not args_str.strip():
+            return []
+
+        # If arguments are expected (num_expected_parts > 0) but none are given
+        if not args_str.strip() and num_expected_parts > 0:
             self.client.add_message(
                 usage_message,
                 self.client.ui.colors["error"],
@@ -274,15 +150,15 @@ class CommandHandler:
             )
             return None
 
+        # If only one "part" is expected, and args_str is present, return it as a single element list.
+        # This handles cases where the single argument might contain spaces.
         if num_expected_parts == 1:
-            # For num_expected_parts = 1, we just need args_str to be non-empty (checked above).
-            # Return it as a single-element list, consistent with splitting behavior.
-            return [args_str]
+            return [args_str.strip()] # Return the stripped full args_str as the single part
 
-        # For num_expected_parts > 1
+        # If multiple parts are expected, split accordingly.
         # Split only up to num_expected_parts - 1 times to get the required initial parts,
         # with the last element containing the rest of the string.
-        parts = args_str.split(" ", num_expected_parts - 1)
+        parts = args_str.strip().split(" ", num_expected_parts - 1)
 
         if len(parts) < num_expected_parts:
             self.client.add_message(
@@ -295,10 +171,9 @@ class CommandHandler:
 
         return parts
 
+
     def process_user_command(self, line: str) -> bool:
-        """Process a user command (starts with /) or a channel message"""
         if not line.startswith("/"):
-            # ... (existing message handling)
             if self.client.context_manager.active_context_name:
                 self.client.handle_text_input(line)
                 return True
@@ -314,22 +189,35 @@ class CommandHandler:
         cmd = command_parts[0].lower()
         args_str = command_parts[1] if len(command_parts) > 1 else ""
 
+        logger.info(f"--- PROCESSING COMMAND ---")
+        logger.info(f"Raw line: '{line}'")
+        logger.info(f"Parsed cmd: '{cmd}'")
+        logger.info(f"Parsed args_str: '{args_str}'")
+
+        is_in_map = cmd in self.command_map
+        logger.info(f"Is '{cmd}' in command_map? {is_in_map}")
+        if not is_in_map:
+            map_keys_full_list = sorted(list(self.command_map.keys()))
+            logger.info(f"Full command_map keys for missing command '{cmd}': {map_keys_full_list}")
+
+
         if cmd in self.command_map:
             handler_func = self.command_map[cmd]
-            logger.info(f"CommandHandler: Found '{cmd}' in command_map. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}")
-            # All handlers in command_map are now expected to have the (client, args_str) signature
-            handler_func(self.client, args_str)
+            logger.info(f"CommandHandler: Dispatching '{cmd}'. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}")
+            try:
+                handler_func(self.client, args_str)
+            except Exception as e_handler:
+                 logger.error(f"Error executing handler for command '{cmd}': {e_handler}", exc_info=True)
+                 self.client.add_message(f"Error in command /{cmd}: {e_handler}", self.client.ui.colors["error"], context_name=self.client.context_manager.active_context_name or "Status")
             return True
         else:
-            # Check for script-registered commands
             script_cmd_data = (
                 self.client.script_manager.get_script_command_handler_and_data(cmd)
             )
             if script_cmd_data and callable(script_cmd_data.get("handler")):
                 script_handler = script_cmd_data["handler"]
-                # Prepare basic event_data for script command handlers
                 event_data_for_script = {
-                    "client_logic_ref": self.client,  # Allows script to access client logic via API if needed
+                    "client_logic_ref": self.client,
                     "raw_line": line,
                     "command": cmd,
                     "args_str": args_str,
@@ -351,11 +239,11 @@ class CommandHandler:
                         or "Status",
                     )
                 return True
-            else: # UNKNOWN CLIENT COMMAND
-                logger.warning(f"CommandHandler: Command '{cmd}' not found in command_map or script commands. Treating as unknown.")
-                self.client.add_message(
+            else:
+                 logger.warning(f"CommandHandler: Command '{cmd}' NOT found in command_map AND not a known script command. Treating as unknown.")
+                 self.client.add_message(
                     f"Unknown command: {cmd}",
                     self.client.ui.colors["error"],
                     context_name=self.client.context_manager.active_context_name or "Status",
                 )
-                return True
+                 return True
