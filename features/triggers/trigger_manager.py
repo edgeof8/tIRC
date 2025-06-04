@@ -1,12 +1,18 @@
 import re
 import json
-import logging
+import logging # Standard import at the top
 import os
 from typing import Dict, List, Optional, Any
+# Removing the incorrect imports if they are active for Pylance
+# from log import logger  <-- This will be replaced by ensuring 'import logging' is at top
+# from enums import TriggerType, ActionType <-- These are defined locally
 from dataclasses import dataclass, asdict
 from enum import Enum, auto, unique
 
-logger = logging.getLogger("pyrc.triggers")
+# Ensure standard logging is imported (usually at the very top with other stdlib imports)
+# 'import logging' should already be at line 3.
+# This logger initialization should replace any 'from log import logger'
+logger = logging.getLogger("pyrc.features.triggers")
 
 
 @unique

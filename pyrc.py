@@ -95,13 +95,7 @@ def main_curses_wrapper(stdscr, args):
         client = IRCClient_Logic(
             stdscr=stdscr,
             args=args,
-            server_addr=args.server,
-            port=args.port,
-            nick=args.nick,
-            initial_channels_raw=args.channel if args.channel else [],
-            password=args.password,
-            nickserv_password=args.nickserv_password,
-            use_ssl=args.ssl,
+            # server_addr, port, nick, etc. are now handled internally by IRCClient_Logic using args
         )
         client.run_main_loop()
     except Exception as e:
@@ -140,53 +134,53 @@ def main_curses_wrapper(stdscr, args):
 
 
 def parse_arguments(
-    default_server: str,
-    default_port: int,
-    default_nick: str,
-    default_channels: List[str],
+    default_server: Optional[str],
+    default_port: Optional[int],
+    default_nick: Optional[str],
+    default_channels: List[str], # Remains List[str] as app_config.IRC_CHANNELS is List[str]
     default_password: Optional[str],
     default_nickserv_password: Optional[str],
-    default_ssl: bool,
+    default_ssl: Optional[bool], # Changed to Optional[bool]
 ) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="PyRC IRC Client")
     parser.add_argument(
         "--server",
-        default=default_server,
-        help=f"IRC server address (default: {default_server})",
+        default=None, # Was default_server
+        help=f"IRC server address. Overrides config. (Config default: {default_server})",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=default_port,
-        help=f"IRC server port (default: {default_port})",
+        default=None, # Was default_port
+        help=f"IRC server port. Overrides config. (Config default: {default_port})",
     )
     parser.add_argument(
         "--nick",
-        default=default_nick,
-        help=f"IRC nickname (default: {default_nick})",
+        default=None, # Was default_nick
+        help=f"IRC nickname. Overrides config. (Config default: {default_nick})",
     )
     parser.add_argument(
         "--channel",
         action="append",
-        default=default_channels,
-        help="IRC channel to join (can be used multiple times)",
+        default=None, # Was default_channels. If not used, args.channel will be None.
+        help="IRC channel to join. Can be used multiple times. Overrides config channels.",
     )
     parser.add_argument(
         "--password",
-        default=default_password,
-        help="IRC server password (if required)",
+        default=None, # Was default_password
+        help="IRC server password. Overrides config.",
     )
     parser.add_argument(
         "--nickserv-password",
-        default=default_nickserv_password,
-        help="NickServ password (if required)",
+        default=None, # Was default_nickserv_password
+        help="NickServ password. Overrides config.",
     )
     parser.add_argument(
         "--ssl",
-        action="store_true",
-        default=default_ssl,
-        help="Use SSL/TLS connection",
+        action="store_true", # If not present, args.ssl will be False.
+        default=False, # Explicitly set False, help string indicates config default.
+        help=f"Use SSL/TLS connection. Overrides config. (Config default for default server: {default_ssl})",
     )
     parser.add_argument(
         "--headless",
@@ -224,13 +218,7 @@ def main():
             client = IRCClient_Logic(
                 stdscr=None,
                 args=args,
-                server_addr=args.server,
-                port=args.port,
-                nick=args.nick,
-                initial_channels_raw=args.channel if args.channel else [],
-                password=args.password,
-                nickserv_password=args.nickserv_password,
-                use_ssl=args.ssl,
+                # server_addr, port, nick, etc. are now handled internally by IRCClient_Logic using args
             )
             client.run_main_loop()  # This loop now blocks until should_quit
 

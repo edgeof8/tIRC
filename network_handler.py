@@ -1,20 +1,24 @@
+# START OF MODIFIED FILE: network_handler.py
 import socket
 import ssl
 import threading
 import time
 import logging
-from typing import List, Optional, Set
+from typing import List, Optional, Set, TYPE_CHECKING # Added TYPE_CHECKING
 from config import (
     CONNECTION_TIMEOUT,
     RECONNECT_INITIAL_DELAY,
     RECONNECT_MAX_DELAY,
 )
 
+if TYPE_CHECKING: # To avoid circular import with client_logic
+    from irc_client_logic import IRCClient_Logic
+
 logger = logging.getLogger("pyrc.network")
 
 
 class NetworkHandler:
-    def __init__(self, client_ref):
+    def __init__(self, client_ref: "IRCClient_Logic"): # Type hint client_ref
         self.client = client_ref
         logger.debug("NetworkHandler initialized.")
         self.sock: Optional[socket.socket] = None
@@ -24,7 +28,7 @@ class NetworkHandler:
         self._should_thread_stop: threading.Event = threading.Event()
         self.channels_to_join_on_connect: List[str] = []
         self.is_handling_nick_collision: bool = False
-        self.running = True
+        # self.running = True # This seems redundant with _should_thread_stop
         self.buffer: bytes = b""
         self._disconnect_event_sent_for_current_session = False
 
@@ -46,7 +50,6 @@ class NetworkHandler:
         self._should_thread_stop.set()
         if self.client:
             self.client.should_quit = True
-        # No direct socket operations here - let the network loop handle its own socket
         logger.info("NetworkHandler.stop() has signaled network thread.")
 
     def disconnect_gracefully(self, quit_message="Client disconnecting"):
@@ -56,9 +59,9 @@ class NetworkHandler:
         )
         if self.client:
             self.client._final_quit_message = (
-                quit_message  # Store for network loop to use
+                quit_message
             )
-        self.stop()  # Signal threads to stop; network loop will send QUIT
+        self.stop()
 
     def update_connection_params(
         self,
@@ -84,11 +87,16 @@ class NetworkHandler:
                 else "Reconnecting"
             )
             self.disconnect_gracefully(quit_msg)
+            # Give some time for the disconnect to process if the network thread is busy
+            if self.network_thread and self.network_thread.is_alive():
+                 self.network_thread.join(timeout=1.0)
+
 
         if channels_to_join is not None:
             self.channels_to_join_on_connect = channels_to_join
-        else:
-            self.channels_to_join_on_connect = self.client.initial_channels_list[:]
+        else: # Fallback to client's initial list if not provided
+            self.channels_to_join_on_connect = self.client.initial_channels_list[:] if self.client else []
+
 
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
 
@@ -99,139 +107,85 @@ class NetworkHandler:
             logger.debug(
                 "Network thread is alive. Setting connected=False to force re-evaluation in loop."
             )
+            # Reset critical handshake components
             if hasattr(self.client, "cap_negotiator") and self.client.cap_negotiator:
                 self.client.cap_negotiator.reset_negotiation_state()
+            if (
+                hasattr(self.client, "sasl_authenticator")
+                and self.client.sasl_authenticator
+            ):
+                self.client.sasl_authenticator.reset_authentication_state()
             if (
                 hasattr(self.client, "registration_handler")
                 and self.client.registration_handler
             ):
                 self.client.registration_handler.reset_registration_state()
 
-            self.connected = False
+            self.connected = False # This will trigger _connect_socket in the loop
 
     def send_cap_ls(self, version: Optional[str] = "302"):
-        # 1. Trigger: Called by `CapNegotiator.start_negotiation()` immediately after a successful socket connection
-        #    (specifically, after `_connect_socket()` calls `cap_negotiator.start_negotiation()`).
-        # 2. Expected State Before:
-        #    - `self.connected` is True.
-        #    - `self.sock` is an active, connected socket.
-        #    - CAP negotiation is just beginning.
-        # 3. Key Actions:
-        #    - Sends the "CAP LS [version]" (e.g., "CAP LS 302") command to the IRC server.
-        #      This requests the server to list the capabilities it supports.
-        # 4. Expected State After:
-        #    - The "CAP LS" command has been sent.
-        #    - The client expects the server to respond with one or more "CAP * LS" messages detailing available capabilities,
-        #      or "CAP * ACK/NAK" if the CAP LS command itself is problematic (less common for LS).
-        #    - Subsequent step: `CapNegotiator` will process the server's "CAP * LS" response.
-        if self.connected:
+        if self.connected and self.sock:
             if version:
                 self.send_raw(f"CAP LS {version}")
             else:
                 self.send_raw("CAP LS")
         else:
-            logger.warning("send_cap_ls called but not connected.")
+            logger.warning("send_cap_ls called but not connected or no socket.")
 
     def send_cap_req(self, capabilities: List[str]):
-        # 1. Trigger: Called by `CapNegotiator.request_capabilities()` after it has processed the server's
-        #    "CAP * LS" response and determined which capabilities to request.
-        # 2. Expected State Before:
-        #    - `self.connected` is True.
-        #    - `self.sock` is an active, connected socket.
-        #    - The client has received and parsed the server's list of supported capabilities.
-        #    - `capabilities` (method argument) contains a list of capability names to request.
-        # 3. Key Actions:
-        #    - Sends the "CAP REQ :cap1 cap2 ..." command to the IRC server.
-        #      This requests the server to enable the specified capabilities.
-        # 4. Expected State After:
-        #    - The "CAP REQ" command has been sent.
-        #    - The client expects the server to respond with "CAP * ACK :cap1 cap2..." for successfully enabled capabilities
-        #      and/or "CAP * NAK :cap3 cap4..." for rejected capabilities.
-        #    - Subsequent step: `CapNegotiator` will process the server's "CAP * ACK/NAK" responses.
-        if self.connected:
+        if self.connected and self.sock:
             if capabilities:
                 self.send_raw(f"CAP REQ :{ ' '.join(capabilities)}")
         else:
-            logger.warning("send_cap_req called but not connected.")
+            logger.warning("send_cap_req called but not connected or no socket.")
 
     def send_cap_end(self):
-        # 1. Trigger: Called by `CapNegotiator.end_negotiation()` when:
-        #    a) The client has finished requesting all desired capabilities (and received ACK/NAK responses).
-        #    b) The client decides not to request any capabilities after "CAP LS" (e.g., if none are desired or supported).
-        #    c) The server indicates no more capabilities will be listed (e.g. an empty LS response or specific server behavior).
-        # 2. Expected State Before:
-        #    - `self.connected` is True.
-        #    - `self.sock` is an active, connected socket.
-        #    - The client has either completed its CAP REQs or decided not to make any/further REQs.
-        #    - `CapNegotiator.negotiation_in_progress` is likely True.
-        # 3. Key Actions:
-        #    - Sends the "CAP END" command to the IRC server.
-        #      This signals to the server that the client has finished capability negotiation.
-        # 4. Expected State After:
-        #    - The "CAP END" command has been sent.
-        #    - `CapNegotiator.negotiation_in_progress` is set to False.
-        #    - The client is now ready to proceed with the next stage of registration, typically SASL authentication
-        #      (if `sasl-auth.enabled` is True and the 'sasl' capability was ACKed) or traditional NICK/USER registration.
-        #    - Subsequent step: `CapNegotiator` calls `self.client.sasl_authenticator.start_authentication()` or
-        #      `self.client.registration_handler.start_registration()` depending on SASL configuration and success.
-        logger.debug("Sending CAP END")
-        self.send_raw("CAP END")
+        if self.connected and self.sock: # Check socket as well
+            logger.debug("Sending CAP END")
+            self.send_raw("CAP END")
+        else:
+            logger.warning("send_cap_end called but not connected or no socket.")
+
 
     def send_authenticate(self, payload: str):
-        # 1. Trigger: Called by `SaslAuthenticator.send_initial_auth()` or `SaslAuthenticator.send_challenge_response()`
-        #    during the SASL authentication process. This happens after CAP negotiation is complete (`CAP END` sent)
-        #    and if SASL authentication is enabled and the 'sasl' capability was acknowledged.
-        # 2. Expected State Before:
-        #    - `self.connected` is True.
-        #    - `self.sock` is an active, connected socket.
-        #    - CAP negotiation is complete.
-        #    - `SaslAuthenticator.authentication_in_progress` is True.
-        #    - `payload` (method argument) contains the base64-encoded SASL mechanism data (e.g., for PLAIN or EXTERNAL)
-        #      or a response to a server challenge.
-        # 3. Key Actions:
-        #    - Sends the "AUTHENTICATE <payload>" command to the IRC server.
-        #      This transmits the client's authentication credentials or challenge response.
-        # 4. Expected State After:
-        #    - The "AUTHENTICATE <payload>" command has been sent.
-        #    - The client expects the server to respond with:
-        #      - `AUTHENTICATE +` (challenge from server, if mechanism requires multiple steps).
-        #      - `903` (RPL_SASLSUCCESS): SASL authentication successful.
-        #      - `904` (RPL_SASLFAIL): SASL authentication failed.
-        #      - `905` (RPL_SASLTOOLONG): SASL payload was too long.
-        #      - `906` (RPL_SASLABORTED): SASL authentication aborted by client (less common here, usually via `AUTHENTICATE *`).
-        #      - `907` (RPL_SASLALREADY): Already authenticated (should not happen if logic is correct).
-        #    - Subsequent step: `SaslAuthenticator` will process the server's response (e.g., `handle_sasl_response`, `handle_sasl_success`, `handle_sasl_failure`).
-        logger.debug(f"Sending AUTHENTICATE {payload[:20]}...")
-        self.send_raw(f"AUTHENTICATE {payload}")
+        if self.connected and self.sock: # Check socket
+            logger.debug(f"Sending AUTHENTICATE {payload[:20]}...")
+            self.send_raw(f"AUTHENTICATE {payload}")
+        else:
+            logger.warning("send_authenticate called but not connected or no socket.")
+
 
     def _reset_connection_state(self, dispatch_event: bool = True):
-        """Reset the connection state and clean up resources."""
         logger.debug(
             f"Resetting connection state. Dispatch disconnect event: {dispatch_event}"
         )
 
-        # Socket closure is now primarily handled by the network loop's finally block
-        # or when a socket error occurs within the loop.
-        # This method focuses on resetting logical state.
         if self.sock:
-            # It's possible this is called when the socket is already bad or closed by the loop.
-            # Attempting a close here again is mostly for safety if called from an unexpected path.
+            try:
+                self.sock.shutdown(socket.SHUT_RDWR) # Politely shutdown read/write
+            except (OSError, socket.error):
+                pass # Ignore if already closed or not connected
             try:
                 self.sock.close()
                 logger.debug(
-                    "Socket closed by _reset_connection_state (might be redundant)."
+                    "Socket closed by _reset_connection_state."
                 )
             except (OSError, socket.error):
-                pass  # Ignore errors if already closed
+                pass
             self.sock = None
 
         was_connected = self.connected
         self.connected = False
-        self.is_handling_nick_collision = False  # Reset this too
+        self.is_handling_nick_collision = False
 
         if self.client:
             if hasattr(self.client, "cap_negotiator") and self.client.cap_negotiator:
                 self.client.cap_negotiator.reset_negotiation_state()
+            if (
+                hasattr(self.client, "sasl_authenticator")
+                and self.client.sasl_authenticator
+            ):
+                self.client.sasl_authenticator.reset_authentication_state()
             if (
                 hasattr(self.client, "registration_handler")
                 and self.client.registration_handler
@@ -253,41 +207,22 @@ class NetworkHandler:
                         "CLIENT_DISCONNECTED",
                         {"server": current_server, "port": current_port},
                     )
-                    self._disconnect_event_sent_for_current_session = (
-                        True  # Mark as sent for this session
-                    )
-
+                    self._disconnect_event_sent_for_current_session = True
         self.buffer = b""
         logger.debug("Connection state reset complete")
 
     def _connect_socket(self):
-        # 1. Trigger: Called by the `_network_loop` when `self.connected` is False.
-        #    This typically happens on initial startup or after a disconnect when a reconnect attempt is made.
-        # 2. Expected State Before:
-        #    - `self.sock` might be None or a closed socket.
-        #    - `self.connected` is False.
-        #    - `self.client.server`, `self.client.port`, `self.client.use_ssl` are set with connection parameters.
-        #    - `self.is_handling_nick_collision` is reset to False.
-        # 3. Key Actions:
-        #    - Resets `self.is_handling_nick_collision`.
-        #    - Attempts to create a TCP socket connection to the configured server and port.
-        #    - If `self.client.use_ssl` is True, wraps the socket with SSL/TLS.
-        #    - Sets `self.sock` to the new socket object.
-        #    - Sets `self.connected` to True on successful connection.
-        #    - Resets `self.reconnect_delay`.
-        #    - Calls `self.client.cap_negotiator.start_negotiation()` to initiate CAP negotiation.
-        # 4. Expected State After (Success):
-        #    - `self.sock` is an active, connected (and possibly SSL-wrapped) socket.
-        #    - `self.connected` is True.
-        #    - CAP negotiation process is initiated via `CapNegotiator`.
-        #    - Returns True.
-        # Expected State After (Failure):
-        #    - `self.sock` remains None or is closed.
-        #    - `self.connected` remains False.
-        #    - An error message is logged and added to the UI.
-        #    - `_reset_connection_state()` is called.
-        #    - Returns False, leading to a retry attempt in `_network_loop`.
         self.is_handling_nick_collision = False
+        if not self.client or not self.client.server or self.client.port is None:
+            logger.error("NetworkHandler._connect_socket: Client server/port not configured.")
+            if self.client: # Add message only if client exists
+                self.client.add_message(
+                    "Cannot connect: Server or port not configured.",
+                    self.client.ui.colors["error"],
+                    context_name="Status",
+                )
+            return False
+
         self.client.add_message(
             f"Attempting to connect to {self.client.server}:{self.client.port}...",
             self.client.ui.colors["system"],
@@ -305,13 +240,13 @@ class NetworkHandler:
                 logger.debug("SSL is enabled, wrapping socket.")
                 context = ssl.create_default_context()
                 try:
-                    context.minimum_version = ssl.TLSVersion.TLSv1
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2 # More secure default
                     logger.info(
-                        f"Set SSLContext minimum_version to TLSv1 for {self.client.server}"
+                        f"Set SSLContext minimum_version to TLSv1_2 for {self.client.server}"
                     )
                 except AttributeError:
                     logger.warning(
-                        "ssl.TLSVersion.TLSv1 not available, or context does not support minimum_version (older Python?). Default TLS settings will be used."
+                        "ssl.TLSVersion.TLSv1_2 not available, or context does not support minimum_version (older Python?). Default TLS settings will be used."
                     )
 
                 logger.info(
@@ -339,7 +274,6 @@ class NetworkHandler:
             )
 
             if hasattr(self.client, "cap_negotiator") and self.client.cap_negotiator:
-                # This is the first step in the IRC handshake after TCP/IP connection.
                 self.client.cap_negotiator.start_negotiation()
             else:
                 logger.error(
@@ -348,10 +282,9 @@ class NetworkHandler:
                 self.client.add_message(
                     "Error: CAP negotiator not initialized.",
                     self.client.ui.colors["error"],
-                    "Status",
+                    context_name="Status",
                 )
 
-            # Dispatch CLIENT_CONNECTED event after successful connection and CAP negotiation start
             if self.client and hasattr(self.client, "script_manager"):
                 self.client.script_manager.dispatch_event(
                     "CLIENT_CONNECTED",
@@ -406,86 +339,108 @@ class NetworkHandler:
         return False
 
     def send_raw(self, data: str):
-        if self.sock and self.connected:
-            try:
-                if not data.endswith("\r\n"):
-                    data += "\r\n"
-                self.sock.sendall(data.encode("utf-8", errors="replace"))
+        # Re-check connection status immediately before sending
+        if not self.sock or not self.connected:
+            logger.warning(
+                f"Attempted to send data while not truly connected or no socket: {data.strip()}"
+            )
+            if self.client: # Only add message if client and thus UI/context manager exists
+                self.client.add_message(
+                    "Cannot send: Not connected.",
+                    self.client.ui.colors["error"],
+                    context_name="Status",
+                )
+                if not self.client.is_headless:
+                    self.client.ui_needs_update.set()
+            return
 
-                log_data = data.strip()
-                if log_data.upper().startswith("PASS "):
-                    log_data = "PASS ******"
-                elif (
-                    log_data.upper().startswith("AUTHENTICATE ") and len(log_data) > 15
-                ):
-                    log_data = log_data.split(" ", 1)[0] + " ******"
-                elif log_data.upper().startswith("PRIVMSG NICKSERV :IDENTIFY"):
-                    parts = log_data.split(" ", 3)
-                    if len(parts) >= 3:
-                        log_data = f"{parts[0]} {parts[1]} {parts[2]} ******"
-                    else:
-                        log_data = "PRIVMSG NickServ :IDENTIFY ******"
+        try:
+            if not data.endswith("\r\n"):
+                data += "\r\n"
+            self.sock.sendall(data.encode("utf-8", errors="replace"))
 
-                logger.debug(f"C >> {log_data}")
+            log_data = data.strip()
+            if log_data.upper().startswith("PASS "):
+                log_data = "PASS ******"
+            elif (
+                log_data.upper().startswith("AUTHENTICATE ") and len(log_data) > 15
+            ):
+                log_data = log_data.split(" ", 1)[0] + " ******"
+            elif log_data.upper().startswith("PRIVMSG NICKSERV :IDENTIFY"):
+                parts = log_data.split(" ", 3)
+                if len(parts) >= 3:
+                    log_data = f"{parts[0]} {parts[1]} {parts[2]} ******"
+                else:
+                    log_data = "PRIVMSG NickServ :IDENTIFY ******"
 
-                if (
-                    hasattr(self.client, "show_raw_log_in_ui")
-                    and self.client.show_raw_log_in_ui
-                ):
-                    self.client.add_message(
-                        f"C >> {log_data}",
-                        self.client.ui.colors.get("system", 0),
-                        context_name="Status",
-                        prefix_time=True,
-                    )
+            logger.debug(f"C >> {log_data}")
 
-                if data.upper().startswith("NICK "):
-                    self.is_handling_nick_collision = False
-            except Exception as e:
-                logger.error(f"Error sending data: {e}", exc_info=True)
+            if (
+                self.client and # Check if client exists
+                hasattr(self.client, "show_raw_log_in_ui")
+                and self.client.show_raw_log_in_ui
+            ):
+                self.client.add_message(
+                    f"C >> {log_data}",
+                    self.client.ui.colors.get("system", 0),
+                    context_name="Status",
+                    prefix_time=True,
+                )
+
+            if data.upper().startswith("NICK "):
+                self.is_handling_nick_collision = False
+        except (OSError, socket.error, ssl.SSLError) as e: # Catch broader socket/SSL errors
+            logger.error(f"Error sending data: {e}", exc_info=True)
+            if self.client:
                 self.client.add_message(
                     f"Error sending data: {e}",
                     self.client.ui.colors["error"],
                     context_name="Status",
                 )
-                self._reset_connection_state()
-                self.client.ui_needs_update.set()
-        elif not self.connected:
-            logger.warning(
-                f"Attempted to send data while not connected: {data.strip()}"
-            )
-            self.client.add_message(
-                "Cannot send: Not connected.",
-                self.client.ui.colors["error"],
-                context_name="Status",
-            )
-            self.client.ui_needs_update.set()
+                if not self.client.is_headless:
+                     self.client.ui_needs_update.set()
+            self._reset_connection_state(dispatch_event=True) # Dispatch disconnect on send error
+        except Exception as e_unhandled_send: # Catch any other unexpected error
+            logger.critical(f"Unhandled error sending data: {e_unhandled_send}", exc_info=True)
+            if self.client:
+                self.client.add_message(
+                    f"Critical send error: {e_unhandled_send}",
+                    self.client.ui.colors["error"],
+                    context_name="Status",
+                )
+            self._reset_connection_state(dispatch_event=True)
+
 
     def _network_loop(self):
         logger.debug("Network loop starting.")
-        self.buffer = b""  # Ensure buffer is reset for each connection attempt cycle
+        self.buffer = b""
 
-        while not self._should_thread_stop.is_set():  # Loop for reconnection attempts
-            if self.client and self.client.should_quit:  # Check global quit flag
+        while not self._should_thread_stop.is_set():
+            if self.client and self.client.should_quit:
                 logger.info(
                     "Network loop: client.should_quit is true. Exiting network loop."
                 )
                 break
 
             if not self.connected:
-                self._disconnect_event_sent_for_current_session = (
-                    False  # Reset for new connection attempt
-                )
+                self._disconnect_event_sent_for_current_session = False
                 if self.client and self.client.should_quit:
-                    break  # Exit if quitting
+                    break
+
+                # Before attempting to connect, check if server/port are configured
+                if not self.client or not self.client.server or self.client.port is None:
+                    logger.warning("Network loop: Server/port not configured. Waiting before retry.")
+                    interrupted = self._should_thread_stop.wait(self.reconnect_delay) # Still use delay
+                    if interrupted or (self.client and self.client.should_quit): break
+                    self.reconnect_delay = min(self.reconnect_delay * 2, RECONNECT_MAX_DELAY)
+                    continue
+
                 logger.debug("Network loop: Not connected. Attempting to connect.")
                 if self._connect_socket():
                     logger.info(
                         "Network loop: Connection successful, CAP negotiation initiated."
                     )
-                    self.is_handling_nick_collision = (
-                        False  # Reset on successful connection
-                    )
+                    self.is_handling_nick_collision = False
                 else:
                     logger.warning("Network loop: Connection attempt failed.")
                     if self.client:
@@ -509,22 +464,16 @@ class NetworkHandler:
                     logger.debug(
                         f"Network loop: Increased reconnect delay to {self.reconnect_delay}s."
                     )
-                    continue  # Retry connection
+                    continue
 
-            # Inner loop for processing data once connected
             try:
                 while (
                     self.connected
+                    and self.sock # Ensure socket exists
                     and not self._should_thread_stop.is_set()
                     and not (self.client and self.client.should_quit)
                 ):
-                    current_sock_for_loop = self.sock
-                    if not current_sock_for_loop:
-                        logger.error(
-                            "Network loop: self.sock is None while connected. Resetting."
-                        )
-                        self._reset_connection_state(dispatch_event=True)
-                        break  # Break inner loop to attempt reconnect
+                    current_sock_for_loop = self.sock # Use a local var for the loop iteration
 
                     try:
                         data = current_sock_for_loop.recv(4096)
@@ -533,7 +482,7 @@ class NetworkHandler:
                                 "Network loop: Connection closed by server (recv returned empty)."
                             )
                             self._reset_connection_state(dispatch_event=True)
-                            break  # Break inner loop
+                            break
 
                         self.buffer += data
                         while b"\r\n" in self.buffer:
@@ -556,22 +505,20 @@ class NetworkHandler:
                                         context_name="Status",
                                     )
 
-                    except (
-                        socket.timeout
-                    ):  # Should not happen with blocking sockets unless set_timeout is used
+                    except socket.timeout:
                         logger.debug("Network loop: Socket recv timed out.")
                         continue
-                    except ssl.SSLWantReadError:  # For non-blocking SSL sockets
+                    except ssl.SSLWantReadError:
                         time.sleep(0.01)
                         continue
                     except (
                         OSError,
                         socket.error,
                         ssl.SSLError,
-                    ) as e_sock:  # Includes ConnectionResetError, BrokenPipeError
-                        if not self._should_thread_stop.is_set():
+                    ) as e_sock:
+                        if not self._should_thread_stop.is_set(): # Only log as error if not planned shutdown
                             logger.error(
-                                f"Network loop: Socket error: {e_sock}", exc_info=False
+                                f"Network loop: Socket error: {e_sock}", exc_info=False # Keep exc_info=False for brevity unless debugging
                             )
                             if self.client:
                                 self.client.add_message(
@@ -584,51 +531,53 @@ class NetworkHandler:
                                 f"Network loop: Socket error during planned shutdown: {e_sock}"
                             )
                         self._reset_connection_state(dispatch_event=True)
-                        break  # Break inner loop to attempt reconnect
+                        break # Break inner loop to attempt reconnect
             except Exception as e_inner_loop:
                 logger.critical(
                     f"Network loop: Unexpected critical error in inner loop: {e_inner_loop}",
                     exc_info=True,
                 )
                 self._reset_connection_state(dispatch_event=True)
-                # Potentially break outer loop too if error is severe
-                # For now, it will try to reconnect
             finally:
                 if (
                     not self.connected and self.client and not self.client.is_headless
-                ):  # If disconnected from inner loop
+                ):
                     self.client.ui_needs_update.set()
 
-        # This finally block is for the outer `while not self._should_thread_stop.is_set():`
         logger.info("Network loop's outer while loop is ending.")
-        if (
-            self.sock
-        ):  # If a socket still exists (e.g. loop broken by should_quit while connected)
+        if self.sock:
             if self.connected and self.client and self.client.should_quit:
-                # Send QUIT if we are quitting and were connected
                 quit_message = getattr(
                     self.client, "_final_quit_message", "Client shutting down"
                 )
                 logger.info(f"Network loop (finally): Sending QUIT: {quit_message}")
                 try:
-                    self.sock.sendall(
-                        f"QUIT :{quit_message}\r\n".encode("utf-8", errors="replace")
-                    )
+                    # Ensure socket is still valid before sending QUIT
+                    if self.sock.fileno() != -1: # Check if socket is not closed
+                        self.sock.sendall(
+                            f"QUIT :{quit_message}\r\n".encode("utf-8", errors="replace")
+                        )
+                    else:
+                        logger.warning("Network loop (finally): Socket already closed, cannot send QUIT.")
                 except Exception as e_quit:
                     logger.warning(
                         f"Network loop (finally): Error sending QUIT: {e_quit}"
                     )
 
-            logger.info("Network loop (finally): Closing socket.")
+            logger.info("Network loop (finally): Closing socket (if not already closed).")
+            try:
+                if self.sock.fileno() != -1:
+                    self.sock.shutdown(socket.SHUT_RDWR)
+            except (OSError, socket.error):
+                pass
             try:
                 self.sock.close()
             except Exception as e_close:
                 logger.error(f"Error closing socket in network loop finally: {e_close}")
             self.sock = None
 
-        if self.connected:  # If we were connected when the loop ended
-            self._reset_connection_state(
-                dispatch_event=True
-            )  # Ensure state is fully reset and event dispatched
+        if self.connected:
+            self._reset_connection_state(dispatch_event=True)
 
         logger.info("Network loop has fully terminated.")
+# END OF MODIFIED FILE: network_handler.py

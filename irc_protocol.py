@@ -240,6 +240,11 @@ def _handle_nick_message(client, parsed_msg: IRCMessage, raw_line: str):
             context_name="Status",
         )
 
+        if client.last_attempted_nick_change is not None and \
+           client.last_attempted_nick_change.lower() == new_nick.lower():
+            logger.info(f"Successful user-initiated nick change to {new_nick} confirmed.")
+            client.last_attempted_nick_change = None
+
         # Dispatch CLIENT_NICK_CHANGED event
         if hasattr(client, "script_manager"):
             event_data = {

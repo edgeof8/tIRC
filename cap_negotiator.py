@@ -10,48 +10,53 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.cap")
 
+
 class CapNegotiator:
-    def __init__(self,
-                 network_handler: 'NetworkHandler',
-                 desired_caps: Set[str],
-                 registration_handler: Optional['RegistrationHandler'] = None,
-                 client_logic_ref: Optional['IRCClient_Logic'] = None):
+    def __init__(
+        self,
+        network_handler: "NetworkHandler",
+        desired_caps: Set[str],
+        registration_handler: Optional["RegistrationHandler"] = None,
+        client_logic_ref: Optional["IRCClient_Logic"] = None,
+    ):
         self.network_handler = network_handler
         self.registration_handler = registration_handler
-        self.sasl_authenticator: Optional['SaslAuthenticator'] = None
+        self.sasl_authenticator: Optional["SaslAuthenticator"] = None
         self.client_logic_ref = client_logic_ref
 
         self.supported_caps: Set[str] = set()
-        self.requested_caps: Set[str] = set() # Caps we have sent REQ for and are awaiting ACK/NAK
-        self.enabled_caps: Set[str] = set()   # Caps confirmed active by ACK
+        self.requested_caps: Set[str] = (
+            set()
+        )  # Caps we have sent REQ for and are awaiting ACK/NAK
+        self.enabled_caps: Set[str] = set()  # Caps confirmed active by ACK
         self.desired_caps: Set[str] = desired_caps.copy()
 
         self.cap_negotiation_pending: bool = False
-        self.cap_negotiation_finished_event = threading.Event() # Signals CAP negotiation (including SASL if part of it) is done
+        self.cap_negotiation_finished_event = (
+            threading.Event()
+        )  # Signals CAP negotiation (including SASL if part of it) is done
 
         # This event specifically signals that CAP LS, REQ, ACK/NAK, and END (if no SASL) is complete,
         # or that SASL has completed and CAP END has been sent.
         # It's what RegistrationHandler would wait on before proceeding with NICK/USER.
         self.initial_cap_flow_complete_event = threading.Event()
 
-
-    def set_sasl_authenticator(self, sasl_authenticator: 'SaslAuthenticator'):
+    def set_sasl_authenticator(self, sasl_authenticator: "SaslAuthenticator"):
         self.sasl_authenticator = sasl_authenticator
 
-    def set_registration_handler(self, registration_handler: 'RegistrationHandler'):
+    def set_registration_handler(self, registration_handler: "RegistrationHandler"):
         """Sets the RegistrationHandler instance after initialization."""
         self.registration_handler = registration_handler
 
     def _add_status_message(self, message: str, color_key: str = "system"):
         logger.info(f"[CapNegotiator Status] {message}")
         if self.client_logic_ref:
-            color_attr = self.client_logic_ref.ui.colors.get(color_key, self.client_logic_ref.ui.colors["system"])
-            self.client_logic_ref.add_message(
-                message,
-                color_attr,
-                context_name="Status"
+            color_attr = self.client_logic_ref.ui.colors.get(
+                color_key, self.client_logic_ref.ui.colors["system"]
             )
-
+            self.client_logic_ref.add_message(
+                message, color_attr, context_name="Status"
+            )
 
     def start_negotiation(self):
         # 1. Trigger: Called by `NetworkHandler._connect_socket()` immediately after a successful TCP/IP (and SSL, if applicable)
@@ -83,7 +88,7 @@ class CapNegotiator:
             self.requested_caps.clear()
 
             self._add_status_message("Negotiating capabilities with server (CAP)...")
-            self.network_handler.send_cap_ls() # Assumes version 302 by default in NetworkHandler
+            self.network_handler.send_cap_ls()  # Assumes version 302 by default in NetworkHandler
         else:
             logger.warning("CapNegotiator.start_negotiation called but not connected.")
             self._add_status_message("Cannot initiate CAP: Not connected.", "error")
@@ -130,22 +135,34 @@ class CapNegotiator:
             return
 
         self.supported_caps = set(capabilities_str.split())
-        self._add_status_message(f"Server supports CAP: {', '.join(self.supported_caps) if self.supported_caps else 'None'}")
+        self._add_status_message(
+            f"Server supports CAP: {', '.join(self.supported_caps) if self.supported_caps else 'None'}"
+        )
 
         caps_to_request = list(self.desired_caps.intersection(self.supported_caps))
 
         if "sasl" in caps_to_request:
-            if not self.sasl_authenticator or not self.sasl_authenticator.has_credentials():
-                logger.info("SASL is supported and desired, but no SASL authenticator or credentials. Removing SASL from request.")
+            if (
+                not self.sasl_authenticator
+                or not self.sasl_authenticator.has_credentials()
+            ):
+                logger.info(
+                    "SASL is supported and desired, but no SASL authenticator or credentials. Removing SASL from request."
+                )
                 caps_to_request.remove("sasl")
-                self._add_status_message("SASL capability available but no credentials/authenticator; skipping SASL request.", "warning")
+                self._add_status_message(
+                    "SASL capability available but no credentials/authenticator; skipping SASL request.",
+                    "warning",
+                )
 
         if caps_to_request:
             self.requested_caps.update(caps_to_request)
             self._add_status_message(f"Requesting CAP: {', '.join(caps_to_request)}")
             self.network_handler.send_cap_req(caps_to_request)
         else:
-            self._add_status_message("No desired and supported capabilities to request. Ending CAP negotiation.")
+            self._add_status_message(
+                "No desired and supported capabilities to request. Ending CAP negotiation."
+            )
             self.network_handler.send_cap_end()
             # If no caps requested, initial flow is done, signal for registration
             self.initial_cap_flow_complete_event.set()
@@ -153,7 +170,6 @@ class CapNegotiator:
             self.cap_negotiation_pending = False
             if self.registration_handler:
                 self.registration_handler.on_cap_negotiation_complete()
-
 
     def on_cap_ack_received(self, acked_caps_str: str):
         # 1. Trigger: Called by `irc_protocol.handle_cap()` when a "CAP * ACK :cap1 cap2..." message is received from the server.
@@ -211,15 +227,23 @@ class CapNegotiator:
         if newly_acked:
             self._add_status_message(f"CAP ACK: {', '.join(newly_acked)}")
 
-        if sasl_was_just_acked and self.sasl_authenticator and self.sasl_authenticator.has_credentials():
+        if (
+            sasl_was_just_acked
+            and self.sasl_authenticator
+            and self.sasl_authenticator.has_credentials()
+        ):
             logger.info("SASL ACKed. Initiating SASL authentication.")
             self.sasl_authenticator.start_authentication()
             # CAP END will be deferred until SASL flow completes.
         elif not self.requested_caps:
             # If SASL flow is active (started due to ACK), wait for it.
             # Otherwise, if no SASL or SASL not active, send CAP END.
-            if not (self.sasl_authenticator and self.sasl_authenticator.is_flow_active()):
-                self._add_status_message("All requested capabilities processed. Ending CAP negotiation.")
+            if not (
+                self.sasl_authenticator and self.sasl_authenticator.is_flow_active()
+            ):
+                self._add_status_message(
+                    "All requested capabilities processed. Ending CAP negotiation."
+                )
                 self.network_handler.send_cap_end()
                 # If CAP END is sent here, it means initial client-side CAP flow is done.
                 self.initial_cap_flow_complete_event.set()
@@ -227,10 +251,13 @@ class CapNegotiator:
                     self.registration_handler.on_cap_negotiation_complete()
 
                 # If no SASL involved, this is also the end of the overall CAP process.
-                if not ("sasl" in self.enabled_caps and self.sasl_authenticator and self.sasl_authenticator.is_flow_active()):
+                if not (
+                    "sasl" in self.enabled_caps
+                    and self.sasl_authenticator
+                    and self.sasl_authenticator.is_flow_active()
+                ):
                     self.cap_negotiation_finished_event.set()
                     self.cap_negotiation_pending = False
-
 
     def on_cap_nak_received(self, naked_caps_str: str):
         # 1. Trigger: Called by `irc_protocol.handle_cap()` when a "CAP * NAK :cap1 cap2..." message is received from the server.
@@ -283,22 +310,28 @@ class CapNegotiator:
                 sasl_was_naked = True
                 self.sasl_authenticator.notify_sasl_cap_rejected()
 
-
         if rejected:
             self._add_status_message(f"CAP NAK (rejected): {', '.join(rejected)}")
 
         if not self.requested_caps:
-            if not (self.sasl_authenticator and self.sasl_authenticator.is_flow_active()):
-                self._add_status_message("All requested capabilities processed (some NAKed). Ending CAP negotiation.")
+            if not (
+                self.sasl_authenticator and self.sasl_authenticator.is_flow_active()
+            ):
+                self._add_status_message(
+                    "All requested capabilities processed (some NAKed). Ending CAP negotiation."
+                )
                 self.network_handler.send_cap_end()
                 self.initial_cap_flow_complete_event.set()
                 if self.registration_handler:
                     self.registration_handler.on_cap_negotiation_complete()
 
-                if not ("sasl" in self.enabled_caps and self.sasl_authenticator and self.sasl_authenticator.is_flow_active()):
+                if not (
+                    "sasl" in self.enabled_caps
+                    and self.sasl_authenticator
+                    and self.sasl_authenticator.is_flow_active()
+                ):
                     self.cap_negotiation_finished_event.set()
                     self.cap_negotiation_pending = False
-
 
     def on_cap_new_received(self, new_caps_str: str):
         """Handles CAP NEW from the server."""
@@ -323,7 +356,6 @@ class CapNegotiator:
             msg += f" Auto-enabled desired: {', '.join(newly_added_to_enabled)}."
         self._add_status_message(msg)
 
-
     def on_cap_del_received(self, deleted_caps_str: str):
         """Handles CAP DEL from the server."""
         deleted_caps = set(deleted_caps_str.split())
@@ -335,9 +367,17 @@ class CapNegotiator:
         msg = f"CAP DEL: Server no longer supports {', '.join(deleted_caps)}."
         if disabled_now:
             msg += f" Disabled: {', '.join(disabled_now)}."
-            if "sasl" in disabled_now and self.sasl_authenticator and self.sasl_authenticator.is_flow_active():
-                logger.warning("SASL capability was deleted by server during active SASL flow. Aborting SASL.")
-                self.sasl_authenticator.abort_authentication("SASL capability deleted by server")
+            if (
+                "sasl" in disabled_now
+                and self.sasl_authenticator
+                and self.sasl_authenticator.is_flow_active()
+            ):
+                logger.warning(
+                    "SASL capability was deleted by server during active SASL flow. Aborting SASL."
+                )
+                self.sasl_authenticator.abort_authentication(
+                    "SASL capability deleted by server"
+                )
         self._add_status_message(msg)
 
     def on_cap_end_confirmed(self):
@@ -348,14 +388,16 @@ class CapNegotiator:
         # This method is called when the SERVER confirms CAP END (e.g. by sending CAP END itself, or via 001).
         # The NICK/USER registration should have ideally been triggered by the CLIENT sending CAP END.
         self.cap_negotiation_pending = False
-        self.initial_cap_flow_complete_event.set() # Redundant if already set, but safe
+        self.initial_cap_flow_complete_event.set()  # Redundant if already set, but safe
         self.cap_negotiation_finished_event.set()
 
         # If RegistrationHandler hasn't proceeded yet (e.g. 001 came before client sent CAP END and triggered it),
         # this is a fallback point.
         if self.registration_handler and not self.registration_handler.nick_user_sent:
-            logger.info("CAP END confirmed by server; ensuring registration handler proceeds if it hasn't.")
-            self.registration_handler.on_cap_negotiation_complete() # Safe to call again; it checks nick_user_sent
+            logger.info(
+                "CAP END confirmed by server; ensuring registration handler proceeds if it hasn't."
+            )
+            self.registration_handler.on_cap_negotiation_complete()  # Safe to call again; it checks nick_user_sent
 
     def on_sasl_flow_completed(self, success: bool):
         # 1. Trigger: Called by `SaslAuthenticator.finish_authentication()` when the SASL authentication process
@@ -392,12 +434,18 @@ class CapNegotiator:
         #    - Subsequent step: `RegistrationHandler` proceeds with NICK/USER if `initial_cap_flow_complete_event` is set.
         #      The server will eventually confirm CAP END (often implicitly with 001).
         """Callback from SaslAuthenticator when SASL flow finishes."""
-        logger.info(f"SASL flow completed. Success: {success}. Checking if CAP END needs to be sent.")
+        logger.info(
+            f"SASL flow completed. Success: {success}. Checking if CAP END needs to be sent."
+        )
         # If CAP negotiation was pending on SASL completion (i.e. CAP END was not yet sent)
         if self.cap_negotiation_pending:
-            if not self.requested_caps: # Ensure no other non-SASL caps are pending REQ
-                logger.info(f"SASL flow completed (success: {success}). Sending CAP END.")
-                self._add_status_message(f"SASL flow completed. Finalizing CAP negotiation.")
+            if not self.requested_caps:  # Ensure no other non-SASL caps are pending REQ
+                logger.info(
+                    f"SASL flow completed (success: {success}). Sending CAP END."
+                )
+                self._add_status_message(
+                    f"SASL flow completed. Finalizing CAP negotiation."
+                )
                 self.network_handler.send_cap_end()
                 # After sending CAP END, the client-side CAP flow is done. Registration can proceed.
                 self.initial_cap_flow_complete_event.set()
@@ -405,17 +453,24 @@ class CapNegotiator:
                     self.registration_handler.on_cap_negotiation_complete()
                 # cap_negotiation_finished_event will be set by on_cap_end_confirmed
             else:
-                logger.info(f"SASL flow completed, but other caps {self.requested_caps} still pending. CAP END deferred.")
+                logger.info(
+                    f"SASL flow completed, but other caps {self.requested_caps} still pending. CAP END deferred."
+                )
         else:
             # SASL completed, but CAP negotiation wasn't pending on it (e.g. CAP END already sent).
             # Ensure overall state is consistent.
-            logger.info("SASL flow completed. CAP negotiation was not actively pending on it.")
+            logger.info(
+                "SASL flow completed. CAP negotiation was not actively pending on it."
+            )
             self.initial_cap_flow_complete_event.set()
             self.cap_negotiation_finished_event.set()
             self.cap_negotiation_pending = False
             # If registration hasn't happened, this is another chance.
-            if self.registration_handler and not self.registration_handler.nick_user_sent:
-                 self.registration_handler.on_cap_negotiation_complete()
+            if (
+                self.registration_handler
+                and not self.registration_handler.nick_user_sent
+            ):
+                self.registration_handler.on_cap_negotiation_complete()
 
     def is_cap_negotiation_pending(self) -> bool:
         return self.cap_negotiation_pending
@@ -447,4 +502,4 @@ class CapNegotiator:
         self.cap_negotiation_finished_event.clear()
         self.initial_cap_flow_complete_event.clear()
         if self.sasl_authenticator:
-            self.sasl_authenticator.reset_authentication_state() # Also reset SASL if it's linked
+            self.sasl_authenticator.reset_authentication_state()  # Also reset SASL if it's linked

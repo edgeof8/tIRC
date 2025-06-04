@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING, List
 if TYPE_CHECKING:
     from irc_client_logic import (
         IRCClient_Logic,
+        DummyUI # Import DummyUI for type checking
     )
     from command_handler import CommandHandler
-    from ui_manager import UIManager
+    from ui_manager import UIManager # UIManager for type checking
 
 logger = logging.getLogger("pyrc.input")
 
@@ -105,9 +106,18 @@ class InputHandler:
             )
             if current_context and current_context.type == "channel":
                 total_users = len(current_context.users)
-                sidebar_height = (
-                    self.client_logic.ui._calculate_available_lines_for_user_list()
-                )
+                # sidebar_height = (
+                #     self.client_logic.ui._calculate_available_lines_for_user_list()
+                # )
+                sidebar_height = 0 # Default value
+                # Check if ui exists, then if the method exists, then if it's callable
+                if self.client_logic.ui and \
+                   hasattr(self.client_logic.ui, '_calculate_available_lines_for_user_list') and \
+                   callable(getattr(self.client_logic.ui, '_calculate_available_lines_for_user_list')):
+                    sidebar_height = self.client_logic.ui._calculate_available_lines_for_user_list()
+                else:
+                    logger.debug("UI or _calculate_available_lines_for_user_list method not available, defaulting sidebar_height to 0 for scroll.")
+
 
                 if sidebar_height > 0 and total_users > 0:
                     new_offset = (

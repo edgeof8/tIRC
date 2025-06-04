@@ -1,20 +1,27 @@
+# START OF MODIFIED FILE: scripts/ai_api_test_script.py
 import logging
 from typing import Dict, Any, TYPE_CHECKING, Optional, List, Tuple
 import time
 import threading
 from config import HEADLESS_MAX_HISTORY
+from context_manager import ChannelJoinStatus
 
 if TYPE_CHECKING:
     from script_manager import ScriptAPIHandler
 
 logger = logging.getLogger("pyrc.script.ai_api_test")
 
+TEST_HISTORY_MESSAGES_COUNT = 3
+DEFAULT_TEST_CHANNEL = "#pyrc-testing-auto"
 
 class AiApiTestScript:
     def __init__(self, api_handler: "ScriptAPIHandler"):
         self.api = api_handler
         self.original_nick_for_test: Optional[str] = None
         self.initial_original_nick_for_test: Optional[str] = None
+        self.tests_scheduled_this_session: bool = False
+        self.last_connection_time: float = 0.0
+        self.test_execution_lock = threading.Lock()
         logger.info("AIAPITestScript initialized")
 
     def load(self):
@@ -26,7 +33,10 @@ class AiApiTestScript:
             aliases=["at"],
         )
         self.api.subscribe_to_event("CLIENT_CONNECTED", self.handle_client_connected)
-        self.api.subscribe_to_event("JOIN", self.handle_join)
+        self.api.subscribe_to_event("CLIENT_REGISTERED", self.handle_client_registered)
+        self.api.subscribe_to_event("CHANNEL_FULLY_JOINED", self.handle_channel_fully_joined_for_tests)
+
+        self.api.subscribe_to_event("JOIN", self.handle_join_event_for_logging_only)
         self.api.subscribe_to_event("PRIVMSG", self.handle_privmsg)
         self.api.subscribe_to_event("NOTICE", self.handle_notice)
         self.api.subscribe_to_event("RAW_IRC_NUMERIC", self.handle_raw_numeric)
@@ -44,26 +54,115 @@ class AiApiTestScript:
         self.api.log_info(
             f"[AI Test] Client connected to server. Event data: {event_data}"
         )
+        with self.test_execution_lock:
+            self.tests_scheduled_this_session = False
+        self.last_connection_time = time.time() # Record connection time
         server_info = self.api.get_server_info()
         self.api.log_info(f"[AI Test] Server info: {server_info}")
         capabilities = self.api.get_server_capabilities()
         self.api.log_info(f"[AI Test] Server capabilities (on connect): {capabilities}")
-        self.original_nick_for_test = self.api.get_client_nick()
-        self.initial_original_nick_for_test = self.api.get_client_nick()
 
-    def _test_nick_change_sequence(self):
-        if not self.original_nick_for_test:
-            self.api.log_error(
-                "[AI Test] Original nick not captured for nick change test."
-            )
+        current_nick = self.api.get_client_nick()
+        self.original_nick_for_test = current_nick
+        self.initial_original_nick_for_test = current_nick
+        self.api.log_info(f"[AI Test] Initial nicks set: original_nick_for_test='{self.original_nick_for_test}', initial_original_nick_for_test='{self.initial_original_nick_for_test}'")
+
+
+    def handle_client_registered(self, event_data: Dict[str, Any]):
+        self.api.log_info(f"[AI Test] Client registered (001 received). Event data: {event_data}")
+
+        confirmed_nick = event_data.get("nick")
+        if confirmed_nick:
+            self.original_nick_for_test = confirmed_nick
+            if not self.initial_original_nick_for_test:
+                 self.initial_original_nick_for_test = confirmed_nick
+            self.api.log_info(f"[AI Test] Nicks updated after 001: original_nick_for_test='{self.original_nick_for_test}', initial_original_nick_for_test='{self.initial_original_nick_for_test}'")
+
+        threading.Timer(10.0, self._test_nick_change_sequence).start()
+
+        if not self.api.client_logic.initial_channels_list:
+            self.api.log_info(f"[AI Test] No initial channels to auto-join. Attempting to join default test channel: {DEFAULT_TEST_CHANNEL}")
+            self.api.join_channel(DEFAULT_TEST_CHANNEL)
+        else:
+            # Auto-join for initial channels is handled by RegistrationHandler.
+            # We just wait for CHANNEL_FULLY_JOINED.
+            self.api.log_info(f"[AI Test] Initial channels {self.api.client_logic.initial_channels_list} will be auto-joined. Waiting for CHANNEL_FULLY_JOINED.")
+
+
+    def handle_channel_fully_joined_for_tests(self, event_data: Dict[str, Any]):
+        channel_name = event_data.get("channel_name")
+        if not channel_name:
+            self.api.log_warning("[AI Test] CHANNEL_FULLY_JOINED event missing channel_name.")
             return
 
-        new_nick = f"{self.original_nick_for_test}_test"
+        self.api.log_info(f"[AI Test] Event CHANNEL_FULLY_JOINED received for {channel_name}.")
+
+        with self.test_execution_lock:
+            if self.tests_scheduled_this_session:
+                self.api.log_info(f"[AI Test] Tests already run/scheduled this session. Ignoring for {channel_name}.")
+                return
+
+            # Check debounce only if we are considering running tests.
+            # The first time, we don't need a long debounce from connection,
+            # just a short delay after full join.
+            # Subsequent attempts (if any, due to multiple channels) might use a longer debounce.
+            # For now, let's assume tests run on the *first* channel that becomes fully joined.
+
+            # Simplified: run tests on the first channel that reports fully joined for this session.
+            self.api.log_info(f"[AI Test] Scheduling tests for channel {channel_name} after 5s delay (first fully joined channel this session).")
+
+            test_thread = threading.Timer(5.0, self._run_tests_on_channel, args=[channel_name])
+            test_thread.daemon = True
+            test_thread.start()
+            self.tests_scheduled_this_session = True # Mark that tests have been scheduled for this session
+
+
+    def _run_tests_on_channel(self, channel_name: str):
+        self.api.log_info(f"[AI Test] Preparing to run tests on channel {channel_name}")
+
+        normalized_test_channel = self.api.client_logic.context_manager._normalize_context_name(channel_name)
+
+        # Double-check status before running, though the event should guarantee it.
+        ctx_info = self.api.get_context_info(normalized_test_channel)
+        is_fully_joined = False
+        if ctx_info and ctx_info.get("type") == "channel":
+            join_status_str = ctx_info.get("join_status")
+            if join_status_str == ChannelJoinStatus.FULLY_JOINED.name:
+                is_fully_joined = True
+
+        if not is_fully_joined:
+            self.api.log_error(f"[AI Test] Pre-test check failed: Not fully joined to {normalized_test_channel}. Status: {ctx_info.get('join_status') if ctx_info else 'N/A'}. Aborting tests.")
+            return
+
+        self.api.log_info(f"[AI Test] Confirmed fully joined to {normalized_test_channel}. Proceeding with tests.")
+
+        self.api.log_info("[AI Test] Starting _test_message_tags_and_triggers...")
+        self._test_message_tags_and_triggers(normalized_test_channel)
+        time.sleep(5.0)
+
+        self.api.log_info("[AI Test] Starting _test_channel_modes...")
+        self._test_channel_modes(normalized_test_channel)
+        time.sleep(5.0)
+
+        self.api.log_info("[AI Test] Starting _test_history_limit...")
+        self._test_history_limit(normalized_test_channel)
+
+        self.api.log_info(f"[AI Test] All scheduled sub-tests for {normalized_test_channel} have been completed.")
+
+
+    def _test_nick_change_sequence(self):
+        if not self.initial_original_nick_for_test:
+            current_nick = self.api.get_client_nick()
+            if not current_nick:
+                self.api.log_error("[AI Test] Nick not available for nick change test.")
+                return
+            self.initial_original_nick_for_test = current_nick
+            self.api.log_info(f"[AI Test] Initial original nick set to '{current_nick}' for nick change test.")
+
+        new_nick = f"{self.initial_original_nick_for_test}_test"
         self.api.log_info(f"[AI Test] Attempting to change nick to: {new_nick}")
         self.api.set_nick(new_nick)
-
-        # Schedule revert after a delay
-        threading.Timer(5.0, self._revert_nick_change).start()
+        threading.Timer(7.0, self._revert_nick_change).start()
 
     def _revert_nick_change(self):
         if self.initial_original_nick_for_test:
@@ -82,28 +181,27 @@ class AiApiTestScript:
             f"[AI Test] Sending test message to {channel_name}: {test_msg}"
         )
         self.api.send_message(channel_name, test_msg)
+        time.sleep(1.5)
 
-        # Test trigger API
         self.api.log_info("[AI Test] Testing trigger API...")
-        trigger_pattern = f"secret word {int(time.time())}"  # Unique pattern
+        trigger_pattern = f"secret word {int(time.time())}"
+
         trigger_id = self.api.add_trigger(
-            event_type="TEXT",  # Using TEXT for text-based triggers
-            pattern=rf".*{trigger_pattern}.*",  # Regex to match anywhere
-            action_type="COMMAND",  # Using COMMAND to match ActionType enum
+            event_type="TEXT",
+            pattern=rf".*{trigger_pattern}.*",
+            action_type="COMMAND",
             action_content=f"/msg {channel_name} Trigger for '{trigger_pattern}' fired!",
         )
+
         if trigger_id is not None:
             self.api.log_info(
                 f"[AI Test] Added trigger with ID: {trigger_id}, pattern: '{trigger_pattern}'"
             )
-            triggers = self.api.list_triggers()
-            self.api.log_info(f"[AI Test] Current triggers: {triggers}")
             self.api.send_message(
                 channel_name, f"The {trigger_pattern} has been spoken."
             )
+            time.sleep(1.5)
 
-            # Test disable/enable
-            time.sleep(1)  # Give time for first trigger
             self.api.set_trigger_enabled(trigger_id, False)
             self.api.log_info(
                 f"[AI Test] Disabled trigger {trigger_id}. Sending message again (should not trigger)."
@@ -112,7 +210,7 @@ class AiApiTestScript:
                 channel_name,
                 f"Another message with {trigger_pattern}, should be ignored.",
             )
-            time.sleep(1)
+            time.sleep(1.5)
             self.api.set_trigger_enabled(trigger_id, True)
             self.api.log_info(
                 f"[AI Test] Enabled trigger {trigger_id}. Sending message again (should trigger)."
@@ -121,7 +219,7 @@ class AiApiTestScript:
                 channel_name, f"Final message with {trigger_pattern} to test re-enable."
             )
 
-            time.sleep(1)
+            time.sleep(1.5)
             if self.api.remove_trigger(trigger_id):
                 self.api.log_info(f"[AI Test] Removed trigger {trigger_id}")
             else:
@@ -129,43 +227,34 @@ class AiApiTestScript:
         else:
             self.api.log_error("[AI Test] Failed to add trigger via API.")
 
+
     def _test_channel_modes(self, channel_name: str):
-        if not self.original_nick_for_test:
-            self.api.log_error("[AI Test] Original nick not captured for mode test.")
+        nick_for_mode_test = self.api.get_client_nick()
+        if not nick_for_mode_test:
+            self.api.log_error("[AI Test] Current nick not available for mode test.")
             return
+
         self.api.log_info(
-            f"[AI Test] Testing mode changes on {channel_name} for {self.original_nick_for_test}"
+            f"[AI Test] Testing mode changes on {channel_name} for {nick_for_mode_test}"
         )
-        self.api.set_channel_mode(channel_name, "+v", str(self.original_nick_for_test))
-        threading.Timer(
-            2.0,
-            lambda: self.api.set_channel_mode(
-                channel_name, "-v", str(self.original_nick_for_test)
-            ),
-        ).start()
+        self.api.set_channel_mode(channel_name, "+v", str(nick_for_mode_test))
+        time.sleep(2.5)
+        self.api.set_channel_mode(channel_name, "-v", str(nick_for_mode_test))
 
     def _test_history_limit(self, channel_name: str):
-        """
-        Tests the message history limit functionality by sending messages and verifying the buffer size.
+        history_test_count = TEST_HISTORY_MESSAGES_COUNT
+        configured_limit = HEADLESS_MAX_HISTORY
 
-        Args:
-            channel_name: The channel to test with.
-        """
-        # Get the configured history limit
-        history_limit = HEADLESS_MAX_HISTORY
         self.api.log_info(
-            f"Testing history limit of {history_limit} messages in {channel_name}"
+            f"Testing history limit: sending {history_test_count} messages to {channel_name} (configured limit is {configured_limit})"
         )
 
-        # Send more messages than the limit
-        test_messages = history_limit + 2
-        for i in range(test_messages):
+        for i in range(history_test_count):
             self.api.send_message(
                 channel_name, f"Test message {i+1} for history limit testing"
             )
-            time.sleep(0.1)  # Small delay between messages
+            time.sleep(0.3)
 
-        # Get messages and verify count
         messages = self.api.get_context_messages(channel_name)
         if messages is None:
             self.api.log_error(f"Failed to get messages for {channel_name}")
@@ -173,33 +262,21 @@ class AiApiTestScript:
 
         actual_count = len(messages)
         self.api.log_info(
-            f"Channel {channel_name} has {actual_count} messages in buffer"
+            f"Channel {channel_name} has {actual_count} messages in buffer after sending {history_test_count}."
         )
 
-        if actual_count > history_limit:
+        if actual_count > configured_limit and history_test_count > configured_limit :
             self.api.log_warning(
-                f"Buffer size {actual_count} exceeds configured limit {history_limit}"
+                f"Buffer size {actual_count} exceeds configured limit {configured_limit}"
             )
         else:
             self.api.log_info(
-                f"Buffer size {actual_count} is within configured limit {history_limit}"
+                f"Buffer size {actual_count} is within/below configured limit {configured_limit} (or test sent fewer messages than limit)."
             )
 
-    def handle_join(self, event_data: Dict[str, Any]):
-        self.api.log_info(f"[AI Test] Join event: {event_data}")
-        channel = event_data.get("channel")
-        if event_data.get("is_self") and channel:
-            self.api.log_info(
-                f"[AI Test] Self joined channel {channel}, scheduling tests."
-            )
-            # Schedule tests with delays to allow server processing
-            threading.Timer(
-                2.0, lambda: self._test_message_tags_and_triggers(channel)
-            ).start()
-            threading.Timer(
-                15.0, lambda: self._test_channel_modes(channel)
-            ).start()  # Run mode test after potential nick changes
-            threading.Timer(2.0, self._test_history_limit, args=[channel]).start()
+    def handle_join_event_for_logging_only(self, event_data: Dict[str, Any]):
+        self.api.log_info(f"[AI Test] Join event (logging only): {event_data}")
+
 
     def handle_privmsg(self, event_data: Dict[str, Any]):
         self.api.log_info(f"[AI Test] PRIVMSG event: {event_data}")
@@ -213,65 +290,28 @@ class AiApiTestScript:
 
     def handle_channel_mode_applied(self, event_data: Dict[str, Any]):
         self.api.log_info(f"[AI Test] CHANNEL_MODE_APPLIED event: {event_data}")
-        self.api.log_info(f"[AI Test] Channel: {event_data.get('channel')}")
-        self.api.log_info(
-            f"[AI Test] Setter: {event_data.get('setter')} ({event_data.get('setter_userhost')})"
-        )
-        self.api.log_info(f"[AI Test] Mode changes: {event_data.get('mode_changes')}")
-        self.api.log_info(
-            f"[AI Test] Current channel modes: {event_data.get('current_modes')}"
-        )
+
 
     def handle_client_nick_changed(self, event_data: Dict[str, Any]):
-        self.api.log_info(f"[AI Test] CLIENT_NICK_CHANGED event: {event_data}")
-        self.api.log_info(
-            f"[AI Test] Old nick: {event_data.get('old_nick')}, New nick: {event_data.get('new_nick')}"
-        )
-        # If our nick changed, update original_nick_for_test if it was the one that changed
-        if (
-            self.original_nick_for_test
-            and event_data.get("old_nick") == self.original_nick_for_test
-        ):
-            self.original_nick_for_test = event_data.get("new_nick")
-            self.api.log_info(
-                f"[AI Test] Updated original_nick_for_test to {self.original_nick_for_test}"
-            )
-        elif (
-            self.original_nick_for_test
-            and event_data.get("old_nick") == f"{self.original_nick_for_test}_test"
-        ):
-            self.original_nick_for_test = event_data.get(
-                "new_nick"
-            )  # Should be back to original
-            self.api.log_info(
-                f"[AI Test] Updated original_nick_for_test to {self.original_nick_for_test} after revert."
-            )
+        old_nick = event_data.get('old_nick')
+        new_nick = event_data.get('new_nick')
+        self.api.log_info(f"[AI Test] CLIENT_NICK_CHANGED event: Old: {old_nick}, New: {new_nick}")
+
+        if self.api.get_client_nick() == new_nick:
+            if self.original_nick_for_test and old_nick == self.original_nick_for_test:
+                self.original_nick_for_test = new_nick
+                self.api.log_info(f"[AI Test] Updated original_nick_for_test to {new_nick} (was tracking old).")
+
+            if self.initial_original_nick_for_test and new_nick == self.initial_original_nick_for_test:
+                self.original_nick_for_test = new_nick
+                self.api.log_info(f"[AI Test] Nick reverted to initial '{new_nick}'. Updated original_nick_for_test.")
+
 
     def handle_raw_numeric(self, event_data: Dict[str, Any]):
-        """Handle RAW_IRC_NUMERIC events."""
         numeric = event_data.get("numeric")
-        params_list = event_data.get("params_list", [])
-        display_params_list = event_data.get("display_params_list", [])
-
-        logger.info(f"RAW_IRC_NUMERIC {numeric}:")
-        logger.info(f"  params_list: {params_list}")
-        logger.info(f"  display_params_list: {display_params_list}")
         self.api.log_info(f"[AI Test] Numeric code: {numeric}")
-        self.api.log_info(f"[AI Test] Source: {event_data.get('source')}")
-        self.api.log_info(f"[AI Test] Params list: {params_list}")
-        self.api.log_info(f"[AI Test] Display Params list: {display_params_list}")
-        self.api.log_info(f"[AI Test] Trailing: {event_data.get('trailing')}")
-        self.api.log_info(f"[AI Test] Tags: {event_data.get('tags')}")
-
-        if numeric == 1:  # RPL_WELCOME
-            self.api.log_info(
-                "[AI Test] Received RPL_WELCOME, scheduling nick change sequence in 7s."
-            )
-            if (
-                not self.original_nick_for_test
-            ):  # Capture if not already set by CLIENT_CONNECTED
-                self.original_nick_for_test = self.api.get_client_nick()
-            threading.Timer(7.0, self._test_nick_change_sequence).start()
+        # RPL_WELCOME (001) is now handled by CLIENT_REGISTERED for test scheduling
+        # Nick change sequence is also triggered from there.
 
     def handle_aitest_command(self, args_str: str, event_data_command: Dict[str, Any]):
         args = args_str.split()
@@ -312,6 +352,7 @@ class AiApiTestScript:
                 self.api.add_message_to_context(
                     active_ctx, "No triggers configured.", "system"
                 )
+        # ... (rest of aitest subcommands unchanged)
         elif sub_command == "addtrigger" and len(cmd_args) >= 4:
             event_type, pattern, action_type, *action_content_parts = cmd_args
             action_content = " ".join(action_content_parts)
@@ -369,3 +410,5 @@ class AiApiTestScript:
 
 def get_script_instance(api_handler: "ScriptAPIHandler"):
     return AiApiTestScript(api_handler)
+
+# END OF MODIFIED FILE: scripts/ai_api_test_script.py

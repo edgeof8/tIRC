@@ -1,5 +1,6 @@
 import logging
 from typing import TYPE_CHECKING, Optional, Tuple
+import time
 
 from context_manager import ChannelJoinStatus
 from config import DEFAULT_PORT, DEFAULT_SSL_PORT  # For _parse_connect_args
@@ -164,14 +165,14 @@ class ServerCommandsHandler:
 
     def handle_reconnect_command(self, args_str: str):
         """Handles the /reconnect command."""
-        if not self.client.server:
+        if not self.client.server or self.client.port is None: # Check both server and port
             help_data = self.client.script_manager.get_help_text_for_command(
                 "reconnect"
             )
             usage_msg = (
                 help_data["help_text"]
                 if help_data
-                else "Cannot reconnect: No server configured. Use /connect first."
+                else "Cannot reconnect: No server configured or port missing. Use /server or /connect first."
             )
             self.client.add_message(
                 usage_msg,
@@ -180,13 +181,18 @@ class ServerCommandsHandler:
             )
             return
 
+        # At this point, self.client.server and self.client.port are guaranteed to be non-None
+        # due to the check above.
+        current_server: str = self.client.server
+        current_port: int = self.client.port
+
         self.client.add_message(
-            f"Reconnecting to {self.client.server}:{self.client.port}...",
+            f"Reconnecting to {current_server}:{current_port}...",
             self.client.ui.colors["system"],
             context_name="Status",
         )
         logger.info(
-            f"User initiated /reconnect to {self.client.server}:{self.client.port}"
+            f"User initiated /reconnect to {current_server}:{current_port}"
         )
 
         # Disconnect if currently connected
@@ -202,9 +208,9 @@ class ServerCommandsHandler:
         # Calling update_connection_params makes this more explicit and handles
         # the case where the network thread might not be running.
         self.client.network_handler.update_connection_params(
-            self.client.server,
-            self.client.port,
-            self.client.use_ssl,
+            server=current_server, # Pass the non-None server
+            port=current_port,       # Pass the non-None port
+            use_ssl=self.client.use_ssl,
             channels_to_join=self.client.network_handler.channels_to_join_on_connect,  # Use current list
         )
         # No need to call _reset_contexts_for_new_connection here,
@@ -214,3 +220,113 @@ class ServerCommandsHandler:
         # and re-joining channels, which implicitly resets contexts or prepares them.
         # If a full context reset like in /connect is desired, _reset_contexts_for_new_connection()
         # could be called before update_connection_params. For now, a simpler reconnect is implemented.
+
+    def handle_server_command(self, args_str: str):
+        """Handle the /server command for switching between configured servers."""
+        if not args_str:
+            help_data = self.client.script_manager.get_help_text_for_command("server")
+            usage_msg = (
+                help_data["help_text"] if help_data else "Usage: /server <config_name>"
+            )
+            self.client.add_message(
+                usage_msg,
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+            return
+
+        config_name = args_str.strip()
+        if config_name not in self.client.all_server_configs:
+            self.client.add_message(
+                f"Server configuration '{config_name}' not found. Available configurations: {', '.join(sorted(self.client.all_server_configs.keys()))}",
+                self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name,
+            )
+            return
+
+        # If already connected and switching to a different server
+        if (
+            self.client.network_handler.connected
+            and config_name != self.client.active_server_config_name
+        ):
+            self.client.network_handler.disconnect_gracefully(
+                "Switching server configurations..."
+            )
+            # Wait for network thread to stop and connection to reset
+            # TODO: Replace with proper event-based approach
+            time.sleep(3)
+
+        # Update active server configuration
+        self.client.active_server_config_name = config_name
+        self.client.active_server_config = self.client.all_server_configs[config_name]
+
+        # Update client's connection attributes
+        self.client.server = self.client.active_server_config.address
+        self.client.port = self.client.active_server_config.port
+        self.client.nick = self.client.active_server_config.nick
+        self.client.initial_channels_list = self.client.active_server_config.channels[:]
+        self.client.password = self.client.active_server_config.server_password
+        self.client.nickserv_password = (
+            self.client.active_server_config.nickserv_password
+        )
+        self.client.use_ssl = self.client.active_server_config.ssl
+        self.client.verify_ssl_cert = self.client.active_server_config.verify_ssl_cert
+
+        # Reconfigure handlers
+        self.client.network_handler.channels_to_join_on_connect = (
+            self.client.active_server_config.channels[:]
+        )
+
+        # Update registration handler
+        self.client.registration_handler.initial_nick = self.client.nick
+        if self.client.active_server_config.username:
+            self.client.registration_handler.username = (
+                self.client.active_server_config.username
+            )
+        if self.client.active_server_config.realname:
+            self.client.registration_handler.realname = (
+                self.client.active_server_config.realname
+            )
+        self.client.registration_handler.server_password = self.client.password
+        self.client.registration_handler.nickserv_password = (
+            self.client.nickserv_password
+        )
+        self.client.registration_handler.initial_channels_to_join = (
+            self.client.initial_channels_list
+        )
+
+        # Update SASL authenticator
+        self.client.sasl_authenticator.password = (
+            self.client.active_server_config.nickserv_password
+        )
+
+        # Reset negotiation and authentication state
+        self.client.cap_negotiator.reset_negotiation_state()
+        self.client.sasl_authenticator.reset_authentication_state()
+        self.client.registration_handler.reset_registration_state()
+
+        # Reset contexts for new connection
+        self._reset_contexts_for_new_connection()
+
+        # Update network handler connection parameters
+        if (
+            self.client.server and self.client.port
+        ):  # Ensure we have valid connection parameters
+            self.client.network_handler.update_connection_params(
+                server=self.client.server,
+                port=self.client.port,
+                use_ssl=self.client.use_ssl,
+                channels_to_join=self.client.initial_channels_list,
+            )
+
+            self.client.add_message(
+                f"Switched active server configuration to '{config_name}'. Attempting to connect...",
+                self.client.ui.colors["system"],
+                context_name="Status",
+            )
+        else:
+            self.client.add_message(
+                f"Error: Invalid server configuration for '{config_name}'. Missing server address or port.",
+                self.client.ui.colors["error"],
+                context_name="Status",
+            )

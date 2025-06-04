@@ -58,8 +58,8 @@ class CommandHandler:
             "quote": self.server_commands.handle_raw_command,
             "r": self.server_commands.handle_raw_command,
             "connect": self.server_commands.handle_connect_command,
-            "server": self.server_commands.handle_connect_command,
-            "s": self.server_commands.handle_connect_command,
+            "server": self.server_commands.handle_server_command,
+            "s": self.server_commands.handle_server_command,
             "disconnect": self.server_commands.handle_disconnect_command,
             "d": self.server_commands.handle_disconnect_command,
             "clear": self._handle_clear_command,
@@ -324,6 +324,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
         if not parts:
             return
         new_nick = parts[0]
+        self.client.last_attempted_nick_change = new_nick
         self.client.network_handler.send_raw(f"NICK {new_nick}")
 
     def _handle_whois_command(self, args_str: str):

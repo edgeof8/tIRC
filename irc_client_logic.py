@@ -1,3 +1,4 @@
+# START OF MODIFIED FILE: irc_client_logic.py
 import curses
 import threading
 import time
@@ -25,11 +26,17 @@ from config import (
     RECONNECT_INITIAL_DELAY,
     RECONNECT_MAX_DELAY,
     CONNECTION_TIMEOUT,
+    ServerConfig,
+    ALL_SERVER_CONFIGS,
+    DEFAULT_SERVER_CONFIG_NAME,
+    DEFAULT_PORT,
+    DEFAULT_SSL_PORT,
+    DEFAULT_NICK,
 )
 
 # Import the config module itself to access its updated globals after reload
 import config as app_config
-from script_manager import ScriptManager  # Add this
+from script_manager import ScriptManager
 
 from context_manager import ContextManager, ChannelJoinStatus
 
@@ -49,7 +56,7 @@ from registration_handler import RegistrationHandler
 logger = logging.getLogger("pyrc.logic")
 
 
-class DummyUI:
+class DummyUI: # DEFINED ONCE HERE
     """A dummy UI class for headless mode that provides no-op implementations of UI methods."""
 
     def __init__(self):
@@ -92,12 +99,12 @@ class DummyUI:
         self.active_split_pane = "top"
         self.top_pane_context_name = ""
         self.bottom_pane_context_name = ""
-        self.msg_win_width = 80  # Default width for message window
-        self.msg_win_height = 24  # Default height for message window
-        self.user_list_width = 20  # Default width for user list
-        self.user_list_height = 24  # Default height for user list
-        self.status_win_height = 1  # Default height for status window
-        self.input_win_height = 1  # Default height for input window
+        self.msg_win_width = 80
+        self.msg_win_height = 24
+        self.user_list_width = 20
+        self.user_list_height = 24
+        self.status_win_height = 1
+        self.input_win_height = 1
         self.msg_win = None
         self.user_list_win = None
         self.status_win = None
@@ -111,7 +118,7 @@ class DummyUI:
         pass
 
     def get_input_char(self) -> int:
-        return curses.ERR
+        return curses.ERR if curses else -1
 
     def setup_layout(self):
         pass
@@ -119,54 +126,92 @@ class DummyUI:
     def scroll_user_list(self, direction: str, lines_arg: int = 1):
         pass
 
+    def _calculate_available_lines_for_user_list(self) -> int:
+        """Dummy implementation for headless mode."""
+        return 0
+
 
 class IRCClient_Logic:
     # Class-level flag to track if exit screen has been shown
     exit_screen_shown = False
 
-    def __init__(
-        self,
-        stdscr,
-        args,
-        server_addr,
-        port,
-        nick,
-        initial_channels_raw: list,
-        password,
-        nickserv_password,
-        use_ssl,
-    ):
+    def __init__(self, stdscr, args):
         self.stdscr = stdscr
         self.is_headless = stdscr is None
-        self.args = args  # Store args for access by other components
-        self.server = server_addr
-        self.port = port
-        self.initial_nick = nick
-        self.nick = nick
+        self.args = args
 
-        self.initial_channels_list = []
-        if initial_channels_raw and isinstance(initial_channels_raw, list):
-            for ch in initial_channels_raw:
-                if isinstance(ch, str):
-                    processed_ch = ch.lstrip()
-                    if not processed_ch.startswith("#"):
-                        processed_ch = "#" + processed_ch
-                    self.initial_channels_list.append(processed_ch)
+        self.all_server_configs = app_config.ALL_SERVER_CONFIGS
+        self.active_server_config_name: Optional[str] = None
+        self.active_server_config: Optional[ServerConfig] = None
+
+        if hasattr(args, 'server') and args.server:
+            cli_port = args.port if hasattr(args, 'port') and args.port is not None else \
+                       (app_config.DEFAULT_SSL_PORT if (hasattr(args, 'ssl') and args.ssl) else app_config.DEFAULT_PORT)
+            cli_nick = args.nick if hasattr(args, 'nick') and args.nick else app_config.DEFAULT_NICK
+            cli_channels = args.channel if hasattr(args, 'channel') and args.channel else []
+            cli_ssl = args.ssl if hasattr(args, 'ssl') else False
+            cli_password = args.password if hasattr(args, 'password') else None
+            cli_nickserv_password = args.nickserv_password if hasattr(args, 'nickserv_password') else None
+
+            temp_config = ServerConfig(
+                server_id="CommandLine",
+                address=args.server,
+                port=cli_port,
+                ssl=cli_ssl,
+                nick=cli_nick,
+                channels=cli_channels,
+                server_password=cli_password,
+                nickserv_password=cli_nickserv_password,
+                verify_ssl_cert=app_config.VERIFY_SSL_CERT,
+                auto_connect=True,
+            )
+            self.active_server_config = temp_config
+            self.active_server_config_name = "CommandLine"
+            logger.info(f"Using command-line server configuration: {args.server}")
+        elif (
+            app_config.DEFAULT_SERVER_CONFIG_NAME
+            and app_config.DEFAULT_SERVER_CONFIG_NAME in self.all_server_configs
+        ):
+            self.active_server_config_name = app_config.DEFAULT_SERVER_CONFIG_NAME
+            self.active_server_config = self.all_server_configs[
+                app_config.DEFAULT_SERVER_CONFIG_NAME
+            ]
+            logger.info(f"Using default server configuration: {self.active_server_config_name}")
+        else:
+            self.active_server_config = None
+            self.active_server_config_name = None
+            logger.warning("No command-line server specified and no default server configuration found.")
+
+        if self.active_server_config:
+            self.server = self.active_server_config.address
+            self.port = self.active_server_config.port
+            self.initial_nick = self.active_server_config.nick
+            self.nick = self.active_server_config.nick
+            self.initial_channels_list = self.active_server_config.channels[:]
+            self.password = self.active_server_config.server_password
+            self.nickserv_password = self.active_server_config.nickserv_password
+            self.use_ssl = self.active_server_config.ssl
+            self.verify_ssl_cert = self.active_server_config.verify_ssl_cert
+        else:
+            self.server = None
+            self.port = None
+            self.initial_nick = app_config.DEFAULT_NICK
+            self.nick = app_config.DEFAULT_NICK
+            self.initial_channels_list = app_config.DEFAULT_CHANNELS[:]
+            self.password = app_config.DEFAULT_PASSWORD
+            self.nickserv_password = app_config.DEFAULT_NICKSERV_PASSWORD
+            self.use_ssl = app_config.DEFAULT_SSL
+            self.verify_ssl_cert = app_config.DEFAULT_VERIFY_SSL_CERT
 
         self.currently_joined_channels: Set[str] = set()
 
-        self.password = password
-        self.nickserv_password = nickserv_password
-        self.use_ssl = use_ssl
-        self.verify_ssl_cert = VERIFY_SSL_CERT
         logger.info(
-            f"IRCClient_Logic.__init__: server='{server_addr}', port={port}, use_ssl={self.use_ssl}, verify_ssl_cert={self.verify_ssl_cert}, headless={self.is_headless}"
+            f"IRCClient_Logic.__init__: server='{self.server}', port={self.port}, nick='{self.nick}' use_ssl={self.use_ssl}, verify_ssl_cert={self.verify_ssl_cert}, headless={self.is_headless}"
         )
         self.echo_sent_to_status: bool = True
         self.show_raw_log_in_ui: bool = False
 
-        # Set max history based on mode
-        max_hist_to_use = MAX_HISTORY  # Default
+        max_hist_to_use = MAX_HISTORY
         if self.is_headless:
             headless_hist_val = HEADLESS_MAX_HISTORY
             if isinstance(headless_hist_val, int) and headless_hist_val >= 0:
@@ -178,14 +223,13 @@ class IRCClient_Logic:
                 logger.info(
                     f"Headless mode: Using default MAX_HISTORY of {max_hist_to_use} ('headless_message_history_lines' not configured or invalid)."
                 )
-        else:  # UI mode
+        else:
             logger.info(f"UI mode: Using MAX_HISTORY of {max_hist_to_use}.")
 
         self.context_manager = ContextManager(max_history_per_context=max_hist_to_use)
         self.context_manager.create_context("Status", context_type="status")
         self.context_manager.set_active_context("Status")
 
-        # Create contexts for initial channels but don't join them yet
         for ch_name in self.initial_channels_list:
             self.context_manager.create_context(
                 ch_name,
@@ -198,25 +242,14 @@ class IRCClient_Logic:
         self.ui_needs_update = threading.Event()
 
         self.desired_caps_config: Set[str] = {
-            "sasl",
-            "multi-prefix",
-            "server-time",
-            "message-tags",
-            "account-tag",
-            "echo-message",
-            "away-notify",
-            "chghost",
-            "userhost-in-names",
-            "cap-notify",
-            "extended-join",
-            "account-notify",
-            "invite-notify",
+            "sasl", "multi-prefix", "server-time", "message-tags", "account-tag",
+            "echo-message", "away-notify", "chghost", "userhost-in-names",
+            "cap-notify", "extended-join", "account-notify", "invite-notify",
         }
 
         self.network_handler = NetworkHandler(self)
         self.network_handler.channels_to_join_on_connect = self.initial_channels_list[:]
 
-        # Initialize UI based on mode
         if self.is_headless:
             self.ui = DummyUI()
             self.input_handler = None
@@ -226,7 +259,6 @@ class IRCClient_Logic:
 
         self.command_handler = CommandHandler(self)
 
-        # Initialize ScriptManager with disabled scripts from both config and CLI
         cli_disabled = (
             set(self.args.disable_script)
             if hasattr(self.args, "disable_script") and self.args.disable_script
@@ -249,12 +281,9 @@ class IRCClient_Logic:
                         f"Could not create config directory for triggers: {e_mkdir}"
                     )
             self.trigger_manager = TriggerManager(config_dir_triggers)
-            logger.info("TriggerManager initialized.")
+            self.trigger_manager.load_triggers()
         else:
-            self.trigger_manager = None
-            logger.info(
-                "TriggerManager is disabled by configuration (ENABLE_TRIGGER_SYSTEM=False)."
-            )
+            self.trigger_manager = None # Ensure attribute exists even if disabled
 
         self.cap_negotiator = CapNegotiator(
             network_handler=self.network_handler,
@@ -263,44 +292,52 @@ class IRCClient_Logic:
             client_logic_ref=self,
         )
 
+        sasl_pass = self.active_server_config.sasl_password if self.active_server_config else \
+                    (self.nickserv_password if self.nickserv_password else None)
         self.sasl_authenticator = SaslAuthenticator(
             network_handler=self.network_handler,
             cap_negotiator=self.cap_negotiator,
-            password=self.nickserv_password,
+            password=sasl_pass,
             client_logic_ref=self,
         )
+
+        reg_initial_nick = self.nick if self.nick is not None else app_config.DEFAULT_NICK
+        reg_username = (self.active_server_config.username if self.active_server_config and self.active_server_config.username is not None
+                        else reg_initial_nick)
+        reg_realname = (self.active_server_config.realname if self.active_server_config and self.active_server_config.realname is not None
+                        else reg_initial_nick)
+        server_pass_val = self.password
+        nickserv_pass_val = self.nickserv_password
+        initial_channels_val = self.initial_channels_list
 
         self.registration_handler = RegistrationHandler(
             network_handler=self.network_handler,
             command_handler=self.command_handler,
-            initial_nick=self.initial_nick,
-            username=self.initial_nick,
-            realname=self.initial_nick,
-            server_password=self.password,
-            nickserv_password=self.nickserv_password,
-            initial_channels_to_join=self.initial_channels_list,
+            initial_nick=reg_initial_nick,
+            username=reg_username,
+            realname=reg_realname,
+            server_password=server_pass_val,
+            nickserv_password=nickserv_pass_val,
+            initial_channels_to_join=initial_channels_val[:],
             cap_negotiator=self.cap_negotiator,
             client_logic_ref=self,
         )
 
-        self.cap_negotiator.set_registration_handler(self.registration_handler)
-        self.cap_negotiator.set_sasl_authenticator(self.sasl_authenticator)
-        self.registration_handler.set_sasl_authenticator(self.sasl_authenticator)
+        self.cap_negotiator.registration_handler = self.registration_handler
+        if hasattr(self.cap_negotiator, 'set_sasl_authenticator'):
+            self.cap_negotiator.set_sasl_authenticator(self.sasl_authenticator)
+        if hasattr(self.registration_handler, 'set_sasl_authenticator'):
+            self.registration_handler.set_sasl_authenticator(self.sasl_authenticator)
 
-        # Only initialize input handler in non-headless mode
-        if not self.is_headless:
-            self.input_handler = InputHandler(self)
+        if not self.is_headless and not self.input_handler:
+             self.input_handler = InputHandler(self)
 
-        # Determine platform-specific config directory
+
         if platform.system() == "Windows":
-            config_dir = os.path.join(
-                os.getenv("APPDATA", os.path.expanduser("~")), "PyRC"
-            )
+            config_dir = os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "PyRC")
         elif platform.system() == "Darwin":
-            config_dir = os.path.join(
-                os.path.expanduser("~"), "Library", "Application Support", "PyRC"
-            )
-        else:  # Linux and other Unix-like systems
+            config_dir = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "PyRC")
+        else:
             config_dir = os.path.join(os.path.expanduser("~"), ".config", "pyrc")
 
         self.channel_log_enabled = CHANNEL_LOG_ENABLED
@@ -310,46 +347,40 @@ class IRCClient_Logic:
         self.channel_log_max_bytes = LOG_MAX_BYTES
         self.channel_log_backup_count = LOG_BACKUP_COUNT
         self.channel_loggers: Dict[str, logging.Logger] = {}
-        self.log_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        self.active_list_context_name: Optional[str] = None  # For /list command output
+        self.status_logger_instance: Optional[logging.Logger] = None # For status.log
+        self.log_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        self.active_list_context_name: Optional[str] = None
+        self.user_modes: List[str] = [] # Initialize user_modes
 
         if self.channel_log_enabled and not os.path.exists(self.main_log_dir_path):
             try:
                 os.makedirs(self.main_log_dir_path)
-                logger.info(
-                    f"Created main log directory in logic: {self.main_log_dir_path}"
-                )
+                logger.info(f"Created main log directory in logic: {self.main_log_dir_path}")
             except OSError as e:
-                logger.error(
-                    f"Error creating main log directory in logic {self.main_log_dir_path}: {e}"
-                )
+                logger.error(f"Error creating main log directory in logic {self.main_log_dir_path}: {e}")
                 self.channel_log_enabled = False
 
+        if not self.active_server_config: # Moved this check here after UI is up
+             self._add_status_message(
+                "No server specified and no default configuration. Use /server <name> or /connect <host> to connect.",
+                "warning",
+            )
+
+        self.add_message("Simple IRC Client starting...", self.ui.colors["system"], context_name="Status")
+        initial_channels_display = (", ".join(self.initial_channels_list) if self.initial_channels_list else "None")
         self.add_message(
-            "Simple IRC Client starting...",
-            self.ui.colors["system"],
-            context_name="Status",
-        )
-        initial_channels_display = (
-            ", ".join(self.initial_channels_list)
-            if self.initial_channels_list
-            else "None"
-        )
-        self.add_message(
-            f"Target: {self.server}:{self.port}, Nick: {self.nick}, Channels: {initial_channels_display}",
-            self.ui.colors["system"],
-            context_name="Status",
+            f"Target: {self.server or 'Not configured'}:{self.port or 'N/A'}, Nick: {self.nick}, Channels: {initial_channels_display}",
+            self.ui.colors["system"], context_name="Status"
         )
         logger.info(
-            f"IRCClient_Logic initialized for {self.server}:{self.port} as {self.nick}. Channels: {initial_channels_display}"
+            f"IRCClient_Logic initialized for {self.server or 'Not configured'}:{self.port or 'N/A'} as {self.nick}. Channels: {initial_channels_display}"
         )
 
         self.max_history = max_hist_to_use
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
         self.max_reconnect_delay = RECONNECT_MAX_DELAY
         self.connection_timeout = CONNECTION_TIMEOUT
+        self.last_attempted_nick_change: Optional[str] = None
 
     def _add_status_message(self, text: str, color_key: str = "system"):
         color_attr = self.ui.colors.get(color_key, self.ui.colors["system"])
@@ -364,11 +395,6 @@ class IRCClient_Logic:
         source_full_ident: Optional[str] = None,
         is_privmsg_or_notice: bool = False,
     ):
-        """
-        Adds a message to the specified or active context.
-        If source_full_ident is provided and is_privmsg_or_notice is True,
-        it checks against the ignore list.
-        """
         target_context_name = (
             context_name
             if context_name is not None
@@ -470,6 +496,11 @@ class IRCClient_Logic:
             channel_logger = self.get_channel_logger(target_context_name)
             if channel_logger:
                 channel_logger.info(text)
+        elif target_context_obj and target_context_obj.name == "Status": # Log to status.log
+            if self.channel_log_enabled: # Reuse this flag for enabling status log too
+                status_logger = self.get_status_logger()
+                if status_logger:
+                    status_logger.info(text) # Log the raw text
 
         if target_context_name == self.context_manager.active_context_name:
             if (
@@ -495,8 +526,30 @@ class IRCClient_Logic:
             return self.channel_loggers[logger_key]
 
         try:
+            # Get the currently configured main application log filename
+            main_app_log_filename = app_config.LOG_FILE
+            main_app_log_file_path = os.path.join(self.main_log_dir_path, main_app_log_filename)
+
+            # Get the default status window log filename
+            status_window_log_filename = app_config.DEFAULT_STATUS_WINDOW_LOG_FILE
+            status_window_log_file_path = os.path.join(self.main_log_dir_path, status_window_log_filename)
+
             log_file_name = f"{safe_filename_part}.log"
             channel_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
+
+            collided = False
+            # Check for collision with the main application log file
+            if os.path.normpath(channel_log_file_path) == os.path.normpath(main_app_log_file_path):
+                logger.warning(f"Channel log for '{channel_name}' ('{log_file_name}') collides with main app log ('{main_app_log_filename}'). Using alternative name.")
+                collided = True
+            # Check for collision with the status window log file
+            elif os.path.normpath(channel_log_file_path) == os.path.normpath(status_window_log_file_path):
+                logger.warning(f"Channel log for '{channel_name}' ('{log_file_name}') collides with status window log ('{status_window_log_filename}'). Using alternative name.")
+                collided = True
+
+            if collided:
+                log_file_name = f"channel_{safe_filename_part}.log"
+                channel_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
 
             channel_logger_instance = logging.getLogger(
                 f"pyrc.channel.{safe_filename_part}"
@@ -525,7 +578,7 @@ class IRCClient_Logic:
 
             channel_logger_instance.addHandler(file_handler)
             channel_logger_instance.propagate = (
-                False  # IMPORTANT: Prevent duplication to root logger / main file
+                False
             )
 
             self.channel_loggers[logger_key] = channel_logger_instance
@@ -540,33 +593,52 @@ class IRCClient_Logic:
             )
             return None
 
+    def get_status_logger(self) -> Optional[logging.Logger]:
+        if not self.channel_log_enabled: # Reuse this flag for enabling status log
+            return None
+
+        if self.status_logger_instance:
+            return self.status_logger_instance
+
+        try:
+            log_file_name = app_config.DEFAULT_STATUS_WINDOW_LOG_FILE # Use new constant
+            status_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
+
+            # Ensure main log directory exists (might be redundant but safe)
+            if not os.path.exists(self.main_log_dir_path):
+                logger.warning(
+                    f"Main log directory {self.main_log_dir_path} not found when creating status logger. Attempting to create."
+                )
+                try:
+                    os.makedirs(self.main_log_dir_path, exist_ok=True)
+                except OSError as e:
+                    logger.error(
+                        f"Failed to create main log directory {self.main_log_dir_path} for status log: {e}. Disabling status logger."
+                    )
+                    return None
+
+            status_logger = logging.getLogger("pyrc.client_status") # New distinct logger name
+            status_logger.setLevel(self.channel_log_level)
+
+            file_handler = logging.handlers.RotatingFileHandler(
+                status_log_file_path,
+                maxBytes=self.channel_log_max_bytes,    # Use same rotation params
+                backupCount=self.channel_log_backup_count, # Use same rotation params
+                encoding="utf-8",
+            )
+            file_handler.setFormatter(self.log_formatter)
+
+            status_logger.addHandler(file_handler)
+            status_logger.propagate = False # Do not propagate to root logger
+
+            self.status_logger_instance = status_logger
+            logger.info(f"Initialized logger for Status messages at {status_log_file_path}")
+            return status_logger
+        except Exception as e:
+            logger.error(f"Failed to create logger for Status messages: {e}", exc_info=True)
+            return None
+
     def handle_server_message(self, line: str):
-        # 1. Trigger: Called by `NetworkHandler._network_loop()` for each complete line received from the IRC server.
-        # 2. Expected State Before:
-        #    - `line` (method argument) contains a raw, decoded IRC message string (e.g., ":irc.example.com 001 MyNick :Welcome...").
-        #    - The client is connected and listening for server messages.
-        # 3. Key Actions:
-        #    - Parses the raw `line` into an `IRCMessage` object (optional, for logging).
-        #    - If channel logging is enabled and the message is a PRIVMSG/NOTICE to a channel, logs it to the specific channel log.
-        #    - CRITICAL: Calls `irc_protocol.handle_server_message(self, line)`.
-        #        - This is the main dispatch point for all incoming IRC commands.
-        #        - `irc_protocol.handle_server_message` parses the line again (or uses a more robust parser)
-        #          and then calls specific handlers within `irc_protocol.py` based on the command
-        #          (e.g., `handle_rpl_welcome`, `handle_cap`, `handle_authenticate`, `handle_ping`, `handle_privmsg`, etc.).
-        #        - These specific handlers in `irc_protocol.py` then interact with the appropriate client components:
-        #            - `CapNegotiator` for CAP subcommands (LS, ACK, NAK).
-        #            - `SaslAuthenticator` for AUTHENTICATE responses and SASL numerics (900-907).
-        #            - `RegistrationHandler` for RPL_WELCOME (001) and nick collision errors (433).
-        #            - `UIManager` / `ContextManager` for displaying messages.
-        #            - `CommandHandler` for some server-side actions that might map to client commands.
-        # 4. Expected State After:
-        #    - The raw `line` has been passed to `irc_protocol.handle_server_message`.
-        #    - The appropriate specific handler within `irc_protocol.py` (and subsequently `CapNegotiator`,
-        #      `SaslAuthenticator`, `RegistrationHandler`, etc.) has processed the command.
-        #    - Client state (e.g., `enabled_caps`, `sasl_authentication_succeeded`, `nick_user_sent`, UI)
-        #      may have been updated based on the message.
-        #    - Subsequent step: Depends on the message; could be sending another command, updating UI, or just listening.
-        #      This function is central to the client's reaction to server events during the handshake and beyond.
         if self.show_raw_log_in_ui:
             self.add_message(
                 f"S << {line.strip()}",
@@ -584,12 +656,6 @@ class IRCClient_Logic:
         ):
             target_channel = parsed_msg.params[0]
             channel_logger = self.get_channel_logger(target_channel)
-            if channel_logger:
-                # The raw line is already being logged to general log if enabled,
-                # and channel specific log for PRIVMSG/NOTICE to channels if enabled.
-                # No need to duplicate raw log here specifically unless desired for a different format.
-                # The S << line above handles UI display.
-                pass  # Placeholder if specific raw logging to file for this flag was intended beyond UI
 
         irc_protocol.handle_server_message(self, line)
 
@@ -789,18 +855,27 @@ class IRCClient_Logic:
         )
 
     def get_enabled_caps(self) -> Set[str]:
-        """Returns the set of currently enabled capabilities."""
         return self.cap_negotiator.get_enabled_caps() if self.cap_negotiator else set()
 
     def handle_channel_fully_joined(self, channel_name: str):
         """
         Called when a channel is confirmed as fully joined (e.g., after RPL_ENDOFNAMES).
         If this channel was the target of the last /join command, make it active.
+        Dispatches CHANNEL_FULLY_JOINED event.
         """
         normalized_channel_name = self.context_manager._normalize_context_name(
             channel_name
         )
         logger.info(f"Channel {normalized_channel_name} reported as fully joined.")
+
+        # Dispatch CHANNEL_FULLY_JOINED event
+        if hasattr(self, "script_manager") and self.script_manager:
+            event_data = {
+                "channel_name": normalized_channel_name,
+                # Add other relevant data if needed, e.g., current topic, user count
+            }
+            self.script_manager.dispatch_event("CHANNEL_FULLY_JOINED", event_data)
+
 
         if (
             self.last_join_command_target
@@ -809,24 +884,26 @@ class IRCClient_Logic:
             )
             == normalized_channel_name
         ):
-
             logger.info(
                 f"Setting active context to recently joined channel: {normalized_channel_name}"
             )
             self.context_manager.set_active_context(normalized_channel_name)
-            self.last_join_command_target = None
+            self.last_join_command_target = None # Clear after use
             self.ui_needs_update.set()
-        else:
+        else: # If not the last /join target, check if it's an initial auto-join channel
             active_ctx = self.context_manager.get_active_context()
-            if not active_ctx or active_ctx.name == "Status":
-                if channel_name in self.initial_channels_list:
+            # If current active is Status, or no active context, and this is an initial channel, switch to it.
+            if (not active_ctx or active_ctx.name == "Status"):
+                # Check if normalized_channel_name is one of the initial channels
+                normalized_initial_channels = {self.context_manager._normalize_context_name(ch) for ch in self.initial_channels_list}
+                if normalized_channel_name in normalized_initial_channels:
                     logger.info(
-                        f"Auto-joined channel {normalized_channel_name} is now fully joined. Setting active."
+                        f"Auto-joined initial channel {normalized_channel_name} is now fully joined. Setting active."
                     )
                     self.context_manager.set_active_context(normalized_channel_name)
                     self.ui_needs_update.set()
 
-    def _execute_python_trigger(
+    def _execute_python_trigger( # Ensure this method exists
         self, code: str, event_data: Dict[str, Any], trigger_info_for_error: str
     ):
         """
@@ -837,10 +914,45 @@ class IRCClient_Logic:
         try:
             # Prepare a limited execution scope
             # Provide 'client' for interacting with the IRC client and 'event_data' for trigger context
-            execution_globals = {}  # Or provide some safe builtins if needed
+            # Also provide 'api' for scripts that might expect it, pointing to a ScriptAPIHandler for this context
+            # For direct execution, 'client' (self) is more direct.
+            # If scripts are designed to use 'api' from within Python triggers,
+            # we might need to instantiate a temporary ScriptAPIHandler or pass a specific one.
+            # For now, providing 'client' (IRCClient_Logic instance) and 'event_data'.
+
+            # Create a minimal API-like object for Python triggers if they expect 'api.log_info' etc.
+            # This is a simplified version. A full ScriptAPIHandler might be too much here.
+            class PythonTriggerAPI:
+                def __init__(self, client_logic, script_name="python_trigger"):
+                    self._client_logic = client_logic
+                    self._script_name = script_name
+                def log_info(self, msg): self._client_logic.script_manager.logger.info(f"[{self._script_name}] {msg}")
+                def log_error(self, msg): self._client_logic.script_manager.logger.error(f"[{self._script_name}] {msg}")
+                def send_raw(self, cmd_str): self._client_logic.network_handler.send_raw(cmd_str)
+                def send_message(self, target, message): self._client_logic.network_handler.send_raw(f"PRIVMSG {target} :{message}")
+                def add_message_to_context(self, ctx_name, text, color_key="system"):
+                    color = self._client_logic.ui.colors.get(color_key, 0)
+                    self._client_logic.add_message(text, color, context_name=ctx_name)
+                def get_client_nick(self): return self._client_logic.nick
+                # Add other commonly used API methods as needed by Python triggers
+
+            python_trigger_api = PythonTriggerAPI(self)
+
+            execution_globals = {
+                "__builtins__": {
+                    "print": lambda *args, **kwargs: python_trigger_api.add_message_to_context(current_context_name, " ".join(map(str, args)), "system"),
+                    "eval": eval, # Be very careful with eval
+                    "str": str, "int": int, "float": float, "list": list, "dict": dict, "True": True, "False": False, "None": None,
+                    "len": len, "isinstance": isinstance, "hasattr": hasattr, "getattr": getattr, "setattr": setattr, "delattr": delattr,
+                    "Exception": Exception, # Allow raising/catching exceptions
+                    # Add other safe builtins as needed
+                }
+            }
             execution_locals = {
-                "client": self,  # Gives access to self.add_message, self.send_raw etc.
-                "event_data": event_data,  # Contains $nick, $channel, $msg, $0, $1 etc.
+                "client": self,  # Direct access to IRCClient_Logic
+                "api": python_trigger_api, # Access to a simplified API
+                "event_data": event_data,
+                "logger": logging.getLogger(f"pyrc.trigger.python_exec.{trigger_info_for_error.replace(' ','_')[:20]}") # Specific logger for this exec
             }
             exec(code, execution_globals, execution_locals)
         except Exception as e:
@@ -852,155 +964,110 @@ class IRCClient_Logic:
                 prefix_time=True,
                 context_name="Status",
             )
-            # Optionally, add more detailed error to a specific debug context or log if too verbose for main chat
 
     def process_trigger_event(
         self, event_type: str, event_data: Dict[str, Any]
     ) -> Optional[str]:
         """Process a trigger event and return any action to take."""
-        if not ENABLE_TRIGGER_SYSTEM or not self.trigger_manager:
+        if not ENABLE_TRIGGER_SYSTEM or not hasattr(self, 'trigger_manager') or not self.trigger_manager:
             return None
 
         result = self.trigger_manager.process_trigger(event_type, event_data)
         if not result:
             return None
 
-        action_type = result.get("action_type")
-        if action_type == "command":
+        action_type = result.get("type")
+        if action_type == ActionType.COMMAND:
             return result.get("content")
-        elif action_type == "python":
-            # Execute Python trigger
-            code = result.get("content")
+        elif action_type == ActionType.PYTHON:
+            code = result.get("code")
             if code:
-                try:
-                    exec(code, {"event_data": event_data})
-                except Exception as e:
-                    logger.error(f"Error executing Python trigger: {e}")
+                trigger_info = f"Event: {event_type}, Pattern: {result.get('pattern', 'N/A')}"
+                # Call the now-defined method
+                self._execute_python_trigger(code, result.get("event_data", {}), trigger_info)
         return None
 
     def handle_text_input(self, text: str):
         active_ctx_name = self.context_manager.active_context_name
         if not active_ctx_name:
-            self.add_message(
-                "No active window to send message to.",
-                self.ui.colors["error"],
-                context_name="Status",
-            )
+            self.add_message("No active window to send message to.", self.ui.colors["error"], context_name="Status")
             return
 
         active_ctx = self.context_manager.get_context(active_ctx_name)
         if not active_ctx:
-            self.add_message(
-                f"Error: Active context '{active_ctx_name}' not found.",
-                self.ui.colors["error"],
-                context_name="Status",
-            )
+            self.add_message(f"Error: Active context '{active_ctx_name}' not found.", self.ui.colors["error"], context_name="Status")
             return
 
         if active_ctx.type == "channel":
             if active_ctx.join_status == ChannelJoinStatus.FULLY_JOINED:
                 self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
                 if "echo-message" not in self.get_enabled_caps():
-                    self.add_message(
-                        f"<{self.nick}> {text}",
-                        self.ui.colors["my_message"],
-                        context_name=active_ctx_name,
-                    )
+                    self.add_message(f"<{self.nick}> {text}", self.ui.colors["my_message"], context_name=active_ctx_name)
                 elif self.echo_sent_to_status:
-                    self.add_message(
-                        f"To {active_ctx_name}: <{self.nick}> {text}",
-                        self.ui.colors["my_message"],
-                        context_name="Status",
-                    )
+                    self.add_message(f"To {active_ctx_name}: <{self.nick}> {text}", self.ui.colors["my_message"], context_name="Status")
             else:
                 self.add_message(
                     f"Cannot send message: Channel {active_ctx_name} not fully joined (Status: {active_ctx.join_status.name if active_ctx.join_status else 'N/A'}).",
-                    self.ui.colors["error"],
-                    context_name=active_ctx_name,
+                    self.ui.colors["error"], context_name=active_ctx_name
                 )
         elif active_ctx.type == "query":
             self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
             if "echo-message" not in self.get_enabled_caps():
-                self.add_message(
-                    f"<{self.nick}> {text}",
-                    self.ui.colors["my_message"],
-                    context_name=active_ctx_name,
-                )
+                self.add_message(f"<{self.nick}> {text}", self.ui.colors["my_message"], context_name=active_ctx_name)
             elif self.echo_sent_to_status:
-                self.add_message(
-                    f"To {active_ctx_name}: <{self.nick}> {text}",
-                    self.ui.colors["my_message"],
-                    context_name="Status",
-                )
+                self.add_message(f"To {active_ctx_name}: <{self.nick}> {text}", self.ui.colors["my_message"], context_name="Status")
         else:
             self.add_message(
                 f"Cannot send messages to '{active_ctx_name}' (type: {active_ctx.type}). Try a command like /msg.",
-                self.ui.colors["error"],
-                context_name="Status",
+                self.ui.colors["error"], context_name="Status"
             )
 
     def handle_rehash_config(self):
-        """Handles the /rehash command by reloading configuration."""
         logger.info("Attempting to reload configuration via /rehash...")
         try:
             app_config.reload_all_config_values()
-
-            # Update IRCClient_Logic's attributes from the now-reloaded config module's globals
             self.verify_ssl_cert = app_config.VERIFY_SSL_CERT
             self.channel_log_enabled = app_config.CHANNEL_LOG_ENABLED
-            self.channel_log_level = (
-                app_config.LOG_LEVEL
-            )  # LOG_LEVEL in config.py is the actual level object
+            self.channel_log_level = app_config.LOG_LEVEL
             self.channel_log_max_bytes = app_config.LOG_MAX_BYTES
             self.channel_log_backup_count = app_config.LOG_BACKUP_COUNT
 
-            # Update ContextManager's default max_history for new contexts
-            # This will apply to newly created contexts.
-            # Existing contexts will retain their original max_history unless explicitly updated.
             if hasattr(self.context_manager, "max_history"):
                 self.context_manager.max_history = app_config.MAX_HISTORY
-            # elif hasattr(self.context_manager, 'max_history_per_context'): # Check for older name if necessary
-            #      self.context_manager.max_history_per_context = app_config.MAX_HISTORY
-
-            # Note: For logging changes like LOG_FILE or root logger level/handlers,
-            # a full application restart is generally required for them to take effect
-            # on the existing logging setup. This rehash primarily updates config values
-            # that the application logic can adapt to at runtime.
-            # Channel loggers created *after* this rehash for *new* channels will use the new settings.
 
             self.add_message(
                 "Configuration reloaded. Some changes (like main log file settings or server connection details if manually edited in INI) may require a /reconnect or client restart to fully apply.",
-                self.ui.colors["system"],
-                context_name="Status",
+                self.ui.colors["system"], context_name="Status"
             )
-            logger.info(
-                "Configuration successfully reloaded and applied where possible."
-            )
-            self.ui_needs_update.set()  # Ensure UI reflects any changes if necessary
+            logger.info("Configuration successfully reloaded and applied where possible.")
+            self.ui_needs_update.set()
 
         except Exception as e:
             logger.error(f"Error during /rehash: {e}", exc_info=True)
-            self.add_message(
-                f"Error reloading configuration: {e}",
-                self.ui.colors["error"],
-                context_name="Status",
-            )
+            self.add_message(f"Error reloading configuration: {e}", self.ui.colors["error"], context_name="Status")
             self.ui_needs_update.set()
 
     def run_main_loop(self):
-        """Main loop for the IRC client."""
         logger.info(f"Starting main client loop (headless={self.is_headless}).")
         if not self.is_headless:
-            self.ui.refresh_all_windows()  # Initial draw
+            self.ui.refresh_all_windows()
 
-        # Start network operations if not already started
         if (
             not self.network_handler.network_thread
             or not self.network_handler.network_thread.is_alive()
         ):
-            self.network_handler.start()
-            if self.is_headless:  # Specific log for headless start after network
-                logger.info("Started network connection in headless mode")
+            if self.server and self.port: # Only start if server/port are configured
+                self.network_handler.start()
+                if self.is_headless:
+                    logger.info("Started network connection in headless mode")
+            else:
+                logger.warning("Network connection not started: server or port not configured.")
+                if not self.active_server_config: # This message might have already been shown if UI was up
+                     self._add_status_message(
+                        "Cannot connect: No server specified and no default configuration. Use /server <name> or /connect <host>.",
+                        "error",
+                    )
+
 
         try:
             while not self.should_quit:
@@ -1012,130 +1079,86 @@ class IRCClient_Logic:
                         self.ui.refresh_all_windows()
                         if self.ui_needs_update.is_set():
                             self.ui_needs_update.clear()
-                else:  # Headless mode or UI not fully up
-                    if self.ui_needs_update.is_set():  # Scripts might still set this
-                        if not self.is_headless and self.ui:  # Refresh if UI exists
+                else:
+                    if self.ui_needs_update.is_set():
+                        if not self.is_headless and self.ui:
                             self.ui.refresh_all_windows()
                         self.ui_needs_update.clear()
-
-                time.sleep(0.05)  # Main loop sleep
+                time.sleep(0.05)
 
         except KeyboardInterrupt:
-            logger.info(
-                "Keyboard interrupt received in main client loop. Initiating quit."
-            )
+            logger.info("Keyboard interrupt received in main client loop. Initiating quit.")
             self.should_quit = True
         except curses.error as e:
-            if not self.is_headless:  # Only relevant if curses is active
+            if not self.is_headless:
                 logger.error(f"Curses error in main loop: {e}", exc_info=True)
                 try:
-                    self.add_message(
-                        f"Curses error: {e}. Quitting.",
-                        self.ui.colors["error"],
-                        prefix_time=True,
-                        context_name="Status",
-                    )
-                except:
-                    pass
+                    self.add_message(f"Curses error: {e}. Quitting.", self.ui.colors["error"], prefix_time=True, context_name="Status")
+                except: pass
             else:
-                logger.error(
-                    f"Curses-related error in headless main loop (should not happen often): {e}",
-                    exc_info=True,
-                )
+                logger.error(f"Curses-related error in headless main loop (should not happen often): {e}", exc_info=True)
             self.should_quit = True
         except Exception as e:
-            logger.critical(
-                f"Unhandled exception in main client loop: {e}", exc_info=True
-            )
+            logger.critical(f"Unhandled exception in main client loop: {e}", exc_info=True)
             try:
-                self.add_message(
-                    f"CRITICAL ERROR: {e}. Attempting to quit.",
-                    self.ui.colors["error"],
-                    prefix_time=True,
-                    context_name="Status",
-                )
-            except:
-                pass
+                self.add_message(f"CRITICAL ERROR: {e}. Attempting to quit.", self.ui.colors["error"], prefix_time=True, context_name="Status")
+            except: pass
             self.should_quit = True
         finally:
             logger.info("IRCClient_Logic.run_main_loop() finally block executing.")
-            self.should_quit = True  # Ensure this is set
+            self.should_quit = True
 
             quit_message_to_send = "PyRC - Exiting"
             if hasattr(self, "script_manager") and self.script_manager:
-                # Allow scripts to provide a quit message
-                temp_nick_for_quit = self.nick
-                temp_server_for_quit = self.server
+                temp_nick_for_quit = self.nick if self.nick else app_config.DEFAULT_NICK
+                temp_server_for_quit = self.server if self.server else "UnknownServer"
                 random_msg = self.script_manager.get_random_quit_message_from_scripts(
                     {"nick": temp_nick_for_quit, "server": temp_server_for_quit}
                 )
                 if random_msg:
                     quit_message_to_send = random_msg
 
-            # Store the quit message for NetworkHandler to use
             self._final_quit_message = quit_message_to_send
 
             if self.network_handler:
-                logger.debug(
-                    "Calling network_handler.stop() from IRCClient_Logic.run_main_loop finally."
-                )
-                self.network_handler.disconnect_gracefully(
-                    quit_message=quit_message_to_send
-                )
-
+                logger.debug("Calling network_handler.stop() from IRCClient_Logic.run_main_loop finally.")
+                self.network_handler.disconnect_gracefully(quit_message=quit_message_to_send)
                 if (
                     self.network_handler.network_thread
                     and self.network_handler.network_thread.is_alive()
                 ):
-                    logger.debug(
-                        "Waiting for network thread to join in IRCClient_Logic.run_main_loop finally."
-                    )
-                    self.network_handler.network_thread.join(
-                        timeout=2.0
-                    )  # Increased timeout slightly
+                    logger.debug("Waiting for network thread to join in IRCClient_Logic.run_main_loop finally.")
+                    self.network_handler.network_thread.join(timeout=2.0)
                     if self.network_handler.network_thread.is_alive():
-                        logger.warning(
-                            "Network thread did not join in time from IRCClient_Logic."
-                        )
+                        logger.warning("Network thread did not join in time from IRCClient_Logic.")
                     else:
-                        logger.debug(
-                            "Network thread joined successfully from IRCClient_Logic."
-                        )
+                        logger.debug("Network thread joined successfully from IRCClient_Logic.")
             logger.info("IRCClient_Logic.run_main_loop() completed.")
 
     def initialize(self) -> bool:
-        """Initialize the client components."""
         try:
-            # Initialize network handler
             self.network_handler = NetworkHandler(self)
-
-            # Initialize script manager with disabled scripts
             self.script_manager = ScriptManager(self, BASE_DIR)
             self.script_manager.disabled_scripts = set(DISABLED_SCRIPTS)
             self.script_manager.load_scripts()
 
-            # Initialize trigger manager if enabled
             if ENABLE_TRIGGER_SYSTEM:
                 self.trigger_manager = TriggerManager(os.path.join(BASE_DIR, "config"))
                 self.trigger_manager.load_triggers()
             else:
+                self.trigger_manager = None # Ensure it's set if disabled
                 logger.info("Trigger system is disabled")
-
             return True
         except Exception as e:
             logger.error(f"Failed to initialize client: {str(e)}")
             return False
 
     def connect(self, server: str, port: int, use_ssl: bool = False) -> bool:
-        """Connect to an IRC server."""
         if not self.network_handler:
             logger.error("Network handler not initialized")
             return False
-
         try:
-            self.network_handler.update_connection_params(
-                server=server, port=port, use_ssl=use_ssl
-            )
+            self.network_handler.update_connection_params(server=server, port=port, use_ssl=use_ssl)
             self.network_handler.start()
             return True
         except Exception as e:
@@ -1143,21 +1166,14 @@ class IRCClient_Logic:
             return False
 
     def disconnect(self, quit_message: str = "Client disconnecting") -> None:
-        """Disconnect from the server."""
         if self.network_handler:
             self.network_handler.disconnect_gracefully(quit_message)
 
-    def process_message(self, message: str) -> Optional[str]:
-        """Process an incoming message through triggers."""
-        if not ENABLE_TRIGGER_SYSTEM:
+    def process_message(self, message: str) -> Optional[str]: # This is likely unused or for a different purpose
+        if not ENABLE_TRIGGER_SYSTEM or not self.trigger_manager:
             return None
-
-        trigger_manager = self.trigger_manager
-        if not trigger_manager or not hasattr(trigger_manager, "process_trigger"):
-            return None
-
         try:
-            result = trigger_manager.process_trigger("TEXT", {"message": message})
+            result = self.trigger_manager.process_trigger("TEXT", {"message": message})
             if result and result["type"] == ActionType.COMMAND:
                 return result["content"]
         except Exception as e:
@@ -1165,11 +1181,11 @@ class IRCClient_Logic:
         return None
 
     def handle_reconnect(self) -> None:
-        """Handle reconnection with exponential backoff."""
         if self.reconnect_delay < self.max_reconnect_delay:
             self.reconnect_delay *= 2
         logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
 
     def reset_reconnect_delay(self) -> None:
-        """Reset the reconnect delay to initial value."""
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
+
+# END OF MODIFIED FILE: irc_client_logic.py

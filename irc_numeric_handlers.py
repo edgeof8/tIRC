@@ -296,6 +296,13 @@ def _handle_err_nicknameinuse(
         "Status",
     )
 
+    if client.last_attempted_nick_change is not None and \
+       client.last_attempted_nick_change.lower() == failed_nick.lower():
+        logger.info(f"ERR_NICKNAMEINUSE for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change.")
+        client.last_attempted_nick_change = None
+    # The existing logic for automatic nick change retries during registration should still apply
+    # if it's the initial registration phase. For a user-issued /nick, the feedback above is primary.
+
     is_our_nick_colliding = client.nick and client.nick.lower() == failed_nick.lower()
 
     if is_our_nick_colliding and not client.network_handler.is_handling_nick_collision:
@@ -708,6 +715,56 @@ def _handle_rpl_listend(
         client.active_list_context_name = None
 
 
+def _handle_err_erroneusnickname(
+    client,
+    parsed_msg: IRCMessage,
+    raw_line: str,
+    display_params: list,
+    trailing: Optional[str],
+):
+    """Handles ERR_ERRONEUSNICKNAME (432)."""
+    # <client> <nick> :Erroneous nickname
+    failed_nick = display_params[0] if display_params else "nick"
+    error_reason = trailing if trailing else "Erroneous nickname"
+    logger.warning(f"ERR_ERRONEUSNICKNAME (432) for {failed_nick}: {error_reason}")
+    client.add_message(
+        f"Cannot change nick to {failed_nick}: {error_reason}",
+        client.ui.colors["error"],
+        "Status",
+    )
+    if client.last_attempted_nick_change is not None and \
+       client.last_attempted_nick_change.lower() == failed_nick.lower():
+        logger.info(f"ERR_ERRONEUSNICKNAME for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change.")
+        client.last_attempted_nick_change = None
+
+def _handle_err_nickcollision(
+    client,
+    parsed_msg: IRCMessage,
+    raw_line: str,
+    display_params: list,
+    trailing: Optional[str],
+):
+    """Handles ERR_NICKCOLLISION (436)."""
+    # <client> <nick> :Nickname collision
+    collided_nick = display_params[0] if display_params else "nick"
+    error_reason = trailing if trailing else "Nickname collision"
+    logger.warning(f"ERR_NICKCOLLISION (436) for {collided_nick}: {error_reason}")
+    client.add_message(
+        f"Cannot change nick to {collided_nick}: {error_reason}. The server killed your nick, attempting to restore to {client.initial_nick}.",
+        client.ui.colors["error"],
+        "Status",
+    )
+    if client.last_attempted_nick_change is not None and \
+       client.last_attempted_nick_change.lower() == collided_nick.lower():
+        logger.info(f"ERR_NICKCOLLISION for user-attempted nick {collided_nick}. Resetting last_attempted_nick_change.")
+        client.last_attempted_nick_change = None
+
+    # Attempt to reclaim initial nick or a variant if collision occurs
+    if client.nick.lower() == collided_nick.lower(): # If our current nick is the one that collided
+        client.network_handler.send_raw(f"NICK {client.initial_nick}")
+        client.add_message(f"Attempting to restore nick to {client.initial_nick}.", client.ui.colors["system"], "Status")
+
+
 NUMERIC_HANDLERS = {
     1: _handle_rpl_welcome,
     251: _handle_motd_and_server_info,
@@ -728,7 +785,9 @@ NUMERIC_HANDLERS = {
     376: _handle_motd_and_server_info,
     401: _handle_err_nosuchnick,
     403: _handle_err_nosuchchannel,
+    432: _handle_err_erroneusnickname, # Added
     433: _handle_err_nicknameinuse,
+    436: _handle_err_nickcollision,   # Added
     471: _handle_err_channel_join_group,
     473: _handle_err_channel_join_group,
     474: _handle_err_channel_join_group,
@@ -791,12 +850,20 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
         _handle_err_nosuchchannel(
             client, parsed_msg, raw_line, display_params, trailing
         )
+    elif code == 432: # ERR_ERRONEUSNICKNAME
+        _handle_err_erroneusnickname(
+            client, parsed_msg, raw_line, display_params, trailing
+        )
     elif code in (471, 472, 473, 474, 475):  # Channel join errors
         _handle_err_channel_join_group(
             client, parsed_msg, raw_line, display_params, trailing
         )
     elif code == 433:  # ERR_NICKNAMEINUSE
         _handle_err_nicknameinuse(
+            client, parsed_msg, raw_line, display_params, trailing
+        )
+    elif code == 436: # ERR_NICKCOLLISION
+        _handle_err_nickcollision(
             client, parsed_msg, raw_line, display_params, trailing
         )
     elif code == 903:  # RPL_SASLLOGGEDIN
