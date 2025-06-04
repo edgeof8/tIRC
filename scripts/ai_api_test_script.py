@@ -441,18 +441,20 @@ class AiApiTestScript:
             command_to_execute_with_slash="/help",
             expected_strings=[
                 "Available commands:",
-                "Core Commands:",       # For commands in commands/core/
-                "Channel Commands:",    # For commands in commands/channel/
-                "Information Commands:",# For commands in commands/information/
-                "Server Commands:",     # For commands in commands/server/
-                "Ui Commands:",         # For commands in commands/ui/
-                "Utility Commands:",    # For commands in commands/utility/
+                "Core Commands:",
+                "Channel Commands:",
+                "Information Commands:",
+                "Server Commands:",
+                "Ui Commands:",
+                "User Commands:", # Added based on the new help structure
+                "Utility Commands:",
                 # Script group headers
                 "Commands from script Default Fun Commands:",
                 "Commands from script Default Random Messages:",
                 "Commands from script Event Test Script:",
                 "Commands from script Test Script:",
-                "Commands from script Ai Api Test Script:", # This script itself
+                "Commands from script Ai Api Test Script:", # Help for /aitest
+                # "Commands from script Script:", # If this default_help.ini entry is still active
                 "Use /help <command> for detailed help"
             ],
             test_label="/help (general)"

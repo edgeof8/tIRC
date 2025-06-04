@@ -97,18 +97,20 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
             if not commands:
                 continue
 
-            display_group_name = group_name.replace("_", " ").title() if group_name not in ["core", "script"] else group_name.title()
-            if group_name == "core":
+            display_group_name_final = group_name.replace("_", " ").title()
+
+            if group_name == "core": # For /help itself
                  client.add_message(
                     "\nCore Commands:", system_color, context_name=active_context_name
                 )
-            elif group_name.startswith("commands."): # From dynamic loading
+            # Check if group_name is one of our known command categories (utility, ui, channel, etc.)
+            elif group_name in ["utility", "ui", "channel", "information", "server", "core_modules", "user"]: # Added "user"
                  client.add_message(
-                    f"\n{display_group_name} Commands:", system_color, context_name=active_context_name
+                    f"\n{display_group_name_final} Commands:", system_color, context_name=active_context_name
                 )
-            else: # Scripts
+            else: # Assumed to be an actual script name
                  client.add_message(
-                    f"\nCommands from script '{display_group_name}':", system_color, context_name=active_context_name
+                    f"\nCommands from script '{display_group_name_final}':", system_color, context_name=active_context_name
                 )
 
             for cmd, help_text in sorted(commands):

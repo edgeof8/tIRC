@@ -9,9 +9,15 @@ logger = logging.getLogger("pyrc.commands.clear")
 
 def handle_clear_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /clear command"""
-# args_str is ignored for the /clear command as it operates on the active context.
-    current_context = client.context_manager.get_active_context()
-    if current_context:
-        current_context.messages.clear()
-        client.ui_needs_update.set()
-    # No message is sent on /clear, it just clears the local buffer.
+    # args_str is ignored for the /clear command as it operates on the active context.
+    logger.info(f"Executing /clear command for active context.")
+    active_ctx = client.context_manager.get_active_context()
+    if active_ctx:
+        logger.info(f"Attempting to clear messages for context: {active_ctx.name}. Current message count: {len(active_ctx.messages)}")
+        active_ctx.messages.clear()
+        client.ui_needs_update.set() # Signal UI to refresh
+        logger.info(f"Messages cleared for context: {active_ctx.name}. New message count: {len(active_ctx.messages)}")
+        # No confirmation message is typically sent to the UI for /clear itself.
+    else:
+        logger.warning("/clear command executed but no active context found.")
+        client.add_message("No active window to clear.", "error", context_name="Status")
