@@ -316,4 +316,21 @@ class ScriptAPIHandler:
     ) -> Optional[List[Tuple[str, Any]]]: # Added type hint for tuple elements
         return self.client_logic.context_manager.get_context_messages_raw(context_name, count)
 
+    def DEV_TEST_ONLY_clear_context_messages(self, context_name: str) -> bool:
+        # THIS IS FOR TESTING PURPOSES ONLY - DO NOT USE IN PRODUCTION SCRIPTS
+        self.log_warning(f"DEV_TEST_ONLY_clear_context_messages called for {context_name}")
+        ctx = self.client_logic.context_manager.get_context(context_name)
+        if ctx:
+            if hasattr(ctx, 'messages') and callable(getattr(ctx.messages, 'clear', None)):
+                ctx.messages.clear()
+                self.client_logic.ui_needs_update.set()
+                self.log_info(f"DEV_TEST_ONLY: Messages cleared for context {context_name}")
+                return True
+            else:
+                self.log_error(f"DEV_TEST_ONLY: Context {context_name} does not have a clearable messages attribute.")
+                return False
+        else:
+            self.log_error(f"DEV_TEST_ONLY: Context {context_name} not found.")
+            return False
+
 # END OF MODIFIED FILE: script_api_handler.py

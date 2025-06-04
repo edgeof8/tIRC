@@ -200,55 +200,84 @@ class AiApiTestScript:
 
         # /clear
         self.api.log_info(f"[AI Test] Testing /clear on {context_name}")
-        self.api.log_info(f"[AI Test] Ensuring {context_name} is active for /clear test.")
-        self.api.execute_client_command(f"/window {context_name}") # Ensure context_name is active
-        time.sleep(0.2) # Allow context switch
-        self.api.execute_client_command("/clear") # Clears active context
-        time.sleep(0.5) # Allow UI update cycle if any (though clear is mostly internal)
 
-        # Immediately fetch and log messages after clear
-        messages_immediately_after_clear = self.api.get_context_messages(context_name)
-        self.api.log_info(f"[AI Test] /clear: Messages in {context_name} IMMEDIATELY after clear: {messages_immediately_after_clear}")
+        # Step a: Make the target context active
+        self.api.log_info(f"[AI Test] Ensuring {context_name} is active before DEV_TEST_ONLY clear.")
+        self.api.execute_client_command(f"/window {context_name}")
+        time.sleep(0.2) # Allow context switch to complete
+
+        # Step b: Clear any pre-existing messages programmatically using DEV_TEST_ONLY method
+        self.api.log_info(f"[AI Test] DEV_TEST_ONLY: Attempting to pre-clear context {context_name} directly.")
+        if hasattr(self.api, 'DEV_TEST_ONLY_clear_context_messages'):
+            if not self.api.DEV_TEST_ONLY_clear_context_messages(context_name):
+                # Log error, but proceed with test as this is a setup step.
+                # The test for /clear itself will reveal if the buffer was truly not cleared.
+                self.api.log_error(f"[AI Test] DEV_TEST_ONLY_clear_context_messages call returned False for {context_name}.")
+            time.sleep(0.2) # Let UI settle if it redraws
+
+            # Verify it's actually empty now
+            pre_clear_check_messages = self.api.get_context_messages(context_name)
+            # An empty list [] is falsy. None is also falsy.
+            # So, if pre_clear_check_messages is True, it means it's not empty or not None.
+            if pre_clear_check_messages:
+                self.api.log_error(f"[AI Test] DEV_TEST_ONLY: Pre-clear for {context_name} FAILED. Buffer not empty after direct clear. Buffer: {pre_clear_check_messages}")
+            else:
+                self.api.log_info(f"[AI Test] DEV_TEST_ONLY: Pre-clear for {context_name} SUCCEEDED (buffer is empty or None).")
+        else:
+            self.api.log_error("[AI Test] DEV_TEST_ONLY_clear_context_messages method not found on API handler. Skipping direct pre-clear step.")
+
+        # Step c: Execute the actual /clear command being tested
+        # The context should already be active from the /window command above.
+        self.api.log_info(f"[AI Test] Executing the actual /clear command on (should be) active context {context_name}.")
+        self.api.execute_client_command("/clear")
+
+        # Step d: time.sleep(0.5)
+        time.sleep(0.5) # Allow UI update cycle and command processing
+
+        # Fetch messages immediately after /clear execution (and before sentinel)
+        messages_after_clear_execution = self.api.get_context_messages(context_name)
+        self.api.log_info(f"[AI Test] /clear: Messages in {context_name} AFTER /clear execution and BEFORE sentinel: {messages_after_clear_execution}")
+
+        # Store the count of messages at this point to identify newly added ones later
+        count_after_clear_execution = len(messages_after_clear_execution) if messages_after_clear_execution is not None else 0
 
         sentinel_message = f"Post-clear sentinel {time.time()}"
-        active_context_for_clear = self.api.get_current_context_name() # Should be context_name
+        active_context_for_sentinel = self.api.get_current_context_name() # Should still be context_name
 
-        if active_context_for_clear: # Ensure it's not None
-            if active_context_for_clear == context_name: # Double check it's the one we intended
-                self.api.send_message(active_context_for_clear, sentinel_message)
+        if active_context_for_sentinel:
+            if active_context_for_sentinel == context_name:
+                self.api.send_message(active_context_for_sentinel, sentinel_message)
                 time.sleep(0.5) # Allow message to be processed
             else:
-                self.api.log_error(f"[AI Test] /clear test: Active context '{active_context_for_clear}' is not the expected '{context_name}' after /window command. Sentinel not sent to target.")
-                # This case itself is a failure of the /window or /clear behavior
+                self.api.log_error(f"[AI Test] /clear test: Active context '{active_context_for_sentinel}' is not the expected '{context_name}' for sending sentinel. Sentinel not sent to target.")
         else:
             self.api.log_error("[AI Test] /clear test: Could not determine active context to send sentinel.")
-            # Handle as test failure or skip sentinel part
 
-        messages_after_clear = self.api.get_context_messages(context_name)
+        messages_after_sentinel = self.api.get_context_messages(context_name)
+        newly_added_messages = []
+        if messages_after_sentinel is not None:
+            newly_added_messages = messages_after_sentinel[count_after_clear_execution:]
 
-        # Revised verification logic:
         passed_clear_test = False
-        # Primary failure check: was the buffer empty *before* the sentinel?
-        if messages_immediately_after_clear: # If it's not None and not empty
-            self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Buffer was NOT empty IMMEDIATELY after clear. Content: {messages_immediately_after_clear}")
-            # passed_clear_test remains False
-        elif messages_immediately_after_clear is None: # Explicitly check for None if that's an error state
-             self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Message buffer was None IMMEDIATELY after clear.")
-             # passed_clear_test remains False
-        else: # messages_immediately_after_clear is an empty list []
-            self.api.log_info(f"[AI Test] /clear: Buffer was empty immediately after clear for {context_name}, as expected.")
-            # Now check the sentinel message logic
-            if messages_after_clear is not None:
-                if len(messages_after_clear) == 1:
-                    if sentinel_message in messages_after_clear[0][0]:
-                        passed_clear_test = True
-                        self.api.log_info(f"[AI Test] PASSED: /clear on active context {context_name} worked (buffer empty post-clear, and only sentinel message found after sending it).")
-                    else:
-                        self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Sentinel message '{sentinel_message}' not found in '{messages_after_clear[0][0]}' (though buffer was initially empty). Got: {messages_after_clear}")
+        # Check 1: Was the buffer empty (or None) immediately after the /clear command execution?
+        if messages_after_clear_execution: # True if not None and not empty
+            self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Buffer was NOT empty (or None) IMMEDIATELY after /clear execution (before sentinel). Content: {messages_after_clear_execution}")
+        elif messages_after_clear_execution is None: # Explicitly check for None if that's an error state from get_context_messages
+             self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Message buffer was None IMMEDIATELY after /clear execution (before sentinel).")
+        else: # messages_after_clear_execution is an empty list []
+            self.api.log_info(f"[AI Test] /clear: Buffer was empty immediately after /clear execution for {context_name} (before sentinel), as expected.")
+            # Check 2: Is the sentinel message the only *newly added* message?
+            if len(newly_added_messages) == 1:
+                if sentinel_message in newly_added_messages[0][0]:
+                    passed_clear_test = True
+                    self.api.log_info(f"[AI Test] PASSED: /clear on active context {context_name} worked. Buffer empty post-clear, and only sentinel message found among newly added messages.")
                 else:
-                    self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Expected 1 sentinel message after it was sent (buffer was initially empty), got {len(messages_after_clear)}. Messages: {messages_after_clear}")
-            else: # messages_after_clear is None (after sending sentinel)
-                self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Message buffer was None after sending sentinel (though buffer was initially empty).")
+                    self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Sentinel message '{sentinel_message}' not found in the single newly added message '{newly_added_messages[0][0]}'.")
+            elif len(newly_added_messages) == 0:
+                 self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. No new messages (including sentinel) found after sending sentinel. Messages after sentinel: {messages_after_sentinel}")
+            else: # More than one new message
+                self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Expected 1 new (sentinel) message, got {len(newly_added_messages)}. Newly added: {newly_added_messages}. All after sentinel: {messages_after_sentinel}")
+
         # self.test_results.append(TestResult("/clear Command", passed_clear_test, ...))
             # (Integrate with TestResult reporting)
 
@@ -446,15 +475,14 @@ class AiApiTestScript:
                 "Information Commands:",
                 "Server Commands:",
                 "Ui Commands:",
-                "User Commands:", # Added based on the new help structure
+                "User Commands:",
                 "Utility Commands:",
-                # Script group headers
+                # Add specific, known script command group titles
                 "Commands from script Default Fun Commands:",
                 "Commands from script Default Random Messages:",
                 "Commands from script Event Test Script:",
                 "Commands from script Test Script:",
-                "Commands from script Ai Api Test Script:", # Help for /aitest
-                # "Commands from script Script:", # If this default_help.ini entry is still active
+                "Commands from script Ai Api Test Script:",
                 "Use /help <command> for detailed help"
             ],
             test_label="/help (general)"

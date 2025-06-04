@@ -316,6 +316,7 @@ class CommandHandler:
 
         if cmd in self.command_map:
             handler_func = self.command_map[cmd]
+            logger.info(f"CommandHandler: Found '{cmd}' in command_map. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}")
             # All handlers in command_map are now expected to have the (client, args_str) signature
             handler_func(self.client, args_str)
             return True
@@ -350,11 +351,11 @@ class CommandHandler:
                         or "Status",
                     )
                 return True
-            else:
+            else: # UNKNOWN CLIENT COMMAND
+                logger.warning(f"CommandHandler: Command '{cmd}' not found in command_map or script commands. Treating as unknown.")
                 self.client.add_message(
                     f"Unknown command: {cmd}",
                     self.client.ui.colors["error"],
-                    context_name=self.client.context_manager.active_context_name
-                    or "Status",
+                    context_name=self.client.context_manager.active_context_name or "Status",
                 )
-                return True  # Command was processed (as unknown)
+                return True

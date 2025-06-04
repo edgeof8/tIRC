@@ -40,15 +40,23 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         commands_by_script: Dict[str, List[tuple[str, str]]] = {}
         for cmd, help_text_data in help_texts_from_scripts.items():
             if isinstance(help_text_data, dict):
-                script_name = help_text_data.get("script_name", "UnknownScript")
+                script_name_original = help_text_data.get("script_name", "UnknownScript")
                 help_text_str = help_text_data.get("help_text", "")
             else: # Should ideally not happen if script_manager always returns dicts
-                script_name = "script" # Fallback
+                script_name_original = "script" # Fallback
                 help_text_str = str(help_text_data)
 
-            if script_name not in commands_by_script:
-                commands_by_script[script_name] = []
-            commands_by_script[script_name].append((cmd, help_text_str))
+            # If script_name_original is a generic fallback, group under 'core'
+            # This helps avoid "Commands from script 'Script':" or "Commands from script 'UnknownScript':"
+            # for INI-defined help entries not associated with a specific loaded script module.
+            effective_group_name = script_name_original
+            if script_name_original.lower() in ["script", "unknownscript", "core_ini_commands"]: # "core_ini_commands" could be a convention from script_manager
+                effective_group_name = "core"
+
+
+            if effective_group_name not in commands_by_script:
+                commands_by_script[effective_group_name] = []
+            commands_by_script[effective_group_name].append((cmd, help_text_str))
 
         # --- Merge help from registered_command_help (core commands) ---
         core_help_from_modules = {}
@@ -103,12 +111,17 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                  client.add_message(
                     "\nCore Commands:", system_color, context_name=active_context_name
                 )
-            # Check if group_name is one of our known command categories (utility, ui, channel, etc.)
-            elif group_name in ["utility", "ui", "channel", "information", "server", "core_modules", "user"]: # Added "user"
+            # Check if group_name is one of our known command categories (derived from commands.* modules)
+            # These categories are like "utility", "ui", "channel", "information", "server", "user".
+            # "core_modules" is a fallback if category extraction fails for a commands.* module.
+            known_core_categories = ["utility", "ui", "channel", "information", "server", "core_modules", "user"]
+            if group_name in known_core_categories:
                  client.add_message(
                     f"\n{display_group_name_final} Commands:", system_color, context_name=active_context_name
                 )
-            else: # Assumed to be an actual script name
+            # If not 'core' and not a known core category, it's assumed to be an actual script name
+            # (e.g., "Default Fun Commands", "Ai Api Test Script")
+            else:
                  client.add_message(
                     f"\nCommands from script '{display_group_name_final}':", system_color, context_name=active_context_name
                 )
