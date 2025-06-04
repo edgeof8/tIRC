@@ -6,6 +6,9 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 
 - **Text-based UI:** Clean and navigable interface using the Python `curses` library (optional for headless operation).
 - **Split-Screen Support:** Horizontal split-screen mode with independent scrolling and context management for each pane.
+- **Multi-Server Configuration & Switching:**
+  - Define multiple server connection profiles in `pyterm_irc_config.ini`.
+  - Switch between configured servers using the `/server <config_name>` command.
 - **Channel and Query Windows:** Separate, consistently managed contexts for channels (case-insensitive handling, e.g., #channel and #Channel are treated as the same) and private messages.
 - **mIRC-like UI Flow:** Starts in the "Status" window and automatically switches to a channel upon successful join (when UI is active).
 - **IRCv3 Support:**
@@ -27,15 +30,17 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
   - Fully manageable via the `/on` command or programmatically through the `ScriptAPIHandler`.
 - **Headless Operation:**
   - Can be run with a `--headless` flag, disabling the `curses` UI for use as an IRC backend or for AI agents. Core logic and scripting remain fully functional.
-  - No UI is drawn
-  - All core IRC logic, including connection, CAP/SASL, event processing, and the scripting system, remains fully functional
-  - Scripts can interact with the IRC server using the ScriptAPIHandler
-  - Logging continues as configured
-  - The client can be shut down via SIGINT (Ctrl+C) or programmatically by a script calling a quit/disconnect API function
-  - The `headless_message_history_lines` config option can be used to set a different message history size for contexts in headless mode, potentially reducing memory usage
+  - No UI is drawn.
+  - All core IRC logic, including connection, CAP/SASL, event processing, and the scripting system, remains fully functional.
+  - Scripts can interact with the IRC server using the ScriptAPIHandler.
+  - Logging continues as configured.
+  - The client can be shut down via SIGINT (Ctrl+C) or programmatically by a script calling a quit/disconnect API function.
+  - The `headless_message_history_lines` config option can be used to set a different message history size for contexts in headless mode, potentially reducing memory usage.
 - **Logging:**
-  - Comprehensive main log file for debugging and session history.
-  - Optional per-channel logging to separate files.
+  - Comprehensive main application log (defaults to `logs/pyrc_core.log`).
+  - Dedicated log for Status window messages (defaults to `logs/client_status_messages.log`).
+  - Optional per-channel logging to separate files in the `logs/` directory (e.g., `logs/python.log`).
+  - Robust collision avoidance for log filenames.
   - Raw IRC message logging to UI toggleable with `/rawlog`.
 - **Code Modularity:** Significantly improved structure and maintainability of core components:
   - Specialized handlers for IRC protocol parsing, numeric replies, command groups (now partially script-based), connection lifecycle (CAP, SASL, registration).
@@ -78,19 +83,32 @@ You can also view and modify many settings directly within the client using the 
 **`pyterm_irc_config.ini` Example Structure (Key Sections):**
 
 ```ini
-[Connection]
-default_server = irc.libera.chat
-default_port = 6697
-default_ssl = true
-default_nick = PyRCUser
-default_channels = #python,#yourchannel
-password =
-nickserv_password =
-auto_reconnect = true
+[Server.LiberaChat] ; Example server configuration block
+address = irc.libera.chat
+port = 6697
+ssl = true
+nick = PyRCUser
+channels = #python,#yourchannel
+; username = YourUsername ; Optional, defaults to nick
+; realname = Your Real Name ; Optional, defaults to nick
+; server_password = YourServerPassword ; Optional
+nickserv_password = YourNickServPassword ; Optional, also used for SASL if sasl_password not set
+; sasl_username = YourSASLUsername ; Optional, defaults to nick
+; sasl_password = YourSASLPASSWORD ; Optional, defaults to nickserv_password
 verify_ssl_cert = true
-# proxy_type = SOCKS5 ; (Proxy support is not yet implemented)
-# proxy_host = 127.0.0.1
-# proxy_port = 9050
+auto_connect = true ; Set to true for one server to auto-connect on startup
+
+[Server.AnotherNet]
+address = irc.another.net
+port = 6667
+ssl = false
+nick = MyOtherNick
+channels = #general
+auto_connect = false
+
+[Connection] ; Legacy section, primarily for global non-server-specific settings now
+auto_reconnect = true
+; default_server, default_port, etc. from here are less relevant with new [Server.Name] blocks
 
 [UI]
 message_history_lines = 500
@@ -99,7 +117,7 @@ headless_message_history_lines = 50 ; For --headless mode
 
 [Logging]
 log_enabled = true
-log_file = pyrc.log ; Main log file name (will be in 'logs/' subdirectory)
+log_file = pyrc_core.log ; Main log file name (will be in 'logs/' subdirectory)
 log_level = INFO   ; DEBUG, INFO, WARNING, ERROR, CRITICAL
 log_max_bytes = 5242880 ; 5 MB
 log_backup_count = 3
@@ -129,13 +147,13 @@ Once installed and configured, run PyRC from its root directory:
 python pyrc.py
 ```
 
-Or, to specify connection parameters via command line (overriding `pyterm_irc_config.ini` defaults):
+Or, to specify connection parameters via command line (overriding any `auto_connect=true` server in `pyterm_irc_config.ini` with a temporary "CommandLine" configuration):
 
 ```bash
-python pyrc.py [--server <server>] [-p <port>] [-n <nick>] [-c <#channel>] [--ssl | --no-ssl] [--password <server_pass>] [--headless] [--disable-script <script_name>]
+python pyrc.py [--server <server>] [--port <port>] [--nick <nick>] [--channel <#channel>] [--ssl] [--password <server_pass>] [--nickserv-password <pass>] [--headless] [--disable-script <script_name>]
 ```
 
-Example: `python pyrc.py --server irc.example.com -p 6667 -n MyPyRCNick -c "#chat" --no-ssl`
+Example: `python pyrc.py --server irc.example.com --port 6667 --nick MyPyRCNick --channel "#chat"`
 Example (headless): `python pyrc.py --server irc.example.com --nick MyBot --headless --disable-script default_fun_commands`
 
 ## Basic Commands
@@ -144,7 +162,8 @@ PyRC supports a variety of commands. Type `/help` within the client for a list o
 
 ### Connection & Session Management:
 
-- `/connect <server[:port]> [ssl|nossl]` (Alias: `/server`, `/s`): Connects to a server.
+- `/connect <server[:port]> [ssl|nossl]`: Connects to a specified server, creating a temporary configuration.
+- `/server <config_name>`: Switches to a server defined in `pyterm_irc_config.ini`.
 - `/disconnect [reason]` (Alias: `/d`): Disconnects from the current server.
 - `/quit [message]` (Alias: `/q`): Disconnects and exits PyRC. Uses random messages if no message is provided (from default_random_messages.py script).
 - `/reconnect`: Disconnects and reconnects to the current server.
@@ -176,7 +195,7 @@ PyRC supports a variety of commands. Type `/help` within the client for a list o
 - `/whois <nick>` (Alias: `/w`): Retrieves WHOIS information.
 - `/who [<target>]`: Retrieves WHO information.
 - `/whowas <nick> [count [target_server]]`: Retrieves WHOWAS information.
-- `/list [pattern]`: Lists channels on the server.
+- `/list [pattern]`: Lists channels on the server. Output goes to a temporary `##LIST_RESULTS...##` window.
 - `/names [channel]`: Lists users in a channel.
 
 ### Client Utility & UI:
@@ -190,7 +209,7 @@ PyRC supports a variety of commands. Type `/help` within the client for a list o
 - `/window <name|number>` (Alias: `/win`): Switches to a specific window.
 - `/status`: Switches to the Status window.
 - `/prevchannel` (Alias: `/pc`): Switches to the previously active channel or Status.
-- `/split [on|off|toggle]`: Toggles split-screen mode.
+- `/split`: Toggles split-screen mode.
 - `/focus <top|bottom>`: Switches focus between split-screen panes.
 - `/setpane <top|bottom> <context_name>`: Assigns a context to a specific pane.
 - Ctrl+U (or `/u [offset|direction]`, `/userlistscroll [offset|direction]`): Scrolls the user list.
@@ -213,7 +232,7 @@ PyRC supports a variety of commands. Type `/help` within the client for a list o
 - `/rainbow <text>`: Sends text in rainbow colors.
 - `/reverse <text>`: Sends text reversed.
 - `/wave <text>`: Sends text with a wave effect.
-- `/ascii <text>`: Converts text to ASCII art.
+- `/ascii <text>`: Converts text to ASCII art (requires `pyfiglet`).
 
 ## Headless Operation
 
@@ -230,11 +249,12 @@ In headless mode:
 - No UI is drawn.
 - All core IRC logic, including connection, CAP/SASL, event processing, and the scripting system, remains fully functional.
 - Scripts can interact with the IRC server using the `ScriptAPIHandler`.
-- Logging continues as configured.
-- The client can be shut down via `SIGINT` (Ctrl+C) or programmatically by a script.
+- Logging continues as configured (main log: `logs/pyrc_core.log`, status messages: `logs/client_status_messages.log`).
+- The client can be shut down via `SIGINT` (Ctrl+C) or programmatically by a script (e.g., `api.quit_client()`).
 - The `headless_message_history_lines` config option in `pyterm_irc_config.ini` (under `[UI]`) can be used to set a different message history size for contexts, potentially reducing memory usage.
 - The `--disable-script <script_name>` flag can be used to prevent specific scripts from loading.
 - The `enable_trigger_system` config option in `pyterm_irc_config.ini` (under `[Features]`) controls whether the `/on` trigger system is active.
+- The `CLIENT_READY` event is dispatched after successful registration and initial setup, useful for headless scripts to start their main logic.
 
 ## Scripting System
 
@@ -243,7 +263,7 @@ PyRC features a powerful and flexible scripting system, allowing users to extend
 ### Key Scripting Capabilities:
 
 - **Command Registration:** Scripts can define new client commands with custom handlers, help text, and aliases.
-- **Event Subscription:** Scripts can subscribe to a wide range of IRC events (e.g., `PRIVMSG`, `JOIN`, `NICK`, `MODE`, `RAW_IRC_NUMERIC`, `CLIENT_NICK_CHANGED`, `CHANNEL_MODE_APPLIED`) and client lifecycle events (e.g., `CLIENT_CONNECTED`, `CLIENT_DISCONNECTED`, `CLIENT_REGISTERED`, `CLIENT_SHUTDOWN_FINAL`). Event data is rich and structured, often including parsed IRCv3 message tags.
+- **Event Subscription:** Scripts can subscribe to a wide range of IRC events (e.g., `PRIVMSG`, `JOIN`, `NICK`, `MODE`, `RAW_IRC_NUMERIC`, `CLIENT_NICK_CHANGED`, `CHANNEL_MODE_APPLIED`) and client lifecycle events (e.g., `CLIENT_CONNECTED`, `CLIENT_DISCONNECTED`, `CLIENT_REGISTERED`, `CLIENT_READY`, `CLIENT_SHUTDOWN_FINAL`). Event data is rich and structured, often including parsed IRCv3 message tags.
 - **Data Files:** Scripts can manage their own data files within a dedicated subdirectory: `scripts/data/<script_module_name>/`.
 - **Comprehensive API Access (`ScriptAPIHandler`):** Scripts interact with the client through a `ScriptAPIHandler` instance (passed as `self.api` to script instances), providing methods to:
 
@@ -252,7 +272,7 @@ PyRC features a powerful and flexible scripting system, allowing users to extend
   - `api.send_raw(command_string: str)`
   - `api.send_message(target: str, message: str)` (for PRIVMSG)
   - `api.send_action(target: str, action_text: str)` (for CTCP ACTION /me)
-  - `api.send_notice(target: str, message: str)` (_New - assuming you'll add this to ScriptAPIHandler based on `/notice` command_)
+  - `api.send_notice(target: str, message: str)`
   - `api.join_channel(channel_name: str, key: Optional[str] = None)`
   - `api.part_channel(channel_name: str, reason: Optional[str] = None)`
   - `api.set_nick(new_nick: str)`
@@ -260,7 +280,7 @@ PyRC features a powerful and flexible scripting system, allowing users to extend
   - `api.set_channel_mode(channel_name: str, modes: str, *mode_params: str)`
   - `api.kick_user(channel_name: str, nick: str, reason: Optional[str] = None)`
   - `api.invite_user(nick: str, channel_name: str)`
-  - `api.quit(reason: Optional[str] = None)` (_New - assuming you'll add this_)
+  - `api.quit_client(reason: Optional[str] = None)` (Signals client to quit and shutdown)
 
   #### Interacting with Client UI (when UI is active):
 
@@ -268,7 +288,7 @@ PyRC features a powerful and flexible scripting system, allowing users to extend
 
   #### Accessing Client & Server Information:
 
-  - `api.get_client_nick() -> str`
+  - `api.get_client_nick() -> Optional[str]`
   - `api.get_current_context_name() -> Optional[str]`
   - `api.get_active_context_type() -> Optional[str]`
   - `api.is_connected() -> bool`
@@ -278,7 +298,7 @@ PyRC features a powerful and flexible scripting system, allowing users to extend
   - `api.get_channel_users(channel_name: str) -> Optional[Dict[str, str]]` (nick: prefix map)
   - `api.get_channel_topic(channel_name: str) -> Optional[str]`
   - `api.get_context_info(context_name: str) -> Optional[Dict[str, Any]]` (detailed info about a context)
-  - `api.get_context_messages(context_name: str, count: Optional[int] = None) -> Optional[List[Tuple[str, Any]]]` (_New - for Stage 4 testing_)
+  - `api.get_context_messages(context_name: str, count: Optional[int] = None) -> Optional[List[Tuple[str, Any]]]`
 
   #### Trigger Management (if `enable_trigger_system` is true):
 
@@ -306,7 +326,6 @@ PyRC features a powerful and flexible scripting system, allowing users to extend
 ```python
 # In scripts/my_cool_script.py
 from script_base import ScriptBase # Assuming script_base.py is in the project root or accessible
-# Or adjust path if script_base.py is elsewhere, e.g., from ..script_base import ScriptBase
 
 class MyScript(ScriptBase): # Inherit from ScriptBase
     def __init__(self, api_handler): # api_handler is an instance of ScriptAPIHandler
@@ -349,6 +368,8 @@ Scripts can subscribe to various events. Event handler functions receive a singl
   - `event_data` additional keys: `server` (str), `port` (int).
 - `CLIENT_REGISTERED`: Fired upon receiving RPL_WELCOME (001).
   - `event_data` additional keys: `nick` (str - confirmed client nick), `server_message` (str - welcome message).
+- `CLIENT_READY`: Fired after `CLIENT_REGISTERED` and initial auto-join actions (like NickServ IDENTIFY and channel joins) have been initiated. This is a good event for headless scripts to start their primary operations.
+  - `event_data` additional keys: `nick` (str - confirmed client nick), `client_logic_ref` (reference to `IRCClient_Logic`).
 - `CLIENT_NICK_CHANGED`: Fired specifically when PyRC's own nickname successfully changes.
   - `event_data` additional keys: `old_nick` (str), `new_nick` (str).
 - `CLIENT_SHUTDOWN_FINAL`: Fired just before application exit, _after_ `curses` UI is down (if UI was active).
@@ -361,6 +382,8 @@ Scripts can subscribe to various events. Event handler functions receive a singl
   - `event_data` additional keys: `nick` (str), `userhost` (str), `target` (str), `message` (str), `is_channel_notice` (bool), `tags` (Dict[str, Any]).
 - `JOIN`: When a user (including client) joins.
   - `event_data` additional keys: `nick` (str), `userhost` (str - if available from server, e.g. with extended-join), `channel` (str), `account` (str - if available, e.g. with extended-join), `real_name` (str - if available, e.g. with extended-join), `is_self` (bool).
+- `CHANNEL_FULLY_JOINED`: Fired after a channel is successfully joined and RPL_ENDOFNAMES (or equivalent) is received.
+  - `event_data` additional keys: `channel_name` (str).
 - `PART`: When a user (including client) parts.
   - `event_data` additional keys: `nick` (str), `userhost` (str), `channel` (str), `reason` (str), `is_self` (bool).
 - `QUIT`: When a user quits.
@@ -393,6 +416,7 @@ PyRC ships with several default scripts in the `scripts/` directory:
 - `event_test_script.py`: Logs various events for debugging/development.
 - `ai_api_test_script.py`: Demonstrates and tests the enhanced `ScriptAPIHandler` for programmatic use, including automated tests for various features.
 - `test_script.py`: Basic command registration example.
+- `test_headless.py`: Script used by `run_headless_tests.py` for automated integration testing in headless mode.
 
 The client's `/help` system is driven by `scripts/data/default_help/command_help.ini` for core commands. Scripts can register help for their own commands using `self.api.register_help_text()`.
 
@@ -400,14 +424,20 @@ The client's `/help` system is driven by `scripts/data/default_help/command_help
 
 ### Latest Updates
 
-- Fixed Pylance type checking errors related to network attribute access
-- Improved code consistency by standardizing on `network_handler` attribute name
-- Enhanced type safety in script management system
-- Fixed attribute access in network-related operations
-- Added support for headless operation mode
-- Enhanced ScriptAPIHandler for AI integration
-- Added new IRCv3 message-tags support
-- Improved event data structure with consistent fields
+- **Server Management:** Implemented multi-server configuration loading from `pyterm_irc_config.ini` and added `/server <config_name>` command to switch between them. CLI arguments now create a temporary "CommandLine" server configuration.
+- **Logging Rationalization:**
+  - Main application log defaults to `logs/pyrc_core.log`.
+  - Status window log defaults to `logs/client_status_messages.log`.
+  - Channel log names now avoid collision with both the main and status logs (e.g., `#pyrc` logs to `logs/channel_pyrc.log`).
+- **Headless Mode:**
+  - Enhanced stability and functionality.
+  - Added `CLIENT_READY` event for headless scripts to reliably start operations.
+  - `headless_message_history_lines` configuration option available.
+- **Scripting API:**
+  - `ScriptAPIHandler` expanded with more methods for server/channel interaction, information retrieval, and trigger management.
+  - Event data structures are more consistent, typically including `timestamp`, `raw_line`, and `client_nick`.
+- **Error Handling:** Improved robustness in UI rendering and network operations.
+- **Configuration:** `/set` and `/rehash` commands are functional for dynamic configuration management.
 
 ### Known Issues
 

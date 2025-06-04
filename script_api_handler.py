@@ -28,11 +28,6 @@ class ScriptAPIHandler:
         # Use a logger specific to this API handler instance for the script
         self.logger = logging.getLogger(f"pyrc.script_api.{script_name}")
         # Removed script-specific attributes that are managed by ScriptManager
-        # self.script_instance = None
-        # self.registered_commands = {}
-        # self.registered_events = set()
-        # self.help_texts = {}
-        # self.quit_messages = []
 
     # --- Logging methods ---
     def log_info(self, message: str):
