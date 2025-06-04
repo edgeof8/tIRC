@@ -1,4 +1,3 @@
-# START OF MODIFIED FILE: irc_client_logic.py
 import curses
 import threading
 import time
@@ -319,11 +318,10 @@ class IRCClient_Logic:
                 "warning",
             )
 
-        self.add_message("Simple IRC Client starting...", self.ui.colors["system"], context_name="Status")
+        self._add_status_message("Simple IRC Client starting...")
         initial_channels_display = (", ".join(self.initial_channels_list) if self.initial_channels_list else "None")
-        self.add_message(
-            f"Target: {self.server or 'Not configured'}:{self.port or 'N/A'}, Nick: {self.nick}, Channels: {initial_channels_display}",
-            self.ui.colors["system"], context_name="Status"
+        self._add_status_message(
+            f"Target: {self.server or 'Not configured'}:{self.port or 'N/A'}, Nick: {self.nick}, Channels: {initial_channels_display}"
         )
         logger.info(
             f"IRCClient_Logic initialized for {self.server or 'Not configured'}:{self.port or 'N/A'} as {self.nick}. Channels: {initial_channels_display}"
@@ -660,12 +658,7 @@ class IRCClient_Logic:
 
     def handle_server_message(self, line: str):
         if self.show_raw_log_in_ui:
-            self.add_message(
-                f"S << {line.strip()}",
-                self.ui.colors.get("system", 0),
-                context_name="Status",
-                prefix_time=True,
-            )
+            self._add_status_message(f"S << {line.strip()}")
 
         parsed_msg = IRCMessage.parse(line)
         if (
@@ -978,12 +971,7 @@ class IRCClient_Logic:
         except Exception as e:
             error_message = f"Error executing Python trigger ({trigger_info_for_error}): {type(e).__name__}: {e}"
             logger.error(error_message, exc_info=True)
-            self.add_message(
-                error_message,
-                self.ui.colors["error"],
-                prefix_time=True,
-                context_name="Status",
-            )
+            self._add_status_message(error_message, "error")
 
     def process_trigger_event(
         self, event_type: str, event_data: Dict[str, Any]
@@ -1010,12 +998,12 @@ class IRCClient_Logic:
     def handle_text_input(self, text: str):
         active_ctx_name = self.context_manager.active_context_name
         if not active_ctx_name:
-            self.add_message("No active window to send message to.", self.ui.colors["error"], context_name="Status")
+            self._add_status_message("No active window to send message to.", "error")
             return
 
         active_ctx = self.context_manager.get_context(active_ctx_name)
         if not active_ctx:
-            self.add_message(f"Error: Active context '{active_ctx_name}' not found.", self.ui.colors["error"], context_name="Status")
+            self._add_status_message(f"Error: Active context '{active_ctx_name}' not found.", "error")
             return
 
         if active_ctx.type == "channel":
@@ -1037,9 +1025,9 @@ class IRCClient_Logic:
             elif self.echo_sent_to_status:
                 self.add_message(f"To {active_ctx_name}: <{self.nick}> {text}", self.ui.colors["my_message"], context_name="Status")
         else:
-            self.add_message(
+            self._add_status_message(
                 f"Cannot send messages to '{active_ctx_name}' (type: {active_ctx.type}). Try a command like /msg.",
-                self.ui.colors["error"], context_name="Status"
+                "error"
             )
 
     def handle_rehash_config(self):
@@ -1055,16 +1043,15 @@ class IRCClient_Logic:
             if hasattr(self.context_manager, "max_history"):
                 self.context_manager.max_history = app_config.MAX_HISTORY
 
-            self.add_message(
-                "Configuration reloaded. Some changes (like main log file settings or server connection details if manually edited in INI) may require a /reconnect or client restart to fully apply.",
-                self.ui.colors["system"], context_name="Status"
+            self._add_status_message(
+                "Configuration reloaded. Some changes (like main log file settings or server connection details if manually edited in INI) may require a /reconnect or client restart to fully apply."
             )
             logger.info("Configuration successfully reloaded and applied where possible.")
             self.ui_needs_update.set()
 
         except Exception as e:
             logger.error(f"Error during /rehash: {e}", exc_info=True)
-            self.add_message(f"Error reloading configuration: {e}", self.ui.colors["error"], context_name="Status")
+            self._add_status_message(f"Error reloading configuration: {e}", "error")
             self.ui_needs_update.set()
 
     def run_main_loop(self):
@@ -1113,7 +1100,7 @@ class IRCClient_Logic:
             if not self.is_headless:
                 logger.error(f"Curses error in main loop: {e}", exc_info=True)
                 try:
-                    self.add_message(f"Curses error: {e}. Quitting.", self.ui.colors["error"], prefix_time=True, context_name="Status")
+                    self._add_status_message(f"Curses error: {e}. Quitting.", "error")
                 except: pass
             else:
                 logger.error(f"Curses-related error in headless main loop (should not happen often): {e}", exc_info=True)
@@ -1121,7 +1108,7 @@ class IRCClient_Logic:
         except Exception as e:
             logger.critical(f"Unhandled exception in main client loop: {e}", exc_info=True)
             try:
-                self.add_message(f"CRITICAL ERROR: {e}. Attempting to quit.", self.ui.colors["error"], prefix_time=True, context_name="Status")
+                self._add_status_message(f"CRITICAL ERROR: {e}. Attempting to quit.", "error")
             except: pass
             self.should_quit = True
         finally:
@@ -1207,5 +1194,3 @@ class IRCClient_Logic:
 
     def reset_reconnect_delay(self) -> None:
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
-
-# END OF MODIFIED FILE: irc_client_logic.py
