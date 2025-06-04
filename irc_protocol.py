@@ -1,59 +1,54 @@
+# START OF MODIFIED FILE: irc_protocol.py
 import re
 import logging
 from collections import deque
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import time
 from context_manager import ChannelJoinStatus
 from irc_message import IRCMessage
 from irc_numeric_handlers import _handle_numeric_command
 from message_handlers import handle_privmsg, handle_notice
-from membership_handlers import handle_membership_changes
+from membership_handlers import handle_membership_changes # Assuming this also calls process_trigger_event for relevant types
 from state_change_handlers import handle_nick_message, handle_mode_message, handle_topic_command_event, handle_chghost_command_event
 from protocol_flow_handlers import handle_cap_message, handle_ping_command, handle_authenticate_command, handle_unknown_command
+
+if TYPE_CHECKING:
+    from irc_client_logic import IRCClient_Logic
+
 
 logger = logging.getLogger("pyrc.protocol")
 
 
-# _handle_cap_message moved to protocol_flow_handlers.py
-# _handle_nick_message and _handle_mode_message moved to state_change_handlers.py
-
-
-def handle_server_message(client, line: str):  # raw_line is 'line' here
-    """
-    Processes a raw message line from the IRC server and calls
-    appropriate methods on the client object to update state or UI.
-    """
+def handle_server_message(client: "IRCClient_Logic", line: str):
     parsed_msg = IRCMessage.parse(line)
 
     if not parsed_msg:
         logger.error(f"Failed to parse IRC message: {line.strip()}")
-        client.add_message(
-            f"[UNPARSED] {line.strip()}",
-            client.ui.colors["error"],
-            context_name="Status",
-        )
+        client.add_message(f"[UNPARSED] {line.strip()}", "error", context_name="Status")
         return
 
     cmd = parsed_msg.command
+    final_trigger_action_to_take: Optional[str] = None
 
+    # Process RAW trigger first
     if hasattr(client, "trigger_manager") and client.trigger_manager:
         raw_data = {
-            "event_type": "RAW",
-            "raw_line": line,
-            "timestamp": time.time(),
-            "client_nick": client.nick,
-            "prefix": parsed_msg.prefix,
-            "command": parsed_msg.command,
-            "params_list": parsed_msg.params,
+            "event_type": "RAW", "raw_line": line, "timestamp": time.time(),
+            "client_nick": client.nick, "prefix": parsed_msg.prefix,
+            "command": parsed_msg.command, "params_list": list(parsed_msg.params), # Ensure it's a list
             "trailing": parsed_msg.trailing,
-            "numeric": (
-                int(parsed_msg.command) if parsed_msg.command.isdigit() else None
-            ),
+            "numeric": (int(parsed_msg.command) if parsed_msg.command.isdigit() else None),
+            "tags": parsed_msg.get_all_tags() # Add tags to RAW event
         }
-        action_to_take = client.process_trigger_event("RAW", raw_data)
-        if action_to_take:
-            client.command_handler.process_user_command(action_to_take)
+        final_trigger_action_to_take = client.process_trigger_event("RAW", raw_data)
+        # If a RAW trigger produces a command, it takes precedence for now.
+        # More sophisticated logic could queue actions or allow multiple.
 
+    # Specific command handlers (which might also call process_trigger_event for specific event types)
+    # If a specific handler's trigger also produces a command, it could override the RAW trigger's command.
+    # This precedence (specific over RAW) is generally desirable.
+
+    specific_handler_trigger_action: Optional[str] = None
     if cmd == "CAP":
         handle_cap_message(client, parsed_msg, line)
     elif cmd == "PING":
@@ -61,22 +56,33 @@ def handle_server_message(client, line: str):  # raw_line is 'line' here
     elif cmd == "AUTHENTICATE":
         handle_authenticate_command(client, parsed_msg, line)
     elif cmd == "PRIVMSG":
-        handle_privmsg(client, parsed_msg, line)
+        specific_handler_trigger_action = handle_privmsg(client, parsed_msg, line)
     elif cmd in ["JOIN", "PART", "QUIT", "KICK"]:
-        handle_membership_changes(client, parsed_msg, line)
+        # Modify these handlers to also return Optional[str] if they process triggers
+        specific_handler_trigger_action = handle_membership_changes(client, parsed_msg, line)
     elif cmd == "NICK":
-        handle_nick_message(client, parsed_msg, line)
+        specific_handler_trigger_action = handle_nick_message(client, parsed_msg, line)
     elif cmd.isdigit():
-        _handle_numeric_command(client, parsed_msg, line)
+        _handle_numeric_command(client, parsed_msg, line) # Numeric handlers might call process_trigger_event internally
     elif cmd == "MODE":
-        handle_mode_message(client, parsed_msg, line)
+        specific_handler_trigger_action = handle_mode_message(client, parsed_msg, line)
     elif cmd == "TOPIC":
-        handle_topic_command_event(client, parsed_msg, line)
+        specific_handler_trigger_action = handle_topic_command_event(client, parsed_msg, line)
     elif cmd == "NOTICE":
-        handle_notice(client, parsed_msg, line)
+        specific_handler_trigger_action = handle_notice(client, parsed_msg, line)
     elif cmd == "CHGHOST":
-        handle_chghost_command_event(client, parsed_msg, line)
+        specific_handler_trigger_action = handle_chghost_command_event(client, parsed_msg, line)
     else:
         handle_unknown_command(client, parsed_msg, line)
 
+    # If a specific handler generated a command from its own trigger processing, use that.
+    if specific_handler_trigger_action:
+        final_trigger_action_to_take = specific_handler_trigger_action
+
+    if final_trigger_action_to_take:
+        logger.info(f"Executing trigger-generated command: {final_trigger_action_to_take}")
+        client.command_handler.process_user_command(final_trigger_action_to_take)
+
     client.ui_needs_update.set()
+
+# END OF MODIFIED FILE: irc_protocol.py

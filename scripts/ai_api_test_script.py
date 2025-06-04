@@ -398,9 +398,9 @@ class AiApiTestScript:
                 "Ui Commands:",
                 "User Commands:",
                 "Utility Commands:",
-                "Commands from script Default Fun Commands:",
-                "Commands from script Test Script:",
-                "Commands from script Ai Api Test Script:",
+                "Commands from script Default Fun Commands:", # Colon added
+                "Commands from script Test Script:",          # Colon added
+                "Commands from script Ai Api Test Script:",   # Colon added
                 "Use /help <command> for detailed help"
             ],
             test_label="/help (general)"
