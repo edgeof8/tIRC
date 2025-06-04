@@ -33,6 +33,13 @@ def _handle_rpl_welcome(
     )
     logger.info(f"Received RPL_WELCOME (001). Nick confirmed as {client.nick}.")
 
+    if hasattr(client, "event_manager") and client.event_manager:
+        client.event_manager.dispatch_client_registered(
+            nick=confirmed_nick,
+            server_message=(trailing if trailing else ""),
+            raw_line=raw_line
+        )
+
     if hasattr(client, "registration_handler") and client.registration_handler:
         client.registration_handler.on_welcome_received(confirmed_nick)
     else:
@@ -821,17 +828,12 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
     display_params = [p for p in params if p.lower() != client.nick.lower()]
 
     # Dispatch RAW_IRC_NUMERIC event
-    if hasattr(client, "script_manager"):
-        numeric_event_data = {
-            "numeric": code,
-            "source": parsed_msg.prefix,
-            "params_list": list(params),
-            "display_params_list": list(display_params),
-            "trailing": trailing,
-            "raw_line": raw_line,
-            "tags": parsed_msg.get_all_tags(),
-        }
-        client.script_manager.dispatch_event("RAW_IRC_NUMERIC", numeric_event_data)
+    if hasattr(client, "event_manager") and client.event_manager:
+        client.event_manager.dispatch_raw_irc_numeric(
+            numeric=code, source=parsed_msg.prefix, params_list=list(params),
+            display_params_list=list(display_params), trailing=trailing,
+            tags=parsed_msg.get_all_tags(), raw_line=raw_line
+        )
 
     # Handle specific numeric replies
     if code == 1:  # RPL_WELCOME

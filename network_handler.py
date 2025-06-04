@@ -197,17 +197,19 @@ class NetworkHandler:
                 and was_connected
                 and not self._disconnect_event_sent_for_current_session
             ):
-                if hasattr(self.client, "script_manager"):
+                if hasattr(self.client, "event_manager") and self.client.event_manager: # Check for event_manager
                     current_server = self.client.server
                     current_port = self.client.port
-                    logger.info(
-                        f"Dispatching CLIENT_DISCONNECTED event from _reset_connection_state for {current_server}:{current_port}"
-                    )
-                    self.client.script_manager.dispatch_event(
-                        "CLIENT_DISCONNECTED",
-                        {"server": current_server, "port": current_port},
-                    )
-                    self._disconnect_event_sent_for_current_session = True
+                    if current_server is not None and current_port is not None:
+                        logger.info(
+                            f"Dispatching CLIENT_DISCONNECTED event via EventManager for {current_server}:{current_port}"
+                        )
+                        self.client.event_manager.dispatch_client_disconnected(
+                            current_server, current_port, raw_line=""
+                        )
+                        self._disconnect_event_sent_for_current_session = True
+                    else:
+                        logger.warning("Could not dispatch CLIENT_DISCONNECTED event: server or port info is missing.")
         self.buffer = b""
         logger.debug("Connection state reset complete")
 
@@ -281,15 +283,13 @@ class NetworkHandler:
                 )
                 self.client._add_status_message("Error: CAP negotiator not initialized.", "error")
 
-            if self.client and hasattr(self.client, "script_manager"):
-                self.client.script_manager.dispatch_event(
-                    "CLIENT_CONNECTED",
-                    {
-                        "server": self.client.server,
-                        "port": self.client.port,
-                        "nick": self.client.nick,
-                        "ssl": self.client.use_ssl,
-                    },
+            if self.client and hasattr(self.client, "event_manager") and self.client.event_manager: # Check for event_manager
+                self.client.event_manager.dispatch_client_connected(
+                    server=self.client.server,
+                    port=self.client.port,
+                    nick=self.client.nick,
+                    ssl=self.client.use_ssl,
+                    raw_line=""
                 )
 
             return True

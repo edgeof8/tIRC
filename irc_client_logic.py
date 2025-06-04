@@ -36,6 +36,7 @@ from config import (
 # Import the config module itself to access its updated globals after reload
 import config as app_config
 from script_manager import ScriptManager
+from event_manager import EventManager
 
 from context_manager import ContextManager, ChannelJoinStatus
 
@@ -264,6 +265,7 @@ class IRCClient_Logic:
         self.script_manager = ScriptManager(
             self, BASE_DIR, disabled_scripts=cli_disabled.union(config_disabled)
         )
+        self.event_manager = EventManager(self, self.script_manager)
         self.script_manager.load_scripts()
 
         # Initialize TriggerManager only if enabled
@@ -897,12 +899,8 @@ class IRCClient_Logic:
         logger.info(f"Channel {normalized_channel_name} reported as fully joined.")
 
         # Dispatch CHANNEL_FULLY_JOINED event
-        if hasattr(self, "script_manager") and self.script_manager:
-            event_data = {
-                "channel_name": normalized_channel_name,
-                # Add other relevant data if needed, e.g., current topic, user count
-            }
-            self.script_manager.dispatch_event("CHANNEL_FULLY_JOINED", event_data)
+        if hasattr(self, "event_manager") and self.event_manager:
+            self.event_manager.dispatch_channel_fully_joined(normalized_channel_name, raw_line="")
 
 
         if (
@@ -1131,7 +1129,7 @@ class IRCClient_Logic:
             self.should_quit = True
 
             quit_message_to_send = "PyRC - Exiting"
-            if hasattr(self, "script_manager") and self.script_manager:
+            if hasattr(self, "script_manager") and self.script_manager: # Keep this for random quit message
                 temp_nick_for_quit = self.nick if self.nick else app_config.DEFAULT_NICK
                 temp_server_for_quit = self.server if self.server else "UnknownServer"
                 random_msg = self.script_manager.get_random_quit_message_from_scripts(
@@ -1139,6 +1137,16 @@ class IRCClient_Logic:
                 )
                 if random_msg:
                     quit_message_to_send = random_msg
+
+            if hasattr(self, "event_manager") and self.event_manager:
+                try:
+                    logger.info(
+                        "Dispatching CLIENT_SHUTDOWN_FINAL from IRCClient_Logic.run_main_loop."
+                    )
+                    self.event_manager.dispatch_client_shutdown_final(raw_line="")
+                except Exception as e_dispatch:
+                    logger.error(f"Error dispatching CLIENT_SHUTDOWN_FINAL: {e_dispatch}", exc_info=True)
+
 
             self._final_quit_message = quit_message_to_send
 

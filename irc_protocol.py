@@ -78,18 +78,12 @@ class IRCProtocolHandler:
         )
 
         # Dispatch PRIVMSG event
-        if hasattr(client, "script_manager"):
-            event_data = {
-                "nick": nick,
-                "userhost": source_full_ident,
-                "target": target,
-                "message": message_body,
-                "is_channel_msg": is_channel_msg,
-                "client_nick": client.nick,
-                "raw_line": raw_line,
-                "tags": parsed_msg.get_all_tags(),
-            }
-            client.script_manager.dispatch_event("PRIVMSG", event_data)
+        if hasattr(client, "event_manager") and client.event_manager:
+            client.event_manager.dispatch_privmsg(
+                nick=nick, userhost=source_full_ident, target=target,
+                message=message_body, is_channel_msg=is_channel_msg,
+                tags=parsed_msg.get_all_tags(), raw_line=raw_line
+            )
 
     def _handle_notice(self, client, parsed_msg: IRCMessage, raw_line: str):
         nick = parsed_msg.source_nick
@@ -138,18 +132,12 @@ class IRCProtocolHandler:
         )
 
         # Dispatch NOTICE event
-        if hasattr(client, "script_manager"):
-            event_data = {
-                "nick": nick if nick else "",
-                "userhost": source_full_ident if source_full_ident else "",
-                "target": target,
-                "message": message_body,
-                "is_channel_notice": is_channel_notice,
-                "client_nick": client.nick,
-                "raw_line": raw_line,
-                "tags": parsed_msg.get_all_tags(),
-            }
-            client.script_manager.dispatch_event("NOTICE", event_data)
+        if hasattr(client, "event_manager") and client.event_manager:
+            client.event_manager.dispatch_notice(
+                nick=nick, userhost=source_full_ident, target=target,
+                message=message_body, is_channel_notice=is_channel_notice,
+                tags=parsed_msg.get_all_tags(), raw_line=raw_line
+            )
 
 
 protocol_handler_instance = IRCProtocolHandler()
@@ -246,14 +234,10 @@ def _handle_nick_message(client, parsed_msg: IRCMessage, raw_line: str):
             client.last_attempted_nick_change = None
 
         # Dispatch CLIENT_NICK_CHANGED event
-        if hasattr(client, "script_manager"):
-            event_data = {
-                "old_nick": old_nick,
-                "new_nick": new_nick,
-                "raw_line": raw_line,
-                "tags": parsed_msg.get_all_tags(),
-            }
-            client.script_manager.dispatch_event("CLIENT_NICK_CHANGED", event_data)
+        if hasattr(client, "event_manager") and client.event_manager:
+            client.event_manager.dispatch_client_nick_changed(
+                old_nick=old_nick, new_nick=new_nick, raw_line=raw_line
+            )
     else:
         # Handle other users' nick changes
         for context in client.context_manager.contexts.values():
@@ -273,16 +257,12 @@ def _handle_nick_message(client, parsed_msg: IRCMessage, raw_line: str):
                     )
 
     # Dispatch general NICK event
-    if hasattr(client, "script_manager"):
-        event_data = {
-            "old_nick": old_nick,
-            "new_nick": new_nick,
-            "source_userhost": source_full_ident,
-            "is_our_nick_change": is_our_nick_change,
-            "raw_line": raw_line,
-            "tags": parsed_msg.get_all_tags(),
-        }
-        client.script_manager.dispatch_event("NICK", event_data)
+    if hasattr(client, "event_manager") and client.event_manager:
+        client.event_manager.dispatch_nick(
+            old_nick=old_nick, new_nick=new_nick,
+            userhost=source_full_ident, # Ensure this is the correct var
+            is_self=is_our_nick_change, raw_line=raw_line
+        )
 
 
 def _handle_join_event(client, parsed_msg: IRCMessage, raw_line: str):
@@ -344,15 +324,17 @@ def _handle_join_event(client, parsed_msg: IRCMessage, raw_line: str):
             )
 
     # Dispatch JOIN event
-    if hasattr(client, "script_manager"):
-        event_data = {
-            "nick": src_nick,
-            "channel": joined_channel,
-            "is_self": src_nick_lower == client_nick_lower,
-            "client_nick": client.nick,
-            "raw_line": raw_line,
-        }
-        client.script_manager.dispatch_event("JOIN", event_data)
+    if hasattr(client, "event_manager") and client.event_manager:
+        # Extract extended join info if available from tags
+        account_name = parsed_msg.get_tag('account')
+        real_name = parsed_msg.trailing.split(':', 1)[-1] if parsed_msg.trailing and ':' in parsed_msg.trailing else src_nick # Simplistic realname from JOIN, better from WHOIS if needed
+        userhost = parsed_msg.prefix # Should be nick!user@host
+
+        client.event_manager.dispatch_join(
+            nick=src_nick, userhost=userhost, channel=joined_channel,
+            account=account_name, real_name=real_name, # Pass new fields
+            is_self=(src_nick_lower == client_nick_lower), raw_line=raw_line
+        )
 
 
 def _handle_part_event(client, parsed_msg: IRCMessage, raw_line: str):
@@ -421,16 +403,12 @@ def _handle_part_event(client, parsed_msg: IRCMessage, raw_line: str):
             )
 
     # Dispatch PART event
-    if hasattr(client, "script_manager"):
-        event_data = {
-            "nick": src_nick,
-            "channel": parted_channel,
-            "reason": trailing.lstrip(":") if trailing else "",
-            "is_self": src_nick_lower == client_nick_lower,
-            "client_nick": client.nick,
-            "raw_line": raw_line,
-        }
-        client.script_manager.dispatch_event("PART", event_data)
+    if hasattr(client, "event_manager") and client.event_manager:
+        client.event_manager.dispatch_part(
+            nick=src_nick, userhost=parsed_msg.prefix, channel=parted_channel, # Use parsed_msg.prefix for userhost
+            reason=(parsed_msg.trailing.lstrip(":") if parsed_msg.trailing else ""),
+            is_self=(src_nick_lower == client_nick_lower), raw_line=raw_line
+        )
 
 
 def _handle_quit_event(client, parsed_msg: IRCMessage, raw_line: str):
@@ -460,14 +438,12 @@ def _handle_quit_event(client, parsed_msg: IRCMessage, raw_line: str):
             )
 
     # Dispatch QUIT event
-    if hasattr(client, "script_manager"):
-        event_data = {
-            "nick": src_nick,
-            "reason": trailing.lstrip(":") if trailing else "",
-            "client_nick": client.nick,
-            "raw_line": raw_line,
-        }
-        client.script_manager.dispatch_event("QUIT", event_data)
+    if hasattr(client, "event_manager") and client.event_manager:
+        client.event_manager.dispatch_quit(
+            nick=src_nick, userhost=parsed_msg.prefix, # Use parsed_msg.prefix for userhost
+            reason=(parsed_msg.trailing.lstrip(":") if parsed_msg.trailing else ""),
+            raw_line=raw_line
+        )
 
 
 def _handle_kick_event(client, parsed_msg: IRCMessage, raw_line: str):
@@ -601,17 +577,12 @@ def _handle_mode_message(client, parsed_msg: IRCMessage, raw_line: str):
             )
 
             # Dispatch CHANNEL_MODE_APPLIED event
-            if hasattr(client, "script_manager"):
-                event_data = {
-                    "channel": target,
-                    "setter": source_nick,
-                    "setter_userhost": source_full_ident,
-                    "mode_changes": parsed_modes,
-                    "current_modes": list(context.modes),  # Include current modes
-                    "raw_line": raw_line,
-                    "tags": parsed_msg.get_all_tags(),
-                }
-                client.script_manager.dispatch_event("CHANNEL_MODE_APPLIED", event_data)
+            if hasattr(client, "event_manager") and client.event_manager:
+                client.event_manager.dispatch_channel_mode_applied(
+                    channel=target, setter_nick=source_nick, setter_userhost=source_full_ident,
+                    mode_changes=parsed_modes, current_channel_modes=list(context.modes),
+                    raw_line=raw_line
+                )
 
     # Handle user modes
     elif target.lower() == client.nick.lower():
@@ -637,18 +608,12 @@ def _handle_mode_message(client, parsed_msg: IRCMessage, raw_line: str):
         )
 
     # Dispatch general MODE event
-    if hasattr(client, "script_manager"):
-        event_data = {
-            "target": target,
-            "setter": source_nick,
-            "setter_userhost": source_full_ident,
-            "mode_string": mode_string,
-            "mode_params": mode_params,
-            "parsed_modes": parsed_modes,
-            "raw_line": raw_line,
-            "tags": parsed_msg.get_all_tags(),
-        }
-        client.script_manager.dispatch_event("MODE", event_data)
+    if hasattr(client, "event_manager") and client.event_manager:
+        client.event_manager.dispatch_mode(
+            target_name=target, setter_nick=source_nick, setter_userhost=source_full_ident,
+            mode_string=mode_string, mode_params=mode_params, parsed_modes=parsed_modes,
+            raw_line=raw_line
+        )
 
 
 def handle_server_message(client, line: str):  # raw_line is 'line' here
@@ -746,16 +711,12 @@ def handle_server_message(client, line: str):  # raw_line is 'line' here
             )
 
             # Dispatch TOPIC event
-            if hasattr(client, "script_manager"):
-                event_data = {
-                    "nick": parsed_msg.source_nick,
-                    "userhost": parsed_msg.prefix,
-                    "channel": channel,
-                    "topic": new_topic if new_topic is not None else "",
-                    "client_nick": client.nick,
-                    "raw_line": line,
-                }
-                client.script_manager.dispatch_event("TOPIC", event_data)
+            if hasattr(client, "event_manager") and client.event_manager:
+                client.event_manager.dispatch_topic(
+                    nick=parsed_msg.source_nick, userhost=parsed_msg.prefix,
+                    channel=channel, topic=(new_topic if new_topic is not None else ""),
+                    raw_line=line
+                )
         else:
             logger.warning(f"Malformed TOPIC message (no channel): {line.strip()}")
     elif cmd == "NOTICE":
@@ -776,16 +737,12 @@ def handle_server_message(client, line: str):  # raw_line is 'line' here
                     pass
 
             # Dispatch CHGHOST event
-            if hasattr(client, "script_manager"):
-                event_data_chghost = {
-                    "nick": src_nick,
-                    "new_ident": new_ident,
-                    "new_host": new_host,
-                    "userhost": parsed_msg.prefix,  # The original full userhost before change
-                    "client_nick": client.nick,
-                    "raw_line": line,
-                }
-                client.script_manager.dispatch_event("CHGHOST", event_data_chghost)
+            if hasattr(client, "event_manager") and client.event_manager:
+                client.event_manager.dispatch_chghost(
+                    nick=src_nick, new_ident=new_ident, new_host=new_host,
+                    old_userhost=parsed_msg.prefix, # old userhost is prefix before change
+                    raw_line=line
+                )
     else:
         display_p_parts = list(parsed_msg.params)
         if parsed_msg.trailing is not None:
