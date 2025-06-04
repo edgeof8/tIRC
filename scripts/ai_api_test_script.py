@@ -404,7 +404,13 @@ class AiApiTestScript:
         # Test /help (general)
         self._check_help_output(
             command_to_execute_with_slash="/help",
-            expected_strings=["Available commands:", "For more information on a specific command, type /help <command>"],
+            expected_strings=[
+                "Available commands:",
+                "Core Commands:",
+                "Commands from script Utility:",
+                "Commands from script Ui:",
+                "Use /help <command> for detailed help"
+            ],
             test_label="/help (general)"
         )
         time.sleep(0.5) # Small delay between tests
@@ -412,7 +418,10 @@ class AiApiTestScript:
         # Test /help set
         self._check_help_output(
             command_to_execute_with_slash="/help set",
-            expected_strings=["/set [<section.key>]", "View or modify configuration settings."],
+            expected_strings=[
+                "/set [<section.key> [<value>]]",
+                "Views or modifies client configuration settings"
+            ],
             test_label="/help set"
         )
         time.sleep(0.5)
@@ -420,7 +429,10 @@ class AiApiTestScript:
         # Test /help join
         self._check_help_output(
             command_to_execute_with_slash="/help join",
-            expected_strings=["/join <#channel>[,<#channel>...] [<key>[,<key>...]]", "Joins the specified channel(s)"],
+            expected_strings=[
+                "/join <channel> [#channel2 ...]",
+                "Joins the specified IRC channel(s)"
+            ],
             test_label="/help join"
         )
         time.sleep(0.5)
@@ -428,7 +440,10 @@ class AiApiTestScript:
         # Test /help split
         self._check_help_output(
             command_to_execute_with_slash="/help split",
-            expected_strings=["/split", "Toggle split-screen mode."],
+            expected_strings=[
+                "/split",
+                "Toggle split-screen mode on/off"
+            ],
             test_label="/help split"
         )
         time.sleep(0.5)
