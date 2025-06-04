@@ -277,33 +277,9 @@ class ServerCommandsHandler:
             self.client.active_server_config.channels[:]
         )
 
-        # Update registration handler
-        self.client.registration_handler.initial_nick = self.client.nick
-        if self.client.active_server_config.username:
-            self.client.registration_handler.username = (
-                self.client.active_server_config.username
-            )
-        if self.client.active_server_config.realname:
-            self.client.registration_handler.realname = (
-                self.client.active_server_config.realname
-            )
-        self.client.registration_handler.server_password = self.client.password
-        self.client.registration_handler.nickserv_password = (
-            self.client.nickserv_password
-        )
-        self.client.registration_handler.initial_channels_to_join = (
-            self.client.initial_channels_list
-        )
-
-        # Update SASL authenticator
-        self.client.sasl_authenticator.password = (
-            self.client.active_server_config.nickserv_password
-        )
-
-        # Reset negotiation and authentication state
-        self.client.cap_negotiator.reset_negotiation_state()
-        self.client.sasl_authenticator.reset_authentication_state()
-        self.client.registration_handler.reset_registration_state()
+        # Call the new helper method in IRCClient_Logic to re-initialize
+        # desired_caps_config, CapNegotiator, SaslAuthenticator, and RegistrationHandler
+        self.client._initialize_connection_handlers()
 
         # Reset contexts for new connection
         self._reset_contexts_for_new_connection()

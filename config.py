@@ -24,7 +24,7 @@ class ServerConfig:
     sasl_password: Optional[str] = None
     verify_ssl_cert: bool = True
     auto_connect: bool = False
-    # desired_caps: Optional[List[str]] = None # Defer this for now
+    desired_caps: Optional[List[str]] = None
 
     def __post_init__(self):
         if self.username is None:
@@ -342,6 +342,9 @@ def load_server_configurations():
             try:
                 # Use direct config.get for mandatory, config.get(fallback=...) for optional strings
                 # and config.getboolean/getint for others.
+                desired_caps_str = config.get(section_name, "desired_caps", fallback=None)
+                desired_caps_list = [cap.strip() for cap in desired_caps_str.split(',')] if desired_caps_str and desired_caps_str.strip() else None
+
                 s_config = ServerConfig(
                     server_id=server_id,
                     address=config.get(section_name, "address"),
@@ -356,7 +359,8 @@ def load_server_configurations():
                     sasl_username=config.get(section_name, "sasl_username", fallback=None),
                     sasl_password=config.get(section_name, "sasl_password", fallback=None),
                     verify_ssl_cert=config.getboolean(section_name, "verify_ssl_cert", fallback=DEFAULT_VERIFY_SSL_CERT),
-                    auto_connect=config.getboolean(section_name, "auto_connect", fallback=False)
+                    auto_connect=config.getboolean(section_name, "auto_connect", fallback=False),
+                    desired_caps=desired_caps_list
                 )
                 ALL_SERVER_CONFIGS[server_id] = s_config
                 logger.info(f"Loaded server configuration: [{s_config.server_id}] {s_config.address}")

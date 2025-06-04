@@ -134,6 +134,8 @@ class DummyUI: # DEFINED ONCE HERE
 class IRCClient_Logic:
     # Class-level flag to track if exit screen has been shown
     exit_screen_shown = False
+    reconnect_delay: int
+    max_reconnect_delay: int
 
     def __init__(self, stdscr, args):
         self.stdscr = stdscr
@@ -241,12 +243,6 @@ class IRCClient_Logic:
         self.should_quit = False
         self.ui_needs_update = threading.Event()
 
-        self.desired_caps_config: Set[str] = {
-            "sasl", "multi-prefix", "server-time", "message-tags", "account-tag",
-            "echo-message", "away-notify", "chghost", "userhost-in-names",
-            "cap-notify", "extended-join", "account-notify", "invite-notify",
-        }
-
         self.network_handler = NetworkHandler(self)
         self.network_handler.channels_to_join_on_connect = self.initial_channels_list[:]
 
@@ -258,6 +254,7 @@ class IRCClient_Logic:
             self.input_handler = InputHandler(self)
 
         self.command_handler = CommandHandler(self)
+        self._initialize_connection_handlers() # Setup CAP, SASL, Registration
 
         cli_disabled = (
             set(self.args.disable_script)
@@ -284,50 +281,6 @@ class IRCClient_Logic:
             self.trigger_manager.load_triggers()
         else:
             self.trigger_manager = None # Ensure attribute exists even if disabled
-
-        self.cap_negotiator = CapNegotiator(
-            network_handler=self.network_handler,
-            desired_caps=self.desired_caps_config,
-            registration_handler=None,
-            client_logic_ref=self,
-        )
-
-        sasl_pass = self.active_server_config.sasl_password if self.active_server_config else \
-                    (self.nickserv_password if self.nickserv_password else None)
-        self.sasl_authenticator = SaslAuthenticator(
-            network_handler=self.network_handler,
-            cap_negotiator=self.cap_negotiator,
-            password=sasl_pass,
-            client_logic_ref=self,
-        )
-
-        reg_initial_nick = self.nick if self.nick is not None else app_config.DEFAULT_NICK
-        reg_username = (self.active_server_config.username if self.active_server_config and self.active_server_config.username is not None
-                        else reg_initial_nick)
-        reg_realname = (self.active_server_config.realname if self.active_server_config and self.active_server_config.realname is not None
-                        else reg_initial_nick)
-        server_pass_val = self.password
-        nickserv_pass_val = self.nickserv_password
-        initial_channels_val = self.initial_channels_list
-
-        self.registration_handler = RegistrationHandler(
-            network_handler=self.network_handler,
-            command_handler=self.command_handler,
-            initial_nick=reg_initial_nick,
-            username=reg_username,
-            realname=reg_realname,
-            server_password=server_pass_val,
-            nickserv_password=nickserv_pass_val,
-            initial_channels_to_join=initial_channels_val[:],
-            cap_negotiator=self.cap_negotiator,
-            client_logic_ref=self,
-        )
-
-        self.cap_negotiator.registration_handler = self.registration_handler
-        if hasattr(self.cap_negotiator, 'set_sasl_authenticator'):
-            self.cap_negotiator.set_sasl_authenticator(self.sasl_authenticator)
-        if hasattr(self.registration_handler, 'set_sasl_authenticator'):
-            self.registration_handler.set_sasl_authenticator(self.sasl_authenticator)
 
         if not self.is_headless and not self.input_handler:
              self.input_handler = InputHandler(self)
@@ -385,6 +338,73 @@ class IRCClient_Logic:
     def _add_status_message(self, text: str, color_key: str = "system"):
         color_attr = self.ui.colors.get(color_key, self.ui.colors["system"])
         self.add_message(text, color_attr, context_name="Status")
+
+    def _initialize_connection_handlers(self):
+        logger.debug("Initializing connection handlers (CAP, SASL, Registration)...")
+        DEFAULT_GLOBAL_DESIRED_CAPS: Set[str] = {
+            "sasl", "multi-prefix", "server-time", "message-tags", "account-tag",
+            "echo-message", "away-notify", "chghost", "userhost-in-names",
+            "cap-notify", "extended-join", "account-notify", "invite-notify",
+        }
+
+        if self.active_server_config and \
+           self.active_server_config.desired_caps is not None and \
+           isinstance(self.active_server_config.desired_caps, list):
+            self.desired_caps_config = set(self.active_server_config.desired_caps)
+            logger.info(f"Using server-specific desired capabilities for '{self.active_server_config_name}': {self.desired_caps_config}")
+        else:
+            self.desired_caps_config = DEFAULT_GLOBAL_DESIRED_CAPS
+            active_server_name_for_log = self.active_server_config_name or "None"
+            logger.info(f"Using default desired capabilities. Server-specific not set or invalid for '{active_server_name_for_log}'.")
+
+        self.cap_negotiator = CapNegotiator(
+            network_handler=self.network_handler,
+            desired_caps=self.desired_caps_config,
+            registration_handler=None,  # Will be set shortly
+            client_logic_ref=self,
+        )
+
+        sasl_pass = self.active_server_config.sasl_password if self.active_server_config else \
+                    (self.nickserv_password if self.nickserv_password else None)
+        self.sasl_authenticator = SaslAuthenticator(
+            network_handler=self.network_handler,
+            cap_negotiator=self.cap_negotiator,
+            password=sasl_pass,
+            client_logic_ref=self,
+        )
+
+        # Ensure these are derived from the current state of self.active_server_config
+        # which should be set prior to calling this helper.
+        reg_initial_nick = self.nick # self.nick is already updated from active_server_config
+        reg_username = (self.active_server_config.username if self.active_server_config and self.active_server_config.username is not None
+                        else reg_initial_nick)
+        reg_realname = (self.active_server_config.realname if self.active_server_config and self.active_server_config.realname is not None
+                        else reg_initial_nick)
+        server_pass_val = self.password # self.password is from active_server_config
+        nickserv_pass_val = self.nickserv_password # self.nickserv_password is from active_server_config
+        initial_channels_val = self.initial_channels_list # self.initial_channels_list is from active_server_config
+
+        self.registration_handler = RegistrationHandler(
+            network_handler=self.network_handler,
+            command_handler=self.command_handler,
+            initial_nick=reg_initial_nick,
+            username=reg_username,
+            realname=reg_realname,
+            server_password=server_pass_val,
+            nickserv_password=nickserv_pass_val,
+            initial_channels_to_join=initial_channels_val[:], # Use a copy
+            cap_negotiator=self.cap_negotiator,
+            client_logic_ref=self,
+        )
+
+        # Link them up
+        self.cap_negotiator.registration_handler = self.registration_handler
+        if hasattr(self.cap_negotiator, 'set_sasl_authenticator'):
+            self.cap_negotiator.set_sasl_authenticator(self.sasl_authenticator)
+        if hasattr(self.registration_handler, 'set_sasl_authenticator'):
+            self.registration_handler.set_sasl_authenticator(self.sasl_authenticator)
+
+        logger.debug("Connection handlers initialized.")
 
     def add_message(
         self,
