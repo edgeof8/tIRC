@@ -1,3 +1,4 @@
+# START OF MODIFIED FILE: message_handlers.py
 import logging
 import time
 from typing import TYPE_CHECKING, Optional
@@ -5,33 +6,34 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
     from irc_message import IRCMessage
-    # from context_manager import ChannelJoinStatus # Not directly used by these two
 
 logger = logging.getLogger("pyrc.handlers.message")
 
-def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str) -> Optional[str]:
     nick = parsed_msg.source_nick
     source_full_ident = parsed_msg.prefix
 
+    logger.debug(f"HANDLE_PRIVMSG: Raw='{raw_line.strip()}', Parsed Nick='{parsed_msg.source_nick}', Target='{parsed_msg.params[0] if parsed_msg.params else None}', Body='{parsed_msg.trailing}'")
+
     if not nick or not source_full_ident:
         logger.warning(f"PRIVMSG without valid source: {raw_line.strip()}")
-        return
+        return None
 
     target = parsed_msg.params[0] if parsed_msg.params else None
     message_body = parsed_msg.trailing if parsed_msg.trailing else ""
 
     if not target:
         logger.warning(f"PRIVMSG without target: {raw_line.strip()}")
-        return
+        return None
 
     is_channel_msg = target.startswith(("#", "&", "!", "+"))
     is_private_msg_to_me = (
-        not is_channel_msg and target.lower() == client.nick.lower()
+        not is_channel_msg and target.lower() == (client.nick.lower() if client.nick else "")
     )
 
     target_context_name = target
-    display_nick = f"<{nick}>" # Markdown escape for < and >
-    color = client.ui.colors["other_message"]
+    display_nick = f"<{nick}>"
+    color_key = "other_message"
 
     if is_private_msg_to_me:
         target_context_name = nick
@@ -39,43 +41,43 @@ def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line
             target_context_name, context_type="query"
         )
         display_nick = f"*{nick}*"
-        color = client.ui.colors["pm"]
-    elif nick.lower() == client.nick.lower() and is_channel_msg:
-        color = client.ui.colors["my_message"]
+        color_key = "pm"
+    elif client.nick and nick.lower() == client.nick.lower() and is_channel_msg:
+        color_key = "my_message"
+        logger.debug(f"HANDLE_PRIVMSG: Echoed self-message to channel. Nick: {nick}, Target: {target_context_name}, Color: {color_key}, Message: '{message_body[:50]}...'")
+
 
     if (
         client.nick
         and client.nick.lower() in message_body.lower()
-        and not (nick.lower() == client.nick.lower())
+        and not (client.nick and nick.lower() == client.nick.lower())
     ):
-        color = client.ui.colors["highlight"]
+        color_key = "highlight"
 
     formatted_msg = f"{display_nick} {message_body}"
 
+    logger.debug(f"HANDLE_PRIVMSG: Adding to context '{target_context_name}': '{formatted_msg}' with color_key '{color_key}'")
     client.add_message(
         formatted_msg,
-        color,
+        color_key,
         context_name=target_context_name,
         source_full_ident=source_full_ident,
         is_privmsg_or_notice=True,
     )
-    client.process_trigger_event(
+
+    action_from_text_trigger = client.process_trigger_event(
         "TEXT",
         {
-            "nick": nick,
-            "userhost": source_full_ident,
-            "target": target,
-            "channel": target if is_channel_msg else "",
-            "message": message_body,
+            "nick": nick, "userhost": source_full_ident, "target": target,
+            "channel": target if is_channel_msg else "", "message": message_body,
             "message_words": message_body.split(),
-            "client_nick": client.nick,
+            "client_nick": client.nick if client.nick else "",
             "raw_line": raw_line,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "tags": parsed_msg.get_all_tags(),
         },
     )
 
-    # Dispatch PRIVMSG event
     if hasattr(client, "event_manager") and client.event_manager:
         client.event_manager.dispatch_privmsg(
             nick=nick, userhost=source_full_ident, target=target,
@@ -83,28 +85,24 @@ def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line
             tags=parsed_msg.get_all_tags(), raw_line=raw_line
         )
 
-def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+    return action_from_text_trigger
+
+
+def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str) -> Optional[str]:
     nick = parsed_msg.source_nick
     source_full_ident = parsed_msg.prefix
+    logger.debug(f"HANDLE_NOTICE: Raw='{raw_line.strip()}', Parsed Nick='{parsed_msg.source_nick}', Target='{parsed_msg.params[0] if parsed_msg.params else None}', Body='{parsed_msg.trailing}'")
+
 
     target = parsed_msg.params[0] if parsed_msg.params else None
     message_body = parsed_msg.trailing if parsed_msg.trailing else ""
 
     if not target:
         logger.warning(f"NOTICE without target: {raw_line.strip()}")
-        return
+        return None
 
     is_channel_notice = target.startswith(("#", "&", "!", "+"))
-    display_source = (
-        nick
-        if nick
-        else (
-            source_full_ident
-            if source_full_ident and "!" not in source_full_ident
-            else "Server"
-        )
-    )
-
+    display_source = nick if nick else (source_full_ident if source_full_ident and "!" not in source_full_ident else "Server")
     notice_prefix = f"-{display_source}-"
     target_context_name = "Status"
 
@@ -113,26 +111,36 @@ def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line:
     elif target.lower() == (client.nick.lower() if client.nick else ""):
         if nick and source_full_ident and "!" in source_full_ident:
             target_context_name = nick
-            client.context_manager.create_context(
-                target_context_name, context_type="query"
-            )
-        else:
-            target_context_name = "Status"
+            client.context_manager.create_context(target_context_name, context_type="query")
 
     formatted_msg = f"{notice_prefix} {message_body}"
 
+    logger.debug(f"HANDLE_NOTICE: Adding to context '{target_context_name}': '{formatted_msg}'")
     client.add_message(
-        formatted_msg,
-        client.ui.colors["system"],
-        context_name=target_context_name,
-        source_full_ident=source_full_ident,
-        is_privmsg_or_notice=True,
+        formatted_msg, "system", context_name=target_context_name,
+        source_full_ident=source_full_ident, is_privmsg_or_notice=True,
     )
 
-    # Dispatch NOTICE event
+    action_from_notice_trigger = client.process_trigger_event(
+        "NOTICE",
+        {
+            "nick": nick, "userhost": source_full_ident, "target": target,
+            "channel": target if is_channel_notice else "", "message": message_body,
+             "message_words": message_body.split(),
+            "client_nick": client.nick if client.nick else "",
+            "raw_line": raw_line,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "tags": parsed_msg.get_all_tags(),
+        }
+    )
+
     if hasattr(client, "event_manager") and client.event_manager:
         client.event_manager.dispatch_notice(
             nick=nick, userhost=source_full_ident, target=target,
             message=message_body, is_channel_notice=is_channel_notice,
             tags=parsed_msg.get_all_tags(), raw_line=raw_line
         )
+
+    return action_from_notice_trigger
+
+# END OF MODIFIED FILE: message_handlers.py
