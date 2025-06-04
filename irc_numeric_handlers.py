@@ -195,11 +195,14 @@ def _handle_rpl_endofnames(
                 f"RPL_ENDOFNAMES for {channel_ended} (status NOT_JOINED). User count: {user_count}. Not changing join status from this alone, as we weren't in a pending join state."
             )
 
-        client.add_message(
-            f"Users in {channel_ended}: {user_count}",
-            client.ui.colors["system"],
-            context_name=channel_ended,
-        )
+            # Add distinct logging before and after the client.add_message(...) call
+            logger.info(f"[ENDOFNAMES_DEBUG] About to add user count message for {channel_ended}. Current user count: {user_count}")
+            client.add_message(
+                f"Users in {channel_ended}: {user_count}",
+                "system", # semantic key
+                context_name=channel_ended,
+            )
+            logger.info(f"[ENDOFNAMES_DEBUG] Finished adding user count message for {channel_ended}.")
     else:
         logger.warning(
             f"RPL_ENDOFNAMES for {channel_ended}, but context not found or not a channel."

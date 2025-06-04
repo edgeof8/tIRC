@@ -896,6 +896,8 @@ class IRCClient_Logic:
         If this channel was the target of the last /join command, make it active.
         Dispatches CHANNEL_FULLY_JOINED event.
         """
+        # At the start of handle_channel_fully_joined
+        logger.info(f"[CLIENT_LOGIC_DEBUG] handle_channel_fully_joined called for {channel_name}")
         normalized_channel_name = self.context_manager._normalize_context_name(
             channel_name
         )
