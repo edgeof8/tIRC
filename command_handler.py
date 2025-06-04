@@ -32,31 +32,14 @@ class CommandHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client = client_logic
         self.trigger_commands = TriggerCommands(client_logic)
-        # self.channel_commands = ChannelCommandsHandler(client_logic) # Class removed
         self.server_commands = ServerCommandsHandler(client_logic)
         self.info_commands = InformationCommandsHandler(client_logic)
 
         self.registered_command_help = {} # New dictionary to store help info
 
         self.command_map = {
-            "quit": self.server_commands.handle_quit_command,
-            "q": self.server_commands.handle_quit_command,
-            "raw": self.server_commands.handle_raw_command,
-            "quote": self.server_commands.handle_raw_command,
-            "r": self.server_commands.handle_raw_command,
-            # "connect": self.server_commands.handle_connect_command, # Will be loaded dynamically
             "server": self.server_commands.handle_server_command,
             "s": self.server_commands.handle_server_command,
-            "disconnect": self.server_commands.handle_disconnect_command,
-            "d": self.server_commands.handle_disconnect_command,
-            # "op": self.channel_commands.handle_op_command,         # Will be loaded dynamically
-            # "o": self.channel_commands.handle_op_command,          # Will be loaded dynamically
-            # "deop": self.channel_commands.handle_deop_command,     # Will be loaded dynamically
-            # "do": self.channel_commands.handle_deop_command,       # Will be loaded dynamically
-            # "voice": self.channel_commands.handle_voice_command,   # Will be loaded dynamically
-            # "v": self.channel_commands.handle_voice_command,       # Will be loaded dynamically
-            # "devoice": self.channel_commands.handle_devoice_command, # Will be loaded dynamically
-            # "dv": self.channel_commands.handle_devoice_command,    # Will be loaded dynamically
             "who": self.info_commands.handle_who_command,
             "whowas": self.info_commands.handle_whowas_command,
             "list": self.info_commands.handle_list_command,

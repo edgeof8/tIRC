@@ -58,34 +58,34 @@ class ServerCommandsHandler:
         )
         self.client.ui_needs_update.set()
 
-    def handle_disconnect_command(self, args_str: str):
-        """Handle the /disconnect command"""
-        reason = args_str if args_str else "Disconnecting"
-        self.client.network_handler.disconnect_gracefully(reason)
+    # def handle_disconnect_command(self, args_str: str):
+    #     """Handle the /disconnect command"""
+    #     reason = args_str if args_str else "Disconnecting"
+    #     self.client.network_handler.disconnect_gracefully(reason)
+    #
+    # def handle_quit_command(self, args_str: str):
+    #     """Handle the /quit command"""
+    #     if args_str:
+    #         reason = args_str
+    #     else:
+    #         # Try to get a random quit message from scripts
+    #         variables = {"nick": self.client.nick, "server": self.client.server}
+    #         reason = self.client.script_manager.get_random_quit_message_from_scripts(
+    #             variables
+    #         )
+    #         if not reason:
+    #             reason = "Leaving"  # Fallback if no script provides a message
+    #     self.client.network_handler.disconnect_gracefully(reason)
 
-    def handle_quit_command(self, args_str: str):
-        """Handle the /quit command"""
-        if args_str:
-            reason = args_str
-        else:
-            # Try to get a random quit message from scripts
-            variables = {"nick": self.client.nick, "server": self.client.server}
-            reason = self.client.script_manager.get_random_quit_message_from_scripts(
-                variables
-            )
-            if not reason:
-                reason = "Leaving"  # Fallback if no script provides a message
-        self.client.network_handler.disconnect_gracefully(reason)
-
-    def handle_raw_command(self, args_str: str):
-        """Handle the /raw command"""
-        help_data = self.client.script_manager.get_help_text_for_command("raw")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /raw <raw IRC command>"
-        )
-        if not self.client.command_handler._ensure_args(args_str, usage_msg):
-            return
-        self.client.network_handler.send_raw(args_str)
+    # def handle_raw_command(self, args_str: str):
+    #     """Handle the /raw command"""
+    #     help_data = self.client.script_manager.get_help_text_for_command("raw")
+    #     usage_msg = (
+    #         help_data["help_text"] if help_data else "Usage: /raw <raw IRC command>"
+    #     )
+    #     if not self.client.command_handler._ensure_args(args_str, usage_msg):
+    #         return
+    #     self.client.network_handler.send_raw(args_str)
 
     def handle_reconnect_command(self, args_str: str):
         """Handles the /reconnect command."""
