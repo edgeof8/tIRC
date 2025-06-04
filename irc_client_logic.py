@@ -1207,3 +1207,52 @@ class IRCClient_Logic:
 
     def reset_reconnect_delay(self) -> None:
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
+
+    def _reset_state_for_new_connection(self):
+        logger.debug("Resetting client state for new server connection.")
+
+        # Preserve and restore Status window messages and scroll offset
+        status_context = self.context_manager.get_context("Status")
+        current_status_msgs = list(status_context.messages) if status_context else []
+        status_scroll_offset = (
+            status_context.scrollback_offset
+            if status_context and hasattr(status_context, "scrollback_offset")
+            else 0
+        )
+
+        self.context_manager.contexts.clear() # Clear all existing contexts
+        self.context_manager.create_context("Status", context_type="status")
+        new_status_context = self.context_manager.get_context("Status")
+        if new_status_context:
+            for msg_tuple in current_status_msgs:
+                new_status_context.add_message(msg_tuple[0], msg_tuple[1])
+            if hasattr(new_status_context, "scrollback_offset"):
+                new_status_context.scrollback_offset = status_scroll_offset
+
+        # Re-create contexts for initial channels based on the *current* self.initial_channels_list
+        # (which should have been updated by /server or /connect logic before calling this)
+        for ch_name in self.initial_channels_list:
+            self.context_manager.create_context(
+                ch_name,
+                context_type="channel",
+                initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
+            )
+
+        if self.initial_channels_list:
+            self.context_manager.set_active_context(
+                self.initial_channels_list[0]
+            )
+        else:
+            self.context_manager.set_active_context("Status")
+
+        self.currently_joined_channels.clear() # Clear previously joined channels
+        self.last_join_command_target = None
+        # Any other client-level state that needs resetting for a new server connection
+        # e.g., user modes, specific server capabilities state if not handled by CapNegotiator.reset.
+        self.user_modes.clear()
+
+
+        logger.info(
+            f"Client state reset. Active context set to '{self.context_manager.active_context_name}'."
+        )
+        self.ui_needs_update.set()

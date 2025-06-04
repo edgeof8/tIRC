@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 from features.triggers.trigger_commands import TriggerCommands
 from context_manager import ChannelJoinStatus, Context
 # from channel_commands_handler import ChannelCommandsHandler # Class removed
-from server_commands_handler import ServerCommandsHandler
+# from server_commands_handler import ServerCommandsHandler # Class is deprecated
 from information_commands_handler import InformationCommandsHandler
 from config import (
     get_all_settings,
@@ -32,19 +32,19 @@ class CommandHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client = client_logic
         self.trigger_commands = TriggerCommands(client_logic)
-        self.server_commands = ServerCommandsHandler(client_logic)
+        # self.server_commands = ServerCommandsHandler(client_logic) # Class is deprecated
         self.info_commands = InformationCommandsHandler(client_logic)
 
         self.registered_command_help = {} # New dictionary to store help info
 
         self.command_map = {
-            "server": self.server_commands.handle_server_command,
-            "s": self.server_commands.handle_server_command,
+            # "server": self.server_commands.handle_server_command, # Now dynamically loaded
+            # "s": self.server_commands.handle_server_command, # Now dynamically loaded
             "who": self.info_commands.handle_who_command,
             "whowas": self.info_commands.handle_whowas_command,
             "list": self.info_commands.handle_list_command,
             "names": self.info_commands.handle_names_command,
-            "reconnect": self.server_commands.handle_reconnect_command,
+            # "reconnect": self.server_commands.handle_reconnect_command,
             "on": self.trigger_commands.handle_on_command, # TriggerCommands is still a handler
 
             # Commands still potentially handled directly by CommandHandler
@@ -379,4 +379,3 @@ class CommandHandler:
                     or "Status",
                 )
                 return True  # Command was processed (as unknown)
-

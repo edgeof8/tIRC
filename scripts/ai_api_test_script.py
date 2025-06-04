@@ -173,34 +173,34 @@ class AiApiTestScript:
 
         # /set
         self.api.log_info("[AI Test] Testing /set logging.log_level (get)")
-        self.api.send_raw("/set logging.log_level")
+        self.api.execute_client_command("/set logging.log_level")
         time.sleep(1.0)
         # TODO: Verification - check context_name for output
 
         self.api.log_info("[AI Test] Testing /set logging.log_level DEBUG")
-        self.api.send_raw("/set logging.log_level DEBUG")
+        self.api.execute_client_command("/set logging.log_level DEBUG")
         time.sleep(0.5)
         # TODO: Verification - ideally check if log level actually changed, or output of /set
 
         self.api.log_info("[AI Test] Testing /set logging.log_level INFO (restore)")
-        self.api.send_raw("/set logging.log_level INFO")
+        self.api.execute_client_command("/set logging.log_level INFO")
         time.sleep(0.5)
 
         # /save
         self.api.log_info("[AI Test] Testing /save")
-        self.api.send_raw("/save")
+        self.api.execute_client_command("/save")
         time.sleep(1.0)
         # TODO: Verification - check for "Configuration saved" message in context_name
 
         # /rehash
         self.api.log_info("[AI Test] Testing /rehash")
-        self.api.send_raw("/rehash")
+        self.api.execute_client_command("/rehash")
         time.sleep(1.0)
         # TODO: Verification - check for "Configuration reloaded" message
 
         # /clear
         self.api.log_info(f"[AI Test] Testing /clear on {context_name}")
-        self.api.send_raw(f"/clear {context_name}") # Target specific context
+        self.api.execute_client_command(f"/clear {context_name}") # Target specific context
         time.sleep(0.5)
         messages_after_clear = self.api.get_context_messages(context_name, count=5)
         if messages_after_clear:
@@ -211,12 +211,12 @@ class AiApiTestScript:
 
         # /rawlog
         self.api.log_info("[AI Test] Testing /rawlog on")
-        self.api.send_raw("/rawlog on")
+        self.api.execute_client_command("/rawlog on")
         time.sleep(0.5)
         # TODO: Verification - check for "Raw logging to UI enabled"
 
         self.api.log_info("[AI Test] Testing /rawlog off")
-        self.api.send_raw("/rawlog off")
+        self.api.execute_client_command("/rawlog off")
         time.sleep(0.5)
         # TODO: Verification - check for "Raw logging to UI disabled"
 
@@ -226,7 +226,7 @@ class AiApiTestScript:
         self.api.send_message(context_name, f"Message with {log_pattern} for lastlog.")
         time.sleep(1.0)
         self.api.log_info(f"[AI Test] Testing /lastlog {log_pattern}")
-        self.api.send_raw(f"/lastlog {log_pattern}")
+        self.api.execute_client_command(f"/lastlog {log_pattern}")
         time.sleep(1.0)
         # TODO: Verification for /lastlog - check context_name for messages containing the pattern
 
@@ -238,52 +238,52 @@ class AiApiTestScript:
 
         # /window
         self.api.log_info("[AI Test] Testing /window Status")
-        self.api.send_raw(f"/window {status_context}")
+        self.api.execute_client_command(f"/window {status_context}")
         time.sleep(0.5)
         self.api.log_info(f"[AI Test] Testing /window {channel_name}")
-        self.api.send_raw(f"/window {channel_name}")
+        self.api.execute_client_command(f"/window {channel_name}")
         time.sleep(0.5)
 
         # /nextwindow & /prevwindow
         self.api.log_info("[AI Test] Testing /nextwindow")
-        self.api.send_raw("/nextwindow")
+        self.api.execute_client_command("/nextwindow")
         time.sleep(0.5)
         self.api.log_info("[AI Test] Testing /prevwindow")
-        self.api.send_raw("/prevwindow")
+        self.api.execute_client_command("/prevwindow")
         time.sleep(0.5)
 
         # /userlistscroll (difficult to verify in headless)
         self.api.log_info("[AI Test] Testing /userlistscroll down")
-        self.api.send_raw("/userlistscroll down")
+        self.api.execute_client_command("/userlistscroll down")
         time.sleep(0.2)
         self.api.log_info("[AI Test] Testing /userlistscroll top")
-        self.api.send_raw("/userlistscroll top")
+        self.api.execute_client_command("/userlistscroll top")
         time.sleep(0.2)
 
         # /split, /focus, /setpane
         self.api.log_info("[AI Test] Testing /split (on)")
-        self.api.send_raw("/split")
+        self.api.execute_client_command("/split")
         time.sleep(0.5)
         self.api.log_info("[AI Test] Testing /focus top")
-        self.api.send_raw("/focus top")
+        self.api.execute_client_command("/focus top")
         time.sleep(0.5)
         self.api.log_info(f"[AI Test] Testing /setpane bottom {status_context}")
-        self.api.send_raw(f"/setpane bottom {status_context}")
+        self.api.execute_client_command(f"/setpane bottom {status_context}")
         time.sleep(0.5)
         self.api.log_info("[AI Test] Testing /focus bottom")
-        self.api.send_raw("/focus bottom")
+        self.api.execute_client_command("/focus bottom")
         time.sleep(0.5)
         self.api.log_info("[AI Test] Testing /split (off)")
-        self.api.send_raw("/split")
+        self.api.execute_client_command("/split")
         time.sleep(0.5)
 
         # /close
         dummy_query_user = f"TestUserForClose{int(time.time())}"
         self.api.log_info(f"[AI Test] Testing /query {dummy_query_user} (to setup /close)")
-        self.api.send_raw(f"/query {dummy_query_user}")
+        self.api.execute_client_command(f"/query {dummy_query_user}")
         time.sleep(1.0) # Allow context to be created
         self.api.log_info(f"[AI Test] Testing /close (on query context {dummy_query_user})")
-        self.api.send_raw(f"/close {dummy_query_user}") # Close the specific query window
+        self.api.execute_client_command(f"/close {dummy_query_user}") # Close the specific query window
         time.sleep(0.5)
         # TODO: Verification - check if context dummy_query_user is removed
 
@@ -296,49 +296,49 @@ class AiApiTestScript:
 
         # /msg
         self.api.log_info(f"[AI Test] Testing /msg {dummy_user} test_message")
-        self.api.send_raw(f"/msg {dummy_user} This is a test message via /msg.")
+        self.api.send_raw(f"/msg {dummy_user} This is a test message via /msg.") # Remains send_raw as it's for server
         time.sleep(0.5)
         # TODO: Verification - check if query window for dummy_user was created and message sent
 
         # /notice
         self.api.log_info(f"[AI Test] Testing /notice {dummy_user} test_notice")
-        self.api.send_raw(f"/notice {dummy_user} This is a test notice via /notice.")
+        self.api.send_raw(f"/notice {dummy_user} This is a test notice via /notice.") # Remains send_raw
         time.sleep(0.5)
 
         # /me
         self.api.log_info(f"[AI Test] Testing /me waves hello in {channel_name}")
-        self.api.send_raw(f"/window {channel_name}") # Ensure channel is active
+        self.api.execute_client_command(f"/window {channel_name}") # Ensure channel is active (client-side)
         time.sleep(0.2)
-        self.api.send_raw("/me waves hello in the current channel")
+        self.api.send_raw("/me waves hello in the current channel") # Remains send_raw
         time.sleep(0.5)
 
 
         # /whois
         self.api.log_info(f"[AI Test] Testing /whois {current_nick}")
-        self.api.send_raw(f"/whois {current_nick}")
+        self.api.send_raw(f"/whois {current_nick}") # Remains send_raw
         time.sleep(1.5) # WHOIS can take a moment for server response
         # TODO: Verification - check Status or active context for WHOIS response lines
 
         # /ignore, /listignores, /unignore
         ignore_pattern = f"{dummy_user}!*@*"
         self.api.log_info(f"[AI Test] Testing /ignore {ignore_pattern}")
-        self.api.send_raw(f"/ignore {ignore_pattern}")
+        self.api.execute_client_command(f"/ignore {ignore_pattern}")
         time.sleep(0.5)
         self.api.log_info("[AI Test] Testing /listignores")
-        self.api.send_raw("/listignores")
+        self.api.execute_client_command("/listignores")
         time.sleep(1.0)
         # TODO: Verification for /listignores - check context for ignore_pattern
         self.api.log_info(f"[AI Test] Testing /unignore {ignore_pattern}")
-        self.api.send_raw(f"/unignore {ignore_pattern}")
+        self.api.execute_client_command(f"/unignore {ignore_pattern}")
         time.sleep(0.5)
 
         # /away
         away_message = f"Testing away status at {time.time()}"
         self.api.log_info(f"[AI Test] Testing /away {away_message}")
-        self.api.send_raw(f"/away {away_message}")
+        self.api.send_raw(f"/away {away_message}") # Remains send_raw
         time.sleep(1.0) # Allow server to process
         self.api.log_info("[AI Test] Testing /away (to remove away status)")
-        self.api.send_raw("/away")
+        self.api.send_raw("/away") # Remains send_raw
         time.sleep(1.0)
 
         self.api.log_info(f"[AI Test] --- Finished User Command Tests on {channel_name} ---")
@@ -348,7 +348,7 @@ class AiApiTestScript:
 
         # /help (general)
         self.api.log_info("[AI Test] Testing /help (general)")
-        self.api.send_raw("/help")
+        self.api.execute_client_command("/help")
         time.sleep(1.5) # Help can be verbose
         messages = self.api.get_context_messages(context_name, count=20) # Get more messages for general help
         found_general_help = any("Available commands:" in msg_text for msg_text, _ in messages) if messages else False
@@ -359,7 +359,7 @@ class AiApiTestScript:
 
         # /help set
         self.api.log_info("[AI Test] Testing /help set")
-        self.api.send_raw("/help set")
+        self.api.execute_client_command("/help set")
         time.sleep(1.0)
         messages = self.api.get_context_messages(context_name, count=5)
         found_help_for_set = any("/set [<section.key>" in msg_text for msg_text, _ in messages) if messages else False
@@ -370,7 +370,7 @@ class AiApiTestScript:
 
         # /help join
         self.api.log_info("[AI Test] Testing /help join")
-        self.api.send_raw("/help join")
+        self.api.execute_client_command("/help join")
         time.sleep(1.0)
         messages = self.api.get_context_messages(context_name, count=5)
         found_help_for_join = any("/join <#channel>" in msg_text for msg_text, _ in messages) if messages else False
@@ -381,7 +381,7 @@ class AiApiTestScript:
 
         # /help split
         self.api.log_info("[AI Test] Testing /help split")
-        self.api.send_raw("/help split")
+        self.api.execute_client_command("/help split")
         time.sleep(1.0)
         messages = self.api.get_context_messages(context_name, count=5)
         found_help_for_split = any("/split" in msg_text and "Toggle split-screen mode" in msg_text for msg_text, _ in messages) if messages else False
@@ -393,7 +393,7 @@ class AiApiTestScript:
         # /help non_existent_command
         non_existent_cmd = f"zxcvbnm_{int(time.time())}"
         self.api.log_info(f"[AI Test] Testing /help {non_existent_cmd}")
-        self.api.send_raw(f"/help {non_existent_cmd}")
+        self.api.execute_client_command(f"/help {non_existent_cmd}")
         time.sleep(1.0)
         messages = self.api.get_context_messages(context_name, count=2)
         found_no_help = any(f"No help available for command: {non_existent_cmd}" in msg_text for msg_text, _ in messages) if messages else False

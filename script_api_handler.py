@@ -243,6 +243,21 @@ class ScriptAPIHandler:
         self.client_logic.should_quit = True # Signal main loop to exit
         # The actual QUIT command to server is handled by client_logic's shutdown sequence
 
+    def execute_client_command(self, command_line_with_slash: str) -> bool: # Added return type hint
+        """
+        Executes a client-side command as if typed by the user.
+        The command_line_with_slash should start with '/'.
+        Returns True if the command was processed (or determined to be unknown by the handler),
+        False if the input was invalid for this method (e.g., not starting with '/').
+        """
+        if not command_line_with_slash.startswith('/'):
+            self.log_error(f"execute_client_command: Command line '{command_line_with_slash}' must start with '/'")
+            return False # Indicate failure or improper call
+
+        self.log_info(f"Executing client command via API: {command_line_with_slash}")
+        # Directly call the command handler's processing method
+        # process_user_command is expected to return True if handled (even if unknown command), False for non-commands
+        return self.client_logic.command_handler.process_user_command(command_line_with_slash)
 
     # --- Information Retrieval ---
     def get_client_nick(self) -> Optional[str]: # Changed from get_nick

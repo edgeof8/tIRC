@@ -68,61 +68,6 @@ def _parse_connect_args_internal(client: "IRCClient_Logic", args_str: str) -> Op
 
     return new_server_host, new_port, new_ssl
 
-def _reset_client_contexts(client: "IRCClient_Logic"):
-    """
-    Resets client contexts for a new server connection.
-    Copied from ServerCommandsHandler._reset_contexts_for_new_connection.
-    """
-    logger.debug("Clearing existing contexts for new server connection (connect_command).")
-    status_context = client.context_manager.get_context("Status")
-    current_status_msgs = list(status_context.messages) if status_context else []
-    status_scroll_offset = (
-        status_context.scrollback_offset
-        if status_context and hasattr(status_context, "scrollback_offset")
-        else 0
-    )
-
-    client.context_manager.contexts.clear()
-    client.context_manager.create_context("Status", context_type="status")
-    new_status_context = client.context_manager.get_context("Status")
-    if new_status_context:
-        for msg_tuple in current_status_msgs: # msg_tuple is (text, color_attr)
-            new_status_context.add_message(msg_tuple[0], msg_tuple[1])
-        if hasattr(new_status_context, "scrollback_offset"):
-            new_status_context.scrollback_offset = status_scroll_offset
-    logger.debug(
-        f"Restored {len(current_status_msgs)} messages to 'Status' context (connect_command)."
-    )
-
-    # Re-create contexts for initial channels if they exist on the client logic
-    # This assumes client.initial_channels_list is relevant for a raw /connect.
-    # Typically, /connect might not auto-join channels unless they are part of a saved server config
-    # that /connect might implicitly load if no server arg is given (not current logic).
-    # For a direct /connect <host>, initial_channels_list might be empty or from a previous config.
-    # For simplicity, we'll mirror the original logic which re-adds initial_channels_list.
-    if client.initial_channels_list:
-        for ch_name in client.initial_channels_list:
-            client.context_manager.create_context(
-                ch_name,
-                context_type="channel",
-                initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
-            )
-            logger.debug(
-                f"Re-created initial channel context: {ch_name} with PENDING_INITIAL_JOIN (connect_command)."
-            )
-
-    if client.initial_channels_list:
-        client.context_manager.set_active_context(
-            client.initial_channels_list[0]
-        )
-    else:
-        client.context_manager.set_active_context("Status")
-    logger.info(
-        f"Set active context to '{client.context_manager.active_context_name}' after server change (connect_command)."
-    )
-    client.ui_needs_update.set()
-
-
 def handle_connect_command(client: "IRCClient_Logic", args_str: str):
     parsed_args = _parse_connect_args_internal(client, args_str)
     if parsed_args is None:
@@ -149,7 +94,7 @@ def handle_connect_command(client: "IRCClient_Logic", args_str: str):
         f"Attempting new connection via /connect: {client.server}:{client.port} (SSL: {client.use_ssl})"
     )
 
-    _reset_client_contexts(client) # Use the local helper
+    client._reset_state_for_new_connection()
 
     # This will also re-initialize CAP, SASL, Registration handlers based on new connection params
     client.network_handler.update_connection_params(
