@@ -205,17 +205,37 @@ class AiApiTestScript:
         time.sleep(0.2) # Allow context switch
         self.api.execute_client_command("/clear") # Clears active context
         time.sleep(0.5) # Allow UI update cycle if any (though clear is mostly internal)
-        # Fetch messages from the context that was supposed to be cleared
+        sentinel_message = f"Post-clear sentinel {time.time()}"
+        active_context_for_clear = self.api.get_current_context_name() # Should be context_name
+
+        if active_context_for_clear: # Ensure it's not None
+            if active_context_for_clear == context_name: # Double check it's the one we intended
+                self.api.send_message(active_context_for_clear, sentinel_message)
+                time.sleep(0.5) # Allow message to be processed
+            else:
+                self.api.log_error(f"[AI Test] /clear test: Active context '{active_context_for_clear}' is not the expected '{context_name}' after /window command. Sentinel not sent to target.")
+                # This case itself is a failure of the /window or /clear behavior
+        else:
+            self.api.log_error("[AI Test] /clear test: Could not determine active context to send sentinel.")
+            # Handle as test failure or skip sentinel part
+
         messages_after_clear = self.api.get_context_messages(context_name)
 
-        if messages_after_clear: # Check if the list is not None and not empty
-            self.api.log_error(
-                f"[AI Test] FAILED: /clear on active context {context_name} did not clear messages. Got: {messages_after_clear}"
-            )
-            # Add to test_results as failure
-        else:
-            self.api.log_info(f"[AI Test] PASSED: /clear on active context {context_name} successfully cleared messages.")
-            # Add to test_results as success
+        # Revised verification logic:
+        passed_clear_test = False
+        if messages_after_clear is not None:
+            if len(messages_after_clear) == 1:
+                if sentinel_message in messages_after_clear[0][0]:
+                    passed_clear_test = True
+                    self.api.log_info(f"[AI Test] PASSED: /clear on active context {context_name} appears to have worked (only sentinel message found).")
+                else:
+                    self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Sentinel message '{sentinel_message}' not found in '{messages_after_clear[0][0]}'. Got: {messages_after_clear}")
+            else:
+                self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Expected 1 sentinel message, got {len(messages_after_clear)}. Messages: {messages_after_clear}")
+        else: # messages_after_clear is None
+            self.api.log_error(f"[AI Test] FAILED: /clear on {context_name}. Message buffer was None after clear and sentinel.")
+        # self.test_results.append(TestResult("/clear Command", passed_clear_test, ...))
+            # (Integrate with TestResult reporting)
 
 
         # /rawlog
