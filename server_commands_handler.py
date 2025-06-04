@@ -15,50 +15,6 @@ class ServerCommandsHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client = client_logic
 
-    def _parse_connect_args(self, args_str: str) -> Optional[Tuple[str, int, bool]]:
-        conn_args = args_str.split()
-        if not conn_args:
-            help_data = self.client.script_manager.get_help_text_for_command("connect")
-            usage_msg = (
-                help_data["help_text"]
-                if help_data
-                else "Usage: /connect <server[:port]> [ssl|nossl]"
-            )
-            self.client.add_message(
-                usage_msg,
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name,
-            )
-            return None
-
-        new_server_host, port_str_arg = conn_args[0], None
-        new_port: Optional[int] = None
-        new_ssl: bool = self.client.use_ssl
-
-        if ":" in new_server_host:
-            new_server_host, port_str_arg = new_server_host.split(":", 1)
-            try:
-                new_port = int(port_str_arg)
-            except ValueError:
-                self.client.add_message(
-                    f"Invalid port: {port_str_arg}",
-                    self.client.ui.colors["error"],
-                    context_name=self.client.context_manager.active_context_name,
-                )
-                return None
-
-        if len(conn_args) > 1:
-            ssl_arg = conn_args[1].lower()
-            if ssl_arg == "ssl":
-                new_ssl = True
-            elif ssl_arg == "nossl":
-                new_ssl = False
-
-        if new_port is None:
-            new_port = DEFAULT_SSL_PORT if new_ssl else DEFAULT_PORT
-
-        return new_server_host, new_port, new_ssl
-
     def _reset_contexts_for_new_connection(self):
         logger.debug("Clearing existing contexts for new server connection.")
         status_context = self.client.context_manager.get_context("Status")
@@ -101,38 +57,6 @@ class ServerCommandsHandler:
             f"Set active context to '{self.client.context_manager.active_context_name}' after server change."
         )
         self.client.ui_needs_update.set()
-
-    def handle_connect_command(self, args_str: str):
-        parsed_args = self._parse_connect_args(args_str)
-        if parsed_args is None:
-            return
-
-        new_server_host, new_port, new_ssl = parsed_args
-
-        if self.client.network_handler.connected:
-            self.client.network_handler.disconnect_gracefully("Changing servers")
-
-        self.client.server = new_server_host
-        self.client.port = new_port
-        self.client.use_ssl = new_ssl
-
-        self.client.add_message(
-            f"Attempting to connect to: {self.client.server}:{self.client.port} (SSL: {self.client.use_ssl})",
-            self.client.ui.colors["system"],
-            context_name="Status",
-        )
-        logger.info(
-            f"Attempting new connection to: {self.client.server}:{self.client.port} (SSL: {self.client.use_ssl})"
-        )
-
-        self._reset_contexts_for_new_connection()
-
-        logger.info(
-            f"ServerCommandsHandler: Before update_connection_params. Server: {self.client.server}, Port: {self.client.port}, SSL: {self.client.use_ssl}, Verify SSL: {self.client.verify_ssl_cert}"
-        )
-        self.client.network_handler.update_connection_params(
-            self.client.server, self.client.port, self.client.use_ssl
-        )
 
     def handle_disconnect_command(self, args_str: str):
         """Handle the /disconnect command"""

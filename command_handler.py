@@ -4,28 +4,9 @@ import importlib # Added for dynamic loading
 from typing import TYPE_CHECKING, List, Optional, Tuple
 from features.triggers.trigger_commands import TriggerCommands
 from context_manager import ChannelJoinStatus, Context
-from channel_commands_handler import ChannelCommandsHandler
+# from channel_commands_handler import ChannelCommandsHandler # Class removed
 from server_commands_handler import ServerCommandsHandler
 from information_commands_handler import InformationCommandsHandler
-# Removed: from commands.utility import set_command as set_command_module
-# Removed: from commands.utility.rehash_command import handle_rehash_command
-# Removed: from commands.utility.save_command import handle_save_command
-# Removed: from commands.utility.clear_command import handle_clear_command
-# Removed: from commands.utility.rawlog_command import handle_rawlog_command
-# Removed: from commands.utility.lastlog_command import handle_lastlog_command
-# Removed: from commands.ui.window_navigation_commands import handle_next_window_command, handle_prev_window_command, handle_window_command
-# Removed: from commands.ui.status_command import handle_status_command
-# Removed: from commands.ui.close_command import handle_close_command
-# Removed: from commands.ui.userlist_scroll_command import handle_userlist_scroll_command
-# Removed: from commands.ui.split_screen_commands import handle_split_command, handle_focus_command, handle_setpane_command
-# Removed: from commands.user.nick_command import handle_nick_command
-# Removed: from commands.user.away_command import handle_away_command
-# Removed: from commands.user.me_command import handle_me_command
-# Removed: from commands.user.msg_command import handle_msg_command
-# Removed: from commands.user.query_command import handle_query_command
-# Removed: from commands.user.notice_command import handle_notice_command
-# Removed: from commands.user.whois_command import handle_whois_command
-# Removed: from commands.user.ignore_commands import handle_ignore_command, handle_unignore_command, handle_listignores_command
 from config import (
     get_all_settings,
     set_config_value,
@@ -51,47 +32,31 @@ class CommandHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client = client_logic
         self.trigger_commands = TriggerCommands(client_logic)
-        self.channel_commands = ChannelCommandsHandler(client_logic)
+        # self.channel_commands = ChannelCommandsHandler(client_logic) # Class removed
         self.server_commands = ServerCommandsHandler(client_logic)
         self.info_commands = InformationCommandsHandler(client_logic)
 
         self.registered_command_help = {} # New dictionary to store help info
 
         self.command_map = {
-            # Commands handled by dedicated handler class instances
-            "join": self.channel_commands.handle_join_command,
-            "j": self.channel_commands.handle_join_command,
-            "part": self.channel_commands.handle_part_command,
-            "p": self.channel_commands.handle_part_command,
-            "invite": self.channel_commands.handle_invite_command,
-            "i": self.channel_commands.handle_invite_command,
-            "topic": self.channel_commands.handle_topic_command,
-            "t": self.channel_commands.handle_topic_command,
             "quit": self.server_commands.handle_quit_command,
             "q": self.server_commands.handle_quit_command,
             "raw": self.server_commands.handle_raw_command,
             "quote": self.server_commands.handle_raw_command,
             "r": self.server_commands.handle_raw_command,
-            "connect": self.server_commands.handle_connect_command,
+            # "connect": self.server_commands.handle_connect_command, # Will be loaded dynamically
             "server": self.server_commands.handle_server_command,
             "s": self.server_commands.handle_server_command,
             "disconnect": self.server_commands.handle_disconnect_command,
             "d": self.server_commands.handle_disconnect_command,
-            "cyclechannel": self.channel_commands.handle_cycle_channel_command,
-            "cc": self.channel_commands.handle_cycle_channel_command,
-            "kick": self.channel_commands.handle_kick_command,
-            "k": self.channel_commands.handle_kick_command,
-            "ban": self.channel_commands.handle_ban_command,
-            "unban": self.channel_commands.handle_unban_command,
-            "mode": self.channel_commands.handle_mode_command,
-            "op": self.channel_commands.handle_op_command,
-            "o": self.channel_commands.handle_op_command,
-            "deop": self.channel_commands.handle_deop_command,
-            "do": self.channel_commands.handle_deop_command,
-            "voice": self.channel_commands.handle_voice_command,
-            "v": self.channel_commands.handle_voice_command,
-            "devoice": self.channel_commands.handle_devoice_command,
-            "dv": self.channel_commands.handle_devoice_command,
+            # "op": self.channel_commands.handle_op_command,         # Will be loaded dynamically
+            # "o": self.channel_commands.handle_op_command,          # Will be loaded dynamically
+            # "deop": self.channel_commands.handle_deop_command,     # Will be loaded dynamically
+            # "do": self.channel_commands.handle_deop_command,       # Will be loaded dynamically
+            # "voice": self.channel_commands.handle_voice_command,   # Will be loaded dynamically
+            # "v": self.channel_commands.handle_voice_command,       # Will be loaded dynamically
+            # "devoice": self.channel_commands.handle_devoice_command, # Will be loaded dynamically
+            # "dv": self.channel_commands.handle_devoice_command,    # Will be loaded dynamically
             "who": self.info_commands.handle_who_command,
             "whowas": self.info_commands.handle_whowas_command,
             "list": self.info_commands.handle_list_command,

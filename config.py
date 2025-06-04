@@ -8,7 +8,7 @@ from typing import Type, Any, List, Union, Set, Dict, Optional
 logger = logging.getLogger("pyrc.config")
 
 
-@dataclass
+@dataclass # Defines server-specific connection and behavior settings
 class ServerConfig:
     server_id: str
     address: str
