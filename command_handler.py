@@ -5,6 +5,25 @@ from context_manager import ChannelJoinStatus, Context
 from channel_commands_handler import ChannelCommandsHandler
 from server_commands_handler import ServerCommandsHandler
 from information_commands_handler import InformationCommandsHandler
+from commands.utility.set_command import handle_set_command
+from commands.utility.rehash_command import handle_rehash_command
+from commands.utility.save_command import handle_save_command
+from commands.utility.clear_command import handle_clear_command
+from commands.utility.rawlog_command import handle_rawlog_command
+from commands.utility.lastlog_command import handle_lastlog_command
+from commands.ui.window_navigation_commands import handle_next_window_command, handle_prev_window_command, handle_window_command
+from commands.ui.status_command import handle_status_command
+from commands.ui.close_command import handle_close_command
+from commands.ui.userlist_scroll_command import handle_userlist_scroll_command
+from commands.ui.split_screen_commands import handle_split_command, handle_focus_command, handle_setpane_command
+from commands.user.nick_command import handle_nick_command
+from commands.user.away_command import handle_away_command
+from commands.user.me_command import handle_me_command
+from commands.user.msg_command import handle_msg_command
+from commands.user.query_command import handle_query_command
+from commands.user.notice_command import handle_notice_command
+from commands.user.whois_command import handle_whois_command
+from commands.user.ignore_commands import handle_ignore_command, handle_unignore_command, handle_listignores_command
 from config import (
     get_all_settings,
     set_config_value,
@@ -39,17 +58,17 @@ class CommandHandler:
             "j": self.channel_commands.handle_join_command,
             "part": self.channel_commands.handle_part_command,
             "p": self.channel_commands.handle_part_command,
-            "msg": self._handle_msg_command,
-            "m": self._handle_msg_command,
-            "query": self._handle_query_command,
-            "nick": self._handle_nick_command,
-            "n": self._handle_nick_command,
+            "msg": handle_msg_command,
+            "m": handle_msg_command,
+            "query": handle_query_command,
+            "nick": handle_nick_command,
+            "n": handle_nick_command,
             "quit": self.server_commands.handle_quit_command,
             "q": self.server_commands.handle_quit_command,
-            "whois": self._handle_whois_command,
-            "w": self._handle_whois_command,
-            "me": self._handle_me_command,
-            "away": self._handle_away_command,
+            "whois": handle_whois_command,
+            "w": handle_whois_command,
+            "me": handle_me_command,
+            "away": handle_away_command,
             "invite": self.channel_commands.handle_invite_command,
             "i": self.channel_commands.handle_invite_command,
             "topic": self.channel_commands.handle_topic_command,
@@ -62,36 +81,36 @@ class CommandHandler:
             "s": self.server_commands.handle_server_command,
             "disconnect": self.server_commands.handle_disconnect_command,
             "d": self.server_commands.handle_disconnect_command,
-            "clear": self._handle_clear_command,
-            "c": self._handle_clear_command,
-            "next": self._handle_next_window_command,
-            "nextwindow": self._handle_next_window_command,
-            "prev": self._handle_prev_window_command,
-            "prevwindow": self._handle_prev_window_command,
-            "win": self._handle_window_command,
-            "window": self._handle_window_command,
-            "close": self._handle_close_command,
-            "wc": self._handle_close_command,
-            "partchannel": self._handle_close_command,
+            "clear": handle_clear_command,
+            "c": handle_clear_command,
+            "next": handle_next_window_command,
+            "nextwindow": handle_next_window_command,
+            "prev": handle_prev_window_command,
+            "prevwindow": handle_prev_window_command,
+            "win": handle_window_command,
+            "window": handle_window_command,
+            "close": handle_close_command,
+            "wc": handle_close_command,
+            "partchannel": handle_close_command,
             "cyclechannel": self.channel_commands.handle_cycle_channel_command,
             "cc": self.channel_commands.handle_cycle_channel_command,
             "prevchannel": self._handle_prev_channel_command,
             "pc": self._handle_prev_channel_command,
-            "userlistscroll": self._handle_userlist_scroll_command,
-            "u": self._handle_userlist_scroll_command,
-            "status": self._handle_status_command,
+            "userlistscroll": handle_userlist_scroll_command,
+            "u": handle_userlist_scroll_command,
+            "status": handle_status_command,
             "kick": self.channel_commands.handle_kick_command,
             "k": self.channel_commands.handle_kick_command,
-            "notice": self._handle_notice_command,
-            "no": self._handle_notice_command,
-            "set": self._handle_set_command,
-            "se": self._handle_set_command,
+            "notice": handle_notice_command,
+            "no": handle_notice_command,
+            "set": handle_set_command,
+            "se": handle_set_command,
             "on": self.trigger_commands.handle_on_command,
             "help": self._handle_help_command,
             "h": self._handle_help_command,
-            "ignore": self._handle_ignore_command,
-            "unignore": self._handle_unignore_command,
-            "listignores": self._handle_listignores_command,
+            "ignore": handle_ignore_command,
+            "unignore": handle_unignore_command,
+            "listignores": handle_listignores_command,
             "ban": self.channel_commands.handle_ban_command,
             "unban": self.channel_commands.handle_unban_command,
             "mode": self.channel_commands.handle_mode_command,
@@ -109,13 +128,13 @@ class CommandHandler:
             "names": self.info_commands.handle_names_command,
             # New commands
             "reconnect": self.server_commands.handle_reconnect_command,
-            "rehash": self._handle_rehash_command,
-            "rawlog": self._handle_rawlog_command,
-            "save": self._handle_save_command,
-            "lastlog": self._handle_lastlog_command,
-            "split": self._handle_split_command,
-            "focus": self._handle_focus_command,
-            "setpane": self._handle_setpane_command,
+            "rehash": handle_rehash_command,
+            "rawlog": handle_rawlog_command,
+            "save": handle_save_command,
+            "lastlog": handle_lastlog_command,
+            "split": handle_split_command,
+            "focus": handle_focus_command,
+            "setpane": handle_setpane_command,
         }
 
         self.command_primary_map = {}
@@ -286,19 +305,6 @@ The context must exist (e.g., a channel, query, or the Status context)."""
                 context_name=active_context_name,
             )
 
-    def _handle_msg_command(self, args_str: str):
-        """Handle the /msg command"""
-        help_data = self.client.script_manager.get_help_text_for_command("msg")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /msg <nick> <message>"
-        )
-        parts = self._ensure_args(args_str, usage_msg, num_expected_parts=2)
-        if not parts:
-            return
-        target = parts[0]
-        message = parts[1]
-        self.client.network_handler.send_raw(f"PRIVMSG {target} :{message}")
-
     def _handle_query_command(self, args_str: str):
         """Handle the /query command"""
         help_data = self.client.script_manager.get_help_text_for_command("query")
@@ -316,369 +322,9 @@ The context must exist (e.g., a channel, query, or the Status context)."""
         if message:
             self.client.network_handler.send_raw(f"PRIVMSG {target_nick} :{message}")
 
-    def _handle_nick_command(self, args_str: str):
-        """Handle the /nick command"""
-        help_data = self.client.script_manager.get_help_text_for_command("nick")
-        usage_msg = help_data["help_text"] if help_data else "Usage: /nick <newnick>"
-        parts = self._ensure_args(args_str, usage_msg)
-        if not parts:
-            return
-        new_nick = parts[0]
-        self.client.last_attempted_nick_change = new_nick
-        self.client.network_handler.send_raw(f"NICK {new_nick}")
-
-    def _handle_whois_command(self, args_str: str):
-        """Handle the /whois command"""
-        help_data = self.client.script_manager.get_help_text_for_command("whois")
-        usage_msg = help_data["help_text"] if help_data else "Usage: /whois <nick>"
-        parts = self._ensure_args(args_str, usage_msg)
-        if not parts:
-            return
-        target = parts[0]
-        self.client.network_handler.send_raw(f"WHOIS {target}")
-
-    def _handle_me_command(self, args_str: str):
-        """Handle the /me command"""
-        help_data = self.client.script_manager.get_help_text_for_command("me")
-        usage_msg = help_data["help_text"] if help_data else "Usage: /me <action>"
-        if not self._ensure_args(args_str, usage_msg):
-            return
-        action_text = args_str
-        current_context_obj = self.client.context_manager.get_active_context()
-        if not current_context_obj:
-            self.client.add_message(
-                "Cannot /me: No active context.",
-                self.client.ui.colors["error"],
-                context_name="Status",
-            )
-            return
-
-        if current_context_obj.type == "channel":
-            if (
-                hasattr(current_context_obj, "join_status")
-                and current_context_obj.join_status == ChannelJoinStatus.FULLY_JOINED
-            ):
-                self.client.network_handler.send_raw(
-                    f"PRIVMSG {current_context_obj.name} :\x01ACTION {action_text}\x01"
-                )
-            else:
-                self.client.add_message(
-                    f"Cannot /me: Channel {current_context_obj.name} not fully joined.",
-                    self.client.ui.colors["error"],
-                    context_name=current_context_obj.name,
-                )
-        elif current_context_obj.type == "query":
-            self.client.network_handler.send_raw(
-                f"PRIVMSG {current_context_obj.name} :\x01ACTION {action_text}\x01"
-            )
-        else:
-            self.client.add_message(
-                "Cannot /me in this window.",
-                self.client.ui.colors["error"],
-                context_name=current_context_obj.name,
-            )
-
-    def _handle_away_command(self, args_str: str):
-        """Handle the /away command"""
-        if not args_str:
-            self.client.network_handler.send_raw("AWAY")
-        else:
-            self.client.network_handler.send_raw(f"AWAY :{args_str}")
-
-    def _handle_clear_command(self, args_str: str):
-        """Handle the /clear command"""
-        current_context = self.client.context_manager.get_active_context()
-        if current_context:
-            current_context.messages.clear()
-            self.client.ui_needs_update.set()
-
-    def _handle_next_window_command(self, args_str: str):
-        """Handle the /next or /nextwindow command"""
-        self.client.switch_active_context("next")
-
-    def _handle_prev_window_command(self, args_str: str):
-        """Handle the /prev or /prevwindow command"""
-        self.client.switch_active_context("prev")
-
-    def _handle_window_command(self, args_str: str):
-        """Handle the /window or /win command"""
-        help_data = self.client.script_manager.get_help_text_for_command("window")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /window <name|number>"
-        )
-        parts = self._ensure_args(args_str, usage_msg)
-        if not parts:
-            return
-        target = parts[0]
-        self.client.context_manager.set_active_context(target)
-
-    def _close_channel_context(self, channel_context: "CTX_Type"):
-        """Helper to handle closing (parting) a channel context."""
-        if hasattr(channel_context, "join_status"):
-            channel_context.join_status = ChannelJoinStatus.PARTING
-
-        # Try to get a random part message from scripts
-        variables = {"nick": self.client.nick, "channel": channel_context.name}
-        part_message = self.client.script_manager.get_random_part_message_from_scripts(
-            variables
-        )
-        if not part_message:
-            part_message = "Leaving"  # Fallback if no script provides a message
-
-        self.client.network_handler.send_raw(
-            f"PART {channel_context.name} :{part_message}"
-        )
-        self.client.add_message(
-            f"Parting {channel_context.name}...",
-            self.client.ui.colors["system"],
-            context_name=channel_context.name,
-        )
-
-    def _close_query_or_generic_context(self, context_obj: "CTX_Type"):
-        """Helper to handle closing a query or generic context."""
-        context_name_to_close = context_obj.name
-        self.client.context_manager.remove_context(context_name_to_close)
-        self.client.add_message(
-            f"Closed window: {context_name_to_close}",
-            self.client.ui.colors["system"],
-            context_name="Status",
-        )
-
-    def _handle_close_command(self, args_str: str):
-        """Handle the /close, /wc, /partchannel command."""
-        active_ctx_name = self.client.context_manager.active_context_name
-        if not active_ctx_name:
-            self.client.add_message(
-                "No active window to close.",
-                self.client.ui.colors["error"],
-                context_name="Status",
-            )
-            return
-
-        current_context = self.client.context_manager.get_context(active_ctx_name)
-        if not current_context:
-            logger.error(
-                f"/close: Active context '{active_ctx_name}' not found in manager."
-            )
-            return
-
-        if current_context.type == "channel":
-            self._close_channel_context(current_context)
-        elif (
-            current_context.type == "query"
-            or current_context.type == "generic"
-            or current_context.type == "list_results"
-        ):
-            self._close_query_or_generic_context(current_context)
-        elif current_context.type == "status":
-            self.client.add_message(
-                "Cannot close the Status window.",
-                self.client.ui.colors["error"],
-                context_name="Status",
-            )
-
     def _handle_prev_channel_command(self, args_str: str):
         """Handle the /prevchannel command"""
         self.client.switch_active_channel("prev")
-
-    def _handle_userlist_scroll_command(self, args_str: str):
-        """Handle the /userlistscroll or /u command"""
-        active_ctx = self.client.context_manager.get_active_context()
-        if not active_ctx or active_ctx.type != "channel":
-            self.client.add_message(
-                "User list scroll is only available in channel windows.",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-            return
-
-        if not args_str:
-            self.client.ui.scroll_user_list("pagedown")
-        else:
-            try:
-                arg_lower = args_str.lower()
-                if arg_lower in ["up", "down", "pageup", "pagedown", "top", "bottom"]:
-                    self.client.ui.scroll_user_list(arg_lower)
-                else:
-                    offset = int(args_str)
-                    if offset > 0:
-                        self.client.ui.scroll_user_list("down", lines_arg=offset)
-                    elif offset < 0:
-                        self.client.ui.scroll_user_list("up", lines_arg=abs(offset))
-            except ValueError:
-                self.client.add_message(
-                    f"Invalid argument for userlistscroll: '{args_str}'. Use up, down, pageup, pagedown, top, bottom, or a number.",
-                    self.client.ui.colors["error"],
-                    context_name=active_ctx.name,
-                )
-        self.client.ui_needs_update.set()
-
-    def _handle_status_command(self, args_str: str):
-        """Handle the /status command"""
-        self.client.context_manager.set_active_context("Status")
-
-    def _handle_notice_command(self, args_str: str):
-        """Handle the /notice command"""
-        help_data = self.client.script_manager.get_help_text_for_command("notice")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /notice <target> <message>"
-        )
-        parts = self._ensure_args(args_str, usage_msg, num_expected_parts=2)
-        if not parts:
-            return
-        target = parts[0]
-        message = parts[1]
-        self.client.network_handler.send_raw(f"NOTICE {target} :{message}")
-
-    def _handle_set_command(self, args_str: str):
-        """Handle the /set command"""
-        help_data = self.client.script_manager.get_help_text_for_command("set")
-        usage_msg = (
-            help_data["help_text"]
-            if help_data
-            else "Usage: /set [<section.key> [<value>]]"
-        )
-        active_context_name = (
-            self.client.context_manager.active_context_name or "Status"
-        )
-        system_color = self.client.ui.colors.get("system", 0)
-        error_color = self.client.ui.colors.get("error", 0)
-
-        stripped_args = args_str.strip()
-
-        if not stripped_args:
-            all_settings = get_all_settings()
-            if not all_settings:
-                self.client.add_message(
-                    "No settings found.", system_color, context_name=active_context_name
-                )
-                return
-
-            self.client.add_message(
-                "Current settings (use /help set for usage):",
-                system_color,
-                context_name=active_context_name,
-            )
-            for section, settings_in_section in all_settings.items():
-                self.client.add_message(
-                    f"[{section}]", system_color, context_name=active_context_name
-                )
-                for key, val in settings_in_section.items():
-                    self.client.add_message(
-                        f"  {key} = {val}",
-                        system_color,
-                        context_name=active_context_name,
-                    )
-            return
-
-        parts = stripped_args.split(" ", 1)
-        variable_arg = parts[0]
-
-        if len(parts) == 1:
-            section_name_filter: Optional[str] = None
-            key_name_filter: str = variable_arg
-
-            if "." in variable_arg:
-                try:
-                    section_name_filter, key_name_filter = variable_arg.split(".", 1)
-                    if not section_name_filter or not key_name_filter:
-                        raise ValueError("Section or key part is empty.")
-                except ValueError:
-                    self.client.add_message(
-                        f"Invalid format for variable: '{variable_arg}'. Use 'key' or 'section.key'.",
-                        error_color,
-                        context_name=active_context_name,
-                    )
-                    return
-
-            found_settings_messages = []
-            all_current_settings = get_all_settings()
-
-            if section_name_filter:
-                if (
-                    section_name_filter in all_current_settings
-                    and key_name_filter in all_current_settings[section_name_filter]
-                ):
-                    value = all_current_settings[section_name_filter][key_name_filter]
-                    found_settings_messages.append(
-                        f"{section_name_filter}.{key_name_filter} = {value}"
-                    )
-                else:
-                    self.client.add_message(
-                        f"Setting '{variable_arg}' not found.",
-                        error_color,
-                        context_name=active_context_name,
-                    )
-                    return
-            else:
-                for sec, settings_in_sec in all_current_settings.items():
-                    if key_name_filter in settings_in_sec:
-                        found_settings_messages.append(
-                            f"{sec}.{key_name_filter} = {settings_in_sec[key_name_filter]}"
-                        )
-
-            if not found_settings_messages:
-                self.client.add_message(
-                    f"Setting '{key_name_filter}' not found in any section.",
-                    error_color,
-                    context_name=active_context_name,
-                )
-            else:
-                for setting_str in found_settings_messages:
-                    self.client.add_message(
-                        setting_str, system_color, context_name=active_context_name
-                    )
-            return
-
-        elif len(parts) == 2:
-            value_arg = parts[1]
-
-            if "." not in variable_arg:
-                self.client.add_message(
-                    "For setting a value, 'section.key' format is required.",
-                    error_color,
-                    context_name=active_context_name,
-                )
-                self.client.add_message(
-                    usage_msg, error_color, context_name=active_context_name
-                )
-                return
-
-            try:
-                section_to_set, key_to_set = variable_arg.split(".", 1)
-                if not section_to_set or not key_to_set:
-                    raise ValueError("Section or key part is empty for setting.")
-            except ValueError:
-                self.client.add_message(
-                    f"Invalid format for variable: '{variable_arg}'. Use 'section.key'.",
-                    error_color,
-                    context_name=active_context_name,
-                )
-                return
-
-            if set_config_value(section_to_set, key_to_set, value_arg):
-                self.client.add_message(
-                    f"Set {section_to_set}.{key_to_set} = {value_arg}",
-                    system_color,
-                    context_name=active_context_name,
-                )
-                self.client.add_message(
-                    "Note: Some settings may require an application restart to take full effect.",
-                    system_color,
-                    context_name=active_context_name,
-                )
-            else:
-                self.client.add_message(
-                    f"Failed to set {section_to_set}.{key_to_set}.",
-                    error_color,
-                    context_name=active_context_name,
-                )
-            return
-
-        self.client.add_message(
-            usage_msg, error_color, context_name=active_context_name
-        )
 
     def _handle_ignore_command(self, args_str: str):
         help_data = self.client.script_manager.get_help_text_for_command("ignore")
@@ -777,125 +423,6 @@ The context must exist (e.g., a channel, query, or the Status context)."""
                 context_name=active_context_name,
             )
 
-    def _handle_rehash_command(self, args_str: str):
-        """Handles the /rehash command."""
-        if hasattr(self.client, "handle_rehash_config"):
-            self.client.handle_rehash_config()
-            # Feedback message is handled within IRCClient_Logic.handle_rehash_config
-        else:
-            logger.error("IRCClient_Logic does not have handle_rehash_config method.")
-            self.client.add_message(
-                "Error: Rehash functionality not fully implemented in client logic.",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-
-    def _handle_rawlog_command(self, args_str: str):
-        """Handles the /rawlog [on|off|toggle] command."""
-        help_data = self.client.script_manager.get_help_text_for_command("rawlog")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /rawlog [on|off|toggle]"
-        )
-        arg = args_str.strip().lower()
-        current_status = self.client.show_raw_log_in_ui
-
-        if arg == "on":
-            self.client.show_raw_log_in_ui = True
-        elif arg == "off":
-            self.client.show_raw_log_in_ui = False
-        elif arg == "toggle" or not arg:  # Empty arg also toggles
-            self.client.show_raw_log_in_ui = not current_status
-        else:
-            self.client.add_message(
-                usage_msg,
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-
-    def _handle_lastlog_command(self, args_str: str):
-        """Handles the /lastlog command."""
-        help_data = self.client.script_manager.get_help_text_for_command("lastlog")
-        usage_msg = help_data["help_text"] if help_data else "Usage: /lastlog <pattern>"
-        active_context_obj = self.client.context_manager.get_active_context()
-        active_context_name = (
-            self.client.context_manager.active_context_name or "Status"
-        )
-        system_color = self.client.ui.colors.get("system", 0)
-        error_color = self.client.ui.colors.get("error", 0)
-
-        if not args_str.strip():
-            self.client.add_message(
-                usage_msg,
-                error_color,
-                context_name=active_context_name,
-            )
-            return
-
-        pattern = args_str.strip()
-
-        if not active_context_obj:
-            self.client.add_message(
-                "Cannot use /lastlog: No active window.",
-                error_color,
-                context_name="Status",
-            )
-            return
-
-        self.client.add_message(
-            f'Searching lastlog for "{pattern}" in {active_context_obj.name}...',
-            system_color,
-            context_name=active_context_name,
-        )
-
-        found_matches = False
-        # Iterate a copy in case messages are added during iteration
-        messages_to_search = list(active_context_obj.messages)
-
-        for msg_text, color_attr in messages_to_search:
-            if pattern.lower() in msg_text.lower():
-                self.client.add_message(
-                    f"[LastLog] {msg_text}",
-                    color_attr,
-                    context_name=active_context_name,
-                )
-                found_matches = True
-
-        if not found_matches:
-            self.client.add_message(
-                f'No matches found for "{pattern}" in the current log.',
-                system_color,
-                context_name=active_context_name,
-            )
-        self.client.add_message(
-            "End of lastlog search.", system_color, context_name=active_context_name
-        )
-
-        feedback_action = "enabled" if self.client.show_raw_log_in_ui else "disabled"
-        self.client.add_message(
-            f"Raw IRC message logging to UI {feedback_action}.",
-            self.client.ui.colors["system"],
-            context_name=self.client.context_manager.active_context_name or "Status",
-        )
-
-    def _handle_save_command(self, args_str: str):
-        """Handles the /save command."""
-        if save_current_config():
-            self.client.add_message(
-                "Configuration saved to pyterm_irc_config.ini.",
-                self.client.ui.colors["system"],
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-        else:
-            self.client.add_message(
-                "Failed to save configuration.",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-
     def get_available_commands_for_tab_complete(self) -> List[str]:
         """
         Returns a list of commands primarily for tab-completion,
@@ -974,7 +501,15 @@ The context must exist (e.g., a channel, query, or the Status context)."""
         args_str = command_parts[1] if len(command_parts) > 1 else ""
 
         if cmd in self.command_map:
-            self.command_map[cmd](args_str)
+            handler_func = self.command_map[cmd]
+            import inspect # Moved import here as it's only used in this block
+            # Check if the handler is a standalone function from 'commands.' module
+            if hasattr(handler_func, '__module__') and \
+               handler_func.__module__.startswith("commands.") and \
+               not inspect.ismethod(handler_func): # Ensure it's not a method incorrectly caught
+                handler_func(self.client, args_str)  # Pass client for new modular commands
+            else:
+                handler_func(args_str)  # Existing call for methods of handler classes
             return True
         else:
             # Check for script-registered commands
@@ -1016,131 +551,3 @@ The context must exist (e.g., a channel, query, or the Status context)."""
                 )
                 return True  # Command was processed (as unknown)
 
-    def _handle_split_command(self, args_str: str):
-        """Handle the /split command to toggle split-screen mode"""
-        ui = self.client.ui
-        if not ui.split_mode_active:
-            # Enable split mode
-            ui.split_mode_active = True
-            ui.active_split_pane = "top"
-            ui.top_pane_context_name = (
-                self.client.context_manager.active_context_name or ""
-            )
-            ui.bottom_pane_context_name = (
-                "Status"  # Default to Status context for bottom pane
-            )
-
-            # Recreate windows with split layout
-            ui.setup_layout()
-
-            self.client.add_message(
-                "Split-screen mode enabled. Use /focus to switch between panes.",
-                self.client.ui.colors["system"],
-                context_name=self.client.context_manager.active_context_name,
-            )
-        else:
-            # Disable split mode
-            ui.split_mode_active = False
-            ui.active_split_pane = "top"
-
-            # Set the active context to the one that was in the active pane
-            active_context = (
-                ui.top_pane_context_name
-                if ui.active_split_pane == "top"
-                else ui.bottom_pane_context_name
-            )
-            if active_context:  # Only set if we have a valid context name
-                self.client.context_manager.set_active_context(active_context)
-
-            # Clear split-related attributes
-            ui.top_pane_context_name = ""
-            ui.bottom_pane_context_name = ""
-
-            # Recreate windows with single layout
-            ui.setup_layout()
-
-            self.client.add_message(
-                "Split-screen mode disabled.",
-                self.client.ui.colors["system"],
-                context_name=self.client.context_manager.active_context_name,
-            )
-
-    def _handle_focus_command(self, args_str: str):
-        """Handle the /focus command to switch between split panes"""
-        if not self.client.ui.split_mode_active:
-            self.client.add_message(
-                "Split-screen mode is not active. Use /split to enable it.",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name,
-            )
-            return
-
-        parts = self._ensure_args(
-            args_str, "Usage: /focus <top|bottom>", num_expected_parts=1
-        )
-        if not parts:
-            return
-
-        pane = parts[0].lower()
-        if pane not in ["top", "bottom"]:
-            self.client.add_message(
-                "Invalid pane. Use 'top' or 'bottom'.",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name,
-            )
-            return
-
-        self.client.ui.active_split_pane = pane
-        self.client.add_message(
-            f"Focus set to {pane} pane.",
-            self.client.ui.colors["system"],
-            context_name=self.client.context_manager.active_context_name,
-        )
-
-    def _handle_setpane_command(self, args_str: str):
-        """Handle the /setpane command to set a context in a specific pane"""
-        if not self.client.ui.split_mode_active:
-            self.client.add_message(
-                "Split-screen mode is not active. Use /split to enable it.",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name,
-            )
-            return
-
-        parts = self._ensure_args(
-            args_str,
-            "Usage: /setpane <top|bottom> <context_name>",
-            num_expected_parts=2,
-        )
-        if not parts:
-            return
-
-        pane, context_name = parts[0].lower(), parts[1]
-        if pane not in ["top", "bottom"]:
-            self.client.add_message(
-                "Invalid pane. Use 'top' or 'bottom'.",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name,
-            )
-            return
-
-        # Verify context exists
-        if not self.client.context_manager.get_context(context_name):
-            self.client.add_message(
-                f"Context '{context_name}' not found.",
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name,
-            )
-            return
-
-        # Set the context for the specified pane
-        if pane == "top":
-            self.client.ui.top_pane_context_name = context_name
-        else:
-            self.client.ui.bottom_pane_context_name = context_name
-
-        self.client.add_message(
-            f"Set {pane} pane to context '{context_name}'.",
-            self.client.ui.colors["system"],
-            context_name=self.client.context_manager.active_context_name,
-        )
