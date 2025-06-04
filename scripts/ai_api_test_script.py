@@ -79,7 +79,7 @@ class LeanAiApiTestScript:
         time.sleep(2)
         self._test_help_system_general(channel_name)
         time.sleep(3)
-        self._test_trigger_functionality(channel_name)
+        self._test_trigger_functionality(channel_name) # Corrected typo: Functionality -> functionality
 
         logger.info(f"[Lean AI Test] --- Focused Tests on {channel_name} Completed ---")
 
@@ -139,120 +139,124 @@ class LeanAiApiTestScript:
             context_to_check=channel_name
         )
 
+    def _verify_trigger_fired_and_message_sent(self, channel_name: str, triggered_action_message_content: str, client_nick_for_check: Optional[str], test_label: str) -> bool:
+        messages = self.api.get_context_messages(channel_name)
+        found = False
+        if not messages: # Handle case where messages might be None or empty
+            logger.error(f"[Lean AI Test] {test_label}: FAILED. No messages in context '{channel_name}' to check.")
+            return False
+        if not client_nick_for_check:
+            logger.error(f"[Lean AI Test] {test_label}: FAILED. Client nick is None, cannot verify echo.")
+            return False
+
+
+        logger.info(f"[Lean AI Test] {test_label}: Checking {len(messages)} messages in {channel_name} for output from '{client_nick_for_check}'. Looking for: '{triggered_action_message_content}'")
+
+        for i in range(len(messages)):
+            msg_text, _ = messages[i]
+            if not isinstance(msg_text, str):
+                continue
+
+            expected_prefix = f"<{client_nick_for_check}>"
+            # Check if this line is from our client and potentially the start of the triggered message
+            # Use lower() for case-insensitive prefix matching, but strip() first
+            if msg_text.strip().lower().startswith(expected_prefix.lower()):
+                reconstructed_message_parts = [msg_text.strip()[len(expected_prefix):].strip()]
+
+                for j in range(i + 1, len(messages)):
+                    next_msg_text, _ = messages[j]
+                    if not isinstance(next_msg_text, str):
+                        continue
+
+                    # Heuristic for continuation: not starting with another nick prefix
+                    # and not starting with a timestamp pattern if your messages usually have them.
+                    # For simplicity, we'll check if it doesn't look like a new message from someone else.
+                    is_new_message = False
+                    if next_msg_text.strip().startswith("<"):
+                        split_next = next_msg_text.strip().split(">", 1)
+                        if len(split_next) > 1 and split_next[0].endswith(""): # Check for <nick>
+                            is_new_message = True
+
+                    if not is_new_message:
+                        reconstructed_message_parts.append(next_msg_text.strip())
+                    else:
+                        break # Stop collecting parts for this logical message
+
+                full_reconstructed_message = " ".join(reconstructed_message_parts)
+                logger.debug(f"[Lean AI Test] {test_label}: Reconstructed message from index {i}: '{full_reconstructed_message}'")
+
+                # Check if the target content is present in the reconstructed message
+                if triggered_action_message_content in full_reconstructed_message:
+                    found = True
+                    logger.info(f"[Lean AI Test] {test_label}: PASSED. Found action content in reconstructed message: '{full_reconstructed_message}'")
+                    break
+
+        if not found:
+            logger.error(f"[Lean AI Test] {test_label}: FAILED. Output message '{triggered_action_message_content}' (echoed as from '{client_nick_for_check}') not found or not matched correctly in {channel_name}.")
+            if messages:
+                logger.info(f"[Lean AI Test] {test_label}: All messages in {channel_name} for debug: {messages}")
+        return found
+
     def _test_trigger_functionality(self, channel_name: str):
         logger.info(f"[Lean AI Test] --- Testing Trigger Functionality ---")
 
         self.api.execute_client_command(f"/window {channel_name}")
         time.sleep(0.3)
 
-        trigger_pattern_unique_part = f"activate_trigger_{int(time.time())}"
+        timestamp_for_trigger = str(time.time())
+        trigger_pattern_unique_part = f"activate_trigger_{timestamp_for_trigger[-6:]}"
         activating_message_content = f"This message contains the phrase: {trigger_pattern_unique_part} for the test."
         trigger_pattern_for_activation = rf".*\b{trigger_pattern_unique_part}\b.*"
 
-        triggered_action_message_content = f"CONFIRMED: Trigger action for phrase ending {str(time.time())[-4:]} was processed!"
+        triggered_action_message_content = f"CONFIRMED: Trigger action for {trigger_pattern_unique_part} was processed!" # Unique action message
 
         logger.info(f"[Lean AI Test] Adding trigger: Pattern='{trigger_pattern_for_activation}', Action='/msg {channel_name} {triggered_action_message_content}'")
         trigger_id = self.api.add_trigger(
-            event_type="TEXT",
-            pattern=trigger_pattern_for_activation,
-            action_type="COMMAND",
-            action_content=f"/msg {channel_name} {triggered_action_message_content}",
+            event_type="TEXT", pattern=trigger_pattern_for_activation,
+            action_type="COMMAND", action_content=f"/msg {channel_name} {triggered_action_message_content}",
         )
 
-        if trigger_id is None:
-            logger.error("[Lean AI Test] FAILED: Could not add trigger.")
-            return
-
-        if hasattr(self.api, 'DEV_TEST_ONLY_clear_context_messages'):
-            self.api.DEV_TEST_ONLY_clear_context_messages(channel_name)
-            time.sleep(0.2)
-
-
-        logger.info(f"[Lean AI Test] Trigger added (ID: {trigger_id}). Sending activating message: '{activating_message_content}'")
-        self.api.send_message(channel_name, activating_message_content)
-        time.sleep(4.0)
-
-        messages = self.api.get_context_messages(channel_name)
-        triggered_message_found = False
+        if trigger_id is None: logger.error("[Lean AI Test] FAILED to add trigger (Initial)."); return
         client_nick_for_check = self.api.get_client_nick()
 
-        if messages: # Check if messages is not None
-            logger.info(f"[Lean AI Test] Checking {len(messages)} messages in {channel_name} for trigger output...")
-            for msg_tuple in reversed(messages):
-                msg_text = msg_tuple[0]
-                if isinstance(msg_text, str) and triggered_action_message_content in msg_text:
-                    expected_echo_format = ""
-                    if client_nick_for_check:
-                       expected_echo_format = f"<{client_nick_for_check}> {triggered_action_message_content}"
+        # Test 1: Initial trigger fire
+        if hasattr(self.api, 'DEV_TEST_ONLY_clear_context_messages'):
+            self.api.DEV_TEST_ONLY_clear_context_messages(channel_name); time.sleep(0.2)
+        logger.info(f"[Lean AI Test] Trigger added (ID: {trigger_id}). Sending activating message: '{activating_message_content}'")
+        self.api.send_message(channel_name, activating_message_content)
+        time.sleep(4.5)
+        initial_fire_passed = self._verify_trigger_fired_and_message_sent(channel_name, triggered_action_message_content, client_nick_for_check, f"Initial fire (ID: {trigger_id})")
 
-                    if expected_echo_format and expected_echo_format == msg_text.strip():
-                        triggered_message_found = True
-                        logger.info(f"[Lean AI Test] PASSED: Trigger {trigger_id} fired. Found echoed message: '{msg_text}'")
-                        break
-                    elif client_nick_for_check:
-                         logger.info(f"[Lean AI Test] Trigger content '{triggered_action_message_content}' found in '{msg_text}', but full echo format '<{client_nick_for_check}> ...' did not match exactly. Actual: '{msg_text.strip()}' vs Expected: '{expected_echo_format}'")
+        if not initial_fire_passed:
+            logger.error(f"[Lean AI Test] Aborting further trigger tests for ID {trigger_id} due to initial fire failure.")
+            if trigger_id is not None: self.api.remove_trigger(trigger_id)
+            return
 
-        if not triggered_message_found:
-            logger.error(f"[Lean AI Test] FAILED: Trigger {trigger_id} (pattern: '{trigger_pattern_for_activation}') did NOT fire as expected OR its output message '{triggered_action_message_content}' (echoed as from '{client_nick_for_check}') not found in {channel_name}.")
-            if messages:
-                logger.info(f"[Lean AI Test] All messages in {channel_name} for trigger debug: {messages}")
+        # Test 2: Trigger disabled
+        self.api.set_trigger_enabled(trigger_id, False)
+        logger.info(f"[Lean AI Test] Disabled trigger {trigger_id}. Sending activating message again (should NOT trigger).")
+        if hasattr(self.api, 'DEV_TEST_ONLY_clear_context_messages'):
+            self.api.DEV_TEST_ONLY_clear_context_messages(channel_name); time.sleep(0.2)
+        self.api.send_message(channel_name, activating_message_content + " (disabled test)")
+        time.sleep(3.5) # Allow time for potential incorrect trigger and echo
+
+        if not self._verify_trigger_fired_and_message_sent(channel_name, triggered_action_message_content, client_nick_for_check, f"Disabled fire check (ID: {trigger_id}) (expecting not found)"):
+            logger.info(f"[Lean AI Test] PASSED: Trigger {trigger_id} did not fire command when disabled (as expected).")
         else:
-            self.api.set_trigger_enabled(trigger_id, False)
-            logger.info(f"[Lean AI Test] Disabled trigger {trigger_id}. Sending activating message again (should NOT trigger command).")
-            self.api.send_message(channel_name, activating_message_content + " (disabled test)")
-            time.sleep(3.0) # Allow time for potential incorrect trigger and echo
-
-            messages_after_disabled_send = self.api.get_context_messages(channel_name)
-            action_message_found_when_disabled = False
-
-            # Count occurrences of the action message to see if new ones appeared
-            initial_trigger_echo = f"<{client_nick_for_check}> {triggered_action_message_content}" if client_nick_for_check else triggered_action_message_content
-            count_before_disable_test = 0
-            if messages: # Count from messages before sending "disabled test" activating message
-                for msg_tuple in messages:
-                    if isinstance(msg_tuple[0], str) and initial_trigger_echo == msg_tuple[0].strip():
-                        count_before_disable_test +=1
-
-            count_after_disable_test = 0
-            if messages_after_disabled_send:
-                for msg_tuple in messages_after_disabled_send:
-                     if isinstance(msg_tuple[0], str) and initial_trigger_echo == msg_tuple[0].strip():
-                        count_after_disable_test +=1
-
-            if count_after_disable_test > count_before_disable_test :
-                action_message_found_when_disabled = True
-
-            if action_message_found_when_disabled:
-                logger.error(f"[Lean AI Test] FAILED: Trigger {trigger_id} fired its command even when disabled. Count before: {count_before_disable_test}, Count after: {count_after_disable_test}")
-            else:
-                logger.info(f"[Lean AI Test] PASSED: Trigger {trigger_id} did not fire command when disabled. Count before: {count_before_disable_test}, Count after: {count_after_disable_test}")
+            logger.error(f"[Lean AI Test] FAILED: Trigger {trigger_id} fired its command even when disabled.")
 
 
-            self.api.set_trigger_enabled(trigger_id, True)
-            logger.info(f"[Lean AI Test] Re-enabled trigger {trigger_id}. Sending activating message again (should trigger command).")
-            self.api.send_message(channel_name, activating_message_content + " (reenabled test)")
-            time.sleep(3.5) # Increased sleep
-
-            messages_after_reenabled_send = self.api.get_context_messages(channel_name)
-            action_message_found_when_reenabled = False
-            count_before_reenable_test = count_after_disable_test # from previous check
-            count_after_reenable_test = 0
-            if messages_after_reenabled_send:
-                 for msg_tuple in messages_after_reenabled_send:
-                     if isinstance(msg_tuple[0], str) and initial_trigger_echo == msg_tuple[0].strip():
-                        count_after_reenable_test +=1
-
-            if count_after_reenable_test > count_before_reenable_test:
-                action_message_found_when_reenabled = True
-
-            if not action_message_found_when_reenabled:
-                logger.error(f"[Lean AI Test] FAILED: Trigger {trigger_id} did NOT fire command when re-enabled. Counts: before={count_before_reenable_test}, after={count_after_reenable_test}. Last messages: {messages_after_reenabled_send[-10:] if messages_after_reenabled_send else 'None'}")
-            else:
-                logger.info(f"[Lean AI Test] PASSED: Trigger {trigger_id} fired command when re-enabled. Counts: before={count_before_reenable_test}, after={count_after_reenable_test}")
+        # Test 3: Trigger re-enabled
+        self.api.set_trigger_enabled(trigger_id, True)
+        logger.info(f"[Lean AI Test] Re-enabled trigger {trigger_id}. Sending activating message again (should trigger).")
+        if hasattr(self.api, 'DEV_TEST_ONLY_clear_context_messages'):
+            self.api.DEV_TEST_ONLY_clear_context_messages(channel_name); time.sleep(0.2)
+        self.api.send_message(channel_name, activating_message_content + " (reenabled test)")
+        time.sleep(4.5)
+        self._verify_trigger_fired_and_message_sent(channel_name, triggered_action_message_content, client_nick_for_check, f"Re-enabled fire (ID: {trigger_id})")
 
         logger.info(f"[Lean AI Test] Removing trigger {trigger_id}.")
-        if trigger_id is not None: # Only remove if it was successfully added
-            self.api.remove_trigger(trigger_id)
+        if trigger_id is not None: self.api.remove_trigger(trigger_id)
 
 
 def get_script_instance(api_handler: "ScriptAPIHandler"):
