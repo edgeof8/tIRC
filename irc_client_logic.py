@@ -254,9 +254,7 @@ class IRCClient_Logic:
             self.ui = UIManager(stdscr, self)
             self.input_handler = InputHandler(self)
 
-        self.command_handler = CommandHandler(self)
-        self._initialize_connection_handlers() # Setup CAP, SASL, Registration
-
+        # Initialize ScriptManager before CommandHandler, as CommandHandler needs it
         cli_disabled = (
             set(self.args.disable_script)
             if hasattr(self.args, "disable_script") and self.args.disable_script
@@ -266,8 +264,12 @@ class IRCClient_Logic:
         self.script_manager = ScriptManager(
             self, BASE_DIR, disabled_scripts=cli_disabled.union(config_disabled)
         )
-        self.event_manager = EventManager(self, self.script_manager)
-        self.script_manager.load_scripts()
+        # CommandHandler depends on ScriptManager for base_dir
+        self.command_handler = CommandHandler(self)
+        self._initialize_connection_handlers() # Setup CAP, SASL, Registration
+
+        self.event_manager = EventManager(self, self.script_manager) # EventManager might depend on ScriptManager
+        self.script_manager.load_scripts() # Load scripts after EventManager is ready if scripts can dispatch events
 
         # Initialize TriggerManager only if enabled
         if ENABLE_TRIGGER_SYSTEM:

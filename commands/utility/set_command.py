@@ -10,6 +10,20 @@ if TYPE_CHECKING:
     # If _ensure_args is to be called from command_handler instance via client:
     # from command_handler import CommandHandler
 
+COMMAND_DEFINITIONS = [
+    {
+        "name": "set",
+        "handler": "handle_set_command", # Name of the handler function in this module
+        "help": {
+            "usage": "/set [<section.key> [<value>]]",
+            "description": "Views or modifies client configuration settings. "
+                           "Without arguments, lists all settings. "
+                           "With <section.key>, shows the value. "
+                           "With <section.key> <value>, sets the value.",
+            "aliases": ["se"]
+        }
+    }
+]
 logger = logging.getLogger("pyrc.commands.set") # Specific logger for this command
 
 def handle_set_command(client: "IRCClient_Logic", args_str: str):

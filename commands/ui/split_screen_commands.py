@@ -6,6 +6,35 @@ if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.commands.ui.split_screen")
+COMMAND_DEFINITIONS = [
+    {
+        "name": "split",
+        "handler": "handle_split_command",
+        "help": {
+            "usage": "/split",
+            "description": "Toggle split-screen mode on/off. When enabled, the message window is split into two panes. Use /focus to switch panes and /setpane to assign contexts.",
+            "aliases": []
+        }
+    },
+    {
+        "name": "focus",
+        "handler": "handle_focus_command",
+        "help": {
+            "usage": "/focus <top|bottom>",
+            "description": "Switch focus between split panes (top or bottom) when in split-screen mode. The focused pane receives scroll commands.",
+            "aliases": []
+        }
+    },
+    {
+        "name": "setpane",
+        "handler": "handle_setpane_command",
+        "help": {
+            "usage": "/setpane <top|bottom> <context_name>",
+            "description": "Set a context in a specific pane (top or bottom) when in split-screen mode. The context must exist.",
+            "aliases": []
+        }
+    }
+]
 
 def handle_split_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /split command to toggle split-screen mode"""

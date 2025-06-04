@@ -1,29 +1,31 @@
 import logging
+import os # Added for dynamic loading
+import importlib # Added for dynamic loading
 from typing import TYPE_CHECKING, List, Optional, Tuple
 from features.triggers.trigger_commands import TriggerCommands
 from context_manager import ChannelJoinStatus, Context
 from channel_commands_handler import ChannelCommandsHandler
 from server_commands_handler import ServerCommandsHandler
 from information_commands_handler import InformationCommandsHandler
-from commands.utility.set_command import handle_set_command
-from commands.utility.rehash_command import handle_rehash_command
-from commands.utility.save_command import handle_save_command
-from commands.utility.clear_command import handle_clear_command
-from commands.utility.rawlog_command import handle_rawlog_command
-from commands.utility.lastlog_command import handle_lastlog_command
-from commands.ui.window_navigation_commands import handle_next_window_command, handle_prev_window_command, handle_window_command
-from commands.ui.status_command import handle_status_command
-from commands.ui.close_command import handle_close_command
-from commands.ui.userlist_scroll_command import handle_userlist_scroll_command
-from commands.ui.split_screen_commands import handle_split_command, handle_focus_command, handle_setpane_command
-from commands.user.nick_command import handle_nick_command
-from commands.user.away_command import handle_away_command
-from commands.user.me_command import handle_me_command
-from commands.user.msg_command import handle_msg_command
-from commands.user.query_command import handle_query_command
-from commands.user.notice_command import handle_notice_command
-from commands.user.whois_command import handle_whois_command
-from commands.user.ignore_commands import handle_ignore_command, handle_unignore_command, handle_listignores_command
+# Removed: from commands.utility import set_command as set_command_module
+# Removed: from commands.utility.rehash_command import handle_rehash_command
+# Removed: from commands.utility.save_command import handle_save_command
+# Removed: from commands.utility.clear_command import handle_clear_command
+# Removed: from commands.utility.rawlog_command import handle_rawlog_command
+# Removed: from commands.utility.lastlog_command import handle_lastlog_command
+# Removed: from commands.ui.window_navigation_commands import handle_next_window_command, handle_prev_window_command, handle_window_command
+# Removed: from commands.ui.status_command import handle_status_command
+# Removed: from commands.ui.close_command import handle_close_command
+# Removed: from commands.ui.userlist_scroll_command import handle_userlist_scroll_command
+# Removed: from commands.ui.split_screen_commands import handle_split_command, handle_focus_command, handle_setpane_command
+# Removed: from commands.user.nick_command import handle_nick_command
+# Removed: from commands.user.away_command import handle_away_command
+# Removed: from commands.user.me_command import handle_me_command
+# Removed: from commands.user.msg_command import handle_msg_command
+# Removed: from commands.user.query_command import handle_query_command
+# Removed: from commands.user.notice_command import handle_notice_command
+# Removed: from commands.user.whois_command import handle_whois_command
+# Removed: from commands.user.ignore_commands import handle_ignore_command, handle_unignore_command, handle_listignores_command
 from config import (
     get_all_settings,
     set_config_value,
@@ -53,26 +55,20 @@ class CommandHandler:
         self.server_commands = ServerCommandsHandler(client_logic)
         self.info_commands = InformationCommandsHandler(client_logic)
 
+        self.registered_command_help = {} # New dictionary to store help info
+
         self.command_map = {
+            # Commands handled by dedicated handler class instances
             "join": self.channel_commands.handle_join_command,
             "j": self.channel_commands.handle_join_command,
             "part": self.channel_commands.handle_part_command,
             "p": self.channel_commands.handle_part_command,
-            "msg": handle_msg_command,
-            "m": handle_msg_command,
-            "query": handle_query_command,
-            "nick": handle_nick_command,
-            "n": handle_nick_command,
-            "quit": self.server_commands.handle_quit_command,
-            "q": self.server_commands.handle_quit_command,
-            "whois": handle_whois_command,
-            "w": handle_whois_command,
-            "me": handle_me_command,
-            "away": handle_away_command,
             "invite": self.channel_commands.handle_invite_command,
             "i": self.channel_commands.handle_invite_command,
             "topic": self.channel_commands.handle_topic_command,
             "t": self.channel_commands.handle_topic_command,
+            "quit": self.server_commands.handle_quit_command,
+            "q": self.server_commands.handle_quit_command,
             "raw": self.server_commands.handle_raw_command,
             "quote": self.server_commands.handle_raw_command,
             "r": self.server_commands.handle_raw_command,
@@ -81,36 +77,10 @@ class CommandHandler:
             "s": self.server_commands.handle_server_command,
             "disconnect": self.server_commands.handle_disconnect_command,
             "d": self.server_commands.handle_disconnect_command,
-            "clear": handle_clear_command,
-            "c": handle_clear_command,
-            "next": handle_next_window_command,
-            "nextwindow": handle_next_window_command,
-            "prev": handle_prev_window_command,
-            "prevwindow": handle_prev_window_command,
-            "win": handle_window_command,
-            "window": handle_window_command,
-            "close": handle_close_command,
-            "wc": handle_close_command,
-            "partchannel": handle_close_command,
             "cyclechannel": self.channel_commands.handle_cycle_channel_command,
             "cc": self.channel_commands.handle_cycle_channel_command,
-            "prevchannel": self._handle_prev_channel_command,
-            "pc": self._handle_prev_channel_command,
-            "userlistscroll": handle_userlist_scroll_command,
-            "u": handle_userlist_scroll_command,
-            "status": handle_status_command,
             "kick": self.channel_commands.handle_kick_command,
             "k": self.channel_commands.handle_kick_command,
-            "notice": handle_notice_command,
-            "no": handle_notice_command,
-            "set": handle_set_command,
-            "se": handle_set_command,
-            "on": self.trigger_commands.handle_on_command,
-            "help": self._handle_help_command,
-            "h": self._handle_help_command,
-            "ignore": handle_ignore_command,
-            "unignore": handle_unignore_command,
-            "listignores": handle_listignores_command,
             "ban": self.channel_commands.handle_ban_command,
             "unban": self.channel_commands.handle_unban_command,
             "mode": self.channel_commands.handle_mode_command,
@@ -126,16 +96,81 @@ class CommandHandler:
             "whowas": self.info_commands.handle_whowas_command,
             "list": self.info_commands.handle_list_command,
             "names": self.info_commands.handle_names_command,
-            # New commands
             "reconnect": self.server_commands.handle_reconnect_command,
-            "rehash": handle_rehash_command,
-            "rawlog": handle_rawlog_command,
-            "save": handle_save_command,
-            "lastlog": handle_lastlog_command,
-            "split": handle_split_command,
-            "focus": handle_focus_command,
-            "setpane": handle_setpane_command,
+            "on": self.trigger_commands.handle_on_command, # TriggerCommands is still a handler
+
+            # Commands still potentially handled directly by CommandHandler
+            # "help": self._handle_help_command, # Removed, will be dynamically loaded
+            # "h": self._handle_help_command,   # Removed, will be dynamically loaded
+            # Removed "prevchannel" and "pc" as they are likely in a command module now
+            # If _handle_prev_channel_command still exists and is used, it should be added back or moved.
+            # For now, assuming it will be dynamically loaded if defined in a module.
         }
+
+        # --- Dynamic command loading from 'commands/' directory ---
+        commands_dir_path = os.path.join(self.client.script_manager.base_dir, "commands")
+        logger.info(f"Starting dynamic command loading from: {commands_dir_path}")
+
+        for root, _, files in os.walk(commands_dir_path):
+            for filename in files:
+                if filename.endswith(".py") and filename != "__init__.py":
+                    module_path_on_disk = os.path.join(root, filename)
+                    # Construct Python module name (e.g., commands.utility.set_command)
+                    relative_path_from_commands_dir = os.path.relpath(module_path_on_disk, commands_dir_path)
+
+                    module_name_parts = relative_path_from_commands_dir[:-3].split(os.sep)
+                    python_module_name = "commands." + ".".join(module_name_parts)
+
+                    try:
+                        logger.debug(f"Attempting to import module: {python_module_name}")
+                        module = importlib.import_module(python_module_name)
+
+                        if hasattr(module, 'COMMAND_DEFINITIONS'):
+                            logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}")
+                            for cmd_def in module.COMMAND_DEFINITIONS:
+                                cmd_name = cmd_def["name"].lower()
+                                handler_name_str = cmd_def["handler"]
+                                handler_func = getattr(module, handler_name_str, None)
+
+                                if handler_func and callable(handler_func):
+                                    if cmd_name in self.command_map:
+                                        logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                                    self.command_map[cmd_name] = handler_func
+
+                                    if "help" in cmd_def and cmd_def["help"]:
+                                        help_info = cmd_def["help"]
+                                        self.registered_command_help[cmd_name] = {
+                                            "help_text": f"{help_info['usage']}\n  {help_info['description']}",
+                                            "aliases": [a.lower() for a in help_info.get("aliases", [])],
+                                            "script_name": "core",
+                                            "is_alias": False,
+                                            "module_path": python_module_name
+                                        }
+                                        for alias_raw in help_info.get("aliases", []):
+                                            alias = alias_raw.lower()
+                                            if alias in self.command_map:
+                                                 logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                                            self.command_map[alias] = handler_func
+                                            self.registered_command_help[alias] = {
+                                                "help_text": f"{help_info['usage']}\n  {help_info['description']}",
+                                                "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
+                                                "script_name": "core",
+                                                "is_alias": True,
+                                                "primary_command": cmd_name,
+                                                "module_path": python_module_name
+                                            }
+                                    logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}.")
+                                else:
+                                    logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
+                        # else:
+                            # logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
+
+                    except ImportError as e:
+                        logger.error(f"Failed to import module {python_module_name}: {e}", exc_info=True)
+                    except Exception as e:
+                        logger.error(f"Error processing module {python_module_name}: {e}", exc_info=True)
+        logger.info("Finished dynamic command loading.")
+        # --- End of dynamic command loading ---
 
         self.command_primary_map = {}
         seen_handlers = {}
@@ -149,161 +184,7 @@ class CommandHandler:
             else:
                 seen_handlers[handler_func] = cmd_name
 
-    def _handle_help_command(self, args_str: str):
-        """Handle the /help command"""
-        system_color = self.client.ui.colors["system"]
-        error_color = self.client.ui.colors["error"]
-        active_context_name = self.client.context_manager.active_context_name
-
-        if not args_str:
-            # Show general help
-            self.client.add_message(
-                "\nAvailable commands:",
-                system_color,
-                context_name=active_context_name,
-            )
-
-            # Get all help texts
-            help_texts = self.client.script_manager.get_all_help_texts()
-
-            # Group commands by script
-            commands_by_script = {}
-            for cmd, help_text in help_texts.items():
-                # For core commands, help_text is a string
-                # For script commands, help_text is a dict with 'help_text' and 'script_name'
-                if isinstance(help_text, dict):
-                    script_name = help_text.get("script_name", "core")
-                    help_text_str = help_text.get("help_text", "")
-                else:
-                    script_name = "core"
-                    help_text_str = help_text
-
-                if script_name not in commands_by_script:
-                    commands_by_script[script_name] = []
-                commands_by_script[script_name].append((cmd, help_text_str))
-
-            # Display commands grouped by script
-            for script_name, commands in sorted(commands_by_script.items()):
-                if script_name != "core":
-                    self.client.add_message(
-                        f"\nCommands from script '{script_name}':",
-                        system_color,
-                        context_name=active_context_name,
-                    )
-                else:
-                    self.client.add_message(
-                        "\nCore commands:",
-                        system_color,
-                        context_name=active_context_name,
-                    )
-
-                for cmd, help_text in sorted(commands):
-                    summary = help_text.split("\n")[0]
-                    self.client.add_message(
-                        f"/{cmd}: {summary}",
-                        system_color,
-                        context_name=active_context_name,
-                    )
-
-            # Add split-screen commands help
-            self.client.add_message(
-                "\nSplit-screen commands:",
-                system_color,
-                context_name=active_context_name,
-            )
-            self.client.add_message(
-                "/split: Toggle split-screen mode",
-                system_color,
-                context_name=active_context_name,
-            )
-            self.client.add_message(
-                "/focus <top|bottom>: Switch focus between split panes",
-                system_color,
-                context_name=active_context_name,
-            )
-            self.client.add_message(
-                "/setpane <top|bottom> <context_name>: Set a context in a specific pane",
-                system_color,
-                context_name=active_context_name,
-            )
-
-            self.client.add_message(
-                "\nUse /help <command> for detailed help on a specific command.",
-                system_color,
-                context_name=active_context_name,
-            )
-            return
-
-        # Show help for specific command
-        command_name_from_user = args_str.strip().lower()
-        help_data = self.client.script_manager.get_help_text_for_command(
-            command_name_from_user
-        )
-
-        # Add split-screen commands help
-        if command_name_from_user == "split":
-            help_text = """Split-screen mode commands:
-/split - Toggle split-screen mode on/off
-When enabled, the message window is split into two panes that can display different contexts.
-The top pane initially shows the current active context, and the bottom pane shows the Status context.
-Use /focus to switch between panes, and /setpane to change which context is shown in each pane."""
-            for line in help_text.splitlines():
-                self.client.add_message(
-                    line, system_color, context_name=active_context_name
-                )
-            return
-        elif command_name_from_user == "focus":
-            help_text = """Focus command for split-screen mode:
-/focus <top|bottom> - Switch focus between split panes
-When in split-screen mode, this command determines which pane receives scroll commands.
-The focused pane is indicated in the status bar."""
-            for line in help_text.splitlines():
-                self.client.add_message(
-                    line, system_color, context_name=active_context_name
-                )
-            return
-        elif command_name_from_user == "setpane":
-            help_text = """Set pane context command for split-screen mode:
-/setpane <top|bottom> <context_name> - Set a context in a specific pane
-When in split-screen mode, this command assigns a context to either the top or bottom pane.
-The context must exist (e.g., a channel, query, or the Status context)."""
-            for line in help_text.splitlines():
-                self.client.add_message(
-                    line, system_color, context_name=active_context_name
-                )
-            return
-
-        if help_data:
-            # Check if this is an alias
-            if help_data.get("is_alias"):
-                primary_cmd = help_data.get("primary_command")
-                self.client.add_message(
-                    f"(Showing help for '/{primary_cmd}', as '/{command_name_from_user}' is an alias)",
-                    system_color,
-                    context_name=active_context_name,
-                )
-
-            # Show the help text
-            help_text = help_data.get("help_text", "")
-            for line in help_text.splitlines():
-                self.client.add_message(
-                    line, system_color, context_name=active_context_name
-                )
-
-            # Get the script name from the command data
-            script_name = help_data.get("script_name")
-            if script_name and script_name != "core":
-                self.client.add_message(
-                    f"(Help from script: {script_name})",
-                    system_color,
-                    context_name=active_context_name,
-                )
-        else:
-            self.client.add_message(
-                f"No help available for command: {command_name_from_user}",
-                error_color,
-                context_name=active_context_name,
-            )
+    # _handle_help_command method removed. Its logic is now in commands/core/help_command.py
 
     def _handle_query_command(self, args_str: str):
         """Handle the /query command"""
@@ -346,7 +227,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
                     f"Interpreting '{parts[0]}' as hostmask pattern: '{pattern_to_ignore}'",
                     self.client.ui.colors["system"],
                     context_name=active_context_name,
-                )
+            )
 
         if add_ignore_pattern(pattern_to_ignore):
             self.client.add_message(
@@ -388,7 +269,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
                     f"Removed from ignore list: {p_attempt}",
                     self.client.ui.colors["system"],
                     context_name=active_context_name,
-                )
+            )
                 removed = True
                 break
 
@@ -415,7 +296,7 @@ The context must exist (e.g., a channel, query, or the Status context)."""
             "Current ignore patterns:",
             self.client.ui.colors["system"],
             context_name=active_context_name,
-        )
+            )
         for pattern in sorted(list(IGNORED_PATTERNS)):
             self.client.add_message(
                 f"- {pattern}",
