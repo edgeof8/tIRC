@@ -200,13 +200,16 @@ class AiApiTestScript:
 
         # /clear
         self.api.log_info(f"[AI Test] Testing /clear on {context_name}")
-        self.api.execute_client_command(f"/clear {context_name}") # Target specific context
-        time.sleep(0.5)
-        messages_after_clear = self.api.get_context_messages(context_name, count=5)
+        self.api.log_info(f"[AI Test] Ensuring {context_name} is active for /clear test.")
+        self.api.execute_client_command(f"/window {context_name}") # Ensure context_name is active
+        time.sleep(0.2) # Allow context switch
+        self.api.execute_client_command("/clear") # Clears active context
+        time.sleep(0.5) # Allow UI updates
+        messages_after_clear = self.api.get_context_messages(context_name) # Get all messages
         if messages_after_clear:
-             self.api.log_error(f"[AI Test] FAILED: /clear {context_name} did not clear messages. Got: {messages_after_clear}")
+             self.api.log_error(f"[AI Test] FAILED: /clear on active context {context_name} did not clear messages. Got: {messages_after_clear}")
         else:
-             self.api.log_info(f"[AI Test] PASSED: /clear {context_name} appears to have cleared messages.")
+             self.api.log_info(f"[AI Test] PASSED: /clear on active context {context_name} resulted in an empty message buffer.")
 
 
         # /rawlog
@@ -343,66 +346,96 @@ class AiApiTestScript:
 
         self.api.log_info(f"[AI Test] --- Finished User Command Tests on {channel_name} ---")
 
-    def _test_help_system(self, context_name: str): # Can be channel or Status
-        self.api.log_info(f"[AI Test] --- Starting Help System Tests on {context_name} ---")
+    def _check_help_output(self, command_to_execute_with_slash: str, expected_strings: List[str], test_label: str):
+        self.api.log_info(f"[AI Test] Testing {test_label}: Executing '{command_to_execute_with_slash}'")
 
-        # /help (general)
-        self.api.log_info("[AI Test] Testing /help (general)")
-        self.api.execute_client_command("/help")
-        time.sleep(1.5) # Help can be verbose
-        messages = self.api.get_context_messages(context_name, count=20) # Get more messages for general help
-        found_general_help = any("Available commands:" in msg_text for msg_text, _ in messages) if messages else False
-        if found_general_help:
-            self.api.log_info("[AI Test] PASSED: /help (general) produced expected output.")
+        # Determine target context for help output. Help usually goes to the active context.
+        # For simplicity, let's assume help output appears in the currently active context,
+        # or Status if no context is active (though one should be during tests).
+        target_context_name = self.api.get_current_context_name() or "Status"
+        # Ensure the target_context_name is active if it's not Status, or /help might go to Status by default.
+        # However, /help command itself should handle where it outputs.
+        # We will fetch messages from the context that *was* active *before* the command.
+        # If /help changes the active context (e.g. to a new help window), this needs adjustment.
+        # For now, assuming /help messages are added to the *current* active window or "Status".
+
+        self.api.log_info(f"[AI Test] Expecting help output for '{command_to_execute_with_slash}' in context '{target_context_name}'.")
+
+        initial_messages_raw = self.api.get_context_messages(target_context_name)
+        initial_msg_count = len(initial_messages_raw) if initial_messages_raw else 0
+        self.api.log_info(f"[AI Test] Initial message count in '{target_context_name}' for '{command_to_execute_with_slash}': {initial_msg_count}") # Changed log_debug to log_info
+
+        self.api.execute_client_command(command_to_execute_with_slash)
+        time.sleep(1.0) # Allow time for messages to be processed and added
+
+        all_messages_raw = self.api.get_context_messages(target_context_name)
+        all_messages = all_messages_raw if all_messages_raw else []
+
+        new_messages = all_messages[initial_msg_count:]
+        self.api.log_info(f"[AI Test] Total messages in '{target_context_name}' after '{command_to_execute_with_slash}': {len(all_messages)}. New messages to check: {len(new_messages)}") # Changed log_debug to log_info
+
+        if not new_messages and expected_strings: # If we expected output but got no new messages
+            self.api.log_error(f"[AI Test] FAILED: {test_label}. No new messages found in '{target_context_name}' after executing '{command_to_execute_with_slash}'. Expected strings: {expected_strings}. All messages in context: {all_messages}")
+            return False
+
+        all_found = True
+        if expected_strings: # Only check if there are expected strings
+            all_found = all(
+                any(expected_str.lower() in msg_tuple[0].lower() for msg_tuple in new_messages)
+                for expected_str in expected_strings
+            )
+
+        if all_found:
+            self.api.log_info(f"[AI Test] PASSED: {test_label}. Found all expected strings in new messages.")
+            return True
         else:
-            self.api.log_error(f"[AI Test] FAILED: /help (general) did not produce expected output. Got: {messages}")
+            self.api.log_error(f"[AI Test] FAILED: {test_label}. Did not find all expected strings: {expected_strings}. New messages received: {new_messages}")
+            return False
 
-        # /help set
-        self.api.log_info("[AI Test] Testing /help set")
-        self.api.execute_client_command("/help set")
-        time.sleep(1.0)
-        messages = self.api.get_context_messages(context_name, count=5)
-        found_help_for_set = any("/set [<section.key>" in msg_text for msg_text, _ in messages) if messages else False
-        if found_help_for_set:
-            self.api.log_info("[AI Test] PASSED: /help set produced expected output.")
-        else:
-            self.api.log_error(f"[AI Test] FAILED: /help set did not produce expected output. Got: {messages}")
+    def _test_help_system(self, context_name: str): # context_name is where tests run, help output might go to active or Status
+        self.api.log_info(f"[AI Test] --- Starting Help System Tests (active context for checks: {context_name}) ---")
 
-        # /help join
-        self.api.log_info("[AI Test] Testing /help join")
-        self.api.execute_client_command("/help join")
-        time.sleep(1.0)
-        messages = self.api.get_context_messages(context_name, count=5)
-        found_help_for_join = any("/join <#channel>" in msg_text for msg_text, _ in messages) if messages else False
-        if found_help_for_join:
-            self.api.log_info("[AI Test] PASSED: /help join produced expected output.")
-        else:
-            self.api.log_error(f"[AI Test] FAILED: /help join did not produce expected output. Got: {messages}")
+        # Test /help (general)
+        self._check_help_output(
+            command_to_execute_with_slash="/help",
+            expected_strings=["Available commands:", "For more information on a specific command, type /help <command>"],
+            test_label="/help (general)"
+        )
+        time.sleep(0.5) # Small delay between tests
 
-        # /help split
-        self.api.log_info("[AI Test] Testing /help split")
-        self.api.execute_client_command("/help split")
-        time.sleep(1.0)
-        messages = self.api.get_context_messages(context_name, count=5)
-        found_help_for_split = any("/split" in msg_text and "Toggle split-screen mode" in msg_text for msg_text, _ in messages) if messages else False
-        if found_help_for_split:
-            self.api.log_info("[AI Test] PASSED: /help split produced expected output.")
-        else:
-            self.api.log_error(f"[AI Test] FAILED: /help split did not produce expected output. Got: {messages}")
+        # Test /help set
+        self._check_help_output(
+            command_to_execute_with_slash="/help set",
+            expected_strings=["/set [<section.key>]", "View or modify configuration settings."],
+            test_label="/help set"
+        )
+        time.sleep(0.5)
 
-        # /help non_existent_command
+        # Test /help join
+        self._check_help_output(
+            command_to_execute_with_slash="/help join",
+            expected_strings=["/join <#channel>[,<#channel>...] [<key>[,<key>...]]", "Joins the specified channel(s)"],
+            test_label="/help join"
+        )
+        time.sleep(0.5)
+
+        # Test /help split
+        self._check_help_output(
+            command_to_execute_with_slash="/help split",
+            expected_strings=["/split", "Toggle split-screen mode."],
+            test_label="/help split"
+        )
+        time.sleep(0.5)
+
+        # Test /help non_existent_command
         non_existent_cmd = f"zxcvbnm_{int(time.time())}"
-        self.api.log_info(f"[AI Test] Testing /help {non_existent_cmd}")
-        self.api.execute_client_command(f"/help {non_existent_cmd}")
-        time.sleep(1.0)
-        messages = self.api.get_context_messages(context_name, count=2)
-        found_no_help = any(f"No help available for command: {non_existent_cmd}" in msg_text for msg_text, _ in messages) if messages else False
-        if found_no_help:
-            self.api.log_info(f"[AI Test] PASSED: /help {non_existent_cmd} produced expected 'no help' message.")
-        else:
-            self.api.log_error(f"[AI Test] FAILED: /help {non_existent_cmd} did not produce 'no help' message. Got: {messages}")
+        self._check_help_output(
+            command_to_execute_with_slash=f"/help {non_existent_cmd}",
+            expected_strings=[f"No help available for command: {non_existent_cmd}"],
+            test_label=f"/help {non_existent_cmd} (non-existent)"
+        )
 
-        self.api.log_info(f"[AI Test] --- Finished Help System Tests on {context_name} ---")
+        self.api.log_info(f"[AI Test] --- Finished Help System Tests ---")
 
     def _test_nick_change_sequence(self):
         if not self.initial_original_nick_for_test:

@@ -1,12 +1,9 @@
 import logging
 import os # Added for dynamic loading
 import importlib # Added for dynamic loading
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Callable, Any # Added Any
 from features.triggers.trigger_commands import TriggerCommands
 from context_manager import ChannelJoinStatus, Context
-# from channel_commands_handler import ChannelCommandsHandler # Class removed
-# from server_commands_handler import ServerCommandsHandler # Class is deprecated
-from information_commands_handler import InformationCommandsHandler
 from config import (
     get_all_settings,
     set_config_value,
@@ -19,9 +16,9 @@ from config import (
 )
 
 if TYPE_CHECKING:
-    from irc_client_logic import (
-        IRCClient_Logic,
-    )
+    from irc_client_logic import IRCClient_Logic
+    # Define a type for our command handlers
+    CommandHandlerCallable = Callable[[IRCClient_Logic, str], Any] # Changed None to Any
 
 from context_manager import Context as CTX_Type
 
@@ -32,27 +29,15 @@ class CommandHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
         self.client = client_logic
         self.trigger_commands = TriggerCommands(client_logic)
-        # self.server_commands = ServerCommandsHandler(client_logic) # Class is deprecated
-        self.info_commands = InformationCommandsHandler(client_logic)
 
         self.registered_command_help = {} # New dictionary to store help info
 
-        self.command_map = {
-            # "server": self.server_commands.handle_server_command, # Now dynamically loaded
-            # "s": self.server_commands.handle_server_command, # Now dynamically loaded
-            "who": self.info_commands.handle_who_command,
-            "whowas": self.info_commands.handle_whowas_command,
-            "list": self.info_commands.handle_list_command,
-            "names": self.info_commands.handle_names_command,
-            # "reconnect": self.server_commands.handle_reconnect_command,
-            "on": self.trigger_commands.handle_on_command, # TriggerCommands is still a handler
-
-            # Commands still potentially handled directly by CommandHandler
-            # "help": self._handle_help_command, # Removed, will be dynamically loaded
-            # "h": self._handle_help_command,   # Removed, will be dynamically loaded
-            # Removed "prevchannel" and "pc" as they are likely in a command module now
-            # If _handle_prev_channel_command still exists and is used, it should be added back or moved.
-            # For now, assuming it will be dynamically loaded if defined in a module.
+        # Explicitly type command_map and ensure all entries conform to CommandHandlerCallable
+        self.command_map: Dict[str, "CommandHandlerCallable"] = {
+            # Wrap methods that don't match (client, args_str) signature
+            "on": lambda client, args_str: self.trigger_commands.handle_on_command(args_str),
+            # Dynamically loaded commands from modules are expected to have the (client, args_str) signature.
+            # Old direct entries for server and info commands are removed as they are now dynamically loaded.
         }
 
         # --- Dynamic command loading from 'commands/' directory ---
@@ -331,14 +316,8 @@ class CommandHandler:
 
         if cmd in self.command_map:
             handler_func = self.command_map[cmd]
-            import inspect # Moved import here as it's only used in this block
-            # Check if the handler is a standalone function from 'commands.' module
-            if hasattr(handler_func, '__module__') and \
-               handler_func.__module__.startswith("commands.") and \
-               not inspect.ismethod(handler_func): # Ensure it's not a method incorrectly caught
-                handler_func(self.client, args_str)  # Pass client for new modular commands
-            else:
-                handler_func(args_str)  # Existing call for methods of handler classes
+            # All handlers in command_map are now expected to have the (client, args_str) signature
+            handler_func(self.client, args_str)
             return True
         else:
             # Check for script-registered commands
