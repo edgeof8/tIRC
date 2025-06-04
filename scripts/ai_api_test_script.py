@@ -1,4 +1,3 @@
-
 # START OF MODIFIED FILE: scripts/ai_api_test_script.py
 import logging
 from typing import Dict, Any, TYPE_CHECKING, Optional, List, Tuple
@@ -399,9 +398,9 @@ class AiApiTestScript:
                 "Ui Commands:",
                 "User Commands:",
                 "Utility Commands:",
-                "Commands from script Default Fun Commands", # Corrected: Title case, no colon inside
-                "Commands from script Test Script",          # Corrected
-                "Commands from script Ai Api Test Script",   # Corrected
+                "Commands from script Default Fun Commands:",
+                "Commands from script Test Script:",
+                "Commands from script Ai Api Test Script:",
                 "Use /help <command> for detailed help"
             ],
             test_label="/help (general)"
@@ -483,32 +482,50 @@ class AiApiTestScript:
         self.api.log_info("[AI Test] Testing trigger API...")
         trigger_pattern = f"secret word {int(time.time())}"
 
+        self.api.execute_client_command(f"/window {channel_name}")
+        time.sleep(0.2)
+
+        triggered_action_message = f"Trigger for '{trigger_pattern}' fired successfully by PyRC!"
+
         trigger_id = self.api.add_trigger(
             event_type="TEXT",
             pattern=rf".*{trigger_pattern}.*",
             action_type="COMMAND",
-            action_content=f"/msg {channel_name} Trigger for '{trigger_pattern}' fired!",
+            action_content=f"/msg {channel_name} {triggered_action_message}",
         )
 
         if trigger_id is not None:
             self.api.log_info(
-                f"[AI Test] Added trigger with ID: {trigger_id}, pattern: '{trigger_pattern}'"
+                f"[AI Test] Added trigger ID: {trigger_id}, Event: TEXT, Pattern: '{trigger_pattern}', Action: COMMAND '/msg {channel_name} {triggered_action_message}'"
             )
+
+            self.api.log_info(f"[AI Test] Sending message to activate trigger: 'The {trigger_pattern} has been spoken.'")
             self.api.send_message(
                 channel_name, f"The {trigger_pattern} has been spoken."
             )
-            time.sleep(1.5)
+            time.sleep(2.5)
 
-            messages = self.api.get_context_messages(channel_name, count=5)
+            messages = self.api.get_context_messages(channel_name)
             triggered_message_found = False
+            client_nick_for_check = self.api.get_client_nick() # Get current nick for verification
+
             if messages:
-                for msg_tuple in messages:
-                    if f"Trigger for '{trigger_pattern}' fired!" in msg_tuple[0]:
-                        triggered_message_found = True
-                        self.api.log_info(f"[AI Test] Trigger {trigger_id} successfully fired and sent message.")
+                self.api.log_info(f"[AI Test] Checking {len(messages)} messages in {channel_name} for trigger output...")
+                for i, msg_tuple in enumerate(reversed(messages)):
+                    # Ensure msg_tuple[0] is a string before checking 'in'
+                    if isinstance(msg_tuple[0], str) and triggered_action_message in msg_tuple[0]:
+                        # Also check if it was likely sent by us (PyRC)
+                        if client_nick_for_check and (client_nick_for_check in msg_tuple[0] or "<" + client_nick_for_check + ">" in msg_tuple[0]):
+                            triggered_message_found = True
+                            self.api.log_info(f"[AI Test] Trigger {trigger_id} successfully fired and sent message: '{msg_tuple[0]}'")
+                            break
+                    if i > 10:
                         break
+
             if not triggered_message_found:
-                self.api.log_error(f"[AI Test] Trigger {trigger_id} did NOT fire as expected or message not found.")
+                self.api.log_error(f"[AI Test] FAILED: Trigger {trigger_id} (pattern: '{trigger_pattern}') did NOT fire as expected or its output message '{triggered_action_message}' not found in {channel_name}.")
+                if messages:
+                    self.api.log_info(f"[AI Test] Last few messages in {channel_name} for trigger debug: {messages[-10:]}")
 
 
             self.api.set_trigger_enabled(trigger_id, False)
@@ -517,9 +534,10 @@ class AiApiTestScript:
             )
             self.api.send_message(
                 channel_name,
-                f"Another message with {trigger_pattern}, should be ignored.",
+                f"Another message with {trigger_pattern}, should be ignored by disabled trigger.",
             )
             time.sleep(1.5)
+
             self.api.set_trigger_enabled(trigger_id, True)
             self.api.log_info(
                 f"[AI Test] Enabled trigger {trigger_id}. Sending message again (should trigger)."
@@ -527,8 +545,8 @@ class AiApiTestScript:
             self.api.send_message(
                 channel_name, f"Final message with {trigger_pattern} to test re-enable."
             )
+            time.sleep(2.5)
 
-            time.sleep(1.5)
             if self.api.remove_trigger(trigger_id):
                 self.api.log_info(f"[AI Test] Removed trigger {trigger_id}")
             else:
@@ -606,7 +624,8 @@ class AiApiTestScript:
         new_nick = event_data.get('new_nick')
         self.api.log_info(f"[AI Test] CLIENT_NICK_CHANGED event: Old: {old_nick}, New: {new_nick}")
 
-        if self.api.get_client_nick() == new_nick:
+        client_current_nick = self.api.get_client_nick() # Get current nick safely
+        if client_current_nick == new_nick:
             if self.original_nick_for_test and old_nick == self.original_nick_for_test:
                 self.original_nick_for_test = new_nick
                 self.api.log_info(f"[AI Test] Updated original_nick_for_test to {new_nick} (was tracking old nick).")
@@ -618,7 +637,7 @@ class AiApiTestScript:
 
     def handle_raw_numeric(self, event_data: Dict[str, Any]):
         numeric = event_data.get("numeric")
-        if numeric in [1, 433, 900, 903, 904]:
+        if numeric in [1, 401, 433, 900, 903, 904]:
              self.api.log_info(f"[AI Test] RAW_IRC_NUMERIC event: {event_data}")
 
 
