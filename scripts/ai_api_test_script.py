@@ -507,14 +507,12 @@ class AiApiTestScript:
 
             messages = self.api.get_context_messages(channel_name)
             triggered_message_found = False
-            client_nick_for_check = self.api.get_client_nick() # Get current nick for verification
+            client_nick_for_check = self.api.get_client_nick()
 
             if messages:
                 self.api.log_info(f"[AI Test] Checking {len(messages)} messages in {channel_name} for trigger output...")
                 for i, msg_tuple in enumerate(reversed(messages)):
-                    # Ensure msg_tuple[0] is a string before checking 'in'
                     if isinstance(msg_tuple[0], str) and triggered_action_message in msg_tuple[0]:
-                        # Also check if it was likely sent by us (PyRC)
                         if client_nick_for_check and (client_nick_for_check in msg_tuple[0] or "<" + client_nick_for_check + ">" in msg_tuple[0]):
                             triggered_message_found = True
                             self.api.log_info(f"[AI Test] Trigger {trigger_id} successfully fired and sent message: '{msg_tuple[0]}'")
@@ -624,7 +622,7 @@ class AiApiTestScript:
         new_nick = event_data.get('new_nick')
         self.api.log_info(f"[AI Test] CLIENT_NICK_CHANGED event: Old: {old_nick}, New: {new_nick}")
 
-        client_current_nick = self.api.get_client_nick() # Get current nick safely
+        client_current_nick = self.api.get_client_nick()
         if client_current_nick == new_nick:
             if self.original_nick_for_test and old_nick == self.original_nick_for_test:
                 self.original_nick_for_test = new_nick

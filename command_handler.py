@@ -194,11 +194,21 @@ class CommandHandler:
         logger.info(f"Parsed cmd: '{cmd}'")
         logger.info(f"Parsed args_str: '{args_str}'")
 
+# command_handler.py
+# ... in process_user_command method ...
         is_in_map = cmd in self.command_map
         logger.info(f"Is '{cmd}' in command_map? {is_in_map}")
-        if not is_in_map:
-            map_keys_full_list = sorted(list(self.command_map.keys()))
-            logger.info(f"Full command_map keys for missing command '{cmd}': {map_keys_full_list}")
+        # Add a check here if the command originated from a trigger
+        # This requires passing a flag or modifying event_data if it's a trigger-originated command
+        # For now, let's assume the existing logging is enough if the command is found.
+
+        if cmd in self.command_map:
+            handler_func = self.command_map[cmd]
+            # Check if this command was initiated by a trigger
+            # One way: check if a specific key exists in event_data if this func was called from process_trigger_event
+            # This is a bit indirect. For now, just rely on the flow.
+            logger.info(f"CommandHandler: Dispatching '{cmd}'. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}")
+            # ... rest of the handler_func call ...
 
 
         if cmd in self.command_map:

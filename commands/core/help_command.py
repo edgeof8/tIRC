@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional, Dict, Any
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.help")
+logger = logging.getLogger("pyrc.commands.help") # Ensure this logger is used
 
 COMMAND_DEFINITIONS = [
     {
@@ -65,6 +65,8 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
 
         # 2. Process script commands
         script_cmds_data = client.script_manager.get_all_script_commands_with_help()
+        logger.debug(f"Help command: script_cmds_data received: {script_cmds_data}") # DEBUG LOG
+
         for cmd_name, cmd_data_val in script_cmds_data.items():
             script_module_name = cmd_data_val.get("script_name", "UnknownScript")
             summary_script = get_summary_from_help_text(cmd_data_val.get("help_text", "No description."), is_core_format=False)
@@ -76,37 +78,36 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                     break
 
             if not is_core_cmd_already:
-                # Use the script_module_name directly as the group key for scripts
-                # This ensures "ai_api_test_script" becomes a group key.
-                if script_module_name not in commands_by_group:
-                    commands_by_group[script_module_name] = []
-                # Only add if not already present in this specific script group (though unlikely)
-                if not any(c[0] == cmd_name for c in commands_by_group[script_module_name]):
-                    commands_by_group[script_module_name].append((cmd_name, summary_script))
+                group_key_for_script = script_module_name # Use script_module_name directly
+                if group_key_for_script not in commands_by_group:
+                    commands_by_group[group_key_for_script] = []
+                if not any(c[0] == cmd_name for c in commands_by_group[group_key_for_script]):
+                    commands_by_group[group_key_for_script].append((cmd_name, summary_script))
 
         # Display logic
         category_display_titles = {cat: f"{cat.title()} Commands" for cat in core_categories}
 
         display_order_keys = core_categories[:]
 
-        # Get all unique script names that actually have commands listed
-        # These are the keys in commands_by_group that are not in core_categories
         script_group_keys = sorted(
             [key for key in commands_by_group.keys() if key not in core_categories and commands_by_group[key]],
             key=lambda k: k.lower()
         )
         display_order_keys.extend(script_group_keys)
+        logger.debug(f"Help command: Final groups for display: {display_order_keys}") # DEBUG LOG
+        logger.debug(f"Help command: commands_by_group content: {commands_by_group}") # DEBUG LOG
 
-        for group_key in display_order_keys:
-            commands_in_this_group = commands_by_group.get(group_key)
+
+        for group_key_to_display in display_order_keys:
+            commands_in_this_group = commands_by_group.get(group_key_to_display)
             if not commands_in_this_group: continue
 
             header_text = ""
-            if group_key in category_display_titles: # It's a core category
-                header_text = f"\n{category_display_titles[group_key]}:"
-            else: # It's a script name
-                script_display_name = group_key.replace("_", " ").title()
-                header_text = f"\nCommands from script {script_display_name}:" # Added colon
+            if group_key_to_display in category_display_titles:
+                header_text = f"\n{category_display_titles[group_key_to_display]}:"
+            else:
+                script_display_name = group_key_to_display.replace("_", " ").title()
+                header_text = f"\nCommands from script {script_display_name}:"
 
             client.add_message(header_text, system_color, context_name=active_context_name)
 

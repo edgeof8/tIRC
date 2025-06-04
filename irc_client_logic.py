@@ -978,27 +978,38 @@ class IRCClient_Logic:
             logger.error(error_message, exc_info=True)
             self._add_status_message(error_message, "error")
 
+# irc_client_logic.py
+# ...
     def process_trigger_event(
         self, event_type: str, event_data: Dict[str, Any]
-    ) -> Optional[str]:
-        """Process a trigger event and return any action to take."""
+    ) -> Optional[str]: # This method itself does not return str, it calls command_handler
         if not ENABLE_TRIGGER_SYSTEM or not hasattr(self, 'trigger_manager') or not self.trigger_manager:
-            return None
+            return # Return None or handle appropriately
 
+        logger.debug(f"Processing trigger event: Type='{event_type}', DataKeys='{list(event_data.keys())}'")
         result = self.trigger_manager.process_trigger(event_type, event_data)
+
         if not result:
-            return None
+            logger.debug(f"No trigger matched for event type '{event_type}'.")
+            return
 
         action_type = result.get("type")
+        logger.info(f"Trigger matched! Event: '{event_type}', Pattern: '{result.get('pattern', 'N/A')}', ActionType: '{action_type}'")
+
         if action_type == ActionType.COMMAND:
-            return result.get("content")
+            action_content = result.get("content")
+            logger.info(f"Trigger action is COMMAND: '{action_content}'. Processing via command_handler.")
+            if action_content: # Ensure content is not None or empty
+                self.command_handler.process_user_command(action_content) # This returns bool, not str
+            return # The method itself can be None
         elif action_type == ActionType.PYTHON:
+            # ... (python execution remains same)
             code = result.get("code")
             if code:
                 trigger_info = f"Event: {event_type}, Pattern: {result.get('pattern', 'N/A')}"
-                # Call the now-defined method
+                logger.info(f"Trigger action is PYTHON. Executing code snippet for trigger: {trigger_info}")
                 self._execute_python_trigger(code, result.get("event_data", {}), trigger_info)
-        return None
+        return # Return None if not a command action or no content
 
     def handle_text_input(self, text: str):
         active_ctx_name = self.context_manager.active_context_name
