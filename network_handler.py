@@ -279,11 +279,7 @@ class NetworkHandler:
                 logger.error(
                     "NetworkHandler: cap_negotiator not found on client object during _connect_socket."
                 )
-                self.client.add_message(
-                    "Error: CAP negotiator not initialized.",
-                    self.client.ui.colors["error"],
-                    context_name="Status",
-                )
+                self.client._add_status_message("Error: CAP negotiator not initialized.", "error")
 
             if self.client and hasattr(self.client, "script_manager"):
                 self.client.script_manager.dispatch_event(
@@ -345,11 +341,7 @@ class NetworkHandler:
                 f"Attempted to send data while not truly connected or no socket: {data.strip()}"
             )
             if self.client: # Only add message if client and thus UI/context manager exists
-                self.client.add_message(
-                    "Cannot send: Not connected.",
-                    self.client.ui.colors["error"],
-                    context_name="Status",
-                )
+                self.client._add_status_message("Cannot send: Not connected.", "error")
                 if not self.client.is_headless:
                     self.client.ui_needs_update.set()
             return
@@ -392,11 +384,7 @@ class NetworkHandler:
         except (OSError, socket.error, ssl.SSLError) as e: # Catch broader socket/SSL errors
             logger.error(f"Error sending data: {e}", exc_info=True)
             if self.client:
-                self.client.add_message(
-                    f"Error sending data: {e}",
-                    self.client.ui.colors["error"],
-                    context_name="Status",
-                )
+                self.client._add_status_message(f"Error sending data: {e}", "error")
                 if not self.client.is_headless:
                      self.client.ui_needs_update.set()
             self._reset_connection_state(dispatch_event=True) # Dispatch disconnect on send error
@@ -444,11 +432,7 @@ class NetworkHandler:
                 else:
                     logger.warning("Network loop: Connection attempt failed.")
                     if self.client:
-                        self.client.add_message(
-                            f"Retrying in {self.reconnect_delay} seconds...",
-                            self.client.ui.colors["system"],
-                            context_name="Status",
-                        )
+                        self.client._add_status_message(f"Retrying in {self.reconnect_delay} seconds...", "system")
                         if not self.client.is_headless:
                             self.client.ui_needs_update.set()
 
@@ -521,11 +505,7 @@ class NetworkHandler:
                                 f"Network loop: Socket error: {e_sock}", exc_info=False # Keep exc_info=False for brevity unless debugging
                             )
                             if self.client:
-                                self.client.add_message(
-                                    f"Network error: {e_sock}",
-                                    self.client.ui.colors["error"],
-                                    context_name="Status",
-                                )
+                                self.client._add_status_message(f"Network error: {e_sock}", "error")
                         else:
                             logger.info(
                                 f"Network loop: Socket error during planned shutdown: {e_sock}"
