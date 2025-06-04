@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional, Dict, Any
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.help")
+# logger = logging.getLogger("pyrc.commands.help") # Standard logger still useful
 
 COMMAND_DEFINITIONS = [
     {
@@ -38,7 +38,10 @@ def get_summary_from_help_text(full_help_text: str, is_core_format: bool) -> str
 def handle_help_command(client: "IRCClient_Logic", args_str: str):
     system_color = client.ui.colors["system"]
     error_color = client.ui.colors["error"]
-    active_context_name = client.context_manager.active_context_name
+    active_context_name = client.context_manager.active_context_name or "Status" # Default to Status for diagnostics if needed
+
+    # Use a dedicated context for verbose debug output, or the active one
+    debug_context = active_context_name
 
     if not args_str:
         client.add_message("\nAvailable commands:", system_color, context_name=active_context_name)
@@ -46,8 +49,7 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         commands_by_group: Dict[str, List[tuple[str, str]]] = {}
         core_categories = ["core", "channel", "information", "server", "ui", "user", "utility"]
 
-        # FORCED PRINT FOR DIAGNOSTICS
-        print("DEBUG_HELP_COMMAND: Processing core commands...", flush=True)
+        client.add_message(f"DEBUG_HELP: Processing core commands...", "debug", context_name=debug_context)
         for cmd_name, help_data_val in client.command_handler.registered_command_help.items():
             if help_data_val.get("is_alias"):
                 continue
@@ -65,11 +67,12 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                  commands_by_group[group_key].append((cmd_name, summary))
 
         script_cmds_data = client.script_manager.get_all_script_commands_with_help()
-        print(f"DEBUG_HELP_COMMAND: script_cmds_data from ScriptManager: {script_cmds_data}", flush=True)
+        client.add_message(f"DEBUG_HELP: script_cmds_data: {str(script_cmds_data)[:500]}...", "debug", context_name=debug_context)
+
 
         for cmd_name, cmd_data_val in script_cmds_data.items():
             script_module_name = cmd_data_val.get("script_name", "UnknownScript")
-            print(f"DEBUG_HELP_COMMAND: Processing script cmd='{cmd_name}', script_module_name='{script_module_name}'", flush=True)
+            client.add_message(f"DEBUG_HELP: ScriptCmd: '{cmd_name}', ScriptName: '{script_module_name}'", "debug", context_name=debug_context)
 
             summary_script = get_summary_from_help_text(cmd_data_val.get("help_text", "No description."), is_core_format=False)
 
@@ -85,19 +88,18 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                     commands_by_group[group_key_for_script] = []
                 if not any(c[0] == cmd_name for c in commands_by_group[group_key_for_script]):
                     commands_by_group[group_key_for_script].append((cmd_name, summary_script))
-                    print(f"DEBUG_HELP_COMMAND: Added '{cmd_name}' to group '{group_key_for_script}'", flush=True)
+                    client.add_message(f"DEBUG_HELP: Added '{cmd_name}' to group '{group_key_for_script}'", "debug", context_name=debug_context)
 
         category_display_titles = {cat: f"{cat.title()} Commands" for cat in core_categories}
-
         display_order_keys = core_categories[:]
 
         script_group_keys_from_data = sorted(
-            [key for key in commands_by_group.keys() if key not in core_categories and commands_by_group[key]],
+            [key for key in commands_by_group.keys() if key not in core_categories and commands_by_group.get(key)],
             key=lambda k: k.lower()
         )
         display_order_keys.extend(script_group_keys_from_data)
-        print(f"DEBUG_HELP_COMMAND: Final groups for display order: {display_order_keys}", flush=True)
-        print(f"DEBUG_HELP_COMMAND: Full commands_by_group content: {commands_by_group}", flush=True)
+        client.add_message(f"DEBUG_HELP: Final display order: {display_order_keys}", "debug", context_name=debug_context)
+        client.add_message(f"DEBUG_HELP: Full commands_by_group: {str(commands_by_group)[:500]}...", "debug", context_name=debug_context)
 
 
         for group_key_to_display in display_order_keys:
@@ -127,7 +129,7 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         )
         return
 
-    # Specific command help logic (remains largely the same)
+    # Specific command help logic (ensure typo is fixed)
     command_name_from_user = args_str.strip().lower()
     help_data = client.command_handler.registered_command_help.get(command_name_from_user)
 
@@ -136,7 +138,7 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         if help_data_script:
             help_data = {
                 "help_text": help_data_script.get("help_text", "No description available."),
-                "is_alias": help_data_script.get("is_alias", False),
+                "is_alias": help_data_script.get("is_alias", False), # Corrected typo
                 "primary_command": help_data_script.get("primary_command"),
                 "script_name": help_data_script.get("script_name", "script"),
                 "module_path": help_data_script.get("module_path")
