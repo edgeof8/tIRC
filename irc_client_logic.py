@@ -52,6 +52,7 @@ from irc_message import IRCMessage
 from cap_negotiator import CapNegotiator
 from sasl_authenticator import SaslAuthenticator
 from registration_handler import RegistrationHandler
+from python_trigger_api import PythonTriggerAPI
 
 logger = logging.getLogger("pyrc.logic")
 
@@ -948,19 +949,6 @@ class IRCClient_Logic:
 
             # Create a minimal API-like object for Python triggers if they expect 'api.log_info' etc.
             # This is a simplified version. A full ScriptAPIHandler might be too much here.
-            class PythonTriggerAPI:
-                def __init__(self, client_logic, script_name="python_trigger"):
-                    self._client_logic = client_logic
-                    self._script_name = script_name
-                def log_info(self, msg): self._client_logic.script_manager.logger.info(f"[{self._script_name}] {msg}")
-                def log_error(self, msg): self._client_logic.script_manager.logger.error(f"[{self._script_name}] {msg}")
-                def send_raw(self, cmd_str): self._client_logic.network_handler.send_raw(cmd_str)
-                def send_message(self, target, message): self._client_logic.network_handler.send_raw(f"PRIVMSG {target} :{message}")
-                def add_message_to_context(self, ctx_name, text, color_key="system"):
-                    # Pass the color_key string directly to the refactored add_message
-                    self._client_logic.add_message(text, color_key, context_name=ctx_name)
-                def get_client_nick(self): return self._client_logic.nick
-                # Add other commonly used API methods as needed by Python triggers
 
             python_trigger_api = PythonTriggerAPI(self)
 
