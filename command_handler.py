@@ -1,4 +1,4 @@
-# command_handler.py
+# START OF MODIFIED FILE: command_handler.py
 import logging
 import os
 import importlib
@@ -30,6 +30,7 @@ class CommandHandler:
         self.client = client_logic
         self.trigger_commands = TriggerCommands(client_logic)
         self.registered_command_help = {}
+        self._processing_depth = 0 # For re-entrancy check
 
         self.command_map: Dict[str, "CommandHandlerCallable"] = {
             "on": lambda client, args_str: self.trigger_commands.handle_on_command(args_str),
@@ -136,124 +137,97 @@ class CommandHandler:
     def _ensure_args(
         self, args_str: str, usage_message: str, num_expected_parts: int = 1
     ) -> Optional[List[str]]:
-        # If no arguments are expected, and none are given, it's fine.
-        if num_expected_parts == 0 and not args_str.strip():
-            return []
+        stripped_args_str = args_str.strip()
 
-        # If arguments are expected (num_expected_parts > 0) but none are given
-        if not args_str.strip() and num_expected_parts > 0:
+        if num_expected_parts == 0: # No arguments expected
+            return [] if not stripped_args_str else [stripped_args_str] # Return [] if truly empty, else the unexpected args
+
+        if not stripped_args_str: # Arguments expected but none given
             self.client.add_message(
-                usage_message,
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
+                usage_message, self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name or "Status",
             )
             return None
 
-        # If only one "part" is expected, and args_str is present, return it as a single element list.
-        # This handles cases where the single argument might contain spaces.
         if num_expected_parts == 1:
-            return [args_str.strip()] # Return the stripped full args_str as the single part
+            return [stripped_args_str]
 
-        # If multiple parts are expected, split accordingly.
-        # Split only up to num_expected_parts - 1 times to get the required initial parts,
-        # with the last element containing the rest of the string.
-        parts = args_str.strip().split(" ", num_expected_parts - 1)
-
+        parts = stripped_args_str.split(" ", num_expected_parts - 1)
         if len(parts) < num_expected_parts:
             self.client.add_message(
-                usage_message,
-                self.client.ui.colors["error"],
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
+                usage_message, self.client.ui.colors["error"],
+                context_name=self.client.context_manager.active_context_name or "Status",
             )
             return None
-
         return parts
 
-
     def process_user_command(self, line: str) -> bool:
-        if not line.startswith("/"):
-            if self.client.context_manager.active_context_name:
-                self.client.handle_text_input(line)
-                return True
-            else:
-                self.client.add_message(
-                    "No active window to send message to.",
-                    self.client.ui.colors["error"],
-                    context_name="Status",
-                )
-                return False
+        self._processing_depth += 1
+        if self._processing_depth > 1: # Basic re-entrancy check
+            # More sophisticated checks might involve checking the exact line or command type
+            # to allow certain benign re-entrant calls if absolutely necessary.
+            logger.error(f"RE-ENTRANCY DETECTED in process_user_command for line: '{line}'. Current depth: {self._processing_depth}. Aborting this call.")
+            self._processing_depth -= 1
+            return False # Indicate command was not processed due to re-entrancy
 
-        command_parts = line[1:].split(" ", 1)
-        cmd = command_parts[0].lower()
-        args_str = command_parts[1] if len(command_parts) > 1 else ""
-
-        logger.info(f"--- PROCESSING COMMAND ---")
-        logger.info(f"Raw line: '{line}'")
-        logger.info(f"Parsed cmd: '{cmd}'")
-        logger.info(f"Parsed args_str: '{args_str}'")
-
-# command_handler.py
-# ... in process_user_command method ...
-        is_in_map = cmd in self.command_map
-        logger.info(f"Is '{cmd}' in command_map? {is_in_map}")
-        # Add a check here if the command originated from a trigger
-        # This requires passing a flag or modifying event_data if it's a trigger-originated command
-        # For now, let's assume the existing logging is enough if the command is found.
-
-        if cmd in self.command_map:
-            handler_func = self.command_map[cmd]
-            # Check if this command was initiated by a trigger
-            # One way: check if a specific key exists in event_data if this func was called from process_trigger_event
-            # This is a bit indirect. For now, just rely on the flow.
-            logger.info(f"CommandHandler: Dispatching '{cmd}'. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}")
-            # ... rest of the handler_func call ...
-
-
-        if cmd in self.command_map:
-            handler_func = self.command_map[cmd]
-            logger.info(f"CommandHandler: Dispatching '{cmd}'. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}")
-            try:
-                handler_func(self.client, args_str)
-            except Exception as e_handler:
-                 logger.error(f"Error executing handler for command '{cmd}': {e_handler}", exc_info=True)
-                 self.client.add_message(f"Error in command /{cmd}: {e_handler}", self.client.ui.colors["error"], context_name=self.client.context_manager.active_context_name or "Status")
-            return True
-        else:
-            script_cmd_data = (
-                self.client.script_manager.get_script_command_handler_and_data(cmd)
-            )
-            if script_cmd_data and callable(script_cmd_data.get("handler")):
-                script_handler = script_cmd_data["handler"]
-                event_data_for_script = {
-                    "client_logic_ref": self.client,
-                    "raw_line": line,
-                    "command": cmd,
-                    "args_str": args_str,
-                    "client_nick": self.client.nick,
-                    "active_context_name": self.client.context_manager.active_context_name,
-                    "script_name": script_cmd_data.get("script_name", "UnknownScript"),
-                }
-                try:
-                    script_handler(args_str, event_data_for_script)
-                except Exception as e:
-                    logger.error(
-                        f"Error executing script command '/{cmd}' from script '{script_cmd_data.get('script_name')}': {e}",
-                        exc_info=True,
-                    )
+        try:
+            if not line.startswith("/"):
+                if self.client.context_manager.active_context_name:
+                    self.client.handle_text_input(line)
+                    return True
+                else:
                     self.client.add_message(
-                        f"Error in script command /{cmd}: {e}",
-                        self.client.ui.colors["error"],
-                        context_name=self.client.context_manager.active_context_name
-                        or "Status",
+                        "No active window to send message to.",
+                        self.client.ui.colors["error"], context_name="Status",
                     )
+                    return False
+
+            command_parts = line[1:].split(" ", 1)
+            cmd = command_parts[0].lower()
+            args_str = command_parts[1] if len(command_parts) > 1 else ""
+
+            logger.info(f"--- PROCESSING COMMAND (Depth: {self._processing_depth}) ---")
+            logger.info(f"Raw line: '{line}'")
+            logger.info(f"Parsed cmd: '{cmd}'")
+            logger.info(f"Parsed args_str: '{args_str}'")
+
+            is_in_map = cmd in self.command_map
+            logger.info(f"Is '{cmd}' in command_map? {is_in_map}")
+            if not is_in_map:
+                map_keys_full_list = sorted(list(self.command_map.keys()))
+                logger.info(f"Full command_map keys for missing command '{cmd}': {map_keys_full_list}")
+
+            if cmd in self.command_map:
+                handler_func = self.command_map[cmd]
+                logger.info(f"CommandHandler: Dispatching '{cmd}'. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}")
+                try:
+                    handler_func(self.client, args_str)
+                except Exception as e_handler:
+                    logger.error(f"Error executing handler for command '{cmd}': {e_handler}", exc_info=True)
+                    self.client.add_message(f"Error in command /{cmd}: {e_handler}", self.client.ui.colors["error"], context_name=self.client.context_manager.active_context_name or "Status")
                 return True
             else:
-                 logger.warning(f"CommandHandler: Command '{cmd}' NOT found in command_map AND not a known script command. Treating as unknown.")
-                 self.client.add_message(
-                    f"Unknown command: {cmd}",
-                    self.client.ui.colors["error"],
-                    context_name=self.client.context_manager.active_context_name or "Status",
-                )
-                 return True
+                script_cmd_data = self.client.script_manager.get_script_command_handler_and_data(cmd)
+                if script_cmd_data and callable(script_cmd_data.get("handler")):
+                    script_handler = script_cmd_data["handler"]
+                    event_data_for_script = {
+                        "client_logic_ref": self.client, "raw_line": line, "command": cmd,
+                        "args_str": args_str, "client_nick": self.client.nick,
+                        "active_context_name": self.client.context_manager.active_context_name,
+                        "script_name": script_cmd_data.get("script_name", "UnknownScript"),
+                    }
+                    try:
+                        script_handler(args_str, event_data_for_script)
+                    except Exception as e:
+                        logger.error(f"Error executing script command '/{cmd}' from script '{script_cmd_data.get('script_name')}': {e}", exc_info=True)
+                        self.client.add_message(f"Error in script command /{cmd}: {e}", self.client.ui.colors["error"],
+                                                context_name=self.client.context_manager.active_context_name or "Status")
+                    return True
+                else:
+                    logger.warning(f"CommandHandler: Command '{cmd}' NOT found in command_map AND not a known script command. Treating as unknown.")
+                    self.client.add_message(f"Unknown command: {cmd}", self.client.ui.colors["error"],
+                                            context_name=self.client.context_manager.active_context_name or "Status")
+                    return True # Still True because we "handled" it as unknown
+        finally:
+            self._processing_depth -= 1
+# END OF MODIFIED FILE: command_handler.py

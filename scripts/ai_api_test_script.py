@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any, TYPE_CHECKING, Optional, List, Tuple
 import time
 import threading
+import re # Import re for re.escape
 from config import HEADLESS_MAX_HISTORY
 from context_manager import ChannelJoinStatus
 
@@ -79,7 +80,7 @@ class LeanAiApiTestScript:
         time.sleep(2)
         self._test_help_system_general(channel_name)
         time.sleep(3)
-        self._test_trigger_functionality(channel_name) # Corrected typo: Functionality -> functionality
+        self._test_trigger_functionality(channel_name)
 
         logger.info(f"[Lean AI Test] --- Focused Tests on {channel_name} Completed ---")
 
@@ -98,9 +99,9 @@ class LeanAiApiTestScript:
         all_messages = all_messages_raw if all_messages_raw else []
         new_messages = all_messages[initial_msg_count:]
 
-        logger.info(f"[Lean AI Test] {test_label}: New messages in '{context_to_check}' ({len(new_messages)} lines):")
-        for i, msg_tuple in enumerate(new_messages):
-            logger.info(f"[Lean AI Test] Help Output Line {i}: {msg_tuple[0]}")
+        # logger.info(f"[Lean AI Test] {test_label}: New messages in '{context_to_check}' ({len(new_messages)} lines):")
+        # for i, msg_tuple in enumerate(new_messages):
+        #     logger.info(f"[Lean AI Test] Help Output Line {i}: {msg_tuple[0]}")
 
 
         all_found = True
@@ -139,62 +140,77 @@ class LeanAiApiTestScript:
             context_to_check=channel_name
         )
 
-    def _verify_trigger_fired_and_message_sent(self, channel_name: str, triggered_action_message_content: str, client_nick_for_check: Optional[str], test_label: str) -> bool:
-        messages = self.api.get_context_messages(channel_name)
+    def _verify_trigger_fired_and_message_sent(self, channel_name: str, action_message_content: str, client_nick_for_check: Optional[str], test_label: str) -> bool:
+        messages = self.api.get_context_messages(channel_name) # Get all messages
         found = False
-        if not messages: # Handle case where messages might be None or empty
+        if not messages:
             logger.error(f"[Lean AI Test] {test_label}: FAILED. No messages in context '{channel_name}' to check.")
             return False
         if not client_nick_for_check:
             logger.error(f"[Lean AI Test] {test_label}: FAILED. Client nick is None, cannot verify echo.")
             return False
 
+        logger.info(f"[Lean AI Test] {test_label}: Checking {len(messages)} messages in {channel_name} for output from '{client_nick_for_check}'. Looking for: '{action_message_content}'")
 
-        logger.info(f"[Lean AI Test] {test_label}: Checking {len(messages)} messages in {channel_name} for output from '{client_nick_for_check}'. Looking for: '{triggered_action_message_content}'")
-
+        # Iterate through messages to find the start of a potential echoed message from our client
         for i in range(len(messages)):
-            msg_text, _ = messages[i]
-            if not isinstance(msg_text, str):
+            msg_text_full_line, _ = messages[i]
+            if not isinstance(msg_text_full_line, str):
                 continue
 
-            expected_prefix = f"<{client_nick_for_check}>"
-            # Check if this line is from our client and potentially the start of the triggered message
-            # Use lower() for case-insensitive prefix matching, but strip() first
-            if msg_text.strip().lower().startswith(expected_prefix.lower()):
-                reconstructed_message_parts = [msg_text.strip()[len(expected_prefix):].strip()]
+            # Strip timestamp if present (e.g., "HH:MM:SS <NICK> message")
+            # A simple heuristic for timestamp is "XX:XX:XX " (9 chars)
+            msg_text_content_part = msg_text_full_line
+            if len(msg_text_full_line) > 9 and msg_text_full_line[2] == ':' and msg_text_full_line[5] == ':':
+                msg_text_content_part = msg_text_full_line[9:]
+
+            msg_text_content_part = msg_text_content_part.strip() # Strip leading/trailing whitespace from content
+
+            expected_prefix_lower = f"<{client_nick_for_check}>".lower()
+
+            if msg_text_content_part.lower().startswith(expected_prefix_lower):
+                # Found a message from our client. Now try to piece together the full logical message.
+                reconstructed_message_parts = [msg_text_content_part[len(expected_prefix_lower):].strip()]
 
                 for j in range(i + 1, len(messages)):
-                    next_msg_text, _ = messages[j]
-                    if not isinstance(next_msg_text, str):
+                    next_msg_text_full_line, _ = messages[j]
+                    if not isinstance(next_msg_text_full_line, str):
                         continue
 
-                    # Heuristic for continuation: not starting with another nick prefix
-                    # and not starting with a timestamp pattern if your messages usually have them.
-                    # For simplicity, we'll check if it doesn't look like a new message from someone else.
-                    is_new_message = False
-                    if next_msg_text.strip().startswith("<"):
-                        split_next = next_msg_text.strip().split(">", 1)
-                        if len(split_next) > 1 and split_next[0].endswith(""): # Check for <nick>
-                            is_new_message = True
+                    next_msg_content_part = next_msg_text_full_line
+                    if len(next_msg_text_full_line) > 9 and next_msg_text_full_line[2] == ':' and next_msg_text_full_line[5] == ':':
+                         next_msg_content_part = next_msg_text_full_line[9:]
+                    next_msg_content_part = next_msg_content_part.strip()
 
-                    if not is_new_message:
-                        reconstructed_message_parts.append(next_msg_text.strip())
+                    is_new_message_from_anyone = False
+                    if next_msg_content_part.startswith("<") :
+                        parts = next_msg_content_part.split(">",1)
+                        if len(parts)>0 and parts[0].endswith(""):
+                             is_new_message_from_anyone = True
+
+                    if not is_new_message_from_anyone:
+                        reconstructed_message_parts.append(next_msg_content_part)
                     else:
-                        break # Stop collecting parts for this logical message
+                        break
 
                 full_reconstructed_message = " ".join(reconstructed_message_parts)
-                logger.debug(f"[Lean AI Test] {test_label}: Reconstructed message from index {i}: '{full_reconstructed_message}'")
+                logger.debug(f"[Lean AI Test] {test_label}: Reconstructed from index {i}: '{full_reconstructed_message}'")
 
-                # Check if the target content is present in the reconstructed message
-                if triggered_action_message_content in full_reconstructed_message:
+                if action_message_content == full_reconstructed_message:
                     found = True
-                    logger.info(f"[Lean AI Test] {test_label}: PASSED. Found action content in reconstructed message: '{full_reconstructed_message}'")
+                    logger.info(f"[Lean AI Test] {test_label}: PASSED. Found exact echoed message content: '{full_reconstructed_message}'")
+                    break
+                elif action_message_content in full_reconstructed_message:
+                    found = True # Be lenient if content is there but exact formatting differs slightly due to wrapping
+                    logger.info(f"[Lean AI Test] {test_label}: PASSED (lenient). Found content '{action_message_content}' within reconstructed '{full_reconstructed_message}'")
                     break
 
         if not found:
-            logger.error(f"[Lean AI Test] {test_label}: FAILED. Output message '{triggered_action_message_content}' (echoed as from '{client_nick_for_check}') not found or not matched correctly in {channel_name}.")
+            logger.error(f"[Lean AI Test] {test_label}: FAILED. Output message '{action_message_content}' (echoed as from '{client_nick_for_check}') not found or not matched correctly in {channel_name}.")
             if messages:
-                logger.info(f"[Lean AI Test] {test_label}: All messages in {channel_name} for debug: {messages}")
+                # Log only the text part of the last few messages for brevity
+                last_msgs_text = [m[0][:100] + ('...' if len(m[0]) > 100 else '') for m in messages[-15:]]
+                logger.info(f"[Lean AI Test] {test_label}: Last few messages in {channel_name} for debug: {last_msgs_text}")
         return found
 
     def _test_trigger_functionality(self, channel_name: str):
@@ -204,11 +220,11 @@ class LeanAiApiTestScript:
         time.sleep(0.3)
 
         timestamp_for_trigger = str(time.time())
-        trigger_pattern_unique_part = f"activate_trigger_{timestamp_for_trigger[-6:]}"
+        trigger_pattern_unique_part = f"PYRC_UNIQUE_ACTIVATION_{timestamp_for_trigger[-6:]}"
         activating_message_content = f"This message contains the phrase: {trigger_pattern_unique_part} for the test."
-        trigger_pattern_for_activation = rf".*\b{trigger_pattern_unique_part}\b.*"
+        trigger_pattern_for_activation = rf".*\b{re.escape(trigger_pattern_unique_part)}\b.*"
 
-        triggered_action_message_content = f"CONFIRMED: Trigger action for {trigger_pattern_unique_part} was processed!" # Unique action message
+        triggered_action_message_content = f"ACTION_CONFIRMED_FOR_TRIGGER_{timestamp_for_trigger[-5:]}"
 
         logger.info(f"[Lean AI Test] Adding trigger: Pattern='{trigger_pattern_for_activation}', Action='/msg {channel_name} {triggered_action_message_content}'")
         trigger_id = self.api.add_trigger(
@@ -237,8 +253,8 @@ class LeanAiApiTestScript:
         logger.info(f"[Lean AI Test] Disabled trigger {trigger_id}. Sending activating message again (should NOT trigger).")
         if hasattr(self.api, 'DEV_TEST_ONLY_clear_context_messages'):
             self.api.DEV_TEST_ONLY_clear_context_messages(channel_name); time.sleep(0.2)
-        self.api.send_message(channel_name, activating_message_content + " (disabled test)")
-        time.sleep(3.5) # Allow time for potential incorrect trigger and echo
+        self.api.send_message(channel_name, activating_message_content + " (disabled test flag)")
+        time.sleep(3.5)
 
         if not self._verify_trigger_fired_and_message_sent(channel_name, triggered_action_message_content, client_nick_for_check, f"Disabled fire check (ID: {trigger_id}) (expecting not found)"):
             logger.info(f"[Lean AI Test] PASSED: Trigger {trigger_id} did not fire command when disabled (as expected).")
@@ -251,7 +267,7 @@ class LeanAiApiTestScript:
         logger.info(f"[Lean AI Test] Re-enabled trigger {trigger_id}. Sending activating message again (should trigger).")
         if hasattr(self.api, 'DEV_TEST_ONLY_clear_context_messages'):
             self.api.DEV_TEST_ONLY_clear_context_messages(channel_name); time.sleep(0.2)
-        self.api.send_message(channel_name, activating_message_content + " (reenabled test)")
+        self.api.send_message(channel_name, activating_message_content + " (reenabled test flag)")
         time.sleep(4.5)
         self._verify_trigger_fired_and_message_sent(channel_name, triggered_action_message_content, client_nick_for_check, f"Re-enabled fire (ID: {trigger_id})")
 

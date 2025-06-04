@@ -1,299 +1,161 @@
+# START OF MODIFIED FILE: features/triggers/trigger_commands.py
 import logging
-from typing import TYPE_CHECKING, Optional, List
-from enum import Enum  # Added for isinstance check
-from .trigger_manager import TriggerType, ActionType
+import time
+from typing import TYPE_CHECKING, List, Optional, Dict, Any
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
+# Removed TriggerType, ActionType is already available via trigger_manager instance or direct import if needed by methods
+# from .trigger_manager import TriggerType, ActionType # ActionType might be needed if used directly
 
-logger = logging.getLogger("pyrc.triggers.commands")
-
+logger = logging.getLogger("pyrc.features.triggers.commands")
 
 class TriggerCommands:
-    def __init__(self, client: "IRCClient_Logic"):
-        self.client = client
+    def __init__(self, client_logic: "IRCClient_Logic"):
+        self.client = client_logic
 
-    def handle_on_command(self, args_str: str) -> bool:
-        """Handle the /on command and its subcommands."""
-        if not args_str:
-            self._show_usage()
-            return True
+    def _parse_on_args(self, args_str: str) -> Optional[Dict[str, Any]]:
+        parts = args_str.split(maxsplit=3)
+        # /on <EVENT_TYPE> <pattern> <action_type> [action_content]
+        # /on <EVENT_TYPE> <pattern> PY <code>
+        # /on <EVENT_TYPE> <pattern> CMD /command_to_run
+        # /on list [event_type]
+        # /on del <id>
+        # /on enable <id>
+        # /on disable <id>
 
-        parts = args_str.split(" ", 1)
+        if not parts:
+            return {"sub_command": "show_usage"}
+
         sub_command = parts[0].lower()
-        remaining_args_str = parts[1] if len(parts) > 1 else ""
+
+        if sub_command in ["list", "del", "delete", "rm", "enable", "disable", "info"]:
+            if sub_command == "del" or sub_command == "delete" or sub_command == "rm":
+                if len(parts) < 2: return None # Requires ID
+                try:
+                    return {"sub_command": "delete", "trigger_id": int(parts[1])}
+                except ValueError:
+                    return None # Invalid ID
+            elif sub_command == "enable" or sub_command == "disable":
+                if len(parts) < 2: return None # Requires ID
+                try:
+                    return {"sub_command": sub_command, "trigger_id": int(parts[1])}
+                except ValueError:
+                    return None # Invalid ID
+            elif sub_command == "list":
+                return {"sub_command": "list", "event_filter": parts[1].upper() if len(parts) > 1 else None}
+            elif sub_command == "info":
+                if len(parts) < 2: return None
+                try:
+                    return {"sub_command": "info", "trigger_id": int(parts[1])}
+                except ValueError:
+                    return None
+            return None # Should not happen if sub_command is one of the above
+
+        # Adding a new trigger
+        if len(parts) < 4: # Needs at least EVENT_TYPE, pattern, ACTION_TYPE, action_content/code
+            # Special case: /on EVENT PATTERN PY (code might be empty initially, or user is typing)
+            if len(parts) == 3 and parts[2].upper() == "PY":
+                 # Allow this form, but it's incomplete for actual addition via command
+                 # For now, consider it an error for direct command parsing, but UI might build it incrementally
+                return None
+            return None
+
+        event_type = parts[0].upper()
+        pattern = parts[1]
+        action_type_str = parts[2].upper()
+        action_content = parts[3] # The rest of the string
+
+        # Validate ActionType directly here if needed, or let TriggerManager handle it
+        # from .trigger_manager import ActionType # Import locally if needed for validation
+        # action_type_enum = ActionType.from_string(action_type_str)
+        # if not action_type_enum:
+        #     self.client.add_message(f"Invalid action type: {action_type_str}. Use CMD or PY.", "error")
+        #     return None
+
+        return {
+            "sub_command": "add",
+            "event_type": event_type,
+            "pattern": pattern,
+            "action_type": action_type_str, # Pass as string, TriggerManager will convert
+            "action_content": action_content,
+        }
+
+
+    def handle_on_command(self, args_str: str):
+        if not self.client.trigger_manager:
+            self.client.add_message("Trigger system is not enabled or available.", "error")
+            return
+
+        parsed_args = self._parse_on_args(args_str)
+        active_ctx = self.client.context_manager.active_context_name or "Status"
+
+        if parsed_args is None:
+            self.client.add_message("Usage: /on <LIST|ADD|DEL|ENABLE|DISABLE|INFO> [params...]", "error", context_name=active_ctx)
+            self.client.add_message("  /on ADD <EVENT> <pattern> <CMD|PY> <action_content/code>", "error", context_name=active_ctx)
+            self.client.add_message("  Example: /on TEXT \"hello world\" CMD /say Hello back!", "error", context_name=active_ctx)
+            self.client.add_message("  Example: /on RAW \"PRIVMSG #chan :hi\" PY print(event_data['nick'] + ' said hi')", "error", context_name=active_ctx)
+            return
+
+        sub_command = parsed_args.get("sub_command")
 
         if sub_command == "add":
-            return self._handle_add(remaining_args_str)
+            trigger_id = self.client.trigger_manager.add_trigger(
+                event_type_str=parsed_args["event_type"],
+                pattern=parsed_args["pattern"],
+                action_type_str=parsed_args["action_type"],
+                action_content=parsed_args["action_content"]
+            )
+            if trigger_id is not None:
+                self.client.add_message(f"Trigger added with ID: {trigger_id}", "system", context_name=active_ctx)
+            else:
+                self.client.add_message("Failed to add trigger. Check pattern or action type.", "error", context_name=active_ctx)
+
         elif sub_command == "list":
-            return self._handle_list(remaining_args_str)
-        elif sub_command == "remove":
-            return self._handle_remove(remaining_args_str)
-        elif sub_command == "enable":
-            return self._handle_enable(remaining_args_str)
-        elif sub_command == "disable":
-            return self._handle_disable(remaining_args_str)
-        else:
-            self._show_usage()
-            return True
+            event_filter = parsed_args.get("event_filter")
+            triggers = self.client.trigger_manager.list_triggers(event_type=event_filter)
+            if triggers:
+                self.client.add_message(f"--- Configured Triggers ({event_filter or 'All'}) ---", "system", context_name=active_ctx)
+                for t in triggers:
+                    enabled_str = "Enabled" if t['is_enabled'] else "Disabled"
+                    action_preview = t['action_content'][:50] + "..." if len(t['action_content']) > 50 else t['action_content']
+                    self.client.add_message(
+                        f"ID: {t['id']}, Event: {t['event_type']}, Pattern: '{t['pattern']}', Action: {t['action_type']} '{action_preview}', Status: {enabled_str}",
+                        "system", context_name=active_ctx
+                    )
+            else:
+                self.client.add_message(f"No triggers configured{(' for event ' + event_filter) if event_filter else ''}.", "system", context_name=active_ctx)
 
-    def _show_usage(self):
-        """Show usage information for the /on command."""
-        usage = (
-            "Usage:\n"
-            "  /on add <event> <pattern> <CMD|PY> <action_content>\n"
-            "    - Adds a new trigger. CMD for client command, PY for Python code.\n"
-            '    - Example CMD: /on add TEXT "hello there" CMD /say General Kenobi!\n'
-            "    - Example PY:  /on add TEXT \"calc (.*)\" PY client.add_message(f\"Result: {eval(event_data['$1'])}\", client.ui.colors['system'])\n"
-            "  /on list [event]\n"
-            "    - Lists triggers, optionally filtered by event type.\n"
-            "  /on remove <id>\n"
-            "    - Removes a trigger by its ID.\n"
-            "  /on enable <id>\n"
-            "    - Enables a trigger by its ID.\n"
-            "  /on disable <id>\n"
-            "    - Disables a trigger by its ID.\n"
-            "\nEvents: TEXT, ACTION, JOIN, PART, QUIT, KICK, MODE, TOPIC, NICK, NOTICE, INVITE, CTCP, RAW"
-        )
-        self.client.add_message(
-            usage,
-            "system",
-            context_name=self.client.context_manager.active_context_name or "Status",
-        )
-
-    def _handle_add(self, args_str: str) -> bool:
-        """Handle /on add <event> <pattern> <TYPE> <action_content>."""
-        usage_msg = "Usage: /on add <event> <pattern> <CMD|PY> <action_content>"
-
-        args = args_str.split(
-            " ", 3
-        )  # event, pattern, type, action_content (action_content can have spaces)
-
-        if len(args) < 4:
-            self.client.add_message(
-                usage_msg,
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-            return True
-
-        event_type_str, pattern, action_type_input, action_content_str = args
-        action_type_str_upper = action_type_input.upper()
-
-        if action_type_str_upper not in [at.name for at in ActionType]:
-            self.client.add_message(
-                f"Invalid action type '{action_type_input}'. Must be CMD or PY.\n{usage_msg}",
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-            return True
-
-        if not self.client.trigger_manager:
-            self.client.add_message(
-                "Trigger system is disabled. Cannot add trigger.",
-                "error",
-                context_name=self.client.context_manager.active_context_name or "Status",
-            )
-            return True
-        trigger_id = self.client.trigger_manager.add_trigger(
-            event_type_str, pattern, action_type_str_upper, action_content_str
-        )
-
-        if trigger_id is not None:
-            self.client.add_message(
-                f"Trigger added with ID {trigger_id}",
-                "system",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-        else:
-            self.client.add_message(
-                f"Failed to add trigger. Check event type ('{event_type_str}'), pattern, or action type ('{action_type_str_upper}').",
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-        return True
-
-    def _handle_list(self, args_str: str) -> bool:
-        """Handle /on list [event]."""
-        # args_str might be empty or contain the event type
-        event_type = args_str.strip() if args_str else None
-        if not self.client.trigger_manager:
-            self.client.add_message(
-                "Trigger system is disabled. Cannot list triggers.",
-                "error",
-                context_name=self.client.context_manager.active_context_name or "Status",
-            )
-            return True
-        triggers = self.client.trigger_manager.list_triggers(event_type)
-
-        if not triggers:
-            self.client.add_message(
-                "No triggers found"
-                + (f" for event {event_type}" if event_type else ""),
-                "system",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-            return True
-
-        for trigger in triggers:
-            status = "Enabled" if trigger["is_enabled"] else "Disabled"
-            # trigger['action_type'] is already a string from TriggerManager.list_triggers
-            trigger_info = (
-                f"ID: {trigger['id']} | Event: {trigger['event_type']} | Type: {trigger['action_type']} | "
-                f"Pattern: \"{trigger['pattern']}\" | Action: \"{trigger['action_content']}\" | {status}"
-            )
-            # Ensure event_type from trigger dict is string for display
-            event_type_display = trigger["event_type"]
-            if isinstance(
-                event_type_display, Enum
-            ):  # Should be string from manager, but defensive
-                event_type_display = event_type_display.name
-
-            trigger_info = (
-                f"ID: {trigger['id']} | Evt: {event_type_display} | Type: {trigger['action_type']} | "
-                f"Ptrn: \"{trigger['pattern']}\" | Act: \"{trigger['action_content']}\" | {status}"
-            )
-            self.client.add_message(
-                trigger_info,
-                "system",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-        return True
-
-    def _handle_remove(self, args_str: str) -> bool:
-        """Handle /on remove <id>."""
-        if not args_str.strip():
-            self.client.add_message(
-                "Usage: /on remove <id>",
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-            return True
-
-        try:
-            trigger_id_str = args_str.strip()
-            trigger_id = int(trigger_id_str)
-            if not self.client.trigger_manager:
-                self.client.add_message(
-                    "Trigger system is disabled. Cannot remove trigger.",
-                    "error",
-                    context_name=self.client.context_manager.active_context_name or "Status",
-                )
-                return True
+        elif sub_command == "delete":
+            trigger_id = parsed_args["trigger_id"]
             if self.client.trigger_manager.remove_trigger(trigger_id):
-                self.client.add_message(
-                    f"Trigger {trigger_id} removed",
-                    "system",
-                    context_name=self.client.context_manager.active_context_name
-                    or "Status",
-                )
+                self.client.add_message(f"Trigger {trigger_id} removed.", "system", context_name=active_ctx)
             else:
-                self.client.add_message(
-                    f"Trigger {trigger_id} not found",
-                    "error",
-                    context_name=self.client.context_manager.active_context_name
-                    or "Status",
-                )
-        except ValueError:
-            self.client.add_message(
-                "Invalid trigger ID",
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-        return True
+                self.client.add_message(f"Failed to remove trigger {trigger_id}. Not found?", "error", context_name=active_ctx)
 
-    def _handle_enable(self, args_str: str) -> bool:
-        """Handle /on enable <id>."""
-        if not args_str.strip():
-            self.client.add_message(
-                "Usage: /on enable <id>",
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-            return True
-
-        try:
-            trigger_id_str = args_str.strip()
-            trigger_id = int(trigger_id_str)
-            if not self.client.trigger_manager:
-                self.client.add_message(
-                    "Trigger system is disabled. Cannot enable trigger.",
-                    "error",
-                    context_name=self.client.context_manager.active_context_name or "Status",
-                )
-                return True
-            if self.client.trigger_manager.set_trigger_enabled(trigger_id, True):
-                self.client.add_message(
-                    f"Trigger {trigger_id} enabled",
-                    "system",
-                    context_name=self.client.context_manager.active_context_name
-                    or "Status",
-                )
+        elif sub_command == "enable" or sub_command == "disable":
+            trigger_id = parsed_args["trigger_id"]
+            should_enable = sub_command == "enable"
+            if self.client.trigger_manager.set_trigger_enabled(trigger_id, should_enable):
+                self.client.add_message(f"Trigger {trigger_id} {'enabled' if should_enable else 'disabled'}.", "system", context_name=active_ctx)
             else:
-                self.client.add_message(
-                    f"Trigger {trigger_id} not found",
-                    "error",
-                    context_name=self.client.context_manager.active_context_name
-                    or "Status",
-                )
-        except ValueError:
-            self.client.add_message(
-                "Invalid trigger ID",
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-        return True
+                self.client.add_message(f"Failed to update trigger {trigger_id}. Not found?", "error", context_name=active_ctx)
 
-    def _handle_disable(self, args_str: str) -> bool:
-        """Handle /on disable <id>."""
-        if not args_str.strip():
-            self.client.add_message(
-                "Usage: /on disable <id>",
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-            return True
-
-        try:
-            trigger_id_str = args_str.strip()
-            trigger_id = int(trigger_id_str)
-            if not self.client.trigger_manager:
-                self.client.add_message(
-                    "Trigger system is disabled. Cannot disable trigger.",
-                    "error",
-                    context_name=self.client.context_manager.active_context_name or "Status",
-                )
-                return True
-            if self.client.trigger_manager.set_trigger_enabled(trigger_id, False):
-                self.client.add_message(
-                    f"Trigger {trigger_id} disabled",
-                    "system",
-                    context_name=self.client.context_manager.active_context_name
-                    or "Status",
-                )
+        elif sub_command == "info":
+            trigger_id = parsed_args["trigger_id"]
+            trigger = self.client.trigger_manager.get_trigger(trigger_id)
+            if trigger:
+                self.client.add_message(f"--- Trigger Info (ID: {trigger.id}) ---", "system", context_name=active_ctx)
+                self.client.add_message(f"  Event Type: {trigger.event_type}", "system", context_name=active_ctx)
+                self.client.add_message(f"  Pattern: '{trigger.pattern}' (Regex: {trigger.is_regex}, IgnoreCase: {trigger.ignore_case})", "system", context_name=active_ctx)
+                self.client.add_message(f"  Action Type: {trigger.action_type.name}", "system", context_name=active_ctx)
+                self.client.add_message(f"  Action Content: {trigger.action_content}", "system", context_name=active_ctx)
+                self.client.add_message(f"  Status: {'Enabled' if trigger.is_enabled else 'Disabled'}", "system", context_name=active_ctx)
+                self.client.add_message(f"  Created by: {trigger.created_by} at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(trigger.created_at)) if trigger.created_at else 'N/A'}", "system", context_name=active_ctx)
+                self.client.add_message(f"  Description: {trigger.description or 'N/A'}", "system", context_name=active_ctx)
             else:
-                self.client.add_message(
-                    f"Trigger {trigger_id} not found",
-                    "error",
-                    context_name=self.client.context_manager.active_context_name
-                    or "Status",
-                )
-        except ValueError:
-            self.client.add_message(
-                "Invalid trigger ID",
-                "error",
-                context_name=self.client.context_manager.active_context_name
-                or "Status",
-            )
-        return True
+                self.client.add_message(f"Trigger ID {trigger_id} not found.", "error", context_name=active_ctx)
+
+        elif sub_command == "show_usage":
+             self.client.add_message("Usage: /on <LIST|ADD|DEL|ENABLE|DISABLE|INFO> [params...]", "error", context_name=active_ctx)
+# END OF MODIFIED FILE: features/triggers/trigger_commands.py

@@ -1,315 +1,283 @@
-import re
+# START OF MODIFIED FILE: features/triggers/trigger_manager.py
 import json
-import logging # Standard import at the top
+import logging
 import os
-from typing import Dict, List, Optional, Any
-# Removing the incorrect imports if they are active for Pylance
-# from log import logger  <-- This will be replaced by ensuring 'import logging' is at top
-# from enums import TriggerType, ActionType <-- These are defined locally
-from dataclasses import dataclass, asdict
-from enum import Enum, auto, unique
+import re
+import time # Import the time module
+from enum import Enum
+from typing import Dict, List, Optional, Any, Union
 
-# Ensure standard logging is imported (usually at the very top with other stdlib imports)
-# 'import logging' should already be at line 3.
-# This logger initialization should replace any 'from log import logger'
 logger = logging.getLogger("pyrc.features.triggers")
 
+TRIGGERS_FILE = "triggers.json"
 
-@unique
 class ActionType(Enum):
-    COMMAND = auto()
-    PYTHON = auto()
+    COMMAND = "COMMAND"
+    PYTHON = "PYTHON"
 
-
-class TriggerType(Enum):
-    TEXT = auto()
-    ACTION = auto()
-    JOIN = auto()
-    PART = auto()
-    QUIT = auto()
-    KICK = auto()
-    MODE = auto()
-    TOPIC = auto()
-    NICK = auto()
-    NOTICE = auto()
-    INVITE = auto()
-    CTCP = auto()
-    RAW = auto()
-
-
-@dataclass
-class Trigger:
-    id: int
-    event_type: TriggerType
-    pattern: str
-    action_content: str  # Stores the command string or Python code
-    action_type: ActionType = ActionType.COMMAND  # Type of action
-    is_enabled: bool = True
-    compiled_pattern: Optional[re.Pattern] = None
-
-    def __post_init__(self):
+    @classmethod
+    def from_string(cls, s: str) -> Optional['ActionType']:
         try:
-            self.compiled_pattern = re.compile(self.pattern)
-        except re.error as e:
-            logger.error(f"Invalid regex pattern '{self.pattern}': {e}")
-            self.compiled_pattern = None
+            return cls[s.upper()]
+        except KeyError:
+            return None
 
+class Trigger:
+    def __init__(
+        self,
+        trigger_id: int,
+        event_type: str,
+        pattern: str,
+        action_type: ActionType,
+        action_content: str,
+        is_enabled: bool = True,
+        is_regex: bool = True,
+        ignore_case: bool = True,
+        created_at: Optional[float] = None,
+        updated_at: Optional[float] = None,
+        created_by: str = "system",
+        description: str = ""
+    ):
+        self.id = trigger_id
+        self.event_type = event_type.upper()
+        self.pattern = pattern
+        self.action_type = action_type
+        self.action_content = action_content
+        self.is_enabled = is_enabled
+        self.is_regex = is_regex
+        self.ignore_case = ignore_case
+
+        current_time = time.time() # Use imported time
+        self.created_at = created_at if created_at is not None else current_time
+        self.updated_at = updated_at if updated_at is not None else current_time # Use imported time
+        self.created_by = created_by
+        self.description = description
+
+        self.compiled_pattern: Optional[re.Pattern] = None
+        if self.is_regex and self.pattern: # Only compile if pattern is not empty
+            try:
+                flags = re.IGNORECASE if self.ignore_case else 0
+                self.compiled_pattern = re.compile(self.pattern, flags)
+            except re.error as e:
+                logger.error(f"Invalid regex pattern for trigger ID {self.id} ('{self.pattern}'): {e}")
+                self.compiled_pattern = None
+                self.is_enabled = False
+        elif not self.is_regex and not self.pattern: # Non-regex trigger with empty pattern
+             logger.warning(f"Trigger ID {self.id} is non-regex but has an empty pattern. It will match any event of its type if enabled.")
+
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id, "event_type": self.event_type, "pattern": self.pattern,
+            "action_type": self.action_type.name, "action_content": self.action_content,
+            "is_enabled": self.is_enabled, "is_regex": self.is_regex,
+            "ignore_case": self.ignore_case, "created_at": self.created_at,
+            "updated_at": self.updated_at, "created_by": self.created_by,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Optional['Trigger']:
+        action_type_enum = ActionType.from_string(data.get("action_type", ""))
+        if not action_type_enum:
+            logger.error(f"Invalid action_type '{data.get('action_type')}' for trigger ID {data.get('id')}. Skipping.")
+            return None
+
+        return cls(
+            trigger_id=data["id"], event_type=data["event_type"], pattern=data["pattern"],
+            action_type=action_type_enum, action_content=data["action_content"],
+            is_enabled=data.get("is_enabled", True), is_regex=data.get("is_regex", True),
+            ignore_case=data.get("ignore_case", True), created_at=data.get("created_at"),
+            updated_at=data.get("updated_at"), created_by=data.get("created_by", "loaded_from_file"),
+            description=data.get("description", "")
+        )
 
 class TriggerManager:
     def __init__(self, config_dir: str):
-        self.triggers: List[Trigger] = []
-        self.next_id = 1
         self.config_dir = config_dir
-        self.triggers_file = os.path.join(config_dir, "triggers.json")
-        self.load_triggers()
+        self.triggers_file_path = os.path.join(config_dir, TRIGGERS_FILE)
+        self.triggers: Dict[int, Trigger] = {}
+        self.next_trigger_id = 1
+        self._load_triggers_from_file() # Renamed for consistency
 
-    def add_trigger(
-        self,
-        event_type_str: str,
-        pattern: str,
-        action_type_str: str,
-        action_content: str,
-    ) -> Optional[int]:
-        """Add a new trigger and return its ID if successful."""
+    def load_triggers(self): # Public method if needed for reloads
+        self._load_triggers_from_file()
+
+    def _load_triggers_from_file(self):
+        if not os.path.exists(self.triggers_file_path):
+            logger.info(f"Triggers file not found at {self.triggers_file_path}. No triggers loaded.")
+            return
         try:
-            trigger_type = TriggerType[event_type_str.upper()]
-        except KeyError:
-            logger.error(f"Invalid event type: {event_type_str}")
+            with open(self.triggers_file_path, "r", encoding="utf-8") as f:
+                triggers_data = json.load(f)
+
+            loaded_triggers_count = 0
+            max_id_found = 0
+            temp_triggers: Dict[int, Trigger] = {}
+            for data in triggers_data:
+                trigger = Trigger.from_dict(data)
+                if trigger:
+                    if trigger.id in temp_triggers: # Check against temp_triggers to handle duplicates in file
+                        logger.warning(f"Duplicate trigger ID {trigger.id} found in file. Using first instance.")
+                        continue
+                    temp_triggers[trigger.id] = trigger
+                    loaded_triggers_count += 1
+                    if trigger.id > max_id_found:
+                        max_id_found = trigger.id
+
+            self.triggers = temp_triggers # Assign loaded triggers
+            self.next_trigger_id = max_id_found + 1
+            logger.info(f"Loaded {len(self.triggers)} triggers from {self.triggers_file_path}. Next ID: {self.next_trigger_id}")
+
+        except json.JSONDecodeError:
+            logger.error(f"Error decoding JSON from {self.triggers_file_path}. No triggers loaded.")
+        except Exception as e:
+            logger.error(f"Error loading triggers from {self.triggers_file_path}: {e}", exc_info=True)
+
+
+    def _save_triggers_to_file(self):
+        try:
+            triggers_data = [trigger.to_dict() for trigger in self.triggers.values()]
+            with open(self.triggers_file_path, "w", encoding="utf-8") as f:
+                json.dump(triggers_data, f, indent=4)
+            logger.info(f"Saved {len(self.triggers)} triggers to {self.triggers_file_path}")
+        except Exception as e:
+            logger.error(f"Error saving triggers to {self.triggers_file_path}: {e}", exc_info=True)
+
+    def add_trigger(self, event_type_str: str, pattern: str, action_type_str: str, action_content: str,
+                    is_enabled: bool = True, is_regex: bool = True, ignore_case: bool = True,
+                    created_by: str = "user", description: str = "") -> Optional[int]:
+
+        action_type = ActionType.from_string(action_type_str)
+        if not action_type:
+            logger.error(f"Invalid action_type '{action_type_str}' for new trigger.")
             return None
 
-        try:
-            action_type = ActionType[action_type_str.upper()]
-        except KeyError:
-            logger.error(f"Invalid action type: {action_type_str}")
-            return None
-
+        trigger_id = self.next_trigger_id
         trigger = Trigger(
-            id=self.next_id,
-            event_type=trigger_type,
-            pattern=pattern,
-            action_type=action_type,
-            action_content=action_content,
+            trigger_id=trigger_id, event_type=event_type_str, pattern=pattern,
+            action_type=action_type, action_content=action_content,
+            is_enabled=is_enabled, is_regex=is_regex, ignore_case=ignore_case,
+            created_by=created_by, description=description, created_at=time.time(), updated_at=time.time()
         )
 
-        if trigger.compiled_pattern is None:
+        if trigger.is_regex and trigger.pattern and not trigger.compiled_pattern:
+            logger.error(f"Cannot add trigger with invalid regex pattern: '{pattern}'")
             return None
 
-        self.triggers.append(trigger)
-        self.next_id += 1
-        self.save_triggers()
-        return trigger.id
+        self.triggers[trigger_id] = trigger
+        self.next_trigger_id += 1
+        self._save_triggers_to_file()
+        logger.info(f"Added trigger ID {trigger_id}: Event='{event_type_str}', Pattern='{pattern}', Action='{action_type_str}'")
+        return trigger_id
 
     def remove_trigger(self, trigger_id: int) -> bool:
-        """Remove a trigger by ID. Returns True if successful."""
-        initial_length = len(self.triggers)
-        self.triggers = [t for t in self.triggers if t.id != trigger_id]
-        if len(self.triggers) < initial_length:
-            self.save_triggers()
+        if trigger_id in self.triggers:
+            del self.triggers[trigger_id]
+            self._save_triggers_to_file()
+            logger.info(f"Removed trigger ID {trigger_id}")
             return True
+        logger.warning(f"Trigger ID {trigger_id} not found for removal.")
         return False
 
     def set_trigger_enabled(self, trigger_id: int, enabled: bool) -> bool:
-        """Enable or disable a trigger by ID. Returns True if successful."""
-        for trigger in self.triggers:
-            if trigger.id == trigger_id:
-                trigger.is_enabled = enabled
-                self.save_triggers()
-                return True
+        if trigger_id in self.triggers:
+            self.triggers[trigger_id].is_enabled = enabled
+            self.triggers[trigger_id].updated_at = time.time()
+            self._save_triggers_to_file()
+            logger.info(f"Trigger ID {trigger_id} {'enabled' if enabled else 'disabled'}.")
+            return True
+        logger.warning(f"Trigger ID {trigger_id} not found for enable/disable.")
         return False
 
     def list_triggers(self, event_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List all triggers, optionally filtered by event type."""
-        triggers = self.triggers
-        if event_type:
-            try:
-                trigger_type = TriggerType[event_type.upper()]
-                triggers = [t for t in triggers if t.event_type == trigger_type]
-            except KeyError:
-                return []
-
-        # Convert ActionType enum to string for serialization
-        trigger_dicts = []
-        for t in triggers:
-            t_dict = asdict(t)
-            t_dict["action_type"] = t.action_type.name
-            trigger_dicts.append(t_dict)
-        return trigger_dicts
-
-    def _prepare_event_data(
-        self, base_data: Dict[str, Any], match: Optional[re.Match]
-    ) -> Dict[str, Any]:
-        """Prepare the event data dictionary, including regex capture groups."""
-        event_data = {
-            "$nick": base_data.get("nick", ""),
-            "$channel": base_data.get("channel", ""),
-            "$target": base_data.get("target", ""),
-            "$me": base_data.get("client_nick", ""),
-            "$msg": base_data.get("message", ""),
-            "$message": base_data.get("message", ""),  # Alias for $msg
-            "$reason": base_data.get("reason", ""),
-            "$mode": base_data.get("modes_str", ""),
-            "$topic": base_data.get("new_topic", ""),
-            "$raw": base_data.get("raw_line", ""),
-            "$timestamp": base_data.get("timestamp", ""),
-            # Add other standard variables from base_data as needed
-        }
-
-        message_words = base_data.get("message_words", [])
-        for i, word in enumerate(message_words, 1):
-            event_data[f"$${i}"] = word  # $$1, $$2, etc. for words
-            if i == 1:
-                event_data["$1-"] = " ".join(message_words[1:])
-            elif i == 2:
-                event_data["$2-"] = " ".join(message_words[2:])
-            # Add $N- for other word ranges if desired
-
-        if match:
-            event_data["$0"] = match.group(0)  # Full match
-            for i, group_val in enumerate(match.groups(), 1):
-                event_data[f"${i}"] = (
-                    group_val if group_val is not None else ""
-                )  # $1, $2, etc.
-            # For named capture groups, if any: event_data.update(match.groupdict())
-
-        # Ensure all values are strings for substitution
-        for key, value in event_data.items():
-            event_data[key] = str(value)
-
-        return event_data
-
-    def _perform_string_substitutions(
-        self, action_string: str, event_data: Dict[str, Any]
-    ) -> str:
-        """Replace variables in the action string with their values from event_data."""
-        result = action_string
-        # Sort keys by length descending to replace longer keys first (e.g., $message before $msg)
-        # This is a simple approach; more robust templating could be used if needed.
-        sorted_vars = sorted(event_data.keys(), key=len, reverse=True)
-        for var_name in sorted_vars:
-            result = result.replace(var_name, str(event_data[var_name]))
+        result = []
+        for trigger in self.triggers.values():
+            if event_type is None or trigger.event_type == event_type.upper():
+                result.append(trigger.to_dict())
         return result
 
-    def process_trigger(
-        self, event_type_str: str, data: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Process an event. If a trigger matches, return a dictionary
-        containing the action type, content, and event data.
-        """
-        try:
-            trigger_type = TriggerType[event_type_str.upper()]
-        except KeyError:
-            return None
+    def get_trigger(self, trigger_id: int) -> Optional[Trigger]:
+        return self.triggers.get(trigger_id)
 
-        for trigger in self.triggers:
-            if not trigger.is_enabled or trigger.event_type != trigger_type:
+    def process_trigger(self, event_type: str, event_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        event_type_upper = event_type.upper()
+        text_to_check = ""
+
+        if event_type_upper in ["TEXT", "ACTION", "NOTICE"]:
+            text_to_check = event_data.get("message", "")
+        elif event_type_upper == "RAW":
+            text_to_check = event_data.get("raw_line", "")
+
+        for trigger_id, trigger in self.triggers.items():
+            if not trigger.is_enabled or trigger.event_type != event_type_upper:
                 continue
 
-            field_to_match = self._get_field_to_match(trigger_type)
-            if not field_to_match or field_to_match not in data:
-                continue
+            match_obj: Union[re.Match[str], bool, None] = None # Type hint for clarity
 
-            match = None
-            if trigger.compiled_pattern:
-                match = trigger.compiled_pattern.search(data.get(field_to_match, ""))
+            if not trigger.pattern:
+                match_obj = True
+            elif trigger.is_regex:
+                if trigger.compiled_pattern:
+                    match_obj = trigger.compiled_pattern.search(text_to_check)
+                else: continue
+            else:
+                flags = re.IGNORECASE if trigger.ignore_case else 0
+                if re.search(re.escape(trigger.pattern), text_to_check, flags):
+                    match_obj = True
 
-            if match:
-                event_data_for_action = self._prepare_event_data(data, match)
+            if match_obj:
+                logger.info(f"Trigger ID {trigger_id} matched event type '{event_type}' with pattern '{trigger.pattern}' on text: '{text_to_check[:100]}...'")
 
-                if trigger.action_type == ActionType.COMMAND:
-                    final_command_string = self._perform_string_substitutions(
-                        trigger.action_content, event_data_for_action
-                    )
-                    return {
-                        "type": ActionType.COMMAND,
-                        "content": final_command_string,
-                        # event_data not strictly needed by caller for COMMAND if already substituted
-                    }
-                elif trigger.action_type == ActionType.PYTHON:
-                    return {
-                        "type": ActionType.PYTHON,
-                        "code": trigger.action_content,
-                        "event_data": event_data_for_action,
-                    }
+                event_data_with_captures = event_data.copy()
+                action_content = trigger.action_content
+
+                # Only try to get groups if it was a regex match and not just 'True'
+                if trigger.is_regex and isinstance(match_obj, re.Match):
+                    groups = match_obj.groups() # Tuple[Optional[str], ...]
+                    event_data_with_captures['captures'] = groups
+                    safe_groups_for_join: List[str] = []
+                    for i, group_val in enumerate(groups):
+                        event_data_with_captures[f'${i+1}'] = group_val if group_val is not None else ""
+                        if group_val is not None:
+                            safe_groups_for_join.append(group_val)
+
+                    if safe_groups_for_join: # Only join if there are non-None groups
+                         event_data_with_captures['$*'] = " ".join(safe_groups_for_join)
+                    else:
+                         event_data_with_captures['$*'] = ""
+
+                    if trigger.action_type == ActionType.COMMAND:
+                        action_content = action_content.replace("$nick", event_data.get("nick", ""))
+                        action_content = action_content.replace("$channel", event_data.get("channel", event_data.get("target", "")))
+                        action_content = action_content.replace("$target", event_data.get("target", ""))
+                        action_content = action_content.replace("$message", event_data.get("message", ""))
+                        action_content = action_content.replace("$$", "$")
+
+                        try: action_content = action_content.replace("$0", match_obj.group(0) or "")
+                        except IndexError: pass
+
+                        for i in range(1, 10):
+                            try:
+                                group_val = match_obj.group(i)
+                                action_content = action_content.replace(f"${i}", group_val if group_val is not None else "")
+                            except IndexError:
+                                action_content = action_content.replace(f"${i}", "")
+                elif trigger.action_type == ActionType.COMMAND: # Non-regex match, or regex with no groups, still do basic subs
+                    action_content = action_content.replace("$nick", event_data.get("nick", ""))
+                    action_content = action_content.replace("$channel", event_data.get("channel", event_data.get("target", "")))
+                    action_content = action_content.replace("$target", event_data.get("target", ""))
+                    action_content = action_content.replace("$message", event_data.get("message", ""))
+                    action_content = action_content.replace("$$", "$")
+
+
+                return {
+                    "type": trigger.action_type,
+                    "content": action_content if trigger.action_type == ActionType.COMMAND else None,
+                    "code": trigger.action_content if trigger.action_type == ActionType.PYTHON else None,
+                    "event_data": event_data_with_captures,
+                    "pattern": trigger.pattern
+                }
         return None
 
-    def _get_field_to_match(self, trigger_type: TriggerType) -> Optional[str]:
-        """Determine which field in the data dict to match against for a given trigger type."""
-        field_map = {
-            TriggerType.TEXT: "message",
-            TriggerType.ACTION: "message",
-            TriggerType.NOTICE: "message",
-            TriggerType.JOIN: "nick",
-            TriggerType.PART: "nick",
-            TriggerType.QUIT: "nick",
-            TriggerType.KICK: "kicked_nick",
-            TriggerType.MODE: "modes_str",
-            TriggerType.TOPIC: "new_topic",
-            TriggerType.NICK: "old_nick",
-            TriggerType.INVITE: "channel",
-            TriggerType.CTCP: "ctcp_command",
-            TriggerType.RAW: "raw_line",
-        }
-        return field_map.get(trigger_type)
-
-    def save_triggers(self):
-        """Save triggers to JSON file."""
-        try:
-            triggers_to_save = []
-            for t in self.triggers:
-                t_dict = asdict(t)
-                # Remove compiled_pattern before serialization
-                if "compiled_pattern" in t_dict:
-                    del t_dict["compiled_pattern"]
-                # Convert enums to strings
-                t_dict["event_type"] = t.event_type.name
-                t_dict["action_type"] = t.action_type.name
-                triggers_to_save.append(t_dict)
-
-            with open(self.triggers_file, "w") as f:
-                json.dump(triggers_to_save, f, indent=2)
-            logger.info(
-                f"Saved {len(triggers_to_save)} triggers to {self.triggers_file}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to save triggers: {e}", exc_info=True)
-
-    def load_triggers(self):
-        """Load triggers from JSON file."""
-        if not os.path.exists(self.triggers_file):
-            logger.info(f"No triggers file found at {self.triggers_file}")
-            return
-
-        try:
-            with open(self.triggers_file, "r") as f:
-                triggers_data = json.load(f)
-
-            max_loaded_id = 0
-            for t_data in triggers_data:
-                try:
-                    # Convert string enums back to enum values
-                    t_data["event_type"] = TriggerType[t_data["event_type"]]
-                    t_data["action_type"] = ActionType[t_data["action_type"]]
-
-                    # Create trigger instance (compiled_pattern will be set in __post_init__)
-                    trigger = Trigger(**t_data)
-                    self.triggers.append(trigger)
-                    max_loaded_id = max(max_loaded_id, trigger.id)
-                except re.error as re_err:
-                    logger.error(
-                        f"Failed to compile pattern for trigger {t_data.get('id', 'unknown')}: {re_err}"
-                    )
-                    continue
-                except Exception as e:
-                    logger.error(
-                        f"Failed to load trigger {t_data.get('id', 'unknown')}: {e}"
-                    )
-                    continue
-
-            # Update next_id to be max_loaded_id + 1
-            self.next_id = max_loaded_id + 1
-            logger.info(
-                f"Loaded {len(self.triggers)} triggers from {self.triggers_file}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to load triggers: {e}", exc_info=True)
+# END OF MODIFIED FILE: features/triggers/trigger_manager.py

@@ -46,7 +46,8 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         commands_by_group: Dict[str, List[tuple[str, str]]] = {}
         core_categories = ["core", "channel", "information", "server", "ui", "user", "utility"]
 
-        logger.debug(f"Help command: Processing core commands from CommandHandler.registered_command_help...")
+        # FORCED PRINT FOR DIAGNOSTICS
+        print("DEBUG_HELP_COMMAND: Processing core commands...", flush=True)
         for cmd_name, help_data_val in client.command_handler.registered_command_help.items():
             if help_data_val.get("is_alias"):
                 continue
@@ -56,24 +57,19 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                 try:
                     category = module_path.split('.')[1].lower()
                     if category in core_categories: group_key = category
-                    logger.debug(f"Help core: cmd='{cmd_name}', module_path='{module_path}', derived_category='{category}', final_group_key='{group_key}'")
-                except IndexError:
-                    logger.debug(f"Help core: cmd='{cmd_name}', module_path='{module_path}', IndexError, group_key='{group_key}'")
+                except IndexError: pass
 
             summary = get_summary_from_help_text(help_data_val["help_text"], is_core_format=True)
             if group_key not in commands_by_group: commands_by_group[group_key] = []
             if not any(c[0] == cmd_name for c in commands_by_group[group_key]):
                  commands_by_group[group_key].append((cmd_name, summary))
-                 logger.debug(f"Help core: Added '{cmd_name}' to group '{group_key}' with summary '{summary}'")
 
-
-        logger.debug(f"Help command: Processing script commands from ScriptManager...")
         script_cmds_data = client.script_manager.get_all_script_commands_with_help()
-        logger.debug(f"Help command: script_cmds_data from ScriptManager: {script_cmds_data}")
+        print(f"DEBUG_HELP_COMMAND: script_cmds_data from ScriptManager: {script_cmds_data}", flush=True)
 
         for cmd_name, cmd_data_val in script_cmds_data.items():
             script_module_name = cmd_data_val.get("script_name", "UnknownScript")
-            logger.debug(f"Help script: Processing cmd='{cmd_name}', script_module_name='{script_module_name}'")
+            print(f"DEBUG_HELP_COMMAND: Processing script cmd='{cmd_name}', script_module_name='{script_module_name}'", flush=True)
 
             summary_script = get_summary_from_help_text(cmd_data_val.get("help_text", "No description."), is_core_format=False)
 
@@ -89,19 +85,19 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                     commands_by_group[group_key_for_script] = []
                 if not any(c[0] == cmd_name for c in commands_by_group[group_key_for_script]):
                     commands_by_group[group_key_for_script].append((cmd_name, summary_script))
-                    logger.debug(f"Help script: Added '{cmd_name}' to group '{group_key_for_script}' with summary '{summary_script}'")
+                    print(f"DEBUG_HELP_COMMAND: Added '{cmd_name}' to group '{group_key_for_script}'", flush=True)
 
         category_display_titles = {cat: f"{cat.title()} Commands" for cat in core_categories}
 
         display_order_keys = core_categories[:]
 
-        script_group_keys_from_data = sorted( # Corrected variable name
+        script_group_keys_from_data = sorted(
             [key for key in commands_by_group.keys() if key not in core_categories and commands_by_group[key]],
             key=lambda k: k.lower()
         )
-        display_order_keys.extend(script_group_keys_from_data) # Use the correct variable
-        logger.debug(f"Help command: Final groups for display order: {display_order_keys}")
-        logger.debug(f"Help command: Full commands_by_group content: {commands_by_group}")
+        display_order_keys.extend(script_group_keys_from_data)
+        print(f"DEBUG_HELP_COMMAND: Final groups for display order: {display_order_keys}", flush=True)
+        print(f"DEBUG_HELP_COMMAND: Full commands_by_group content: {commands_by_group}", flush=True)
 
 
         for group_key_to_display in display_order_keys:
@@ -131,7 +127,7 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         )
         return
 
-    # Specific command help logic
+    # Specific command help logic (remains largely the same)
     command_name_from_user = args_str.strip().lower()
     help_data = client.command_handler.registered_command_help.get(command_name_from_user)
 
