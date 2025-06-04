@@ -22,13 +22,16 @@ class SaslAuthenticator:
         self.sasl_authentication_succeeded: Optional[bool] = None # None = not yet determined, True = success, False = failure
 
     def _add_status_message(self, message: str, color_key: str = "system"):
-        logger.info(f"[SaslAuthenticator Status] {message}")
-        if self.client_logic_ref:
-            color_attr = self.client_logic_ref.ui.colors.get(color_key, self.client_logic_ref.ui.colors["system"])
+        logger.info(f"[SaslAuthenticator Status via Client] {message}") # Keep local log
+        if self.client_logic_ref and hasattr(self.client_logic_ref, '_add_status_message'):
+            self.client_logic_ref._add_status_message(message, color_key)
+        elif self.client_logic_ref: # Fallback (defensive)
+            logger.warning("SaslAuthenticator: client_logic_ref._add_status_message not found, using direct add_message.")
+            color_attr = self.client_logic_ref.ui.colors.get(
+                color_key, self.client_logic_ref.ui.colors["system"]
+            )
             self.client_logic_ref.add_message(
-                message,
-                color_attr,
-                context_name="Status"
+                message, color_attr, context_name="Status"
             )
 
     def has_credentials(self) -> bool:

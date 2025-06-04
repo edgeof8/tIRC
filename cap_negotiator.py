@@ -49,8 +49,11 @@ class CapNegotiator:
         self.registration_handler = registration_handler
 
     def _add_status_message(self, message: str, color_key: str = "system"):
-        logger.info(f"[CapNegotiator Status] {message}")
-        if self.client_logic_ref:
+        logger.info(f"[CapNegotiator Status via Client] {message}") # Keep local log
+        if self.client_logic_ref and hasattr(self.client_logic_ref, '_add_status_message'):
+            self.client_logic_ref._add_status_message(message, color_key)
+        elif self.client_logic_ref: # Fallback if _add_status_message somehow not found (defensive)
+            logger.warning("CapNegotiator: client_logic_ref._add_status_message not found, using direct add_message.")
             color_attr = self.client_logic_ref.ui.colors.get(
                 color_key, self.client_logic_ref.ui.colors["system"]
             )
