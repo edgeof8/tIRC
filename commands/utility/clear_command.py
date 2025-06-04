@@ -9,6 +9,7 @@ logger = logging.getLogger("pyrc.commands.clear")
 
 def handle_clear_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /clear command"""
+# args_str is ignored for the /clear command as it operates on the active context.
     current_context = client.context_manager.get_active_context()
     if current_context:
         current_context.messages.clear()

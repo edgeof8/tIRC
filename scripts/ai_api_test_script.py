@@ -204,12 +204,18 @@ class AiApiTestScript:
         self.api.execute_client_command(f"/window {context_name}") # Ensure context_name is active
         time.sleep(0.2) # Allow context switch
         self.api.execute_client_command("/clear") # Clears active context
-        time.sleep(0.5) # Allow UI updates
-        messages_after_clear = self.api.get_context_messages(context_name) # Get all messages
-        if messages_after_clear:
-             self.api.log_error(f"[AI Test] FAILED: /clear on active context {context_name} did not clear messages. Got: {messages_after_clear}")
+        time.sleep(0.5) # Allow UI update cycle if any (though clear is mostly internal)
+        # Fetch messages from the context that was supposed to be cleared
+        messages_after_clear = self.api.get_context_messages(context_name)
+
+        if messages_after_clear: # Check if the list is not None and not empty
+            self.api.log_error(
+                f"[AI Test] FAILED: /clear on active context {context_name} did not clear messages. Got: {messages_after_clear}"
+            )
+            # Add to test_results as failure
         else:
-             self.api.log_info(f"[AI Test] PASSED: /clear on active context {context_name} resulted in an empty message buffer.")
+            self.api.log_info(f"[AI Test] PASSED: /clear on active context {context_name} successfully cleared messages.")
+            # Add to test_results as success
 
 
         # /rawlog
