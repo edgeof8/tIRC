@@ -218,14 +218,14 @@ class NetworkHandler:
             if self.client: # Add message only if client exists
                 self.client.add_message(
                     "Cannot connect: Server or port not configured.",
-                    self.client.ui.colors["error"],
+                    "error",
                     context_name="Status",
                 )
             return False
 
         self.client.add_message(
             f"Attempting to connect to {self.client.server}:{self.client.port}...",
-            self.client.ui.colors["system"],
+            "system",
             context_name="Status",
         )
         try:
@@ -269,7 +269,7 @@ class NetworkHandler:
             )
             self.client.add_message(
                 f"Connected. SSL: {'Yes' if self.client.use_ssl else 'No'}",
-                self.client.ui.colors["system"],
+                "system",
                 context_name="Status",
             )
 
@@ -299,14 +299,14 @@ class NetworkHandler:
             )
             self.client.add_message(
                 f"Connection to {self.client.server}:{self.client.port} timed out.",
-                self.client.ui.colors["error"],
+                "error",
                 context_name="Status",
             )
         except socket.gaierror as e:
             logger.error(f"Hostname {self.client.server} could not be resolved: {e}")
             self.client.add_message(
                 f"Hostname {self.client.server} could not be resolved.",
-                self.client.ui.colors["error"],
+                "error",
                 context_name="Status",
             )
         except ConnectionRefusedError as e:
@@ -315,19 +315,19 @@ class NetworkHandler:
             )
             self.client.add_message(
                 f"Connection refused by {self.client.server}:{self.client.port}.",
-                self.client.ui.colors["error"],
+                "error",
                 context_name="Status",
             )
         except ssl.SSLError as e:
             logger.error(f"SSL Error during connection: {e}", exc_info=True)
             self.client.add_message(
-                f"SSL Error: {e}", self.client.ui.colors["error"], context_name="Status"
+                f"SSL Error: {e}", "error", context_name="Status"
             )
         except Exception as e:
             logger.error(f"Unexpected error during connection: {e}", exc_info=True)
             self.client.add_message(
                 f"Connection error: {e}",
-                self.client.ui.colors["error"],
+                "error",
                 context_name="Status",
             )
 
@@ -374,7 +374,7 @@ class NetworkHandler:
             ):
                 self.client.add_message(
                     f"C >> {log_data}",
-                    self.client.ui.colors.get("system", 0),
+                    "system",
                     context_name="Status",
                     prefix_time=True,
                 )
@@ -393,7 +393,7 @@ class NetworkHandler:
             if self.client:
                 self.client.add_message(
                     f"Critical send error: {e_unhandled_send}",
-                    self.client.ui.colors["error"],
+                    "error",
                     context_name="Status",
                 )
             self._reset_connection_state(dispatch_event=True)
@@ -485,7 +485,7 @@ class NetworkHandler:
                                 if self.client:
                                     self.client.add_message(
                                         f"Unicode decode error: {e_decode}",
-                                        self.client.ui.colors["error"],
+                                        "error",
                                         context_name="Status",
                                     )
 

@@ -334,8 +334,11 @@ class IRCClient_Logic:
         self.last_attempted_nick_change: Optional[str] = None
 
     def _add_status_message(self, text: str, color_key: str = "system"):
-        color_attr = self.ui.colors.get(color_key, self.ui.colors["system"])
-        self.add_message(text, color_attr, context_name="Status")
+        # Resolve color_key to actual curses color attribute here
+        color_attr = self.ui.colors.get(color_key, self.ui.colors.get("system", 0)) # Fallback to raw 0 if "system" also missing
+        # Log the intended key for clarity, the actual adding is done by add_message
+        logger.info(f"[StatusUpdate via Helper] ColorKey: '{color_key}', Text: {text}")
+        self.add_message(text, color_attr, context_name="Status") # Pass resolved color_attr
 
     def _initialize_connection_handlers(self):
         logger.debug("Initializing connection handlers (CAP, SASL, Registration)...")
@@ -407,12 +410,24 @@ class IRCClient_Logic:
     def add_message(
         self,
         text: str,
-        color_attr: int,
+        color_attr_or_key: Any, # Changed from color_attr: int
         prefix_time: bool = True,
         context_name: Optional[str] = None,
         source_full_ident: Optional[str] = None,
         is_privmsg_or_notice: bool = False,
     ):
+        resolved_color_attr: int
+        if isinstance(color_attr_or_key, str):
+            # It's a color key, resolve it
+            resolved_color_attr = self.ui.colors.get(color_attr_or_key, self.ui.colors.get("default", 0)) # Fallback to raw 0 if "default" also missing
+        elif isinstance(color_attr_or_key, int):
+            # It's already a resolved color attribute
+            resolved_color_attr = color_attr_or_key
+        else:
+            # Fallback for unexpected type
+            logger.warning(f"add_message: Unexpected type for color_attr_or_key: {type(color_attr_or_key)}. Using default color.")
+            resolved_color_attr = self.ui.colors.get("default", 0)
+
         target_context_name = (
             context_name
             if context_name is not None
@@ -467,7 +482,7 @@ class IRCClient_Logic:
                 self.context_manager.add_message_to_context(
                     "Status",
                     f"[CtxErr for {target_context_name}] {text}",
-                    color_attr,
+                    resolved_color_attr, # Use resolved_color_attr
                 )
                 self.ui_needs_update.set()
                 return
@@ -507,7 +522,7 @@ class IRCClient_Logic:
 
         for line_part in lines:
             self.context_manager.add_message_to_context(
-                target_context_name, line_part, color_attr, 1
+                target_context_name, line_part, resolved_color_attr, 1 # Use resolved_color_attr
             )
 
         if target_context_obj and target_context_obj.type == "channel":
@@ -720,7 +735,7 @@ class IRCClient_Logic:
                     else:
                         self.add_message(
                             f"Invalid window number: {direction}. Max: {len(sorted_context_names)}",
-                            self.ui.colors["error"],
+                            "error",
                             context_name=current_active_name,
                         )
                         return
@@ -735,7 +750,7 @@ class IRCClient_Logic:
                     elif len(found_ctx) > 1:
                         self.add_message(
                             f"Ambiguous window name '{direction}'. Matches: {', '.join(sorted(found_ctx))}",
-                            self.ui.colors["error"],
+                            "error",
                             context_name=current_active_name,
                         )
                         return
@@ -750,7 +765,7 @@ class IRCClient_Logic:
                         else:
                             self.add_message(
                                 f"Window '{direction}' not found.",
-                                self.ui.colors["error"],
+                                "error",
                                 context_name=current_active_name,
                             )
                             return
@@ -768,7 +783,7 @@ class IRCClient_Logic:
                 join_status_name = target_ctx_to_activate.join_status.name
                 self.add_message(
                     f"Channel {new_active_context_name} is not fully joined yet (Status: {join_status_name}).",
-                    self.ui.colors["system"],
+                    "system",
                     context_name=current_active_name,
                 )
 
@@ -783,7 +798,7 @@ class IRCClient_Logic:
                 )
                 self.add_message(
                     f"Error switching to window '{new_active_context_name}'.",
-                    self.ui.colors["error"],
+                    "error",
                     context_name=current_active_name,
                 )
 
@@ -807,7 +822,7 @@ class IRCClient_Logic:
         if not channel_context_names:
             self.add_message(
                 "No channels or Status window to switch to.",
-                self.ui.colors["system"],
+                "system",
                 context_name=self.context_manager.active_context_name or "Status",
             )
             return
@@ -855,7 +870,7 @@ class IRCClient_Logic:
                 )
                 self.add_message(
                     f"Error switching to '{new_active_channel_name}'.",
-                    self.ui.colors["error"],
+                    "error",
                     context_name=current_active_name_str or "Status",
                 )
 
@@ -944,8 +959,8 @@ class IRCClient_Logic:
                 def send_raw(self, cmd_str): self._client_logic.network_handler.send_raw(cmd_str)
                 def send_message(self, target, message): self._client_logic.network_handler.send_raw(f"PRIVMSG {target} :{message}")
                 def add_message_to_context(self, ctx_name, text, color_key="system"):
-                    color = self._client_logic.ui.colors.get(color_key, 0)
-                    self._client_logic.add_message(text, color, context_name=ctx_name)
+                    # Pass the color_key string directly to the refactored add_message
+                    self._client_logic.add_message(text, color_key, context_name=ctx_name)
                 def get_client_nick(self): return self._client_logic.nick
                 # Add other commonly used API methods as needed by Python triggers
 
@@ -1010,20 +1025,20 @@ class IRCClient_Logic:
             if active_ctx.join_status == ChannelJoinStatus.FULLY_JOINED:
                 self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
                 if "echo-message" not in self.get_enabled_caps():
-                    self.add_message(f"<{self.nick}> {text}", self.ui.colors["my_message"], context_name=active_ctx_name)
+                    self.add_message(f"<{self.nick}> {text}", "my_message", context_name=active_ctx_name)
                 elif self.echo_sent_to_status:
-                    self.add_message(f"To {active_ctx_name}: <{self.nick}> {text}", self.ui.colors["my_message"], context_name="Status")
+                    self.add_message(f"To {active_ctx_name}: <{self.nick}> {text}", "my_message", context_name="Status")
             else:
                 self.add_message(
                     f"Cannot send message: Channel {active_ctx_name} not fully joined (Status: {active_ctx.join_status.name if active_ctx.join_status else 'N/A'}).",
-                    self.ui.colors["error"], context_name=active_ctx_name
+                    "error", context_name=active_ctx_name
                 )
         elif active_ctx.type == "query":
             self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
             if "echo-message" not in self.get_enabled_caps():
-                self.add_message(f"<{self.nick}> {text}", self.ui.colors["my_message"], context_name=active_ctx_name)
+                self.add_message(f"<{self.nick}> {text}", "my_message", context_name=active_ctx_name)
             elif self.echo_sent_to_status:
-                self.add_message(f"To {active_ctx_name}: <{self.nick}> {text}", self.ui.colors["my_message"], context_name="Status")
+                self.add_message(f"To {active_ctx_name}: <{self.nick}> {text}", "my_message", context_name="Status")
         else:
             self._add_status_message(
                 f"Cannot send messages to '{active_ctx_name}' (type: {active_ctx.type}). Try a command like /msg.",

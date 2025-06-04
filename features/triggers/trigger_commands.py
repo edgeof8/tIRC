@@ -57,7 +57,7 @@ class TriggerCommands:
         )
         self.client.add_message(
             usage,
-            self.client.ui.colors["system"],
+            "system",
             context_name=self.client.context_manager.active_context_name or "Status",
         )
 
@@ -72,7 +72,7 @@ class TriggerCommands:
         if len(args) < 4:
             self.client.add_message(
                 usage_msg,
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -84,12 +84,19 @@ class TriggerCommands:
         if action_type_str_upper not in [at.name for at in ActionType]:
             self.client.add_message(
                 f"Invalid action type '{action_type_input}'. Must be CMD or PY.\n{usage_msg}",
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
             return True
 
+        if not self.client.trigger_manager:
+            self.client.add_message(
+                "Trigger system is disabled. Cannot add trigger.",
+                "error",
+                context_name=self.client.context_manager.active_context_name or "Status",
+            )
+            return True
         trigger_id = self.client.trigger_manager.add_trigger(
             event_type_str, pattern, action_type_str_upper, action_content_str
         )
@@ -97,14 +104,14 @@ class TriggerCommands:
         if trigger_id is not None:
             self.client.add_message(
                 f"Trigger added with ID {trigger_id}",
-                self.client.ui.colors["system"],
+                "system",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
         else:
             self.client.add_message(
                 f"Failed to add trigger. Check event type ('{event_type_str}'), pattern, or action type ('{action_type_str_upper}').",
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -114,13 +121,20 @@ class TriggerCommands:
         """Handle /on list [event]."""
         # args_str might be empty or contain the event type
         event_type = args_str.strip() if args_str else None
+        if not self.client.trigger_manager:
+            self.client.add_message(
+                "Trigger system is disabled. Cannot list triggers.",
+                "error",
+                context_name=self.client.context_manager.active_context_name or "Status",
+            )
+            return True
         triggers = self.client.trigger_manager.list_triggers(event_type)
 
         if not triggers:
             self.client.add_message(
                 "No triggers found"
                 + (f" for event {event_type}" if event_type else ""),
-                self.client.ui.colors["system"],
+                "system",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -146,7 +160,7 @@ class TriggerCommands:
             )
             self.client.add_message(
                 trigger_info,
-                self.client.ui.colors["system"],
+                "system",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -157,7 +171,7 @@ class TriggerCommands:
         if not args_str.strip():
             self.client.add_message(
                 "Usage: /on remove <id>",
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -166,24 +180,31 @@ class TriggerCommands:
         try:
             trigger_id_str = args_str.strip()
             trigger_id = int(trigger_id_str)
+            if not self.client.trigger_manager:
+                self.client.add_message(
+                    "Trigger system is disabled. Cannot remove trigger.",
+                    "error",
+                    context_name=self.client.context_manager.active_context_name or "Status",
+                )
+                return True
             if self.client.trigger_manager.remove_trigger(trigger_id):
                 self.client.add_message(
                     f"Trigger {trigger_id} removed",
-                    self.client.ui.colors["system"],
+                    "system",
                     context_name=self.client.context_manager.active_context_name
                     or "Status",
                 )
             else:
                 self.client.add_message(
                     f"Trigger {trigger_id} not found",
-                    self.client.ui.colors["error"],
+                    "error",
                     context_name=self.client.context_manager.active_context_name
                     or "Status",
                 )
         except ValueError:
             self.client.add_message(
                 "Invalid trigger ID",
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -194,7 +215,7 @@ class TriggerCommands:
         if not args_str.strip():
             self.client.add_message(
                 "Usage: /on enable <id>",
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -203,24 +224,31 @@ class TriggerCommands:
         try:
             trigger_id_str = args_str.strip()
             trigger_id = int(trigger_id_str)
+            if not self.client.trigger_manager:
+                self.client.add_message(
+                    "Trigger system is disabled. Cannot enable trigger.",
+                    "error",
+                    context_name=self.client.context_manager.active_context_name or "Status",
+                )
+                return True
             if self.client.trigger_manager.set_trigger_enabled(trigger_id, True):
                 self.client.add_message(
                     f"Trigger {trigger_id} enabled",
-                    self.client.ui.colors["system"],
+                    "system",
                     context_name=self.client.context_manager.active_context_name
                     or "Status",
                 )
             else:
                 self.client.add_message(
                     f"Trigger {trigger_id} not found",
-                    self.client.ui.colors["error"],
+                    "error",
                     context_name=self.client.context_manager.active_context_name
                     or "Status",
                 )
         except ValueError:
             self.client.add_message(
                 "Invalid trigger ID",
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -231,7 +259,7 @@ class TriggerCommands:
         if not args_str.strip():
             self.client.add_message(
                 "Usage: /on disable <id>",
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
@@ -240,24 +268,31 @@ class TriggerCommands:
         try:
             trigger_id_str = args_str.strip()
             trigger_id = int(trigger_id_str)
+            if not self.client.trigger_manager:
+                self.client.add_message(
+                    "Trigger system is disabled. Cannot disable trigger.",
+                    "error",
+                    context_name=self.client.context_manager.active_context_name or "Status",
+                )
+                return True
             if self.client.trigger_manager.set_trigger_enabled(trigger_id, False):
                 self.client.add_message(
                     f"Trigger {trigger_id} disabled",
-                    self.client.ui.colors["system"],
+                    "system",
                     context_name=self.client.context_manager.active_context_name
                     or "Status",
                 )
             else:
                 self.client.add_message(
                     f"Trigger {trigger_id} not found",
-                    self.client.ui.colors["error"],
+                    "error",
                     context_name=self.client.context_manager.active_context_name
                     or "Status",
                 )
         except ValueError:
             self.client.add_message(
                 "Invalid trigger ID",
-                self.client.ui.colors["error"],
+                "error",
                 context_name=self.client.context_manager.active_context_name
                 or "Status",
             )
