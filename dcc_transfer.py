@@ -3,6 +3,7 @@ import threading
 import time
 import os
 import socket
+import hashlib
 from enum import Enum, auto
 from typing import Optional, Callable, Any
 
@@ -66,7 +67,90 @@ class DCCTransfer:
         self.last_progress_update_time: Optional[float] = None
         self.last_bytes_at_progress_update: int = 0
 
+        # Checksum related attributes
+        self.expected_checksum: Optional[str] = None
+        self.calculated_checksum: Optional[str] = None
+        self.checksum_status: str = "Pending" # "Pending", "NotChecked", "Match", "Mismatch", "SenderDidNotProvide", "AlgorithmMismatch"
+        self.checksum_algorithm: Optional[str] = None # Algorithm used by sender or preferred by us
+
         logger.info(f"DCCTransfer object created: ID={self.transfer_id}, Type={self.transfer_type.name}, Peer={self.peer_nick}, File='{self.original_filename}', Size={self.filesize}, LocalPath='{self.local_filepath}'")
+
+    def _calculate_file_checksum(self) -> Optional[str]:
+        """Calculates checksum of the local file."""
+        if not self.local_filepath or not os.path.exists(self.local_filepath):
+            logger.error(f"[{self.transfer_id}] File not found for checksum: {self.local_filepath}")
+            return None
+
+        algo_name = self.dcc_manager.dcc_config.get("checksum_algorithm", "md5")
+        if algo_name == "none":
+            return None
+
+        try:
+            hasher = hashlib.new(algo_name)
+        except ValueError:
+            logger.error(f"[{self.transfer_id}] Unsupported checksum algorithm: {algo_name}")
+            self.checksum_status = f"Error: BadAlgo ({algo_name})"
+            return None
+
+        try:
+            with open(self.local_filepath, "rb") as f:
+                while True:
+                    chunk = f.read(8192) # Read in chunks
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except IOError as e:
+            logger.error(f"[{self.transfer_id}] Error reading file for checksum '{self.local_filepath}': {e}")
+            self.checksum_status = "Error: FileRead"
+            return None
+
+    def set_expected_checksum(self, algorithm: str, checksum_value: str):
+        """Called by DCCManager when sender provides a checksum."""
+        logger.info(f"[{self.transfer_id}] Received expected checksum: Algo={algorithm}, Value={checksum_value[:10]}...")
+        self.expected_checksum = checksum_value
+        # Store the algorithm the sender used, for a more precise status later
+        # This is important if our config prefers a different one but sender sent one we support.
+        self.checksum_algorithm = algorithm.lower()
+
+        # If we already calculated our checksum, compare now
+        if self.calculated_checksum:
+            self._compare_checksums()
+
+    def _compare_checksums(self):
+        """Compares calculated and expected checksums."""
+        if not self.dcc_manager.dcc_config.get("checksum_verify", False) or \
+           self.dcc_manager.dcc_config.get("checksum_algorithm", "none") == "none":
+            self.checksum_status = "NotChecked"
+            return
+
+        if not self.expected_checksum:
+            self.checksum_status = "SenderDidNotProvide"
+            logger.warning(f"[{self.transfer_id}] Cannot compare checksums: Sender did not provide one.")
+            return
+
+        if not self.calculated_checksum:
+            self.checksum_status = "Error: LocalCalcFailed" # Should have been calculated if transfer completed
+            logger.warning(f"[{self.transfer_id}] Cannot compare checksums: Local checksum not calculated.")
+            return
+
+        # Check if algorithm used by sender matches what we might expect or support
+        # For now, we assume if sender sent one, we use that algo for comparison if we support it.
+        # A stricter check could be if self.checksum_algorithm (from sender) matches self.dcc_manager.dcc_config.get("checksum_algorithm")
+        # but that might be too restrictive if sender uses SHA1 and we prefer MD5 but support both.
+        # The key is that hashlib.new(self.checksum_algorithm) must have worked for our local calculation.
+
+        if self.calculated_checksum == self.expected_checksum:
+            self.checksum_status = "Match"
+            logger.info(f"[{self.transfer_id}] Checksum MATCH for '{self.original_filename}' (Algo: {self.checksum_algorithm or 'unknown'})")
+        else:
+            self.checksum_status = "Mismatch"
+            logger.warning(f"[{self.transfer_id}] Checksum MISMATCH for '{self.original_filename}' (Algo: {self.checksum_algorithm or 'unknown'}). Expected: {self.expected_checksum[:10]}..., Got: {self.calculated_checksum[:10]}...")
+
+        # Notify DCCManager about the checksum status update
+        if self.dcc_manager and hasattr(self.dcc_manager, 'update_transfer_checksum_result'):
+             self.dcc_manager.update_transfer_checksum_result(self.transfer_id, self.checksum_status)
+
 
     def _report_status(self, new_status: DCCTransferStatus, error_msg: Optional[str] = None):
         """Helper to call the status update callback."""
@@ -275,6 +359,24 @@ class DCCSendTransfer(DCCTransfer):
             if not self._stop_event.is_set() and self.bytes_transferred >= self.filesize:
                 logger.info(f"[{self.transfer_id}] File '{self.original_filename}' sent successfully.")
                 self._report_status(DCCTransferStatus.COMPLETED)
+
+                # After successful send, calculate and potentially send checksum
+                if self.dcc_manager.dcc_config.get("checksum_verify", False) and \
+                   self.dcc_manager.dcc_config.get("checksum_algorithm", "none") != "none":
+                    self.calculated_checksum = self._calculate_file_checksum()
+                    if self.calculated_checksum:
+                        algo = self.dcc_manager.dcc_config.get("checksum_algorithm")
+                        self.checksum_algorithm = algo # Store algo used for our calculation
+                        self.checksum_status = "CalculatedLocal" # Waiting for peer or for peer to request
+                        logger.info(f"[{self.transfer_id}] Calculated SEND checksum ({algo}): {self.calculated_checksum[:10]}...")
+                        # DCCManager will be responsible for sending this via CTCP
+                        if hasattr(self.dcc_manager, 'send_dcc_checksum_info'):
+                            self.dcc_manager.send_dcc_checksum_info(self.transfer_id, self.peer_nick, self.original_filename, algo, self.calculated_checksum)
+                    else:
+                        self.checksum_status = "Error: LocalCalcFailed"
+                else:
+                    self.checksum_status = "NotChecked"
+
             elif not self._stop_event.is_set() and self.bytes_transferred < self.filesize :
                 # This case might be hit if loop broke due to non-send error (e.g. file read issue not caught above)
                 if self.status not in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]:
@@ -393,6 +495,22 @@ class DCCReceiveTransfer(DCCTransfer):
             if not self._stop_event.is_set() and self.bytes_transferred >= self.filesize:
                 logger.info(f"[{self.transfer_id}] File '{self.original_filename}' received successfully.")
                 self._report_status(DCCTransferStatus.COMPLETED)
+
+                # After successful receive, calculate checksum if enabled
+                if self.dcc_manager.dcc_config.get("checksum_verify", False) and \
+                   self.dcc_manager.dcc_config.get("checksum_algorithm", "none") != "none":
+                    self.calculated_checksum = self._calculate_file_checksum()
+                    if self.calculated_checksum:
+                        logger.info(f"[{self.transfer_id}] Calculated RECV checksum ({self.dcc_manager.dcc_config.get('checksum_algorithm')}): {self.calculated_checksum[:10]}...")
+                        if self.expected_checksum: # If sender already sent their checksum
+                            self._compare_checksums()
+                        else:
+                            self.checksum_status = "CalculatedLocal_WaitingForPeer"
+                    else:
+                        self.checksum_status = "Error: LocalCalcFailed"
+                else:
+                    self.checksum_status = "NotChecked"
+
             elif not self._stop_event.is_set() and self.bytes_transferred < self.filesize:
                 # This case might be hit if loop broke due to non-recv error
                 if self.status not in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]:

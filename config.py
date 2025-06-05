@@ -97,6 +97,7 @@ DEFAULT_DCC_PORT_RANGE_END = 65535
 DEFAULT_DCC_TIMEOUT = 300  # 5 minutes
 DEFAULT_DCC_RESUME_ENABLED = True # For enabling resume capability
 DEFAULT_DCC_CHECKSUM_VERIFY = True # Phase 2
+DEFAULT_DCC_CHECKSUM_ALGORITHM = "md5" # md5, sha1, sha256, etc. (Phase 2)
 DEFAULT_DCC_BANDWIDTH_LIMIT = 0  # 0 = unlimited, bytes per second (Phase 4)
 DEFAULT_DCC_BLOCKED_EXTENSIONS = ['.exe', '.bat', '.com', '.scr', '.vbs', '.pif']
 DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT = 120 # Seconds for a passive mode token to be valid (Phase 2)
@@ -558,6 +559,7 @@ DCC_PORT_RANGE_END = get_config_value("DCC", "port_range_end", DEFAULT_DCC_PORT_
 DCC_TIMEOUT = get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
 DCC_RESUME_ENABLED = get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
 DCC_CHECKSUM_VERIFY = get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool) # Phase 2
+DCC_CHECKSUM_ALGORITHM = get_config_value("DCC", "checksum_algorithm", DEFAULT_DCC_CHECKSUM_ALGORITHM, str).lower() # Phase 2
 DCC_BANDWIDTH_LIMIT = get_config_value("DCC", "bandwidth_limit", DEFAULT_DCC_BANDWIDTH_LIMIT, int) # Phase 4
 DCC_BLOCKED_EXTENSIONS = get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
 DCC_PASSIVE_MODE_TOKEN_TIMEOUT = get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int) # Phase 2

@@ -184,6 +184,33 @@ def parse_dcc_ctcp(ctcp_message: str) -> Optional[Dict[str, Any]]:
             logger.warning(f"Error parsing DCC ACCEPT arguments '{args}': {e}", exc_info=True)
             return None
 
+    elif command == "DCCCHECKSUM": # New command
+        # DCC DCCCHECKSUM <filename> <algorithm> <checksum_value> <transfer_identifier>
+        if len(args) < 4:
+            logger.warning(f"DCCCHECKSUM message has too few arguments: {args}")
+            return None
+        try:
+            # Filename can contain spaces, so it's everything before the last 3 args
+            transfer_identifier = args[-1]
+            checksum_value = args[-2]
+            algorithm = args[-3]
+
+            num_fixed_args_at_end = 3 # algorithm, checksum_value, transfer_identifier
+            if len(args) > num_fixed_args_at_end:
+                 filename = " ".join(args[:-num_fixed_args_at_end])
+            else: # Should be at least 4 args, so filename must be args[0]
+                 filename = args[0]
+
+
+            parsed_data["filename"] = filename.strip('"')
+            parsed_data["algorithm"] = algorithm.lower()
+            parsed_data["checksum_value"] = checksum_value
+            parsed_data["transfer_identifier"] = transfer_identifier
+            return parsed_data
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Error parsing DCCCHECKSUM arguments '{args}': {e}", exc_info=True)
+            return None
+
     # Add other DCC commands like RESUME, etc. later (RESUME sender-side)
     else:
         logger.debug(f"Unsupported DCC command: {command}")
@@ -250,6 +277,11 @@ def format_dcc_accept_ctcp(filename: str, ip_str: str, port: int, position: int,
     else: # Typically for resume of active DCC
         return f"DCC ACCEPT {quoted_filename} {port} {position}" # Old format for resume without IP
 
+def format_dcc_checksum_ctcp(filename: str, algorithm: str, checksum: str, transfer_identifier: str) -> str:
+    """Formats a DCCCHECKSUM CTCP message string."""
+    quoted_filename = f'"{filename}"' if " " in filename else filename
+    return f"DCC DCCCHECKSUM {quoted_filename} {algorithm.lower()} {checksum} {transfer_identifier}"
+
 # Example Usage (for testing):
 if __name__ == "__main__":
     # Test IP conversion
@@ -298,3 +330,11 @@ if __name__ == "__main__":
 
     test_unknown_dcc = "DCC CHAT chat 2130706433 1236"
     print(f"Parsed '{test_unknown_dcc}': {parse_dcc_ctcp(test_unknown_dcc)}")
+
+    # Test DCCCHECKSUM parsing and formatting
+    formatted_checksum = format_dcc_checksum_ctcp("my movie.avi", "MD5", "a1b2c3d4e5f6", "transferXYZ")
+    print(f"Formatted DCCCHECKSUM: {formatted_checksum}")
+    # Expected: DCC DCCCHECKSUM "my movie.avi" md5 a1b2c3d4e5f6 transferXYZ
+    parsed_checksum = parse_dcc_ctcp(formatted_checksum) # Use the main parser
+    print(f"Parsed DCCCHECKSUM: {parsed_checksum}")
+    # Expected: {'dcc_command': 'DCCCHECKSUM', 'filename': 'my movie.avi', 'algorithm': 'md5', 'checksum_value': 'a1b2c3d4e5f6', 'transfer_identifier': 'transferXYZ'}

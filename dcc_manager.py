@@ -15,7 +15,7 @@ from typing import Dict, Optional, Any, List, Tuple
 import config as app_config # Use this to access config values
 
 from dcc_transfer import DCCTransfer, DCCSendTransfer, DCCReceiveTransfer, DCCTransferStatus, DCCTransferType
-from dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp, format_dcc_accept_ctcp
+from dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp, format_dcc_accept_ctcp, format_dcc_checksum_ctcp
 from dcc_security import validate_download_path, sanitize_filename
 
 logger = logging.getLogger("pyrc.dcc.manager")
@@ -50,6 +50,8 @@ class DCCManager:
             "timeout": getattr(app_config, "DCC_TIMEOUT", 300),
             "blocked_extensions": getattr(app_config, "DCC_BLOCKED_EXTENSIONS", []),
             "passive_mode_token_timeout": getattr(app_config, "DCC_PASSIVE_MODE_TOKEN_TIMEOUT", 120),
+            "checksum_verify": getattr(app_config, "DCC_CHECKSUM_VERIFY", True),
+            "checksum_algorithm": getattr(app_config, "DCC_CHECKSUM_ALGORITHM", "md5").lower(),
         }
 
     def _cleanup_stale_passive_offers(self):
@@ -300,6 +302,46 @@ class DCCManager:
                 # Find original transfer, set resume position, and restart.
             else:
                 logger.warning(f"Received ambiguous DCC ACCEPT from {nick}: {parsed_dcc}")
+
+        elif dcc_command == "DCCCHECKSUM":
+            # Parsed by dcc_protocol.py: {'dcc_command': 'DCCCHECKSUM', 'filename': ...,
+            # 'algorithm': ..., 'checksum_value': ..., 'transfer_identifier': ...}
+
+            transfer_identifier = parsed_dcc.get("transfer_identifier")
+            filename = parsed_dcc.get("filename")
+            algorithm = parsed_dcc.get("algorithm")
+            checksum_value = parsed_dcc.get("checksum_value")
+
+            if not all([transfer_identifier, filename, algorithm, checksum_value]):
+                logger.warning(f"Malformed DCCCHECKSUM from {nick}: {parsed_dcc}")
+                return
+
+            logger.info(f"Received DCCCHECKSUM from {nick} for transfer '{transfer_identifier}', file '{filename}', algo '{algorithm}'.")
+
+            transfer_to_update = None
+            with self._lock:
+                # Try to find by transfer_id first
+                if transfer_identifier in self.transfers:
+                    potential_transfer = self.transfers[transfer_identifier]
+                    if isinstance(potential_transfer, DCCReceiveTransfer) and potential_transfer.peer_nick == nick and potential_transfer.original_filename == filename:
+                        transfer_to_update = potential_transfer
+
+                # Fallback: If not found by ID, maybe by filename and nick (less reliable if multiple transfers of same file)
+                if not transfer_to_update:
+                    for tid, tr_obj in self.transfers.items():
+                        if isinstance(tr_obj, DCCReceiveTransfer) and tr_obj.peer_nick == nick and tr_obj.original_filename == filename and tr_obj.status == DCCTransferStatus.COMPLETED:
+                            # Only apply to completed transfers if ID didn't match, to avoid ambiguity
+                            transfer_to_update = tr_obj
+                            logger.info(f"DCCCHECKSUM matched by filename/nick for completed transfer {tid}")
+                            break
+
+            if transfer_to_update:
+                if hasattr(transfer_to_update, 'set_expected_checksum'):
+                    transfer_to_update.set_expected_checksum(algorithm, checksum_value)
+                else:
+                    logger.error(f"Transfer object {transfer_to_update.transfer_id} does not have set_expected_checksum method.")
+            else:
+                logger.warning(f"Received DCCCHECKSUM from {nick} for '{filename}' (ID/Ref: {transfer_identifier}), but no matching active/completed RECV transfer found.")
 
         else:
             self.client_logic.add_message(f"Received unhandled DCC '{dcc_command}' from {nick}: {' '.join(parsed_dcc.get('args',[]))}", "system", context_name="Status")
@@ -569,3 +611,52 @@ class DCCManager:
     def cleanup_old_transfers(self):
         # Placeholder for future: remove very old completed/failed transfers
         pass
+
+    def send_dcc_checksum_info(self, transfer_id: str, peer_nick: str, filename: str, algorithm: str, checksum: str):
+        """Called by DCCSendTransfer to send checksum info to the peer."""
+        if not self.dcc_config.get("checksum_verify", False) or self.dcc_config.get("checksum_algorithm", "none") == "none":
+            return # Checksums not enabled
+
+        logger.info(f"Sending DCCCHECKSUM for transfer {transfer_id}, file '{filename}', algo {algorithm} to {peer_nick}")
+
+        # Using transfer_id as the identifier for the peer to match
+        ctcp_checksum_msg = format_dcc_checksum_ctcp(filename, algorithm, checksum, transfer_id)
+
+        if ctcp_checksum_msg:
+            self.client_logic.send_ctcp_privmsg(peer_nick, ctcp_checksum_msg)
+            self.client_logic.add_message(f"Sent checksum ({algorithm}) for '{filename}' to {peer_nick}.", "debug", context_name="DCC")
+        else:
+            logger.error(f"Failed to format DCCCHECKSUM message for transfer {transfer_id}.")
+
+    def update_transfer_checksum_result(self, transfer_id: str, checksum_status: str):
+        """Called by DCCTransfer when checksum comparison is done."""
+        with self._lock:
+            transfer = self.transfers.get(transfer_id)
+
+        if transfer:
+            logger.info(f"Checksum status for transfer {transfer_id} ('{transfer.original_filename}'): {checksum_status}")
+            transfer.checksum_status = checksum_status # Ensure it's updated on the object if not already
+
+            # Notify UI
+            ui_message = f"DCC: Checksum for '{transfer.original_filename}' with {transfer.peer_nick}: {checksum_status}."
+            color_key = "system"
+            if checksum_status == "Mismatch":
+                color_key = "error"
+            elif checksum_status == "Match":
+                color_key = "info" # Or a success color
+
+            self.client_logic.add_message(ui_message, color_key, context_name="DCC")
+
+            # Dispatch event
+            self.event_manager.dispatch_event("DCC_TRANSFER_CHECKSUM_VALIDATED", {
+                "transfer_id": transfer_id,
+                "type": transfer.transfer_type.name,
+                "nick": transfer.peer_nick,
+                "filename": transfer.original_filename,
+                "checksum_status": checksum_status,
+                "expected_checksum": transfer.expected_checksum,
+                "calculated_checksum": transfer.calculated_checksum,
+                "algorithm_used": transfer.checksum_algorithm
+            })
+        else:
+            logger.warning(f"update_transfer_checksum_result called for unknown transfer_id: {transfer_id}")

@@ -1,0 +1,86 @@
+[Connection]
+; This section is legacy. Please define servers under [Server.<Name>] sections.
+; If no [Server.<Name>] sections with auto_connect=true are found,
+; the client may attempt to use these values as a last resort default.
+; default_server = irc.libera.chat
+; default_port = 6697
+; default_ssl = true
+; default_nick = PyTermUser
+; default_channels = #pylounge,#pyrc-test
+; password =
+; nickserv_password =
+; verify_ssl_cert = true
+auto_reconnect = true
+
+; --- Server Definitions ---
+; Define each server you connect to in its own section, like [Server.MyServerName]
+; The <Name> part is how you refer to it with /server <Name>
+
+[Server.LiberaChat]
+address = irc.libera.chat
+port = 6697
+ssl = true
+nick = PyRCUserL
+channels = #python,#pylounge
+; Optional:
+; username = my_irc_user        ; Defaults to nick if not set
+; realname = My Actual Name     ; Defaults to nick if not set
+; server_password = serverpass  ; For password-protected servers
+; nickserv_password = my_nick_password ; For NickServ identification
+; sasl_username = my_sasl_user  ; Defaults to nick
+; sasl_password = my_sasl_pass  ; Defaults to nickserv_password if SASL is used and this is not set
+verify_ssl_cert = true
+auto_connect = true             ; Set to true for one server to connect to on startup
+; desired_caps = sasl,multi-prefix,server-time ; Comma-separated list of IRCv3 capabilities to request
+
+[Server.EFNet]
+address = irc.efnet.org
+port = 6667
+ssl = false
+nick = PyRCUserE
+channels = #efnet,#help
+auto_connect = false
+; nickserv_password = your_efnet_pass
+
+[UI]
+message_history_lines = 500
+headless_message_history_lines = 100 ; Max lines kept in headless mode
+colorscheme = default
+
+[Logging]
+log_enabled = true
+log_file = logs/pyrc_core.log   ; Main client log file path, relative to PyRC root
+log_level = INFO                ; DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_max_bytes = 5242880         ; 5MB before rotation
+log_backup_count = 3            ; Number of old log files to keep
+channel_log_enabled = true      ; Enable/disable per-channel logging (into logs/ dir)
+; status_window_log_file = logs/client_status_messages.log ; Path for Status window log (default managed by config.py)
+
+[Features]
+enable_trigger_system = true    ; Enable the /on command and trigger system
+
+[Scripts]
+; disabled_scripts = script_one_name,another_script ; Comma-separated list of script filenames (without .py) to disable
+
+[DCC]
+enabled = true
+download_dir = downloads/       ; Default directory for DCC downloaded files
+; upload_dir = uploads/         ; (Currently less used by manager, defaults in code)
+auto_accept = false             ; Automatically accept all incoming DCC SEND offers (use with caution)
+; auto_accept_from_friends = true ; (Future feature) Auto-accept from a list of trusted nicks
+max_file_size = 104857600       ; Max file size in bytes (e.g., 100MB = 100 * 1024 * 1024)
+port_range_start = 1024         ; Start of port range for listening sockets (active DCC)
+port_range_end = 65535          ; End of port range
+timeout = 300                   ; Timeout in seconds for DCC connections/transfers
+resume_enabled = true           ; General flag for resume capability (actual resume logic is phased)
+checksum_verify = true          ; Enable checksum verification after transfer
+checksum_algorithm = md5        ; Algorithm for checksums (e.g., md5, sha1, sha256, none to disable)
+blocked_extensions = .exe,.bat,.com,.scr,.vbs,.pif,.cmd ; Comma-separated list of file extensions to auto-reject
+passive_token_timeout = 120     ; Seconds a passive DCC offer token remains valid if not accepted
+; virus_scan_cmd = ""           ; (Future feature) Command to run for virus scanning a downloaded file
+
+; [IgnoreList]
+; This section is automatically managed by /ignore, /unignore, /listignores commands.
+; Example:
+; *!*@some.host.com = ignored
+; BadUser!*@* = ignored
