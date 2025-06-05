@@ -167,38 +167,73 @@ class DCCTransfer:
 
 class DCCSendTransfer(DCCTransfer):
     """Handles outgoing DCC SEND transfers."""
-    def __init__(self, server_socket_for_active_send: Optional[socket.socket] = None, **kwargs):
+    def __init__(
+        self,
+        server_socket_for_active_send: Optional[socket.socket] = None,
+        is_passive_offer: bool = False,
+        passive_token: Optional[str] = None,
+        connect_to_ip: Optional[str] = None, # For passive sender, this is peer's IP
+        connect_to_port: Optional[int] = None, # For passive sender, this is peer's port
+        **kwargs
+    ):
         super().__init__(transfer_type=DCCTransferType.SEND, **kwargs)
-        self.server_socket = server_socket_for_active_send # Listening socket for active DCC
-        # For passive DCC SEND, self.socket will be set after connecting to receiver.
+        self.server_socket = server_socket_for_active_send # Listening socket for active DCC sender
+        self.is_passive_offer = is_passive_offer
+        self.passive_token = passive_token
+        self.connect_to_ip = connect_to_ip     # Peer's IP if we are connecting (passive send)
+        self.connect_to_port = connect_to_port # Peer's port if we are connecting (passive send)
+
+        if self.is_passive_offer and self.server_socket:
+            logger.warning(f"[{self.transfer_id}] DCCSendTransfer initialized as passive offer but also given a server_socket. Socket will be ignored initially.")
+            self.server_socket = None # Passive offers don't listen initially.
 
     def run(self):
         try:
             self._report_status(DCCTransferStatus.CONNECTING)
 
-            if self.server_socket: # Active DCC SEND: We are listening
+            if self.connect_to_ip and self.connect_to_port: # Passive DCC SEND: We connect to receiver
+                logger.info(f"[{self.transfer_id}] Passive DCC SEND: Connecting to peer {self.peer_nick} at {self.connect_to_ip}:{self.connect_to_port} for '{self.original_filename}'.")
+                try:
+                    self.socket = socket.create_connection((self.connect_to_ip, self.connect_to_port), timeout=15)
+                    logger.info(f"[{self.transfer_id}] Connected to peer for passive DCC SEND.")
+                except socket.timeout:
+                    logger.warning(f"[{self.transfer_id}] Timeout connecting to peer for passive DCC SEND.")
+                    self._report_status(DCCTransferStatus.TIMED_OUT, "Connection to peer timed out.")
+                    return
+                except socket.error as e:
+                    logger.error(f"[{self.transfer_id}] Socket error connecting for passive DCC SEND: {e}")
+                    self._report_status(DCCTransferStatus.FAILED, f"Network connect error: {e}")
+                    return
+
+            elif self.server_socket: # Active DCC SEND: We are listening
                 logger.info(f"[{self.transfer_id}] Active DCC SEND: Waiting for peer {self.peer_nick} to connect...")
                 try:
-                    # Timeout for accept should be handled by DCCManager before starting thread,
-                    # or by setting a timeout on the server_socket itself.
-                    # For now, assume DCCManager handles timeout for accept.
                     self.socket, addr = self.server_socket.accept()
-                    self.server_socket.close() # Close listening socket after one connection
+                    self.server_socket.close()
                     self.server_socket = None
                     logger.info(f"[{self.transfer_id}] Accepted connection from {addr} for sending '{self.original_filename}'.")
-                except socket.timeout:
+                except socket.timeout: # Should be set on server_socket by DCCManager if desired
                     logger.warning(f"[{self.transfer_id}] Timeout waiting for {self.peer_nick} to connect for DCC SEND.")
                     self._report_status(DCCTransferStatus.TIMED_OUT, "Peer connection timed out.")
                     return
-                except OSError as e: # Catch other socket errors like [Errno 9] Bad file descriptor if socket closed
+                except OSError as e:
                     logger.error(f"[{self.transfer_id}] Socket error while waiting for accept: {e}")
                     self._report_status(DCCTransferStatus.FAILED, f"Socket accept error: {e}")
                     return
 
-            # else: Passive DCC SEND: We need to connect (logic to be added in DCCManager to set self.socket)
             if not self.socket:
-                 logger.error(f"[{self.transfer_id}] Socket not set for DCC SEND. Aborting.")
-                 self._report_status(DCCTransferStatus.FAILED, "Internal error: socket not available for sending.")
+                 # This state can be reached if it's a passive offer that hasn't been accepted yet,
+                 # and start_transfer_thread was called prematurely by manager.
+                 # Or if active send socket setup failed.
+                 if self.is_passive_offer and not (self.connect_to_ip and self.connect_to_port):
+                     logger.info(f"[{self.transfer_id}] Passive offer for {self.original_filename} waiting for peer ACCEPT. Thread will exit if not connected.")
+                     # This thread shouldn't have been started by DCCManager yet for a passive offer.
+                     # If it is, it means the manager expects it to do something, which is an error in logic.
+                     # For now, consider it a setup issue.
+                     self._report_status(DCCTransferStatus.FAILED, "Passive offer not yet accepted by peer.")
+                 else:
+                    logger.error(f"[{self.transfer_id}] Socket not set for DCC SEND. Aborting.")
+                    self._report_status(DCCTransferStatus.FAILED, "Internal error: socket not available for sending.")
                  return
 
             self._report_status(DCCTransferStatus.TRANSFERRING)
@@ -256,33 +291,54 @@ class DCCSendTransfer(DCCTransfer):
 
 class DCCReceiveTransfer(DCCTransfer):
     """Handles incoming DCC RECEIVE transfers."""
-    def __init__(self, connect_to_ip: Optional[str] = None, connect_to_port: Optional[int] = None, **kwargs):
+    def __init__(
+        self,
+        connect_to_ip: Optional[str] = None,       # For active receive: peer's IP
+        connect_to_port: Optional[int] = None,     # For active receive: peer's port
+        server_socket_for_passive_recv: Optional[socket.socket] = None, # For passive receive: our listening socket
+        **kwargs
+    ):
         super().__init__(transfer_type=DCCTransferType.RECEIVE, **kwargs)
         self.connect_ip = connect_to_ip
         self.connect_port = connect_to_port
-        # For passive DCC RECV, self.socket will be set after accepting connection on a listening socket.
+        self.server_socket = server_socket_for_passive_recv # Our listening socket if we are passive receiver
 
     def run(self):
         try:
             self._report_status(DCCTransferStatus.CONNECTING)
 
-            if self.connect_ip and self.connect_port: # Active DCC RECV: We connect to sender
+            if self.server_socket: # Passive DCC RECV: We are listening
+                logger.info(f"[{self.transfer_id}] Passive DCC RECV: Waiting for peer {self.peer_nick} to connect to us for '{self.original_filename}'.")
+                try:
+                    self.socket, addr = self.server_socket.accept()
+                    self.server_socket.close() # Close listening socket after one connection
+                    self.server_socket = None
+                    logger.info(f"[{self.transfer_id}] Accepted connection from {addr} for passive DCC RECV.")
+                except socket.timeout: # Timeout should be set on server_socket by DCCManager
+                    logger.warning(f"[{self.transfer_id}] Timeout waiting for peer connection for passive DCC RECV.")
+                    self._report_status(DCCTransferStatus.TIMED_OUT, "Peer connection timed out.")
+                    return
+                except OSError as e:
+                    logger.error(f"[{self.transfer_id}] Socket error during accept for passive DCC RECV: {e}")
+                    self._report_status(DCCTransferStatus.FAILED, f"Socket accept error: {e}")
+                    return
+
+            elif self.connect_ip and self.connect_port: # Active DCC RECV: We connect to sender
                 logger.info(f"[{self.transfer_id}] Active DCC RECV: Connecting to {self.connect_ip}:{self.connect_port} for '{self.original_filename}'.")
                 try:
-                    self.socket = socket.create_connection((self.connect_ip, self.connect_port), timeout=15) # Shorter timeout for connect
-                    logger.info(f"[{self.transfer_id}] Connected to sender for DCC RECV.")
+                    self.socket = socket.create_connection((self.connect_ip, self.connect_port), timeout=15)
+                    logger.info(f"[{self.transfer_id}] Connected to sender for active DCC RECV.")
                 except socket.timeout:
-                    logger.warning(f"[{self.transfer_id}] Timeout connecting to sender for DCC RECV.")
+                    logger.warning(f"[{self.transfer_id}] Timeout connecting to sender for active DCC RECV.")
                     self._report_status(DCCTransferStatus.TIMED_OUT, "Connection to sender timed out.")
                     return
                 except socket.error as e:
-                    logger.error(f"[{self.transfer_id}] Socket error connecting to sender: {e}")
+                    logger.error(f"[{self.transfer_id}] Socket error connecting for active DCC RECV: {e}")
                     self._report_status(DCCTransferStatus.FAILED, f"Network connect error: {e}")
                     return
 
-            # else: Passive DCC RECV: We accept connection (logic to be added in DCCManager to set self.socket)
             if not self.socket:
-                 logger.error(f"[{self.transfer_id}] Socket not set for DCC RECV. Aborting.")
+                 logger.error(f"[{self.transfer_id}] Socket not established for DCC RECV. Aborting.")
                  self._report_status(DCCTransferStatus.FAILED, "Internal error: socket not available for receiving.")
                  return
 
