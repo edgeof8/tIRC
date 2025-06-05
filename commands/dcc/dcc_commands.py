@@ -53,23 +53,37 @@ def dcc_command_handler(client_logic: 'IRCClient_Logic', args_str: str):
                  return
 
             nick = parsed_known_args.nick
-            filepath = " ".join(parsed_known_args.filepath) # Join back if filepath had spaces
+            filepaths_to_send = parsed_known_args.filepath # This is already a list due to nargs='+'
             passive_mode = parsed_known_args.passive
 
-            result = dcc_m.initiate_send(nick, filepath, passive=passive_mode)
+            # Call the new initiate_sends method
+            results = dcc_m.initiate_sends(nick, filepaths_to_send, passive=passive_mode)
 
-            msg = f"DCC SEND to {nick} for '{os.path.basename(filepath)}'"
-            if passive_mode:
-                msg += " (passive offer)"
-                token = result.get('token')
-                if token:
-                    msg += f" with token {token[:8]}"
-            msg += f" (ID: {result.get('transfer_id', 'N/A')[:8]}) initiated."
+            # Process results and provide feedback
+            if results.get("transfers_started"):
+                for transfer_info in results["transfers_started"]:
+                    fn = transfer_info.get("filename", "Unknown file")
+                    tid = transfer_info.get("transfer_id", "N/A")[:8]
+                    token_info = ""
+                    if passive_mode and transfer_info.get("token"):
+                        token_info = f" (Passive Offer, token: {transfer_info.get('token')[:8]})"
+                    client_logic.add_message(f"DCC SEND of '{fn}' to {nick} initiated (ID: {tid}){token_info}.", "system", context_name=dcc_context_name)
 
-            if result.get("success"):
-                client_logic.add_message(msg, "system", context_name=dcc_context_name)
-            else:
-                client_logic.add_message(f"DCC SEND failed: {result.get('error', 'Unknown error')}", "error", context_name=dcc_context_name)
+            if results.get("files_queued"):
+                for queue_info in results["files_queued"]:
+                    fn = queue_info.get("filename", "Unknown file")
+                    client_logic.add_message(f"DCC SEND of '{fn}' to {nick} queued.", "system", context_name=dcc_context_name)
+
+            if results.get("errors"):
+                for error_info in results["errors"]:
+                    fn = error_info.get("filename", "Unknown file")
+                    err = error_info.get("error", "Unknown error")
+                    client_logic.add_message(f"DCC SEND for '{fn}' to {nick} failed: {err}", "error", context_name=dcc_context_name)
+
+            if not results.get("overall_success", True) and not results.get("transfers_started") and not results.get("files_queued") and not results.get("errors"):
+                 # Generic failure if no specific results were populated but overall_success is false
+                 client_logic.add_message(f"DCC SEND to {nick} failed: {results.get('error', 'No files processed or unknown error.')}", "error", context_name=dcc_context_name)
+
 
             if client_logic.context_manager.active_context_name != dcc_context_name:
                 client_logic.switch_active_context(dcc_context_name)

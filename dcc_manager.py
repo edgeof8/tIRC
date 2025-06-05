@@ -4,7 +4,8 @@ import os
 import socket
 import threading
 import uuid # For unique transfer IDs
-from typing import Dict, Optional, Any, List, Tuple
+from typing import Dict, Optional, Any, List, Tuple, Deque
+from collections import deque # Import Deque
 
 # Assuming these will be accessible via client_logic.config or similar
 # from config import (
@@ -26,8 +27,9 @@ class DCCManager:
         self.event_manager = event_manager_ref
         self.transfers: Dict[str, DCCTransfer] = {}
         self.pending_passive_offers: Dict[str, Dict[str, Any]] = {} # Key: token
+        self.send_queues: Dict[str, Deque[Dict[str, Any]]] = {} # Key: peer_nick, Value: Deque of file_info dicts
         self.dcc_config = self._load_dcc_config()
-        self._lock = threading.Lock() # To protect access to self.transfers, and pending_passive_offers
+        self._lock = threading.Lock() # To protect access to self.transfers, pending_passive_offers, and send_queues
 
         if not self.dcc_config.get("enabled", False):
             logger.info("DCCManager initialized, but DCC is disabled in configuration.")
@@ -123,24 +125,13 @@ class DCCManager:
                 logger.warning("Could not determine local IP via gethostname. Falling back to '127.0.0.1'.")
                 return "127.0.0.1"
 
-    def initiate_send(self, peer_nick: str, local_filepath: str, passive: bool = False) -> Dict[str, Any]:
-        """Initiates a DCC SEND. Active by default, or passive if specified."""
-        if not self.dcc_config.get("enabled"):
-            return {"success": False, "error": "DCC is disabled."}
+        def _execute_send(self, peer_nick: str, local_filepath: str, original_filename: str, filesize: int, passive: bool = False) -> Dict[str, Any]:
+            """Internal method to execute a single DCC SEND operation."""
+            # This method assumes local_filepath is valid and filesize is known.
+            # Basic enabled check is done by the public calling method.
 
-        abs_local_filepath = os.path.abspath(local_filepath)
-        if not os.path.isfile(abs_local_filepath):
-            return {"success": False, "error": f"File not found: {local_filepath}"}
+            abs_local_filepath = os.path.abspath(local_filepath) # Should already be absolute from initiate_sends
 
-        try:
-            filesize = os.path.getsize(abs_local_filepath)
-        except OSError as e:
-            return {"success": False, "error": f"Could not get file size for '{local_filepath}': {e}"}
-
-        if filesize > self.dcc_config["max_file_size"]:
-            return {"success": False, "error": f"File exceeds maximum size of {self.dcc_config['max_file_size']} bytes."}
-
-        original_filename = os.path.basename(local_filepath)
         transfer_id = self._generate_transfer_id()
         passive_token: Optional[str] = None
         ctcp_message: Optional[str] = None
@@ -197,7 +188,142 @@ class DCCManager:
             "filename": original_filename, "size": filesize, "is_passive": passive
         })
         self.client_logic.add_message(f"DCC SEND to {peer_nick} for '{original_filename}' ({filesize} bytes) initiated{status_message_suffix}", "system", context_name="DCC")
-        return {"success": True, "transfer_id": transfer_id, "token": passive_token if passive else None}
+        return {"success": True, "transfer_id": transfer_id, "token": passive_token if passive else None, "filename": original_filename}
+
+
+    def initiate_sends(self, peer_nick: str, local_filepaths: List[str], passive: bool = False) -> Dict[str, Any]:
+        """
+        Initiates DCC SEND for one or more files. Files are queued if a transfer to the same peer is active.
+        """
+        if not self.dcc_config.get("enabled"):
+            return {"success": False, "error": "DCC is disabled.", "transfers_started": [], "files_queued": [], "errors": []}
+
+        results: Dict[str, Any] = {
+            "transfers_started": [],
+            "files_queued": [],
+            "errors": [],
+            "overall_success": True # Becomes false if any critical error occurs
+        }
+
+        validated_files_to_process: List[Dict[str, Any]] = []
+
+        for fp_index, local_filepath_orig in enumerate(local_filepaths):
+            abs_local_filepath = os.path.abspath(local_filepath_orig)
+            original_filename = os.path.basename(abs_local_filepath)
+
+            if not os.path.isfile(abs_local_filepath):
+                err_msg = f"File not found: {original_filename} (path: {local_filepath_orig})"
+                logger.warning(f"DCC SEND: {err_msg}")
+                results["errors"].append({"filename": original_filename, "error": err_msg})
+                continue
+
+            try:
+                filesize = os.path.getsize(abs_local_filepath)
+            except OSError as e:
+                err_msg = f"Could not get file size for '{original_filename}': {e}"
+                logger.warning(f"DCC SEND: {err_msg}")
+                results["errors"].append({"filename": original_filename, "error": err_msg})
+                continue
+
+            if filesize > self.dcc_config["max_file_size"]:
+                err_msg = f"File '{original_filename}' exceeds maximum size of {self.dcc_config['max_file_size']} bytes."
+                logger.warning(f"DCC SEND: {err_msg}")
+                results["errors"].append({"filename": original_filename, "error": err_msg})
+                continue
+
+            validated_files_to_process.append({
+                "local_filepath": abs_local_filepath,
+                "original_filename": original_filename,
+                "filesize": filesize,
+                "passive": passive # All files in a single /dcc send command share the passive flag
+            })
+
+        if not validated_files_to_process:
+            results["overall_success"] = False # No valid files to process
+            if not results["errors"]: # If no specific file errors, add a generic one
+                 results["error"] = "No valid files provided for sending."
+            return results
+
+        with self._lock:
+            # Check if there's an active DCCSendTransfer to this peer
+            is_active_send_to_peer = any(
+                isinstance(t, DCCSendTransfer) and t.peer_nick == peer_nick and
+                t.status not in [DCCTransferStatus.COMPLETED, DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]
+                for t in self.transfers.values()
+            )
+
+            queue_exists_for_peer = peer_nick in self.send_queues and self.send_queues[peer_nick]
+
+            if is_active_send_to_peer or queue_exists_for_peer:
+                # Queue all validated files
+                if peer_nick not in self.send_queues:
+                    self.send_queues[peer_nick] = deque()
+
+                for file_info in validated_files_to_process:
+                    self.send_queues[peer_nick].append(file_info)
+                    results["files_queued"].append({"filename": file_info["original_filename"], "size": file_info["filesize"]})
+                    logger.info(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick}.")
+                    self.client_logic.add_message(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick}.", "system", context_name="DCC")
+            else:
+                # No active send or queue, start the first file and queue the rest
+                first_file_info = validated_files_to_process.pop(0)
+                exec_result = self._execute_send(
+                    peer_nick,
+                    first_file_info["local_filepath"],
+                    first_file_info["original_filename"],
+                    first_file_info["filesize"],
+                    first_file_info["passive"]
+                )
+                if exec_result.get("success"):
+                    results["transfers_started"].append({
+                        "filename": exec_result.get("filename", first_file_info["original_filename"]),
+                        "transfer_id": exec_result.get("transfer_id"),
+                        "token": exec_result.get("token")
+                    })
+                else:
+                    results["errors"].append({
+                        "filename": first_file_info["original_filename"],
+                        "error": exec_result.get("error", "Failed to start transfer")
+                    })
+                    results["overall_success"] = False # If first fails, mark overall as failed for now
+
+                # Queue remaining validated files
+                if validated_files_to_process:
+                    if peer_nick not in self.send_queues:
+                        self.send_queues[peer_nick] = deque()
+                    for file_info in validated_files_to_process:
+                        self.send_queues[peer_nick].append(file_info)
+                        results["files_queued"].append({"filename": file_info["original_filename"], "size": file_info["filesize"]})
+                        logger.info(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick} (after starting first).")
+                        self.client_logic.add_message(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick} (after starting first).", "system", context_name="DCC")
+
+        if not results["transfers_started"] and not results["files_queued"] and not results["errors"]:
+            results["error"] = "No files processed." # Should be caught by empty validated_files_to_process
+            results["overall_success"] = False
+
+        return results
+
+    def _process_next_in_send_queue(self, peer_nick: str):
+        """Checks the send queue for a peer and starts the next transfer if available."""
+        file_to_send_info: Optional[Dict[str, Any]] = None
+        with self._lock:
+            if peer_nick in self.send_queues and self.send_queues[peer_nick]:
+                file_to_send_info = self.send_queues[peer_nick].popleft()
+                if not self.send_queues[peer_nick]: # If queue is now empty
+                    del self.send_queues[peer_nick]
+                logger.info(f"Dequeued '{file_to_send_info['original_filename'] if file_to_send_info else 'N/A'}' for sending to {peer_nick}.")
+            else:
+                logger.debug(f"No more files in send queue for {peer_nick}.")
+
+        if file_to_send_info:
+            self.client_logic.add_message(f"Starting next queued DCC SEND of '{file_to_send_info['original_filename']}' to {peer_nick}.", "system", context_name="DCC")
+            self._execute_send(
+                peer_nick,
+                file_to_send_info["local_filepath"],
+                file_to_send_info["original_filename"],
+                file_to_send_info["filesize"],
+                file_to_send_info["passive"]
+            )
 
     def handle_incoming_dcc_ctcp(self, nick: str, userhost: str, ctcp_payload: str):
         """Handles a parsed DCC CTCP command from a peer."""
@@ -594,11 +720,15 @@ class DCCManager:
             # Clean up completed or failed transfers from active list?
             # Or keep them for a while for /dcc list. For now, keep.
             if status in [DCCTransferStatus.COMPLETED, DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]:
-                logger.info(f"Transfer {transfer_id} reached final state: {status.name}. It will remain in list for now.")
+                logger.info(f"Transfer {transfer_id} ('{transfer.original_filename}') reached final state: {status.name}.")
+                # If it's a send transfer, try to process the next in queue for that peer
+                if isinstance(transfer, DCCSendTransfer):
+                    logger.debug(f"Send transfer {transfer_id} for {transfer.peer_nick} ended. Checking send queue.")
+                    self._process_next_in_send_queue(transfer.peer_nick)
                 # Consider removing from self.transfers after a delay or if list gets too long.
 
             self.client_logic.add_message(
-                f"DCC {transfer.transfer_type.name} {transfer.original_filename} with {transfer.peer_nick}: {status.name}"
+                f"DCC {transfer.transfer_type.name} '{transfer.original_filename}' with {transfer.peer_nick}: {status.name}"
                 f"{f' ({error_message})' if error_message else ''}",
                 "error" if status in [DCCTransferStatus.FAILED, DCCTransferStatus.TIMED_OUT] else "system",
                 context_name="DCC"
