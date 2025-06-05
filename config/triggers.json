@@ -68,5 +68,19 @@
         "updated_at": 1749106977.6945078,
         "created_by": "system",
         "description": "Handle QUIT events"
+    },
+    {
+        "id": 6,
+        "event_type": "TEXT",
+        "pattern": ".*\\bPYRC_UNIQUE_ACTIVATION_925975\\b.*",
+        "action_type": "COMMAND",
+        "action_content": "/msg #pyrc-testing-lean ACTION_CONFIRMED_FOR_TRIGGER_25975",
+        "is_enabled": false,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749109090.592976,
+        "updated_at": 1749109095.2976348,
+        "created_by": "user",
+        "description": ""
     }
 ]

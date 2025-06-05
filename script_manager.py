@@ -514,11 +514,13 @@ class ScriptManager:
             if script_name not in commands_by_script:
                 commands_by_script[script_name] = {}
 
-            commands_by_script[script_name][cmd_name] = {
-                "help_text": cmd_data.get("help_text", "No help text provided."),
-                "aliases": cmd_data.get("aliases", []),
-                "script_name": script_name,
-            }
+            # Only add if not already present (to avoid duplicates)
+            if cmd_name not in commands_by_script[script_name]:
+                commands_by_script[script_name][cmd_name] = {
+                    "help_text": cmd_data.get("help_text", "No help text provided."),
+                    "aliases": cmd_data.get("aliases", []),
+                    "script_name": script_name,
+                }
 
         # Then, override with explicitly registered help texts
         for cmd_name, help_data in self.registered_help_texts.items():
@@ -527,11 +529,19 @@ class ScriptManager:
                 if script_name not in commands_by_script:
                     commands_by_script[script_name] = {}
 
+                # Override or add the command data
                 commands_by_script[script_name][cmd_name] = {
                     "help_text": help_data.get("help_text", "No help text provided."),
                     "aliases": help_data.get("aliases", []),
                     "script_name": script_name,
                 }
+
+        # Remove any empty script sections
+        commands_by_script = {
+            script_name: commands
+            for script_name, commands in commands_by_script.items()
+            if commands
+        }
 
         return commands_by_script
 
