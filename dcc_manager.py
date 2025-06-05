@@ -19,7 +19,9 @@ import config as app_config # Use this to access config values
 from dcc_transfer import DCCTransfer, DCCSendTransfer, DCCReceiveTransfer, DCCTransferStatus, DCCTransferType
 from dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp, format_dcc_accept_ctcp, format_dcc_checksum_ctcp, format_dcc_resume_ctcp
 from dcc_security import validate_download_path, sanitize_filename
-from dcc_ctcp_handler import DCCCTCPHandler # Added import
+from dcc_ctcp_handler import DCCCTCPHandler
+from dcc_passive_offer_manager import DCCPassiveOfferManager
+from dcc_send_manager import DCCSendManager # Added import
 
 logger = logging.getLogger("pyrc.dcc.manager") # For general manager operations
 dcc_event_logger = logging.getLogger("pyrc.dcc.events") # For detailed DCC events
@@ -83,11 +85,13 @@ class DCCManager:
         self.client_logic = client_logic_ref
         self.event_manager = event_manager_ref
         self.transfers: Dict[str, DCCTransfer] = {}
-        self.pending_passive_offers: Dict[str, Dict[str, Any]] = {} # Key: token
-        self.send_queues: Dict[str, Deque[Dict[str, Any]]] = {} # Key: peer_nick, Value: Deque of file_info dicts
+        # self.pending_passive_offers: Dict[str, Dict[str, Any]] = {} # Replaced by passive_offer_manager
+        # self.send_queues: Dict[str, Deque[Dict[str, Any]]] = {} # Replaced by send_manager
         self.dcc_config = self._load_dcc_config()
-        self._lock = threading.Lock() # To protect access to self.transfers, pending_passive_offers, and send_queues
-        self.ctcp_handler = DCCCTCPHandler(self) # Instantiate the CTCP handler
+        self._lock = threading.Lock() # Protects self.transfers. Used by sub-managers.
+        self.ctcp_handler = DCCCTCPHandler(self)
+        self.passive_offer_manager = DCCPassiveOfferManager(self)
+        self.send_manager = DCCSendManager(self) # Instantiate send manager
 
         # Setup the dedicated DCC logger instance
         # This logger will be used by DCCManager and passed to DCCTransfer instances
@@ -122,23 +126,11 @@ class DCCManager:
         }
 
     def _cleanup_stale_passive_offers(self):
-        """Removes pending passive offers that have timed out."""
-        now = time.time()
-        stale_tokens = []
-        timeout_duration = self.dcc_config.get("passive_mode_token_timeout", 120)
-
-        with self._lock: # Ensure thread-safe access
-            for token, offer_details in self.pending_passive_offers.items():
-                if now - offer_details.get("timestamp", 0) > timeout_duration:
-                    stale_tokens.append(token)
-
-            for token in stale_tokens:
-                del self.pending_passive_offers[token]
-                self.dcc_event_logger.info(f"Removed stale passive DCC offer with token {token} due to timeout.")
-
-        if stale_tokens:
-            self.client_logic.add_message(f"Cleaned up {len(stale_tokens)} stale passive DCC offer(s).", "debug", context_name="DCC")
-            self.dcc_event_logger.debug(f"Cleaned up {len(stale_tokens)} stale passive DCC offer(s).")
+        """Removes pending passive offers that have timed out by delegating to DCCPassiveOfferManager."""
+        cleaned_count = self.passive_offer_manager.cleanup_stale_offers()
+        if cleaned_count > 0:
+            self.client_logic.add_message(f"Cleaned up {cleaned_count} stale passive DCC offer(s).", "debug", context_name="DCC")
+            # DCCPassiveOfferManager already logs details
 
 
     def _ensure_dir_exists(self, dir_path: str):
@@ -191,278 +183,19 @@ class DCCManager:
                 logger.warning("Could not determine local IP via gethostname. Falling back to '127.0.0.1'.")
                 return "127.0.0.1"
 
-    def _execute_send(self, peer_nick: str, local_filepath: str, original_filename: str, filesize: int, passive: bool = False) -> Dict[str, Any]:
-        """Internal method to execute a single DCC SEND operation."""
-        self.dcc_event_logger.info(f"Executing DCC SEND: Peer={peer_nick}, File='{original_filename}', Size={filesize}, Passive={passive}, Path='{local_filepath}'")
-        # This method assumes local_filepath is valid and filesize is known.
-        # Basic enabled check is done by the public calling method.
-
-        abs_local_filepath = os.path.abspath(local_filepath) # Should already be absolute from initiate_sends
-
-        # Check for existing failed/cancelled transfer to offer resume
-        if self.dcc_config.get("resume_enabled", True) and not passive: # Resume primarily for active sends for now
-            with self._lock:
-                for tid, old_transfer in list(self.transfers.items()): # list() for safe iteration if we modify
-                    if (isinstance(old_transfer, DCCSendTransfer) and
-                        old_transfer.peer_nick == peer_nick and
-                        old_transfer.original_filename == original_filename and
-                        old_transfer.status in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT] and
-                        old_transfer.bytes_transferred > 0 and
-                        old_transfer.bytes_transferred < old_transfer.filesize):
-
-                        resume_offset = old_transfer.bytes_transferred
-                        self.dcc_event_logger.info(f"Found previous incomplete send of '{original_filename}' to {peer_nick} at offset {resume_offset}. Offering RESUME.")
-
-                        # Clean up the old transfer object from the main list if we're replacing it with a resume attempt
-                        # Or mark it differently. For now, let's remove the old one to avoid confusion.
-                        # A more robust system might keep it for history or multiple resume attempts.
-                        # del self.transfers[tid]
-                        # self.dcc_event_logger.debug(f"Removed old transfer object {tid} before offering resume.")
-
-
-                        socket_info_resume = self._get_listening_socket()
-                        if not socket_info_resume:
-                            self.dcc_event_logger.error(f"Could not get listening socket for DCC RESUME of '{original_filename}' to {peer_nick}.")
-                            # Fall through to normal send if socket fails for resume
-                            break # Break from loop, proceed to normal send below
-
-                        listening_socket_resume, port_resume = socket_info_resume
-
-                        ctcp_resume_message = format_dcc_resume_ctcp(original_filename, port_resume, resume_offset)
-                        if not ctcp_resume_message:
-                            listening_socket_resume.close()
-                            self.dcc_event_logger.error(f"Failed to format DCC RESUME CTCP for '{original_filename}'.")
-                            break # Fall through
-
-                        new_transfer_id_resume = self._generate_transfer_id()
-                        resume_send_args: Dict[str, Any] = {
-                            "transfer_id": new_transfer_id_resume,
-                            "peer_nick": peer_nick,
-                            "filename": original_filename,
-                            "filesize": filesize, # Total original filesize
-                            "local_filepath": abs_local_filepath,
-                            "dcc_manager_ref": self,
-                            "server_socket_for_active_send": listening_socket_resume,
-                            "resume_offset": resume_offset, # Key part for resume
-                            "dcc_event_logger": self.dcc_event_logger
-                        }
-                        resume_transfer = DCCSendTransfer(**resume_send_args)
-                        self.transfers[new_transfer_id_resume] = resume_transfer # Add new transfer attempt
-
-                        self.client_logic.send_ctcp_privmsg(peer_nick, ctcp_resume_message)
-                        resume_transfer._report_status(DCCTransferStatus.NEGOTIATING, f"DCC RESUME offered. Waiting for {peer_nick} to connect on port {port_resume} for '{original_filename}' from offset {resume_offset}.")
-                        resume_transfer.start_transfer_thread() # Starts listening
-
-                        self.event_manager.dispatch_event("DCC_TRANSFER_QUEUED", { # Or a new event like DCC_RESUME_OFFERED
-                            "transfer_id": new_transfer_id_resume, "type": "SEND_RESUME", "nick": peer_nick,
-                            "filename": original_filename, "size": filesize, "resume_offset": resume_offset
-                        })
-                        self.client_logic.add_message(f"Offering to RESUME DCC SEND to {peer_nick} for '{original_filename}' from offset {resume_offset}. Waiting for peer on port {port_resume}.", "system", context_name="DCC")
-                        return {"success": True, "transfer_id": new_transfer_id_resume, "filename": original_filename, "resumed": True}
-            # End of resume check block
-
-        transfer_id = self._generate_transfer_id()
-        self.dcc_event_logger.debug(f"Generated Transfer ID: {transfer_id} for SEND to {peer_nick} of '{original_filename}'")
-        passive_token: Optional[str] = None
-        ctcp_message: Optional[str] = None
-        send_transfer_args: Dict[str, Any] = {
-            "transfer_id": transfer_id,
-            "peer_nick": peer_nick,
-            "filename": original_filename,
-            "filesize": filesize,
-            "local_filepath": abs_local_filepath,
-            "dcc_manager_ref": self,
-        }
-        status_message_suffix = ""
-
-        if passive:
-            passive_token = self._generate_transfer_id() # Use another UUID for token
-            # For passive send, IP can be "0" or actual IP. Port is 0.
-            # Sending "0" for IP might be problematic for some clients; actual IP is better if known.
-            local_ip_for_ctcp = self._get_local_ip_for_ctcp() # Try to get a real IP
-            ctcp_message = format_dcc_send_ctcp(original_filename, local_ip_for_ctcp, 0, filesize, passive_token)
-            send_transfer_args["is_passive_offer"] = True
-            send_transfer_args["passive_token"] = passive_token
-            status_message_suffix = f" (Passive Offer, token: {passive_token[:8]})"
-            if not ctcp_message:
-                self.dcc_event_logger.error(f"Failed to format passive DCC SEND CTCP for '{original_filename}' to {peer_nick}.")
-                return {"success": False, "error": "Failed to format passive DCC SEND CTCP message."}
-            self.dcc_event_logger.debug(f"Passive SEND to {peer_nick} for '{original_filename}'. CTCP: {ctcp_message.strip()}")
-        else: # Active DCC
-            socket_info = self._get_listening_socket()
-            if not socket_info:
-                self.dcc_event_logger.error(f"Could not get listening socket for active SEND of '{original_filename}' to {peer_nick}.")
-                return {"success": False, "error": "Could not create listening socket for active DCC SEND."}
-            listening_socket, port = socket_info
-            local_ip_for_ctcp = self._get_local_ip_for_ctcp()
-            ctcp_message = format_dcc_send_ctcp(original_filename, local_ip_for_ctcp, port, filesize)
-            send_transfer_args["server_socket_for_active_send"] = listening_socket
-            status_message_suffix = f". Waiting for connection on port {port}."
-            if not ctcp_message:
-                listening_socket.close()
-                self.dcc_event_logger.error(f"Failed to format active DCC SEND CTCP for '{original_filename}' to {peer_nick}.")
-                return {"success": False, "error": "Failed to format active DCC SEND CTCP message."}
-            self.dcc_event_logger.debug(f"Active SEND to {peer_nick} for '{original_filename}'. CTCP: {ctcp_message.strip()}")
-
-        # Pass the dcc_event_logger to the transfer object
-        send_transfer_args["dcc_event_logger"] = self.dcc_event_logger
-        send_transfer = DCCSendTransfer(**send_transfer_args)
-
-        with self._lock:
-            self.transfers[transfer_id] = send_transfer
-
-        self.client_logic.send_ctcp_privmsg(peer_nick, ctcp_message)
-
-        if passive:
-            send_transfer._report_status(DCCTransferStatus.NEGOTIATING, f"Passive offer sent. Waiting for peer to ACCEPT with token.{status_message_suffix}")
-            # For passive, thread starts when ACCEPT is received from peer.
-        else: # Active
-            send_transfer._report_status(DCCTransferStatus.NEGOTIATING, f"Waiting for peer to connect.{status_message_suffix}")
-            send_transfer.start_transfer_thread() # Active send starts listening immediately
-
-        self.event_manager.dispatch_event("DCC_TRANSFER_QUEUED", {
-            "transfer_id": transfer_id, "type": "SEND", "nick": peer_nick,
-            "filename": original_filename, "size": filesize, "is_passive": passive
-        })
-        self.client_logic.add_message(f"DCC SEND to {peer_nick} for '{original_filename}' ({filesize} bytes) initiated{status_message_suffix}", "system", context_name="DCC")
-        return {"success": True, "transfer_id": transfer_id, "token": passive_token if passive else None, "filename": original_filename}
-
+    # _execute_send method is removed as its logic is now in DCCSendManager._execute_send_operation
 
     def initiate_sends(self, peer_nick: str, local_filepaths: List[str], passive: bool = False) -> Dict[str, Any]:
         """
-        Initiates DCC SEND for one or more files. Files are queued if a transfer to the same peer is active.
+        Initiates DCC SEND for one or more files. Delegates to DCCSendManager.
         """
-        if not self.dcc_config.get("enabled"):
+        if not self.dcc_config.get("enabled"): # Keep basic enabled check here
             return {"success": False, "error": "DCC is disabled.", "transfers_started": [], "files_queued": [], "errors": []}
-
-        results: Dict[str, Any] = {
-            "transfers_started": [],
-            "files_queued": [],
-            "errors": [],
-            "overall_success": True # Becomes false if any critical error occurs
-        }
-
-        validated_files_to_process: List[Dict[str, Any]] = []
-
-        for fp_index, local_filepath_orig in enumerate(local_filepaths):
-            abs_local_filepath = os.path.abspath(local_filepath_orig)
-            original_filename = os.path.basename(abs_local_filepath)
-
-            if not os.path.isfile(abs_local_filepath):
-                err_msg = f"File not found: {original_filename} (path: {local_filepath_orig})"
-                self.dcc_event_logger.warning(f"DCC SEND to {peer_nick}: {err_msg}")
-                results["errors"].append({"filename": original_filename, "error": err_msg})
-                continue
-
-            try:
-                filesize = os.path.getsize(abs_local_filepath)
-            except OSError as e:
-                err_msg = f"Could not get file size for '{original_filename}': {e}"
-                self.dcc_event_logger.warning(f"DCC SEND to {peer_nick}: {err_msg}")
-                results["errors"].append({"filename": original_filename, "error": err_msg})
-                continue
-
-            if filesize > self.dcc_config["max_file_size"]:
-                err_msg = f"File '{original_filename}' exceeds maximum size of {self.dcc_config['max_file_size']} bytes."
-                self.dcc_event_logger.warning(f"DCC SEND to {peer_nick}: {err_msg}")
-                results["errors"].append({"filename": original_filename, "error": err_msg})
-                continue
-
-            validated_files_to_process.append({
-                "local_filepath": abs_local_filepath,
-                "original_filename": original_filename,
-                "filesize": filesize,
-                "passive": passive # All files in a single /dcc send command share the passive flag
-            })
-
-        if not validated_files_to_process:
-            results["overall_success"] = False # No valid files to process
-            if not results["errors"]: # If no specific file errors, add a generic one
-                 results["error"] = "No valid files provided for sending."
-            return results
-
-        with self._lock:
-            # Check if there's an active DCCSendTransfer to this peer
-            is_active_send_to_peer = any(
-                isinstance(t, DCCSendTransfer) and t.peer_nick == peer_nick and
-                t.status not in [DCCTransferStatus.COMPLETED, DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]
-                for t in self.transfers.values()
-            )
-
-            queue_exists_for_peer = peer_nick in self.send_queues and self.send_queues[peer_nick]
-
-            if is_active_send_to_peer or queue_exists_for_peer:
-                # Queue all validated files
-                if peer_nick not in self.send_queues:
-                    self.send_queues[peer_nick] = deque()
-
-                for file_info in validated_files_to_process:
-                    self.send_queues[peer_nick].append(file_info)
-                    results["files_queued"].append({"filename": file_info["original_filename"], "size": file_info["filesize"]})
-                    self.dcc_event_logger.info(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick}. Queue size: {len(self.send_queues[peer_nick])}")
-                    self.client_logic.add_message(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick}.", "system", context_name="DCC")
-            else:
-                # No active send or queue, start the first file and queue the rest
-                self.dcc_event_logger.info(f"No active send or queue for {peer_nick}. Starting first file and queuing rest.")
-                first_file_info = validated_files_to_process.pop(0)
-                exec_result = self._execute_send(
-                    peer_nick,
-                    first_file_info["local_filepath"],
-                    first_file_info["original_filename"],
-                    first_file_info["filesize"],
-                    first_file_info["passive"]
-                )
-                if exec_result.get("success"):
-                    results["transfers_started"].append({
-                        "filename": exec_result.get("filename", first_file_info["original_filename"]),
-                        "transfer_id": exec_result.get("transfer_id"),
-                        "token": exec_result.get("token")
-                    })
-                else:
-                    results["errors"].append({
-                        "filename": first_file_info["original_filename"],
-                        "error": exec_result.get("error", "Failed to start transfer")
-                    })
-                    results["overall_success"] = False # If first fails, mark overall as failed for now
-
-                # Queue remaining validated files
-                if validated_files_to_process:
-                    if peer_nick not in self.send_queues:
-                        self.send_queues[peer_nick] = deque()
-                    for file_info in validated_files_to_process:
-                        self.send_queues[peer_nick].append(file_info)
-                        results["files_queued"].append({"filename": file_info["original_filename"], "size": file_info["filesize"]})
-                        self.dcc_event_logger.info(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick} (after starting first). Queue size: {len(self.send_queues[peer_nick])}")
-                        self.client_logic.add_message(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick} (after starting first).", "system", context_name="DCC")
-
-        if not results["transfers_started"] and not results["files_queued"] and not results["errors"]:
-            results["error"] = "No files processed." # Should be caught by empty validated_files_to_process
-            results["overall_success"] = False
-
-        return results
+        return self.send_manager.initiate_sends(peer_nick, local_filepaths, passive)
 
     def _process_next_in_send_queue(self, peer_nick: str):
-        """Checks the send queue for a peer and starts the next transfer if available."""
-        file_to_send_info: Optional[Dict[str, Any]] = None
-        with self._lock:
-            if peer_nick in self.send_queues and self.send_queues[peer_nick]:
-                file_to_send_info = self.send_queues[peer_nick].popleft()
-                if not self.send_queues[peer_nick]: # If queue is now empty
-                    del self.send_queues[peer_nick]
-                self.dcc_event_logger.info(f"Dequeued '{file_to_send_info['original_filename'] if file_to_send_info else 'N/A'}' for sending to {peer_nick}. Remaining queue size: {len(self.send_queues.get(peer_nick, []))}")
-            else:
-                self.dcc_event_logger.debug(f"No more files in send queue for {peer_nick}.")
-
-        if file_to_send_info:
-            self.client_logic.add_message(f"Starting next queued DCC SEND of '{file_to_send_info['original_filename']}' to {peer_nick}.", "system", context_name="DCC")
-            self.dcc_event_logger.info(f"Processing next from queue for {peer_nick}: '{file_to_send_info['original_filename']}'")
-            self._execute_send(
-                peer_nick,
-                file_to_send_info["local_filepath"],
-                file_to_send_info["original_filename"],
-                file_to_send_info["filesize"],
-                file_to_send_info["passive"]
-            )
+        """Checks the send queue for a peer and starts the next transfer. Delegates to DCCSendManager."""
+        self.send_manager.process_next_in_queue(peer_nick)
 
     def handle_incoming_dcc_ctcp(self, nick: str, userhost: str, ctcp_payload: str):
         """Handles a parsed DCC CTCP command from a peer by delegating to DCCCTCPHandler."""
@@ -600,16 +333,15 @@ class DCCManager:
         self.client_logic.add_message(f"DCC RECV for '{original_filename}' from {peer_nick} accepted. Connecting to {ip_str}:{port}. Saving to '{sanitized_filename_for_log}'.", "system", context_name="DCC")
         return {"success": True, "transfer_id": transfer_id}
 
-    def initiate_passive_receive(self, peer_nick: str, offered_filename: str, offered_filesize: int, offer_token: str) -> Dict[str, Any]:
+    def initiate_passive_receive(self, peer_nick: str, offered_filename: str, offered_filesize: int, offer_token: str, peer_ip_str_from_offer: Optional[str]) -> Dict[str, Any]:
         """
         Called when the local user wants to accept a PASSIVE DCC SEND offer they received.
         This client will listen, and send an ACCEPT CTCP to the peer, who will then connect.
+        `peer_ip_str_from_offer` is retrieved from the stored passive offer.
         """
-        self.dcc_event_logger.info(f"Attempting to initiate PASSIVE DCC RECV for '{offered_filename}' from {peer_nick} (token: {offer_token}, size: {offered_filesize}).")
+        self.dcc_event_logger.info(f"Attempting to initiate PASSIVE DCC RECV for '{offered_filename}' from {peer_nick} (token: {offer_token}, size: {offered_filesize}, peer_ip: {peer_ip_str_from_offer}).")
         if not self.dcc_config.get("enabled"):
             return {"success": False, "error": "DCC is disabled."}
-
-        # logger.info(f"Attempting to initiate passive receive for '{offered_filename}' from {peer_nick} (token: {offer_token}).") # Redundant with above
 
         validation_result = validate_download_path(
             offered_filename,
@@ -632,12 +364,11 @@ class DCCManager:
         listening_socket, local_listening_port = socket_info
         local_ip_for_ctcp = self._get_local_ip_for_ctcp()
 
-        # We send an ACCEPT with our listening IP/Port, position 0, and the token
         ctcp_accept_message = format_dcc_accept_ctcp(
             filename=offered_filename,
             ip_str=local_ip_for_ctcp,
             port=local_listening_port,
-            position=0, # Position is 0 for new passive transfers
+            position=0,
             token=offer_token
         )
 
@@ -648,7 +379,6 @@ class DCCManager:
         self.dcc_event_logger.debug(f"Passive RECV for '{offered_filename}' from {peer_nick}. Sent ACCEPT CTCP: {ctcp_accept_message.strip()}")
 
         transfer_id = self._generate_transfer_id()
-        # Ensure DCCReceiveTransfer can handle server_socket_for_passive_recv
         recv_transfer_args = {
             "transfer_id":transfer_id,
             "peer_nick":peer_nick,
@@ -657,8 +387,8 @@ class DCCManager:
             "local_filepath":safe_local_path,
             "dcc_manager_ref":self,
             "server_socket_for_passive_recv":listening_socket,
-            "peer_ip": self.pending_passive_offers.get(offer_token, {}).get("ip_str"), # Get peer IP from stored passive offer
-            "dcc_event_logger": self.dcc_event_logger # Pass the logger
+            "peer_ip": peer_ip_str_from_offer, # Use the IP from the stored offer
+            "dcc_event_logger": self.dcc_event_logger
         }
         # We need to ensure that ip_str from the passive offer is stored in pending_passive_offers
         # This was added in the change for line 443.
@@ -689,39 +419,34 @@ class DCCManager:
     def accept_passive_offer_by_token(self, calling_nick_for_logging: str, offered_filename_by_user: str, offer_token: str) -> Dict[str, Any]:
         """
         Accepts a stored passive DCC SEND offer based on a token.
-        Called by the /dcc get command.
+        Called by the /dcc get command. Delegates to DCCPassiveOfferManager.
         """
         self.dcc_event_logger.info(f"User {calling_nick_for_logging} attempting to accept passive offer with token: {offer_token} for filename: {offered_filename_by_user}")
-        pending_offer_details = None
-        with self._lock:
-            pending_offer_details = self.pending_passive_offers.get(offer_token)
+
+        pending_offer_details = self.passive_offer_manager.get_offer(offer_token)
 
         if not pending_offer_details:
             self.dcc_event_logger.warning(f"Passive offer with token '{offer_token}' not found or expired for user {calling_nick_for_logging}.")
             return {"success": False, "error": f"Passive offer with token '{offer_token}' not found or expired."}
 
-        # Verify details (optional, but good for sanity)
-        # The filename from user command might differ slightly (e.g. no quotes) from stored one.
-        # For now, primary match is by token.
         original_sender_nick = pending_offer_details["nick"]
         original_offered_filename = pending_offer_details["filename"]
         original_filesize = pending_offer_details["filesize"]
+        original_peer_ip_str = pending_offer_details.get("ip_str") # Get the stored IP
 
         if offered_filename_by_user.lower() != original_offered_filename.lower():
              self.dcc_event_logger.warning(f"Filename mismatch for passive offer token {offer_token}. User: '{offered_filename_by_user}', Offer: '{original_offered_filename}'. Proceeding by token match.")
 
-        # Remove the pending offer once we attempt to process it
-        with self._lock:
-            if offer_token in self.pending_passive_offers:
-                del self.pending_passive_offers[offer_token]
-                self.dcc_event_logger.info(f"Removed pending passive offer token {offer_token} after acceptance attempt by {calling_nick_for_logging}.")
+        if not self.passive_offer_manager.remove_offer(offer_token):
+            self.dcc_event_logger.warning(f"Failed to remove passive offer token {offer_token} during acceptance by {calling_nick_for_logging}, it might have been removed by cleanup.")
+            # Continue if details were fetched, but log this anomaly.
 
-        # Now call initiate_passive_receive with the details from the stored offer
         return self.initiate_passive_receive(
-            peer_nick=original_sender_nick, # The one who made the passive offer
+            peer_nick=original_sender_nick,
             offered_filename=original_offered_filename,
             offered_filesize=original_filesize,
-            offer_token=offer_token # Pass the original token through
+            offer_token=offer_token,
+            peer_ip_str_from_offer=original_peer_ip_str # Pass the IP
         )
 
     def update_transfer_status(self, transfer_id: str, status: DCCTransferStatus, error_message: Optional[str]):
@@ -829,26 +554,12 @@ class DCCManager:
                         line += f" Error: {t.error_message}"
                     status_lines.append(line)
 
-            # List pending passive offers
-            if self.pending_passive_offers:
-                status_lines.append("--- Pending Passive Offers (Incoming) ---")
-                # Sort by timestamp, newest first
-                sorted_passive_offers = sorted(self.pending_passive_offers.items(), key=lambda item: item[1].get("timestamp", 0), reverse=True)
+            # List pending passive offers using the new manager
+            passive_offer_status_lines = self.passive_offer_manager.get_status_lines()
+            if passive_offer_status_lines: # Will include its own header if offers exist
+                status_lines.extend(passive_offer_status_lines)
 
-                for token, offer_details in sorted_passive_offers:
-                    nick = offer_details.get("nick", "Unknown")
-                    filename = offer_details.get("filename", "UnknownFile")
-                    filesize_bytes = offer_details.get("filesize", 0)
-                    filesize_mb = filesize_bytes / (1024*1024)
-                    timestamp = offer_details.get("timestamp", 0)
-                    age_seconds = time.time() - timestamp
-
-                    line = (f"Token: {token[:8]}... From: {nick}, File: '{filename}' ({filesize_mb:.2f}MB). "
-                            f"Received: {age_seconds:.0f}s ago. "
-                            f"Use: /dcc get {nick} \"{filename}\" --token {token}")
-                    status_lines.append(line)
-
-            if not status_lines: # If both lists were empty
+            if not status_lines: # If both active transfers and passive offers were empty
                 return ["No active DCC transfers or pending passive offers."]
 
             # The previously duplicated/commented out code from line 683 to 702 has been removed by this diff.
@@ -869,35 +580,18 @@ class DCCManager:
         return False
 
     def cancel_pending_passive_offer(self, token_prefix: str) -> bool:
-        """Cancels a pending passive DCC SEND offer based on a token or its prefix."""
-        if not token_prefix:
-            return False
-
-        cancelled_offer_details: Optional[Dict[str, Any]] = None
-        actual_token_cancelled: Optional[str] = None
-
-        with self._lock:
-            # Iterate to find a match by prefix
-            for token, offer_details in list(self.pending_passive_offers.items()): # list() for safe iteration while modifying
-                if token.startswith(token_prefix):
-                    actual_token_cancelled = token
-                    cancelled_offer_details = self.pending_passive_offers.pop(token)
-                    break # Cancel only the first match
+        """Cancels a pending passive DCC SEND offer by delegating to DCCPassiveOfferManager."""
+        actual_token_cancelled, cancelled_offer_details = self.passive_offer_manager.cancel_offer_by_prefix(token_prefix)
 
         if cancelled_offer_details and actual_token_cancelled:
             peer_nick = cancelled_offer_details.get('nick', 'UnknownNick')
             filename = cancelled_offer_details.get('filename', 'UnknownFile')
-            self.dcc_event_logger.info(f"Cancelled pending passive DCC SEND offer from {peer_nick} for '{filename}' with token {actual_token_cancelled} (matched by prefix '{token_prefix}').")
             self.client_logic.add_message(
                 f"Cancelled pending passive DCC SEND offer from {peer_nick} for '{filename}' (token: {actual_token_cancelled[:8]}...).",
                 "system", context_name="DCC"
             )
             return True
-        else:
-            # No message here, as the command handler will try active transfers first
-            # and then report if neither was found.
-            self.dcc_event_logger.debug(f"No pending passive offer found starting with token prefix '{token_prefix}'.")
-            return False
+        return False
 
     def cleanup_old_transfers(self):
         # Placeholder for future: remove very old completed/failed transfers
@@ -1017,7 +711,7 @@ class DCCManager:
         # This means `self.transfers` might accumulate multiple attempts for the same logical file if resume is tried multiple times.
         # This might be desired for history, or might need cleanup later.
 
-        return self._execute_send(
+        return self.send_manager._execute_send_operation(
             peer_nick=resumable_transfer.peer_nick,
             local_filepath=resumable_transfer.local_filepath,
             original_filename=resumable_transfer.original_filename,

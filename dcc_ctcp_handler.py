@@ -64,17 +64,19 @@ class DCCCTCPHandler:
 
         if is_passive_offer:
             if token:
-                with self.manager._lock:
-                    self.manager.pending_passive_offers[token] = {
-                        "nick": nick,
-                        "filename": filename,
-                        "filesize": filesize,
-                        "ip_str": ip_str, # Store sender's IP for passive offers
-                        "userhost": userhost,
-                        "timestamp": time.time()
-                    }
-                self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' (IP: {ip_str}) with token {token}.")
-                self.manager._cleanup_stale_passive_offers()
+                # Use the new DCCPassiveOfferManager to store the offer
+                # The lock is handled within the DCCPassiveOfferManager's methods
+                assert filename is not None and ip_str is not None and filesize is not None # Ensure type safety for store_offer
+                self.manager.passive_offer_manager.store_offer(
+                    token=token,
+                    nick=nick,
+                    filename=filename,
+                    filesize=filesize,
+                    ip_str=ip_str,
+                    userhost=userhost
+                )
+                # self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' (IP: {ip_str}) with token {token}.") # Logged by store_offer
+                self.manager._cleanup_stale_passive_offers() # Manager can still trigger cleanup
                 self.manager.client_logic.add_message(
                     f"Passive DCC SEND offer from {nick} ({userhost}): '{filename}' ({filesize} bytes). "
                     f"Use /dcc get {nick} \"{filename}\" --token {token} to receive.",
