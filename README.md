@@ -16,16 +16,7 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
   - SASL PLAIN authentication for secure login.
   - IRCv3 Message Tag parsing and inclusion in relevant script events.
 - **Highly Modular Command System:** _All_ core client commands are now implemented in individual, self-contained Python modules within a structured `commands/` directory (e.g., [`commands/utility/set_command.py`](commands/utility/set_command.py:1), [`commands/ui/split_screen_commands.py`](commands/ui/split_screen_commands.py:1)). These commands are dynamically discovered and registered at startup, making the system highly extensible and maintainable. Each command module defines its own handler(s), help text (usage, description), and aliases, ensuring that adding or modifying core commands is straightforward and isolated.
-  ```mermaid
-  graph TD
-    A[PyRC Startup] --> B{Scan `commands/` directory};
-    B --> C[Load Core Command Modules];
-    C --> D{Scan `scripts/` directory};
-    D --> E[Load Script Modules];
-    E --> F[Register Commands & Help Text];
-    F --> G[User Issues /help];
-    G --> H[Dynamic Help Displayed];
-  ```
+
 - **Dynamic Help System:** The `/help` system is now fully dynamic, sourcing its information directly from the core command modules' definitions and from script registrations. This ensures help text is always up-to-date with available commands and their functionalities.
 - **Comprehensive Command Set:** Supports a wide array of standard IRC commands and client-specific utility commands. (See "Basic Commands" section).
 - **Dynamic Configuration:** View and modify client settings on-the-fly using the `/set` command. Changes are saved to [`pyterm_irc_config.ini`](pyterm_irc_config.ini:1). Reload configuration with `/rehash`.
