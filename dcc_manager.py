@@ -125,12 +125,12 @@ class DCCManager:
                 logger.warning("Could not determine local IP via gethostname. Falling back to '127.0.0.1'.")
                 return "127.0.0.1"
 
-        def _execute_send(self, peer_nick: str, local_filepath: str, original_filename: str, filesize: int, passive: bool = False) -> Dict[str, Any]:
-            """Internal method to execute a single DCC SEND operation."""
-            # This method assumes local_filepath is valid and filesize is known.
-            # Basic enabled check is done by the public calling method.
+    def _execute_send(self, peer_nick: str, local_filepath: str, original_filename: str, filesize: int, passive: bool = False) -> Dict[str, Any]:
+        """Internal method to execute a single DCC SEND operation."""
+        # This method assumes local_filepath is valid and filesize is known.
+        # Basic enabled check is done by the public calling method.
 
-            abs_local_filepath = os.path.abspath(local_filepath) # Should already be absolute from initiate_sends
+        abs_local_filepath = os.path.abspath(local_filepath) # Should already be absolute from initiate_sends
 
         transfer_id = self._generate_transfer_id()
         passive_token: Optional[str] = None
