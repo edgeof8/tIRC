@@ -105,6 +105,14 @@ Key settings from `pyterm_irc_config.ini`:
 - **Scripts:** (`[Scripts]`)
   - `disabled_scripts` (comma-separated list of script module names to disable)
 - **IgnoreList:** (`[IgnoreList]`): This section is automatically managed by the `/ignore`, `/unignore`, and `/listignores` commands. Ignored patterns (e.g., `*!*@*.example.com`) are stored here.
+- **DCC Settings:** (`[DCC]`)
+  - `dcc_enabled` (true/false): Enables or disables DCC functionality.
+  - `dcc_download_dir` (string): Default directory for downloaded files (e.g., `downloads/`).
+  - `dcc_max_file_size` (integer): Maximum file size in bytes for transfers (e.g., `104857600` for 100MB).
+  - `dcc_auto_accept` (true/false): Whether to automatically accept incoming file offers (use with caution).
+  - `dcc_blocked_extensions` (comma-separated string): File extensions to block (e.g., `exe,bat,sh,vbs`).
+  - `dcc_port_range_start`, `dcc_port_range_end` (integers): Port range for listening sockets in active DCC.
+  - `dcc_timeout` (integer): Timeout in seconds for DCC connections/transfers.
 
 You can view and modify many settings on-the-fly using the `/set` command. Changes are saved automatically. Use `/rehash` to reload the INI file.
 
@@ -200,6 +208,14 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 - `/wave <text>`: Sends text with a wave effect.
 - `/ascii <text>`: Converts text to ASCII art (requires `pyfiglet`).
 
+### DCC (Direct Client-to-Client) Commands:
+
+- `/dcc send <nick> <filepath>`: Initiates a DCC SEND (file transfer) to the specified user.
+- `/dcc accept <nick> <filename> <ip> <port> <size>`: Accepts an incoming DCC SEND offer from a user.
+- `/dcc list`: Lists current DCC transfers and their statuses.
+- `/dcc cancel <transfer_id>`: Cancels an active or queued DCC transfer.
+- `/dcc browse [path]`: (Future functionality) Opens a file browser, planned for easier file selection.
+
 ## Headless Operation
 
 Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), event management (`EventManager`), and the trigger system (if enabled via config) remain fully functional. Ideal for bots and AI integrations.
@@ -276,6 +292,7 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 
 ## Recent Changes (Summary)
 
+- **Initial DCC Implementation (Phase 1 - Active DCC):** Added core functionality for DCC SEND and DCC ACCEPT (receive) using active DCC connections. This includes new `/dcc` commands, DCC-specific configuration, and underlying modules (`DCCManager`, `DCCTransfer`, `DCCProtocol`, `DCCSecurity`). CTCP handling for DCC negotiation has been integrated into `IRCClient_Logic`.
 - **Complete Core Command Modularization:** All core client commands are now located in individual modules within the `commands/` directory and are dynamically loaded. This includes commands for UI navigation, user interactions (ignore, away, etc.), server management, and utilities.
 - **Trigger System Stability:** Successfully resolved a trigger execution loop issue, leading to improved stability and reliability of the `/on` command and Python-based triggers.
 - **Help System Accuracy:** Fixed the general `/help` command to accurately display all command groups and their respective commands, sourcing information dynamically from modules and scripts.
