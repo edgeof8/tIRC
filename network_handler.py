@@ -18,60 +18,87 @@ logger = logging.getLogger("pyrc.network")
 
 
 class NetworkHandler:
-    def __init__(self, client_ref: "IRCClient_Logic"):  # Type hint client_ref
-        self.client = client_ref
-        logger.debug("NetworkHandler initialized.")
-        self.sock: Optional[socket.socket] = None
-        self.connected: bool = False
+    def __init__(self, client_logic_ref: "IRCClient_Logic"):
+        self.client_logic_ref = client_logic_ref
+        self.socket = None
+        self.connected = False
+        self.connection_params = None
+        self._network_thread = None
+        self._stop_event = threading.Event()
+        self._thread_shutdown_complete = threading.Event()
+        self._shutdown_timeout = 3.0  # 3 seconds timeout for shutdown
+        self._force_shutdown = False
+        self.logger = logging.getLogger("pyrc.network")
         self.reconnect_delay: int = RECONNECT_INITIAL_DELAY
-        self.network_thread: Optional[threading.Thread] = None
-        self._should_thread_stop: threading.Event = threading.Event()
-        self._thread_shutdown_complete: threading.Event = threading.Event()
         self.channels_to_join_on_connect: List[str] = []
         self.is_handling_nick_collision: bool = False
         self.buffer: bytes = b""
         self._disconnect_event_sent_for_current_session = False
 
-    def start(self):
-        if self.network_thread and self.network_thread.is_alive():
-            logger.warning("Network thread start requested, but already running.")
-            return
-        logger.info("Starting network thread.")
-        self._should_thread_stop.clear()
+    def start(self) -> bool:
+        """Start the network handler and its thread."""
+        if self._network_thread is not None and self._network_thread.is_alive():
+            self.logger.warning("Network thread already running")
+            return False
+
+        self._stop_event.clear()
         self._thread_shutdown_complete.clear()
-        self.network_thread = threading.Thread(target=self._network_loop, daemon=True)
-        self.network_thread.start()
-        logger.debug("Network thread object created and started.")
+        self._force_shutdown = False
+        self._network_thread = threading.Thread(target=self._network_loop, daemon=True)
+        self._network_thread.start()
+        return True
 
-    def stop(self):
-        """Stop the network handler and clean up resources."""
-        logger.info(
-            "NetworkHandler.stop() called. Signaling network thread and client to quit."
+    def stop(self) -> bool:
+        """Stop the network handler and wait for thread completion."""
+        if self._network_thread is None or not self._network_thread.is_alive():
+            return True
+
+        self.logger.info("Stopping network handler...")
+        self._stop_event.set()
+
+        # Wait for thread to complete with timeout
+        thread_joined = self._thread_shutdown_complete.wait(
+            timeout=self._shutdown_timeout
         )
-        self._should_thread_stop.set()
-        if self.client:
-            self.client.should_quit = True
 
-        # Wait for thread shutdown with timeout
-        if self.network_thread and self.network_thread.is_alive():
-            logger.info("Waiting for network thread to complete shutdown...")
-            if not self._thread_shutdown_complete.wait(timeout=3.0):
-                logger.warning(
-                    "Network thread did not complete shutdown within timeout."
-                )
+        if not thread_joined:
+            self.logger.warning(
+                "Network thread did not complete in time, forcing shutdown..."
+            )
+            self._force_shutdown = True
+            # Give a brief moment for forced shutdown
+            time.sleep(0.5)
+
+            if self._network_thread.is_alive():
+                self.logger.error("Network thread still alive after forced shutdown!")
+                return False
             else:
-                logger.info("Network thread completed shutdown successfully.")
+                self.logger.info("Network thread terminated after forced shutdown")
+                return True
 
-        logger.info("NetworkHandler.stop() completed.")
+        self.logger.info("Network handler stopped successfully")
+        return True
 
-    def disconnect_gracefully(self, quit_message="Client disconnecting"):
-        """Disconnect from the server gracefully with a quit message."""
-        logger.info(
-            f"NetworkHandler.disconnect_gracefully called with message: {quit_message}"
-        )
-        if self.client:
-            self.client._final_quit_message = quit_message
+    def disconnect_gracefully(self, quit_message: Optional[str] = None) -> None:
+        """Disconnect from the server gracefully."""
+        if self.connected and self.socket:
+            try:
+                if quit_message:
+                    self.send_raw(f"QUIT :{quit_message}")
+                else:
+                    self.send_raw("QUIT :Client disconnected")
+            except Exception as e:
+                self.logger.error(f"Error sending QUIT message: {e}")
+
         self.stop()
+        self.connected = False
+        if self.socket:
+            try:
+                self.socket.close()
+            except Exception as e:
+                self.logger.error(f"Error closing socket: {e}")
+            finally:
+                self.socket = None
 
     def update_connection_params(
         self,
@@ -88,7 +115,9 @@ class NetworkHandler:
                 "Currently connected, disconnecting gracefully before updating params."
             )
             current_server_lower = (
-                self.client.server.lower() if self.client.server else ""
+                self.client_logic_ref.server.lower()
+                if self.client_logic_ref.server
+                else ""
             )
             new_server_lower = server.lower()
             quit_msg = (
@@ -98,19 +127,21 @@ class NetworkHandler:
             )
             self.disconnect_gracefully(quit_msg)
             # Give some time for the disconnect to process if the network thread is busy
-            if self.network_thread and self.network_thread.is_alive():
-                self.network_thread.join(timeout=1.0)
+            if self._network_thread and self._network_thread.is_alive():
+                self._network_thread.join(timeout=1.0)
 
         if channels_to_join is not None:
             self.channels_to_join_on_connect = channels_to_join
         else:  # Fallback to client's initial list if not provided
             self.channels_to_join_on_connect = (
-                self.client.initial_channels_list[:] if self.client else []
+                self.client_logic_ref.initial_channels_list[:]
+                if self.client_logic_ref
+                else []
             )
 
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
 
-        if not self.network_thread or not self.network_thread.is_alive():
+        if not self._network_thread or not self._network_thread.is_alive():
             logger.info("Network thread not running, starting it after param update.")
             self.start()
         else:
@@ -118,23 +149,26 @@ class NetworkHandler:
                 "Network thread is alive. Setting connected=False to force re-evaluation in loop."
             )
             # Reset critical handshake components
-            if hasattr(self.client, "cap_negotiator") and self.client.cap_negotiator:
-                self.client.cap_negotiator.reset_negotiation_state()
             if (
-                hasattr(self.client, "sasl_authenticator")
-                and self.client.sasl_authenticator
+                hasattr(self.client_logic_ref, "cap_negotiator")
+                and self.client_logic_ref.cap_negotiator
             ):
-                self.client.sasl_authenticator.reset_authentication_state()
+                self.client_logic_ref.cap_negotiator.reset_negotiation_state()
             if (
-                hasattr(self.client, "registration_handler")
-                and self.client.registration_handler
+                hasattr(self.client_logic_ref, "sasl_authenticator")
+                and self.client_logic_ref.sasl_authenticator
             ):
-                self.client.registration_handler.reset_registration_state()
+                self.client_logic_ref.sasl_authenticator.reset_authentication_state()
+            if (
+                hasattr(self.client_logic_ref, "registration_handler")
+                and self.client_logic_ref.registration_handler
+            ):
+                self.client_logic_ref.registration_handler.reset_registration_state()
 
             self.connected = False  # This will trigger _connect_socket in the loop
 
     def send_cap_ls(self, version: Optional[str] = "302"):
-        if self.connected and self.sock:
+        if self.connected and self.socket:
             if version:
                 self.send_raw(f"CAP LS {version}")
             else:
@@ -143,21 +177,21 @@ class NetworkHandler:
             logger.warning("send_cap_ls called but not connected or no socket.")
 
     def send_cap_req(self, capabilities: List[str]):
-        if self.connected and self.sock:
+        if self.connected and self.socket:
             if capabilities:
                 self.send_raw(f"CAP REQ :{ ' '.join(capabilities)}")
         else:
             logger.warning("send_cap_req called but not connected or no socket.")
 
     def send_cap_end(self):
-        if self.connected and self.sock:  # Check socket as well
+        if self.connected and self.socket:  # Check socket as well
             logger.debug("Sending CAP END")
             self.send_raw("CAP END")
         else:
             logger.warning("send_cap_end called but not connected or no socket.")
 
     def send_authenticate(self, payload: str):
-        if self.connected and self.sock:  # Check socket
+        if self.connected and self.socket:  # Check socket
             logger.debug(f"Sending AUTHENTICATE {payload[:20]}...")
             self.send_raw(f"AUTHENTICATE {payload}")
         else:
@@ -168,35 +202,38 @@ class NetworkHandler:
             f"Resetting connection state. Dispatch disconnect event: {dispatch_event}"
         )
 
-        if self.sock:
+        if self.socket:
             try:
-                self.sock.shutdown(socket.SHUT_RDWR)  # Politely shutdown read/write
+                self.socket.shutdown(socket.SHUT_RDWR)  # Politely shutdown read/write
             except (OSError, socket.error):
                 pass  # Ignore if already closed or not connected
             try:
-                self.sock.close()
+                self.socket.close()
                 logger.debug("Socket closed by _reset_connection_state.")
             except (OSError, socket.error):
                 pass
-            self.sock = None
+            self.socket = None
 
         was_connected = self.connected
         self.connected = False
         self.is_handling_nick_collision = False
 
-        if self.client:
-            if hasattr(self.client, "cap_negotiator") and self.client.cap_negotiator:
-                self.client.cap_negotiator.reset_negotiation_state()
+        if self.client_logic_ref:
             if (
-                hasattr(self.client, "sasl_authenticator")
-                and self.client.sasl_authenticator
+                hasattr(self.client_logic_ref, "cap_negotiator")
+                and self.client_logic_ref.cap_negotiator
             ):
-                self.client.sasl_authenticator.reset_authentication_state()
+                self.client_logic_ref.cap_negotiator.reset_negotiation_state()
             if (
-                hasattr(self.client, "registration_handler")
-                and self.client.registration_handler
+                hasattr(self.client_logic_ref, "sasl_authenticator")
+                and self.client_logic_ref.sasl_authenticator
             ):
-                self.client.registration_handler.reset_registration_state()
+                self.client_logic_ref.sasl_authenticator.reset_authentication_state()
+            if (
+                hasattr(self.client_logic_ref, "registration_handler")
+                and self.client_logic_ref.registration_handler
+            ):
+                self.client_logic_ref.registration_handler.reset_registration_state()
 
             if (
                 dispatch_event
@@ -204,15 +241,16 @@ class NetworkHandler:
                 and not self._disconnect_event_sent_for_current_session
             ):
                 if (
-                    hasattr(self.client, "event_manager") and self.client.event_manager
+                    hasattr(self.client_logic_ref, "event_manager")
+                    and self.client_logic_ref.event_manager
                 ):  # Check for event_manager
-                    current_server = self.client.server
-                    current_port = self.client.port
+                    current_server = self.client_logic_ref.server
+                    current_port = self.client_logic_ref.port
                     if current_server is not None and current_port is not None:
                         logger.info(
                             f"Dispatching CLIENT_DISCONNECTED event via EventManager for {current_server}:{current_port}"
                         )
-                        self.client.event_manager.dispatch_client_disconnected(
+                        self.client_logic_ref.event_manager.dispatch_client_disconnected(
                             current_server, current_port, raw_line=""
                         )
                         self._disconnect_event_sent_for_current_session = True
@@ -225,32 +263,37 @@ class NetworkHandler:
 
     def _connect_socket(self):
         self.is_handling_nick_collision = False
-        if not self.client or not self.client.server or self.client.port is None:
+        if (
+            not self.client_logic_ref
+            or not self.client_logic_ref.server
+            or self.client_logic_ref.port is None
+        ):
             logger.error(
                 "NetworkHandler._connect_socket: Client server/port not configured."
             )
-            if self.client:  # Add message only if client exists
-                self.client.add_message(
+            if self.client_logic_ref:  # Add message only if client exists
+                self.client_logic_ref.add_message(
                     "Cannot connect: Server or port not configured.",
                     "error",
                     context_name="Status",
                 )
             return False
 
-        self.client.add_message(
-            f"Attempting to connect to {self.client.server}:{self.client.port}...",
+        self.client_logic_ref.add_message(
+            f"Attempting to connect to {self.client_logic_ref.server}:{self.client_logic_ref.port}...",
             "system",
             context_name="Status",
         )
         try:
             logger.info(
-                f"Attempting socket connection to {self.client.server}:{self.client.port} (SSL: {self.client.use_ssl})"
+                f"Attempting socket connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} (SSL: {self.client_logic_ref.use_ssl})"
             )
             sock = socket.create_connection(
-                (self.client.server, self.client.port), timeout=CONNECTION_TIMEOUT
+                (self.client_logic_ref.server, self.client_logic_ref.port),
+                timeout=CONNECTION_TIMEOUT,
             )
             logger.debug("Socket created.")
-            if self.client.use_ssl:
+            if self.client_logic_ref.use_ssl:
                 logger.debug("SSL is enabled, wrapping socket.")
                 context = ssl.create_default_context()
                 try:
@@ -258,7 +301,7 @@ class NetworkHandler:
                         ssl.TLSVersion.TLSv1_2
                     )  # More secure default
                     logger.info(
-                        f"Set SSLContext minimum_version to TLSv1_2 for {self.client.server}"
+                        f"Set SSLContext minimum_version to TLSv1_2 for {self.client_logic_ref.server}"
                     )
                 except AttributeError:
                     logger.warning(
@@ -266,84 +309,93 @@ class NetworkHandler:
                     )
 
                 logger.info(
-                    f"VERIFY_SSL_CERT value in _connect_socket for {self.client.server}: {self.client.verify_ssl_cert}"
+                    f"VERIFY_SSL_CERT value in _connect_socket for {self.client_logic_ref.server}: {self.client_logic_ref.verify_ssl_cert}"
                 )
-                if not self.client.verify_ssl_cert:
+                if not self.client_logic_ref.verify_ssl_cert:
                     logger.warning(
                         "SSL certificate verification is DISABLED. This is insecure."
                     )
                     context.check_hostname = False
                     context.verify_mode = ssl.CERT_NONE
-                sock = context.wrap_socket(sock, server_hostname=self.client.server)
+                sock = context.wrap_socket(
+                    sock, server_hostname=self.client_logic_ref.server
+                )
                 logger.debug("Socket wrapped with SSL.")
 
-            self.sock = sock
+            self.socket = sock
             self.connected = True
             self.reconnect_delay = RECONNECT_INITIAL_DELAY
             logger.info(
-                f"Successfully connected to {self.client.server}:{self.client.port}. SSL: {self.client.use_ssl}"
+                f"Successfully connected to {self.client_logic_ref.server}:{self.client_logic_ref.port}. SSL: {self.client_logic_ref.use_ssl}"
             )
-            self.client.add_message(
-                f"Connected. SSL: {'Yes' if self.client.use_ssl else 'No'}",
+            self.client_logic_ref.add_message(
+                f"Connected. SSL: {'Yes' if self.client_logic_ref.use_ssl else 'No'}",
                 "system",
                 context_name="Status",
             )
 
-            if hasattr(self.client, "cap_negotiator") and self.client.cap_negotiator:
-                self.client.cap_negotiator.start_negotiation()
+            if (
+                hasattr(self.client_logic_ref, "cap_negotiator")
+                and self.client_logic_ref.cap_negotiator
+            ):
+                self.client_logic_ref.cap_negotiator.start_negotiation()
             else:
                 logger.error(
                     "NetworkHandler: cap_negotiator not found on client object during _connect_socket."
                 )
-                self.client._add_status_message(
+                self.client_logic_ref._add_status_message(
                     "Error: CAP negotiator not initialized.", "error"
                 )
 
             if (
-                self.client
-                and hasattr(self.client, "event_manager")
-                and self.client.event_manager
+                self.client_logic_ref
+                and hasattr(self.client_logic_ref, "event_manager")
+                and self.client_logic_ref.event_manager
             ):  # Check for event_manager
-                self.client.event_manager.dispatch_client_connected(
-                    server=self.client.server,
-                    port=self.client.port,
-                    nick=self.client.nick,
-                    ssl=self.client.use_ssl,
+                self.client_logic_ref.event_manager.dispatch_client_connected(
+                    server=self.client_logic_ref.server,
+                    port=self.client_logic_ref.port,
+                    nick=self.client_logic_ref.nick,
+                    ssl=self.client_logic_ref.use_ssl,
                     raw_line="",
                 )
 
             return True
         except socket.timeout:
             logger.warning(
-                f"Connection to {self.client.server}:{self.client.port} timed out."
+                f"Connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} timed out."
             )
-            self.client.add_message(
-                f"Connection to {self.client.server}:{self.client.port} timed out.",
+            self.client_logic_ref.add_message(
+                f"Connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} timed out.",
                 "error",
                 context_name="Status",
             )
         except socket.gaierror as e:
-            logger.error(f"Hostname {self.client.server} could not be resolved: {e}")
-            self.client.add_message(
-                f"Hostname {self.client.server} could not be resolved.",
+            logger.error(
+                f"Hostname {self.client_logic_ref.server} could not be resolved: {e}"
+            )
+            self.client_logic_ref.add_message(
+                f"Hostname {self.client_logic_ref.server} could not be resolved.",
                 "error",
                 context_name="Status",
             )
         except ConnectionRefusedError as e:
             logger.error(
-                f"Connection refused by {self.client.server}:{self.client.port}: {e}"
+                f"Connection refused by {self.client_logic_ref.server}:{self.client_logic_ref.port}: {e}"
             )
-            self.client.add_message(
-                f"Connection refused by {self.client.server}:{self.client.port}.",
+            self.client_logic_ref.add_message(
+                f"Connection refused by {self.client_logic_ref.server}:{self.client_logic_ref.port}.",
                 "error",
                 context_name="Status",
             )
         except ssl.SSLError as e:
             logger.error(f"SSL Error during connection: {e}", exc_info=True)
-            self.client.add_message(f"SSL Error: {e}", "error", context_name="Status")
+            self.client_logic_ref.add_message(
+                f"SSL Error: {e}", "error", context_name="Status"
+            )
         except Exception as e:
             logger.error(f"Unexpected error during connection: {e}", exc_info=True)
-            self.client.add_message(
+            self.client_logic_ref.add_message(
                 f"Connection error: {e}",
                 "error",
                 context_name="Status",
@@ -354,22 +406,24 @@ class NetworkHandler:
 
     def send_raw(self, data: str):
         # Re-check connection status immediately before sending
-        if not self.sock or not self.connected:
+        if not self.socket or not self.connected:
             logger.warning(
                 f"Attempted to send data while not truly connected or no socket: {data.strip()}"
             )
             if (
-                self.client
+                self.client_logic_ref
             ):  # Only add message if client and thus UI/context manager exists
-                self.client._add_status_message("Cannot send: Not connected.", "error")
-                if not self.client.is_headless:
-                    self.client.ui_needs_update.set()
+                self.client_logic_ref._add_status_message(
+                    "Cannot send: Not connected.", "error"
+                )
+                if not self.client_logic_ref.is_headless:
+                    self.client_logic_ref.ui_needs_update.set()
             return
 
         try:
             if not data.endswith("\r\n"):
                 data += "\r\n"
-            self.sock.sendall(data.encode("utf-8", errors="replace"))
+            self.socket.sendall(data.encode("utf-8", errors="replace"))
 
             log_data = data.strip()
             if log_data.upper().startswith("PASS "):
@@ -386,11 +440,11 @@ class NetworkHandler:
             logger.debug(f"C >> {log_data}")
 
             if (
-                self.client  # Check if client exists
-                and hasattr(self.client, "show_raw_log_in_ui")
-                and self.client.show_raw_log_in_ui
+                self.client_logic_ref  # Check if client exists
+                and hasattr(self.client_logic_ref, "show_raw_log_in_ui")
+                and self.client_logic_ref.show_raw_log_in_ui
             ):
-                self.client.add_message(
+                self.client_logic_ref.add_message(
                     f"C >> {log_data}",
                     "system",
                     context_name="Status",
@@ -405,10 +459,12 @@ class NetworkHandler:
             ssl.SSLError,
         ) as e:  # Catch broader socket/SSL errors
             logger.error(f"Error sending data: {e}", exc_info=True)
-            if self.client:
-                self.client._add_status_message(f"Error sending data: {e}", "error")
-                if not self.client.is_headless:
-                    self.client.ui_needs_update.set()
+            if self.client_logic_ref:
+                self.client_logic_ref._add_status_message(
+                    f"Error sending data: {e}", "error"
+                )
+                if not self.client_logic_ref.is_headless:
+                    self.client_logic_ref.ui_needs_update.set()
             self._reset_connection_state(
                 dispatch_event=True
             )  # Dispatch disconnect on send error
@@ -416,202 +472,59 @@ class NetworkHandler:
             logger.critical(
                 f"Unhandled error sending data: {e_unhandled_send}", exc_info=True
             )
-            if self.client:
-                self.client.add_message(
+            if self.client_logic_ref:
+                self.client_logic_ref.add_message(
                     f"Critical send error: {e_unhandled_send}",
                     "error",
                     context_name="Status",
                 )
             self._reset_connection_state(dispatch_event=True)
 
-    def _network_loop(self):
-        """Main network loop that handles connection and message processing."""
-        logger.info("Network loop started.")
+    def _network_loop(self) -> None:
+        """Main network handling loop."""
         try:
-            while not self._should_thread_stop.is_set() and not (
-                self.client and self.client.should_quit
-            ):
-                if not self.connected:
-                    self._disconnect_event_sent_for_current_session = False
-                    if self.client and self.client.should_quit:
+            while not self._stop_event.is_set():
+                if not self.connected or not self.socket:
+                    time.sleep(0.1)
+                    continue
+
+                try:
+                    # Set a timeout for socket operations
+                    self.socket.settimeout(0.5)
+                    data = self.socket.recv(4096)
+
+                    if not data:
+                        logger.info("Connection closed by server")
                         break
 
-                    # Before attempting to connect, check if server/port are configured
-                    if (
-                        not self.client
-                        or not self.client.server
-                        or self.client.port is None
-                    ):
-                        logger.warning(
-                            "Network loop: Server/port not configured. Waiting before retry."
-                        )
-                        interrupted = self._should_thread_stop.wait(
-                            self.reconnect_delay
-                        )  # Still use delay
-                        if interrupted or (self.client and self.client.should_quit):
-                            break
-                        self.reconnect_delay = min(
-                            self.reconnect_delay * 2, RECONNECT_MAX_DELAY
-                        )
-                        continue
+                    # Process received data
+                    self._process_received_data(data)
 
-                    logger.debug("Network loop: Not connected. Attempting to connect.")
-                    if self._connect_socket():
-                        logger.info(
-                            "Network loop: Connection successful, CAP negotiation initiated."
-                        )
-                        self.is_handling_nick_collision = False
-                    else:
-                        logger.warning("Network loop: Connection attempt failed.")
-                        if self.client:
-                            self.client._add_status_message(
-                                f"Retrying in {self.reconnect_delay} seconds...",
-                                "system",
-                            )
-                            if not self.client.is_headless:
-                                self.client.ui_needs_update.set()
+                except socket.timeout:
+                    continue
+                except ConnectionError as e:
+                    logger.error(f"Connection error: {e}")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in network loop: {e}")
+                    break
 
-                        interrupted = self._should_thread_stop.wait(
-                            self.reconnect_delay
-                        )
-                        if interrupted or (self.client and self.client.should_quit):
-                            logger.debug(
-                                "Network loop: Reconnect wait interrupted or client quitting. Exiting loop."
-                            )
-                            break
-                        self.reconnect_delay = min(
-                            self.reconnect_delay * 2, RECONNECT_MAX_DELAY
-                        )
-                        logger.debug(
-                            f"Network loop: Increased reconnect delay to {self.reconnect_delay}s."
-                        )
-                        continue
-
-                try:
-                    while (
-                        self.connected
-                        and self.sock  # Ensure socket exists
-                        and not self._should_thread_stop.is_set()
-                        and not (self.client and self.client.should_quit)
-                    ):
-                        current_sock_for_loop = (
-                            self.sock
-                        )  # Use a local var for the loop iteration
-
-                        try:
-                            data = current_sock_for_loop.recv(4096)
-                            if not data:
-                                logger.info(
-                                    "Network loop: Connection closed by server (recv returned empty)."
-                                )
-                                self._reset_connection_state(dispatch_event=True)
-                                break
-
-                            self.buffer += data
-                            while b"\r\n" in self.buffer:
-                                line_bytes, self.buffer = self.buffer.split(b"\r\n", 1)
-                                try:
-                                    decoded_line = line_bytes.decode(
-                                        "utf-8", errors="replace"
-                                    )
-                                    if self.client:
-                                        self.client.handle_server_message(decoded_line)
-                                except UnicodeDecodeError as e_decode:
-                                    logger.error(
-                                        f"Unicode decode error: {e_decode} on line: {line_bytes.hex()}",
-                                        exc_info=True,
-                                    )
-                                    if self.client:
-                                        self.client.add_message(
-                                            f"Unicode decode error: {e_decode}",
-                                            "error",
-                                            context_name="Status",
-                                        )
-
-                        except socket.timeout:
-                            logger.debug("Network loop: Socket recv timed out.")
-                            continue
-                        except ssl.SSLWantReadError:
-                            time.sleep(0.01)
-                            continue
-                        except (
-                            OSError,
-                            socket.error,
-                            ssl.SSLError,
-                        ) as e_sock:
-                            if (
-                                not self._should_thread_stop.is_set()
-                            ):  # Only log as error if not planned shutdown
-                                logger.error(
-                                    f"Network loop: Socket error: {e_sock}",
-                                    exc_info=False,  # Keep exc_info=False for brevity unless debugging
-                                )
-                                if self.client:
-                                    self.client._add_status_message(
-                                        f"Network error: {e_sock}", "error"
-                                    )
-                            else:
-                                logger.info(
-                                    f"Network loop: Socket error during planned shutdown: {e_sock}"
-                                )
-                            self._reset_connection_state(dispatch_event=True)
-                            break  # Break inner loop to attempt reconnect
-                except Exception as e_inner_loop:
-                    logger.critical(
-                        f"Network loop: Unexpected critical error in inner loop: {e_inner_loop}",
-                        exc_info=True,
-                    )
-                    self._reset_connection_state(dispatch_event=True)
-                finally:
-                    if (
-                        not self.connected
-                        and self.client
-                        and not self.client.is_headless
-                    ):
-                        self.client.ui_needs_update.set()
         except Exception as e:
-            logger.critical(f"Critical error in network loop: {e}", exc_info=True)
+            logger.error(f"Critical error in network loop: {e}")
         finally:
-            logger.info("Network loop's outer while loop is ending.")
-            if self.sock:
-                if self.connected and self.client and self.client.should_quit:
-                    quit_message = getattr(
-                        self.client, "_final_quit_message", "Client shutting down"
-                    )
-                    logger.info(f"Network loop (finally): Sending QUIT: {quit_message}")
+            # Ensure cleanup happens even if there's an error
+            if not self._force_shutdown:
+                self.connected = False
+                if self.socket:
                     try:
-                        if self.sock.fileno() != -1:
-                            self.sock.sendall(
-                                f"QUIT :{quit_message}\r\n".encode(
-                                    "utf-8", errors="replace"
-                                )
-                            )
-                    except Exception as e_quit:
-                        logger.warning(
-                            f"Network loop (finally): Error sending QUIT: {e_quit}"
-                        )
+                        self.socket.close()
+                    except Exception as e:
+                        logger.error(f"Error closing socket in cleanup: {e}")
+                    finally:
+                        self.socket = None
 
-                logger.info(
-                    "Network loop (finally): Closing socket (if not already closed)."
-                )
-                try:
-                    if self.sock.fileno() != -1:
-                        self.sock.shutdown(socket.SHUT_RDWR)
-                except (OSError, socket.error):
-                    pass
-                try:
-                    self.sock.close()
-                except Exception as e_close:
-                    logger.error(
-                        f"Error closing socket in network loop finally: {e_close}"
-                    )
-                self.sock = None
-
-            if self.connected:
-                self._reset_connection_state(dispatch_event=True)
-
-            logger.info("Network loop has fully terminated.")
-            self._thread_shutdown_complete.set()  # Signal that shutdown is complete
+            self._thread_shutdown_complete.set()
+            logger.info("Network thread shutdown complete")
 
 
 # END OF MODIFIED FILE: network_handler.py
