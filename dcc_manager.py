@@ -1,5 +1,5 @@
 import logging
-import وقت
+import time
 import os
 import socket
 import threading
@@ -12,7 +12,7 @@ from typing import Dict, Optional, Any, List, Tuple
 #     DCC_MAX_FILE_SIZE, DCC_PORT_RANGE_START, DCC_PORT_RANGE_END, DCC_TIMEOUT,
 #     DCC_BLOCKED_EXTENSIONS
 # )
-import app_config # Use this to access config values
+import config as app_config # Use this to access config values
 
 from dcc_transfer import DCCTransfer, DCCSendTransfer, DCCReceiveTransfer, DCCTransferStatus, DCCTransferType
 from dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp
