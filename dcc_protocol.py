@@ -42,7 +42,8 @@ def parse_dcc_ctcp(ctcp_message: str) -> Optional[Dict[str, Any]]:
     Example DCC SEND (Active): "DCC SEND <filename> <ip_int> <port> <filesize>"
     Example DCC SEND (Passive Offer): "DCC SEND <filename> <ip_int> 0 <filesize> <token>"
     Example DCC ACCEPT (Passive Response): "DCC ACCEPT <filename> <ip_int_receiver> <port_receiver> 0 <token>"
-    Example DCC ACCEPT (Resume): "DCC ACCEPT <filename> <port_sender_listens_on> <resume_position>"
+    Example DCC RESUME (Sender offers resume): "DCC RESUME <filename> <port_sender_listens_on> <resume_position>"
+    Example DCC ACCEPT (Receiver accepts resume): "DCC ACCEPT <filename> <port_sender_listens_on> <resume_position>"
     Returns a dictionary with parsed data or None if parsing fails.
     """
     parts = ctcp_message.strip().split()
@@ -211,7 +212,27 @@ def parse_dcc_ctcp(ctcp_message: str) -> Optional[Dict[str, Any]]:
             logger.warning(f"Error parsing DCCCHECKSUM arguments '{args}': {e}", exc_info=True)
             return None
 
-    # Add other DCC commands like RESUME, etc. later (RESUME sender-side)
+    elif command == "RESUME": # Sender offers to resume a send
+        # DCC RESUME <filename> <port> <position>
+        if len(args) < 3:
+            logger.warning(f"DCC RESUME message has too few arguments: {args}")
+            return None
+        try:
+            position_str = args[-1]
+            port_str = args[-2]
+            filename = " ".join(args[:-2]).strip('"')
+
+            parsed_data["filename"] = filename
+            parsed_data["port"] = int(port_str)
+            parsed_data["position"] = int(position_str)
+
+            if not (0 < parsed_data["port"] <= 65535) or parsed_data["position"] < 0:
+                logger.warning(f"Invalid DCC RESUME port/position: {args}")
+                return None
+            return parsed_data
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Error parsing DCC RESUME arguments '{args}': {e}", exc_info=True)
+            return None
     else:
         logger.debug(f"Unsupported DCC command: {command}")
         # Return a generic structure for unknown DCC commands if needed
@@ -257,8 +278,18 @@ def format_dcc_send_ctcp(filename: str, ip_str: str, port: int, filesize: int, t
 def format_dcc_accept_ctcp(filename: str, ip_str: str, port: int, position: int, token: Optional[str] = None) -> Optional[str]:
     """
     Formats a DCC ACCEPT CTCP message string.
-    Used by receiver to accept a passive DCC SEND offer (ip_str, port are receiver's listening details, position=0, token is echoed).
-    Also used for resuming active DCC (ip_str might be ignored or 0, port is sender's original port, position is resume point).
+    Scenario 1 (Passive DCC Accept):
+        Receiver accepts a passive DCC SEND offer.
+        ip_str: Receiver's listening IP.
+        port: Receiver's listening port.
+        position: Typically 0 for passive accept.
+        token: The token from the SEND offer.
+    Scenario 2 (Resume Accept):
+        Receiver accepts a DCC RESUME offer or proactively requests to resume a standard DCC SEND.
+        ip_str: Often "0" or ignored by sender, as port and filename identify the transfer.
+        port: Port the original sender is (or was) listening on for this file.
+        position: Byte offset from which to resume.
+        token: None for this scenario.
     Returns None if formatting fails.
     """
     ip_int = format_ip_for_dcc_send(ip_str if ip_str != "0" else "0.0.0.0")
@@ -281,6 +312,21 @@ def format_dcc_checksum_ctcp(filename: str, algorithm: str, checksum: str, trans
     """Formats a DCCCHECKSUM CTCP message string."""
     quoted_filename = f'"{filename}"' if " " in filename else filename
     return f"DCC DCCCHECKSUM {quoted_filename} {algorithm.lower()} {checksum} {transfer_identifier}"
+
+def format_dcc_resume_ctcp(filename: str, port: int, position: int) -> Optional[str]:
+    """
+    Formats a DCC RESUME CTCP message string (sender offers to resume).
+    <filename>: The name of the file.
+    <port>: The port the sender is now listening on for the resumed connection.
+    <position>: The byte offset from which the transfer should continue.
+    Returns None if formatting fails.
+    """
+    if not (0 < port <= 65535) or position < 0:
+        logger.error(f"Invalid port ({port}) or position ({position}) for DCC RESUME.")
+        return None
+
+    quoted_filename = f'"{filename}"' if " " in filename else filename
+    return f"DCC RESUME {quoted_filename} {port} {position}"
 
 # Example Usage (for testing):
 if __name__ == "__main__":
@@ -338,3 +384,12 @@ if __name__ == "__main__":
     parsed_checksum = parse_dcc_ctcp(formatted_checksum) # Use the main parser
     print(f"Parsed DCCCHECKSUM: {parsed_checksum}")
     # Expected: {'dcc_command': 'DCCCHECKSUM', 'filename': 'my movie.avi', 'algorithm': 'md5', 'checksum_value': 'a1b2c3d4e5f6', 'transfer_identifier': 'transferXYZ'}
+
+    # Test DCC RESUME parsing and formatting
+    formatted_resume = format_dcc_resume_ctcp("resume test.file", 6000, 12345)
+    print(f"Formatted DCC RESUME: {formatted_resume}")
+    # Expected: DCC RESUME "resume test.file" 6000 12345
+    if formatted_resume:
+        parsed_resume = parse_dcc_ctcp(formatted_resume)
+        print(f"Parsed DCC RESUME: {parsed_resume}")
+        # Expected: {'dcc_command': 'RESUME', 'filename': 'resume test.file', 'port': 6000, 'position': 12345}

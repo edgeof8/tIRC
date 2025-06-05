@@ -287,9 +287,9 @@ sequenceDiagram
 - **Phase 4: Advanced Features (Resume, Advanced Security, UPnP)**
 
   - **Modules**: `DCCTransfer` (full resume), `dcc_security.py` (virus scan hooks).
-  - **Config**: `DCC_BANDWIDTH_LIMIT`, `DCC_RESUME_ENABLED`, `DCC_VIRUS_SCAN_CMD`.
-  - **Network**: Bandwidth throttling, (Optional) UPnP.
-  - **Commands**: `/dcc resume`.
+  - **Config**: `DCC_BANDWIDTH_LIMIT_SEND_KBPS`, `DCC_BANDWIDTH_LIMIT_RECV_KBPS`, `DCC_RESUME_ENABLED`, `DCC_VIRUS_SCAN_CMD`.
+  - **Network**: Bandwidth throttling (COMPLETED), (Optional) UPnP.
+  - **Commands**: `/dcc resume` (COMPLETED - for sender-initiated resume of outgoing sends).
   - **Security**: Virus scan hook.
 
 - **Phase 5: Testing and Optimization**

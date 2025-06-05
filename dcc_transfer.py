@@ -6,6 +6,7 @@ import socket
 import hashlib
 from enum import Enum, auto
 from typing import Optional, Callable, Any
+import config # For accessing global config values like bandwidth limits
 
 # from dcc_manager import DCCManager # Forward declaration or import later to avoid circularity if needed
 
@@ -38,7 +39,8 @@ class DCCTransfer:
         filesize: int, # Proposed filesize from offer
         local_filepath: str, # Sanitized, absolute local path for the file
         dcc_manager_ref: Any, # Actual type DCCManager, but Any to avoid circular import for now
-        dcc_event_logger: Optional[logging.Logger] = None
+        dcc_event_logger: Optional[logging.Logger] = None,
+        resume_offset: int = 0 # For resuming transfers
         # progress_callback: Callable[[str, int, int, float, float], None], # id, transferred, total, rate, eta
         # status_update_callback: Callable[[str, DCCTransferStatus, Optional[str]], None] # id, status, error_msg
     ):
@@ -48,9 +50,10 @@ class DCCTransfer:
         self.original_filename: str = filename
         self.filesize: int = filesize # Proposed size
         self.local_filepath: str = local_filepath # Full path to local file
+        self.resume_offset: int = resume_offset if resume_offset >= 0 else 0
 
         self.status: DCCTransferStatus = DCCTransferStatus.QUEUED
-        self.bytes_transferred: int = 0
+        self.bytes_transferred: int = self.resume_offset if self.resume_offset > 0 else 0
         self.current_rate_bps: float = 0.0  # Bytes per second
         self.estimated_eta_seconds: Optional[float] = None
 
@@ -82,7 +85,24 @@ class DCCTransfer:
             self.dcc_event_logger = logging.getLogger("pyrc.dcc.events.transfer") # Get a child of the main DCC event logger
             self.dcc_event_logger.warning(f"[{self.transfer_id}] DCCTransfer initialized without a dedicated event logger. Using fallback pyrc.dcc.events.transfer.")
 
-        self.dcc_event_logger.info(f"DCCTransfer object created: ID={self.transfer_id}, Type={self.transfer_type.name}, Peer={self.peer_nick}, File='{self.original_filename}', Size={self.filesize}, LocalPath='{self.local_filepath}'")
+        if self.resume_offset > 0:
+            self.dcc_event_logger.info(f"DCCTransfer object created for RESUME: ID={self.transfer_id}, Type={self.transfer_type.name}, Peer={self.peer_nick}, File='{self.original_filename}', Size={self.filesize}, LocalPath='{self.local_filepath}', ResumeOffset={self.resume_offset}")
+        else:
+            self.dcc_event_logger.info(f"DCCTransfer object created: ID={self.transfer_id}, Type={self.transfer_type.name}, Peer={self.peer_nick}, File='{self.original_filename}', Size={self.filesize}, LocalPath='{self.local_filepath}'")
+
+        # Bandwidth Throttling attributes
+        self.bandwidth_limit_bps: int = 0
+        if self.transfer_type == DCCTransferType.SEND:
+            limit_kbps = config.DCC_BANDWIDTH_LIMIT_SEND_KBPS
+        else: # RECEIVE
+            limit_kbps = config.DCC_BANDWIDTH_LIMIT_RECV_KBPS
+
+        if limit_kbps > 0:
+            self.bandwidth_limit_bps = limit_kbps * 1024
+            self.dcc_event_logger.info(f"[{self.transfer_id}] Bandwidth limit set to {self.bandwidth_limit_bps} Bps ({limit_kbps} KBps).")
+
+        self.throttle_chunk_start_time: float = time.monotonic()
+
 
     def _calculate_file_checksum(self) -> Optional[str]:
         """Calculates checksum of the local file."""
@@ -257,6 +277,26 @@ class DCCTransfer:
             self.file_object = None
         self.dcc_event_logger.debug(f"[{self.transfer_id}] Cleanup finished.")
 
+    def _apply_throttle(self, chunk_size: int):
+        """Applies bandwidth throttling if a limit is set."""
+        if self.bandwidth_limit_bps <= 0 or chunk_size <= 0:
+            return
+
+        # Time elapsed to process/transfer the current chunk
+        elapsed_for_chunk = time.monotonic() - self.throttle_chunk_start_time
+
+        # Expected time this chunk *should* have taken based on the limit
+        expected_time_for_chunk = chunk_size / self.bandwidth_limit_bps
+
+        sleep_duration = expected_time_for_chunk - elapsed_for_chunk
+
+        if sleep_duration > 0:
+            time.sleep(sleep_duration)
+            # self.dcc_event_logger.debug(f"[{self.transfer_id}] Throttling: Slept for {sleep_duration:.4f}s")
+
+        # Reset start time for the next chunk's rate calculation (after potential sleep)
+        self.throttle_chunk_start_time = time.monotonic()
+
 
 class DCCSendTransfer(DCCTransfer):
     """Handles outgoing DCC SEND transfers."""
@@ -331,16 +371,34 @@ class DCCSendTransfer(DCCTransfer):
                  return
 
             self._report_status(DCCTransferStatus.TRANSFERRING)
-            self.dcc_event_logger.info(f"[{self.transfer_id}] Starting to send file '{self.local_filepath}' ({self.filesize} bytes).")
 
             try:
-                self.file_object = open(self.local_filepath, "rb")
+                if self.resume_offset > 0:
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Attempting to resume send for '{self.local_filepath}' from offset {self.resume_offset}.")
+                    if not os.path.exists(self.local_filepath):
+                        self.dcc_event_logger.error(f"[{self.transfer_id}] Resume failed: File '{self.local_filepath}' not found.")
+                        self._report_status(DCCTransferStatus.FAILED, "Resume error: File not found.")
+                        return
+                    # File size check for sending resume is less critical than receiving, but good for sanity.
+                    # If file is smaller than offset, it's an issue.
+                    if os.path.getsize(self.local_filepath) < self.resume_offset:
+                        self.dcc_event_logger.error(f"[{self.transfer_id}] Resume failed: File '{self.local_filepath}' is smaller than resume offset {self.resume_offset}.")
+                        self._report_status(DCCTransferStatus.FAILED, "Resume error: File smaller than offset.")
+                        return
+
+                    self.file_object = open(self.local_filepath, "rb")
+                    self.file_object.seek(self.resume_offset)
+                    self.bytes_transferred = self.resume_offset # Ensure this is set for progress
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Resuming send from {self.bytes_transferred} bytes.")
+                else:
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Starting to send file '{self.local_filepath}' ({self.filesize} bytes) from beginning.")
+                    self.file_object = open(self.local_filepath, "rb")
+                    self.bytes_transferred = 0
             except IOError as e:
                 self.dcc_event_logger.error(f"[{self.transfer_id}] Could not open file '{self.local_filepath}' for sending: {e}")
                 self._report_status(DCCTransferStatus.FAILED, f"File error: {e}")
                 return
 
-            self.bytes_transferred = 0 # Or resume position if implemented
             self._report_progress() # Initial progress
 
             while self.bytes_transferred < self.filesize:
@@ -360,6 +418,7 @@ class DCCSendTransfer(DCCTransfer):
                 try:
                     self.socket.sendall(chunk)
                     self.bytes_transferred += len(chunk)
+                    self._apply_throttle(len(chunk)) # Apply throttling
                     self._report_progress()
                 except socket.error as e:
                     self.dcc_event_logger.error(f"[{self.transfer_id}] Socket error during send: {e}")
@@ -456,20 +515,38 @@ class DCCReceiveTransfer(DCCTransfer):
                  return
 
             self._report_status(DCCTransferStatus.TRANSFERRING)
-            self.dcc_event_logger.info(f"[{self.transfer_id}] Starting to receive file '{self.original_filename}' to '{self.local_filepath}'.")
 
             try:
-                # Ensure directory exists
                 local_dir = os.path.dirname(self.local_filepath)
                 if not os.path.exists(local_dir):
                     os.makedirs(local_dir, exist_ok=True)
-                self.file_object = open(self.local_filepath, "wb") # Open in binary write mode
+
+                if self.resume_offset > 0:
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Attempting to resume receive for '{self.local_filepath}' from offset {self.resume_offset}.")
+                    if not os.path.exists(self.local_filepath):
+                        self.dcc_event_logger.error(f"[{self.transfer_id}] Resume failed: Local file '{self.local_filepath}' not found for resume.")
+                        self._report_status(DCCTransferStatus.FAILED, "Resume error: Local file missing.")
+                        return
+
+                    current_size = os.path.getsize(self.local_filepath)
+                    if current_size != self.resume_offset:
+                        self.dcc_event_logger.error(f"[{self.transfer_id}] Resume failed: Local file size {current_size} does not match resume offset {self.resume_offset}.")
+                        self._report_status(DCCTransferStatus.FAILED, f"Resume error: File size mismatch (local {current_size} != offset {self.resume_offset}).")
+                        return
+
+                    self.file_object = open(self.local_filepath, "r+b") # Read/Write binary for resume
+                    self.file_object.seek(self.resume_offset)
+                    self.bytes_transferred = self.resume_offset # Ensure this is set
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Resuming receive to '{self.local_filepath}' from {self.bytes_transferred} bytes.")
+                else:
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Starting to receive file '{self.original_filename}' to '{self.local_filepath}' from beginning.")
+                    self.file_object = open(self.local_filepath, "wb") # Write binary, create/truncate
+                    self.bytes_transferred = 0
             except IOError as e:
                 self.dcc_event_logger.error(f"[{self.transfer_id}] Could not open file '{self.local_filepath}' for writing: {e}")
                 self._report_status(DCCTransferStatus.FAILED, f"File system error: {e}")
                 return
 
-            self.bytes_transferred = 0
             self._report_progress() # Initial progress
 
             while self.bytes_transferred < self.filesize:
@@ -492,6 +569,7 @@ class DCCReceiveTransfer(DCCTransfer):
 
                     self.file_object.write(chunk)
                     self.bytes_transferred += len(chunk)
+                    self._apply_throttle(len(chunk)) # Apply throttling
                     self._report_progress()
 
                 except socket.timeout:

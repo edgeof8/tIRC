@@ -28,7 +28,7 @@ def dcc_command_handler(client_logic: 'IRCClient_Logic', args_str: str):
 
     if not args:
         client_logic.add_message(
-            "Usage: /dcc <send|get|accept|list|close|browse|cancel> [options...]. Try /help dcc for more.",
+            "Usage: /dcc <send|get|accept|list|close|browse|cancel|resume> [options...]. Try /help dcc for more.",
             "error",
             context_name=active_context_name
         )
@@ -312,6 +312,36 @@ def dcc_command_handler(client_logic: 'IRCClient_Logic', args_str: str):
         else:
             client_logic.add_message("Usage: /dcc auto [on|off]", "error", context_name=active_context_name)
 
+    elif subcommand == "resume":
+        # Usage: /dcc resume <transfer_id_prefix_or_filename>
+        parser_resume = argparse.ArgumentParser(prog="/dcc resume", add_help=False)
+        parser_resume.add_argument("identifier", help="The transfer ID prefix or filename to resume.")
+
+        try:
+            parsed_resume_args = parser_resume.parse_args(cmd_args)
+            identifier = parsed_resume_args.identifier
+
+            if hasattr(dcc_m, "attempt_user_resume"):
+                result = dcc_m.attempt_user_resume(identifier)
+                if result.get("success"):
+                    resumed_filename = result.get("filename", identifier)
+                    resumed_tid = result.get("transfer_id", "N/A")[:8]
+                    client_logic.add_message(f"Attempting to resume DCC SEND for '{resumed_filename}' (New ID: {resumed_tid}).", "system", context_name=dcc_context_name)
+                else:
+                    client_logic.add_message(f"DCC RESUME for '{identifier}' failed: {result.get('error', 'Unknown error or transfer not found/resumable.')}", "error", context_name=dcc_context_name)
+            else:
+                client_logic.add_message("DCC RESUME command logic not fully implemented in DCCManager yet.", "error", context_name=dcc_context_name)
+
+            if client_logic.context_manager.active_context_name != dcc_context_name:
+                client_logic.switch_active_context(dcc_context_name)
+
+        except SystemExit: # Argparse calls sys.exit()
+            client_logic.add_message("Usage: /dcc resume <transfer_id_prefix_or_filename>", "error", context_name=active_context_name)
+            return
+        except Exception as e:
+            logger.error(f"Error parsing /dcc resume arguments: {e}", exc_info=True)
+            client_logic.add_message(f"Error in /dcc resume: {e}. Usage: /dcc resume <transfer_id_prefix_or_filename>", "error", context_name=active_context_name)
+            return
     else:
         client_logic.add_message(f"Unknown DCC subcommand: {subcommand}. Try /help dcc.", "error", context_name=active_context_name)
 
@@ -321,7 +351,7 @@ COMMAND_DEFINITIONS = [
         "handler": "dcc_command_handler", # Name of the function in this module
         "help": {
             "usage": "/dcc <subcommand> [args]",
-            "description": "Manages DCC file transfers. Subcommands: send, get, accept, list, close, browse, cancel, auto.",
+            "description": "Manages DCC file transfers. Subcommands: send, get, accept, list, close, browse, cancel, auto, resume.",
             "aliases": []
         }
     },

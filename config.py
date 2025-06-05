@@ -98,7 +98,9 @@ DEFAULT_DCC_TIMEOUT = 300  # 5 minutes
 DEFAULT_DCC_RESUME_ENABLED = True # For enabling resume capability
 DEFAULT_DCC_CHECKSUM_VERIFY = True # Phase 2
 DEFAULT_DCC_CHECKSUM_ALGORITHM = "md5" # md5, sha1, sha256, etc. (Phase 2)
-DEFAULT_DCC_BANDWIDTH_LIMIT = 0  # 0 = unlimited, bytes per second (Phase 4)
+DEFAULT_DCC_BANDWIDTH_LIMIT = 0  # 0 = unlimited, bytes per second (Phase 4) # DEPRECATED by send/recv specific limits
+DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS = 0 # 0 = unlimited, Kilobytes per second (Phase 4)
+DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS = 0 # 0 = unlimited, Kilobytes per second (Phase 4)
 DEFAULT_DCC_BLOCKED_EXTENSIONS = ['.exe', '.bat', '.com', '.scr', '.vbs', '.pif']
 DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT = 120 # Seconds for a passive mode token to be valid (Phase 2)
 DEFAULT_DCC_VIRUS_SCAN_CMD = "" # Phase 4
@@ -457,6 +459,14 @@ def reload_all_config_values():
     global MAX_HISTORY, UI_COLORSCHEME
     global LOG_ENABLED, LOG_FILE, LOG_LEVEL_STR, LOG_LEVEL, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CHANNEL_LOG_ENABLED
     global ENABLE_TRIGGER_SYSTEM, DISABLED_SCRIPTS, HEADLESS_MAX_HISTORY
+    # DCC Globals for reload
+    global DCC_ENABLED, DCC_DOWNLOAD_DIR, DCC_UPLOAD_DIR, DCC_AUTO_ACCEPT, DCC_AUTO_ACCEPT_FROM_FRIENDS
+    global DCC_MAX_FILE_SIZE, DCC_PORT_RANGE_START, DCC_PORT_RANGE_END, DCC_TIMEOUT, DCC_RESUME_ENABLED
+    global DCC_CHECKSUM_VERIFY, DCC_CHECKSUM_ALGORITHM
+    global DCC_BANDWIDTH_LIMIT_SEND_KBPS, DCC_BANDWIDTH_LIMIT_RECV_KBPS # New specific limits
+    global DCC_BLOCKED_EXTENSIONS, DCC_PASSIVE_MODE_TOKEN_TIMEOUT, DCC_VIRUS_SCAN_CMD
+    global DCC_LOG_ENABLED, DCC_LOG_FILE, DCC_LOG_LEVEL_STR, DCC_LOG_LEVEL # DCC Log specific globals
+    global DCC_LOG_MAX_BYTES, DCC_LOG_BACKUP_COUNT # DCC Log specific globals
 
     logger.info(f"Reloading configuration from {CONFIG_FILE_PATH}")
     new_config = configparser.ConfigParser() # Use a new ConfigParser instance for read
@@ -495,6 +505,35 @@ def reload_all_config_values():
     LOG_MAX_BYTES = get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
     LOG_BACKUP_COUNT = get_config_value("Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int)
     CHANNEL_LOG_ENABLED = get_config_value("Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool)
+
+    # --- DCC Configuration Loading within reload function ---
+    DCC_ENABLED = get_config_value("DCC", "enabled", DEFAULT_DCC_ENABLED, bool)
+    DCC_DOWNLOAD_DIR = get_config_value("DCC", "download_dir", DEFAULT_DCC_DOWNLOAD_DIR, str)
+    DCC_UPLOAD_DIR = get_config_value("DCC", "upload_dir", DEFAULT_DCC_UPLOAD_DIR, str)
+    DCC_AUTO_ACCEPT = get_config_value("DCC", "auto_accept", DEFAULT_DCC_AUTO_ACCEPT, bool)
+    DCC_AUTO_ACCEPT_FROM_FRIENDS = get_config_value("DCC", "auto_accept_from_friends", DEFAULT_DCC_AUTO_ACCEPT_FROM_FRIENDS, bool)
+    DCC_MAX_FILE_SIZE = get_config_value("DCC", "max_file_size", DEFAULT_DCC_MAX_FILE_SIZE, int)
+    DCC_PORT_RANGE_START = get_config_value("DCC", "port_range_start", DEFAULT_DCC_PORT_RANGE_START, int)
+    DCC_PORT_RANGE_END = get_config_value("DCC", "port_range_end", DEFAULT_DCC_PORT_RANGE_END, int)
+    DCC_TIMEOUT = get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
+    DCC_RESUME_ENABLED = get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
+    DCC_CHECKSUM_VERIFY = get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool)
+    DCC_CHECKSUM_ALGORITHM = get_config_value("DCC", "checksum_algorithm", DEFAULT_DCC_CHECKSUM_ALGORITHM, str).lower()
+    DCC_BANDWIDTH_LIMIT_SEND_KBPS = get_config_value("DCC", "bandwidth_limit_send_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS, int)
+    DCC_BANDWIDTH_LIMIT_RECV_KBPS = get_config_value("DCC", "bandwidth_limit_recv_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS, int)
+    DCC_BLOCKED_EXTENSIONS = get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
+    DCC_PASSIVE_MODE_TOKEN_TIMEOUT = get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int)
+    DCC_VIRUS_SCAN_CMD = get_config_value("DCC", "virus_scan_cmd", DEFAULT_DCC_VIRUS_SCAN_CMD, str)
+    DCC_LOG_ENABLED = get_config_value("DCC", "log_enabled", DEFAULT_DCC_LOG_ENABLED, bool)
+    DCC_LOG_FILE = get_config_value("DCC", "log_file", DEFAULT_DCC_LOG_FILE, str)
+    DCC_LOG_LEVEL_STR = get_config_value("DCC", "log_level", DEFAULT_DCC_LOG_LEVEL, str).upper()
+    _dcc_log_level_int_reload = getattr(logging, DCC_LOG_LEVEL_STR, None)
+    if not isinstance(_dcc_log_level_int_reload, int):
+        _dcc_log_level_int_reload = getattr(logging, DEFAULT_DCC_LOG_LEVEL.upper(), logging.INFO)
+        if not isinstance(_dcc_log_level_int_reload, int): _dcc_log_level_int_reload = logging.INFO
+    DCC_LOG_LEVEL = _dcc_log_level_int_reload
+    DCC_LOG_MAX_BYTES = get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
+    DCC_LOG_BACKUP_COUNT = get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
 
     load_ignore_list()
     logger.info("Configuration values reloaded.")
@@ -565,7 +604,9 @@ DCC_TIMEOUT = get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
 DCC_RESUME_ENABLED = get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
 DCC_CHECKSUM_VERIFY = get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool) # Phase 2
 DCC_CHECKSUM_ALGORITHM = get_config_value("DCC", "checksum_algorithm", DEFAULT_DCC_CHECKSUM_ALGORITHM, str).lower() # Phase 2
-DCC_BANDWIDTH_LIMIT = get_config_value("DCC", "bandwidth_limit", DEFAULT_DCC_BANDWIDTH_LIMIT, int) # Phase 4
+# DCC_BANDWIDTH_LIMIT = get_config_value("DCC", "bandwidth_limit", DEFAULT_DCC_BANDWIDTH_LIMIT, int) # DEPRECATED by send/recv specific
+DCC_BANDWIDTH_LIMIT_SEND_KBPS = get_config_value("DCC", "bandwidth_limit_send_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS, int) # Phase 4
+DCC_BANDWIDTH_LIMIT_RECV_KBPS = get_config_value("DCC", "bandwidth_limit_recv_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS, int) # Phase 4
 DCC_BLOCKED_EXTENSIONS = get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
 DCC_PASSIVE_MODE_TOKEN_TIMEOUT = get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int) # Phase 2
 DCC_VIRUS_SCAN_CMD = get_config_value("DCC", "virus_scan_cmd", DEFAULT_DCC_VIRUS_SCAN_CMD, str) # Phase 4

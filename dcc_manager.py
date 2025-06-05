@@ -17,7 +17,7 @@ import logging.handlers # For RotatingFileHandler
 import config as app_config # Use this to access config values
 
 from dcc_transfer import DCCTransfer, DCCSendTransfer, DCCReceiveTransfer, DCCTransferStatus, DCCTransferType
-from dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp, format_dcc_accept_ctcp, format_dcc_checksum_ctcp
+from dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp, format_dcc_accept_ctcp, format_dcc_checksum_ctcp, format_dcc_resume_ctcp
 from dcc_security import validate_download_path, sanitize_filename
 
 logger = logging.getLogger("pyrc.dcc.manager") # For general manager operations
@@ -116,6 +116,7 @@ class DCCManager:
             "passive_mode_token_timeout": getattr(app_config, "DCC_PASSIVE_MODE_TOKEN_TIMEOUT", 120),
             "checksum_verify": getattr(app_config, "DCC_CHECKSUM_VERIFY", True),
             "checksum_algorithm": getattr(app_config, "DCC_CHECKSUM_ALGORITHM", "md5").lower(),
+            "resume_enabled": getattr(app_config, "DCC_RESUME_ENABLED", True), # Added for resume
         }
 
     def _cleanup_stale_passive_offers(self):
@@ -195,6 +196,68 @@ class DCCManager:
         # Basic enabled check is done by the public calling method.
 
         abs_local_filepath = os.path.abspath(local_filepath) # Should already be absolute from initiate_sends
+
+        # Check for existing failed/cancelled transfer to offer resume
+        if self.dcc_config.get("resume_enabled", True) and not passive: # Resume primarily for active sends for now
+            with self._lock:
+                for tid, old_transfer in list(self.transfers.items()): # list() for safe iteration if we modify
+                    if (isinstance(old_transfer, DCCSendTransfer) and
+                        old_transfer.peer_nick == peer_nick and
+                        old_transfer.original_filename == original_filename and
+                        old_transfer.status in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT] and
+                        old_transfer.bytes_transferred > 0 and
+                        old_transfer.bytes_transferred < old_transfer.filesize):
+
+                        resume_offset = old_transfer.bytes_transferred
+                        self.dcc_event_logger.info(f"Found previous incomplete send of '{original_filename}' to {peer_nick} at offset {resume_offset}. Offering RESUME.")
+
+                        # Clean up the old transfer object from the main list if we're replacing it with a resume attempt
+                        # Or mark it differently. For now, let's remove the old one to avoid confusion.
+                        # A more robust system might keep it for history or multiple resume attempts.
+                        # del self.transfers[tid]
+                        # self.dcc_event_logger.debug(f"Removed old transfer object {tid} before offering resume.")
+
+
+                        socket_info_resume = self._get_listening_socket()
+                        if not socket_info_resume:
+                            self.dcc_event_logger.error(f"Could not get listening socket for DCC RESUME of '{original_filename}' to {peer_nick}.")
+                            # Fall through to normal send if socket fails for resume
+                            break # Break from loop, proceed to normal send below
+
+                        listening_socket_resume, port_resume = socket_info_resume
+
+                        ctcp_resume_message = format_dcc_resume_ctcp(original_filename, port_resume, resume_offset)
+                        if not ctcp_resume_message:
+                            listening_socket_resume.close()
+                            self.dcc_event_logger.error(f"Failed to format DCC RESUME CTCP for '{original_filename}'.")
+                            break # Fall through
+
+                        new_transfer_id_resume = self._generate_transfer_id()
+                        resume_send_args: Dict[str, Any] = {
+                            "transfer_id": new_transfer_id_resume,
+                            "peer_nick": peer_nick,
+                            "filename": original_filename,
+                            "filesize": filesize, # Total original filesize
+                            "local_filepath": abs_local_filepath,
+                            "dcc_manager_ref": self,
+                            "server_socket_for_active_send": listening_socket_resume,
+                            "resume_offset": resume_offset, # Key part for resume
+                            "dcc_event_logger": self.dcc_event_logger
+                        }
+                        resume_transfer = DCCSendTransfer(**resume_send_args)
+                        self.transfers[new_transfer_id_resume] = resume_transfer # Add new transfer attempt
+
+                        self.client_logic.send_ctcp_privmsg(peer_nick, ctcp_resume_message)
+                        resume_transfer._report_status(DCCTransferStatus.NEGOTIATING, f"DCC RESUME offered. Waiting for {peer_nick} to connect on port {port_resume} for '{original_filename}' from offset {resume_offset}.")
+                        resume_transfer.start_transfer_thread() # Starts listening
+
+                        self.event_manager.dispatch_event("DCC_TRANSFER_QUEUED", { # Or a new event like DCC_RESUME_OFFERED
+                            "transfer_id": new_transfer_id_resume, "type": "SEND_RESUME", "nick": peer_nick,
+                            "filename": original_filename, "size": filesize, "resume_offset": resume_offset
+                        })
+                        self.client_logic.add_message(f"Offering to RESUME DCC SEND to {peer_nick} for '{original_filename}' from offset {resume_offset}. Waiting for peer on port {port_resume}.", "system", context_name="DCC")
+                        return {"success": True, "transfer_id": new_transfer_id_resume, "filename": original_filename, "resumed": True}
+            # End of resume check block
 
         transfer_id = self._generate_transfer_id()
         self.dcc_event_logger.debug(f"Generated Transfer ID: {transfer_id} for SEND to {peer_nick} of '{original_filename}'")
@@ -544,13 +607,190 @@ class DCCManager:
                     self.client_logic.add_message(f"Received unexpected Passive DCC ACCEPT from {nick} for '{filename}'.", "warning", context_name="Status")
 
             elif is_resume_accept:
-                # Handle DCC RESUME ACCEPT logic (Phase 4)
-                accepted_port = parsed_dcc.get("port")
-                accepted_position = parsed_dcc.get("position")
-                self.dcc_event_logger.info(f"Received Resume DCC ACCEPT from {nick} for '{filename}' (Port: {accepted_port}, Position: {accepted_position}). Resume not fully implemented yet.")
-                # Find original transfer, set resume position, and restart.
+                # This is when peer ACKs our RESUME offer.
+                # Our DCCSendTransfer (created when we sent DCC RESUME) should be listening.
+                # The accept() call in its run() method will handle the connection.
+                # This CTCP ACCEPT is mostly an acknowledgment.
+                accepted_filename = parsed_dcc.get("filename")
+                accepted_port = parsed_dcc.get("port") # This should be the port we told them we're listening on for resume
+                accepted_position = parsed_dcc.get("position") # This should be the offset we offered
+
+                self.dcc_event_logger.info(f"Received Resume DCC ACCEPT from {nick} for '{accepted_filename}' (Port: {accepted_port}, Position: {accepted_position}).")
+
+                found_resuming_send_transfer = None
+                with self._lock:
+                    for tid, transfer_obj in self.transfers.items():
+                        if (isinstance(transfer_obj, DCCSendTransfer) and
+                            transfer_obj.peer_nick == nick and
+                            transfer_obj.original_filename == accepted_filename and
+                            hasattr(transfer_obj, 'resume_offset') and # Check if it's a resume-capable transfer object
+                            transfer_obj.resume_offset == accepted_position and
+                            transfer_obj.status == DCCTransferStatus.NEGOTIATING and # It should be waiting for connection
+                            transfer_obj.server_socket is not None and # It should have a listening socket
+                            transfer_obj.server_socket.getsockname()[1] == accepted_port): # Port matches
+                            found_resuming_send_transfer = transfer_obj
+                            break
+
+                if found_resuming_send_transfer:
+                    # The actual connection is handled by the listening socket in DCCSendTransfer.run()
+                    # This ACCEPT confirms the peer is proceeding with the resume.
+                    # We might change status here slightly or just log.
+                    self.dcc_event_logger.info(f"DCC RESUME for '{accepted_filename}' to {nick} acknowledged by peer. Transfer {found_resuming_send_transfer.transfer_id} should proceed.")
+                    # The transfer status will change to CONNECTING/TRANSFERRING when the socket accepts.
+                    # We don't need to call start_transfer_thread() again as it's already running and listening.
+                else:
+                    self.dcc_event_logger.warning(f"Received Resume DCC ACCEPT from {nick} for '{accepted_filename}', but no matching active RESUME offer found or details mismatch.")
+                    self.client_logic.add_message(f"Received unexpected/mismatched Resume DCC ACCEPT from {nick} for '{accepted_filename}'.", "warning", context_name="Status")
+
             else: # Should not happen if parsed_dcc is valid and has is_passive_accept or is_resume_accept
                 self.dcc_event_logger.warning(f"Received ambiguous DCC ACCEPT from {nick}: {parsed_dcc}")
+
+        elif dcc_command == "RESUME": # Peer is offering to RESUME sending a file to us
+            # DCC RESUME <filename> <peer_listening_port> <position_peer_will_send_from>
+            # Peer's IP is implicitly known from CTCP source (nick).
+            # dcc_protocol.parse_dcc_ctcp for RESUME should provide: filename, port, position
+
+            if not self.dcc_config.get("resume_enabled", True):
+                self.dcc_event_logger.info(f"DCC RESUME from {nick} ignored, resume disabled in config.")
+                # Optionally send a reject CTCP? For now, just ignore.
+                return
+
+            resume_filename = parsed_dcc.get("filename")
+            resume_peer_port = parsed_dcc.get("port")
+            resume_position_offered_by_peer = parsed_dcc.get("position")
+            # Assuming peer's IP is implicitly the source of the CTCP.
+            # We need the actual IP of the sender to connect to.
+            # For now, let's assume DCCManager can get the peer's IP if needed, or that the protocol implies it.
+            # This part needs careful thought on how peer_ip is obtained for the connection.
+            # Let's assume for now the client_logic can provide the peer's IP based on nick.
+            # This is a placeholder, real IP lookup might be needed.
+            # For now, we'll assume client_logic can provide it. If not, we can't proceed.
+            # A more robust method would be to store peer IP from initial DCC SEND offer.
+            peer_ip_address = None
+            if hasattr(self.client_logic, 'get_user_ip') and callable(self.client_logic.get_user_ip):
+                 peer_ip_address = self.client_logic.get_user_ip(nick)
+
+            if not peer_ip_address:
+                self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Could not determine peer IP address. Cannot proceed.")
+                self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Peer IP unknown.", "error", context_name="DCC")
+                return
+
+            if not all([resume_filename, resume_peer_port is not None, resume_position_offered_by_peer is not None]): # Removed peer_ip_address from here as it's checked above
+                self.dcc_event_logger.warning(f"DCC RESUME from {nick} missing critical information: {parsed_dcc}")
+                return
+
+            assert isinstance(resume_filename, str), "resume_filename must be a string after the all() check"
+
+            self.dcc_event_logger.info(f"Received DCC RESUME offer from {nick} for '{resume_filename}' to port {resume_peer_port} from offset {resume_position_offered_by_peer}.")
+
+            # Look for an existing partial download to determine total filesize and validate resume
+            existing_transfer_info: Optional[Dict[str, Any]] = None
+            with self._lock:
+                for tid, transfer in self.transfers.items():
+                    if (isinstance(transfer, DCCReceiveTransfer) and
+                        transfer.peer_nick == nick and
+                        transfer.original_filename == resume_filename and
+                        transfer.status in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]):
+                        existing_transfer_info = {
+                            "local_filepath": transfer.local_filepath,
+                            "total_filesize": transfer.filesize, # Crucial: get total size from previous attempt
+                            "current_bytes": transfer.bytes_transferred
+                        }
+                        break
+
+            if not existing_transfer_info:
+                if resume_position_offered_by_peer == 0:
+                    # Peer offers to send from start, and we have no prior record. Treat as a new SEND offer essentially.
+                    # However, a RESUME CTCP doesn't carry total filesize. This is problematic.
+                    # For now, we cannot accept a RESUME offer for a completely new file if it doesn't start at 0
+                    # and even then, we don't know the total size.
+                    # A more compliant client might send DCC SEND first, then we could request RESUME.
+                    self.dcc_event_logger.warning(f"DCC RESUME from {nick} for '{resume_filename}' at offset 0, but no prior transfer record found. Total filesize is unknown. Rejecting.")
+                    self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': No prior transfer record to determine total filesize.", "error", context_name="DCC")
+                    return # Reject if no prior record and offset is 0 (filesize unknown)
+                else: # resume_position_offered_by_peer > 0 but no record
+                    self.dcc_event_logger.warning(f"DCC RESUME from {nick} for '{resume_filename}' at offset {resume_position_offered_by_peer}, but no prior transfer record found. Rejecting.")
+                    self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': No prior transfer record.", "error", context_name="DCC")
+                    return
+
+            # At this point, existing_transfer_info is guaranteed to be populated if we didn't return.
+            local_file_path_to_check = existing_transfer_info["local_filepath"]
+            total_filesize = existing_transfer_info["total_filesize"]
+
+            if total_filesize <= 0: # Should not happen if we had a valid prior transfer
+                self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Prior transfer record has invalid total filesize ({total_filesize}). Rejecting.")
+                self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Invalid prior transfer data.", "error", context_name="DCC")
+                return
+
+            actual_resume_offset = 0
+            can_resume_this_offer = False
+
+            if os.path.exists(local_file_path_to_check):
+                current_local_size = os.path.getsize(local_file_path_to_check)
+                if current_local_size == resume_position_offered_by_peer:
+                    actual_resume_offset = current_local_size
+                    can_resume_this_offer = True
+                    self.dcc_event_logger.info(f"Local file '{local_file_path_to_check}' size {current_local_size} matches peer's offered RESUME offset {resume_position_offered_by_peer}. Will accept.")
+                else:
+                    self.dcc_event_logger.warning(f"DCC RESUME from {nick}: local file '{local_file_path_to_check}' size {current_local_size} mismatches peer's offered offset {resume_position_offered_by_peer}. Cannot accept this RESUME offer as is.")
+                    # Optionally, could send DCC ACCEPT with *our* current_local_size if we want to request resume from *our* end.
+                    # For now, if peer's offset doesn't match our local state exactly for an existing file, we reject their RESUME offer.
+            elif resume_position_offered_by_peer == 0: # Peer offers to send from start, we had a record but local file is gone.
+                 can_resume_this_offer = True # Effectively a new download, but we know the total_filesize
+                 actual_resume_offset = 0
+                 # local_file_path_to_check is already set from existing_transfer_info.original_filename
+                 self.dcc_event_logger.info(f"DCC RESUME from {nick} for '{resume_filename}' is from offset 0. Local file missing/re-downloading to '{local_file_path_to_check}'.")
+
+            if can_resume_this_offer:
+                # Send DCC ACCEPT <filename> <our_ip_or_0_ignored> <our_connecting_port_ignored> <actual_resume_offset>
+                # The port in this ACCEPT is not critical as the peer is already listening.
+                # The IP is also not strictly needed by the peer for resume.
+                ctcp_accept_msg = format_dcc_accept_ctcp(resume_filename, "0", 0, actual_resume_offset, token=None)
+                if not ctcp_accept_msg:
+                    self.dcc_event_logger.error(f"Failed to format DCC ACCEPT for RESUME from {nick}.")
+                    return
+
+                self.client_logic.send_ctcp_privmsg(nick, ctcp_accept_msg)
+
+                new_transfer_id = self._generate_transfer_id()
+                # If existing_transfer, we might reuse its ID or update it. For simplicity, new ID for new attempt.
+
+                # Path validation for local_file_path_to_check should have happened when existing_transfer_info was created.
+                # If actual_resume_offset is 0 and file was missing, local_file_path_to_check was (re)derived.
+                # We trust local_file_path_to_check from existing_transfer_info or its re-derivation.
+
+                recv_resume_args = {
+                    "transfer_id": new_transfer_id,
+                    "peer_nick": nick,
+                    "filename": resume_filename,
+                    "filesize": total_filesize, # Use the known total_filesize from prior record
+                    "local_filepath": local_file_path_to_check, # This is the validated path
+                    "dcc_manager_ref": self,
+                    "connect_to_ip": peer_ip_address,
+                    "connect_to_port": resume_peer_port,
+                    "resume_offset": actual_resume_offset,
+                    "dcc_event_logger": self.dcc_event_logger
+                }
+                # DCC RESUME typically doesn't include total filesize. This needs to be obtained from original offer or stored.
+                # For now, if existing_transfer, use its filesize. Otherwise, this is problematic.
+                # Let's assume filesize is known from a previous offer or needs to be requested again.
+                # For this simplified step, we'll assume filesize is available if existing_transfer.
+                # If not existing_transfer and offset is 0, this is like a new SEND, but RESUME protocol might not provide total size.
+                # This needs clarification from DCC spec for RESUME. For now, proceed if filesize is sensible.
+                # No need for the filesize check here as total_filesize is now sourced reliably.
+
+                new_recv_transfer = DCCReceiveTransfer(**recv_resume_args)
+                with self._lock:
+                    self.transfers[new_transfer_id] = new_recv_transfer
+
+                new_recv_transfer._report_status(DCCTransferStatus.CONNECTING, f"Accepted RESUME from {nick}. Connecting to resume download.")
+                new_recv_transfer.start_transfer_thread()
+                self.client_logic.add_message(f"Accepted DCC RESUME from {nick} for '{resume_filename}'. Resuming download from offset {actual_resume_offset}.", "system", context_name="DCC")
+            else:
+                self.dcc_event_logger.info(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}' under current conditions (offset mismatch or file issue).")
+                # Optionally send reject CTCP
+                self.client_logic.add_message(f"Could not accept DCC RESUME from {nick} for '{resume_filename}' (offset/file mismatch).", "warning", context_name="DCC")
+
 
         elif dcc_command == "DCCCHECKSUM":
             self.dcc_event_logger.debug(f"Received DCCCHECKSUM CTCP from {nick}: {parsed_dcc}")
@@ -1009,3 +1249,76 @@ class DCCManager:
             })
         else:
             self.dcc_event_logger.warning(f"update_transfer_checksum_result called for unknown transfer_id: {transfer_id}")
+
+    def attempt_user_resume(self, identifier: str) -> Dict[str, Any]:
+        """
+        Attempts to resume a previously failed/cancelled outgoing DCC SEND transfer
+        based on a user-provided identifier (transfer ID prefix or filename).
+        """
+        if not self.dcc_config.get("enabled"):
+            return {"success": False, "error": "DCC is disabled."}
+        if not self.dcc_config.get("resume_enabled"):
+            return {"success": False, "error": "DCC resume is disabled in configuration."}
+
+        self.dcc_event_logger.info(f"User attempt to resume transfer with identifier: '{identifier}'")
+
+        resumable_transfer: Optional[DCCSendTransfer] = None
+
+        with self._lock:
+            # Try to find by transfer ID prefix first
+            possible_matches_by_id = []
+            for tid, transfer in self.transfers.items():
+                if tid.startswith(identifier) and isinstance(transfer, DCCSendTransfer):
+                    possible_matches_by_id.append(transfer)
+
+            if len(possible_matches_by_id) == 1:
+                resumable_transfer = possible_matches_by_id[0]
+            elif len(possible_matches_by_id) > 1:
+                self.dcc_event_logger.warning(f"Ambiguous identifier '{identifier}' for resume (multiple ID prefix matches).")
+                return {"success": False, "error": f"Ambiguous transfer ID prefix '{identifier}'. Be more specific."}
+
+            # If not found by ID prefix, try by filename (case-insensitive)
+            if not resumable_transfer:
+                possible_matches_by_filename = []
+                for transfer in self.transfers.values():
+                    if (isinstance(transfer, DCCSendTransfer) and
+                        transfer.original_filename.lower() == identifier.lower()):
+                        possible_matches_by_filename.append(transfer)
+
+                if len(possible_matches_by_filename) == 1:
+                    resumable_transfer = possible_matches_by_filename[0]
+                elif len(possible_matches_by_filename) > 1:
+                    self.dcc_event_logger.warning(f"Ambiguous identifier '{identifier}' for resume (multiple filename matches).")
+                    # Consider listing them or asking for peer_nick if implementing more complex resume UI
+                    return {"success": False, "error": f"Ambiguous filename '{identifier}'. Multiple transfers match. Try ID prefix."}
+
+        if not resumable_transfer:
+            self.dcc_event_logger.warning(f"No resumable SEND transfer found matching identifier '{identifier}'.")
+            return {"success": False, "error": f"No SEND transfer found matching '{identifier}'."}
+
+        # Check if the found transfer is in a state that allows resuming
+        if resumable_transfer.status not in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]:
+            self.dcc_event_logger.info(f"Transfer '{resumable_transfer.transfer_id}' ('{resumable_transfer.original_filename}') is not in a resumable state (current state: {resumable_transfer.status.name}).")
+            return {"success": False, "error": f"Transfer '{resumable_transfer.original_filename}' is not in a failed/cancelled state ({resumable_transfer.status.name})."}
+
+        if not (resumable_transfer.bytes_transferred > 0 and resumable_transfer.bytes_transferred < resumable_transfer.filesize):
+            self.dcc_event_logger.info(f"Transfer '{resumable_transfer.transfer_id}' ('{resumable_transfer.original_filename}') has no partial progress ({resumable_transfer.bytes_transferred}/{resumable_transfer.filesize}). Cannot resume.")
+            return {"success": False, "error": f"Transfer '{resumable_transfer.original_filename}' has no partial progress to resume from."}
+
+        # At this point, we have a valid, resumable DCCSendTransfer.
+        # Call _execute_send, which contains the logic to offer DCC RESUME CTCP.
+        self.dcc_event_logger.info(f"Re-initiating send for '{resumable_transfer.original_filename}' to {resumable_transfer.peer_nick} (will offer resume from {resumable_transfer.bytes_transferred}).")
+
+        # Note: _execute_send will create a *new* transfer object internally for the resume attempt.
+        # The old 'resumable_transfer' object will remain in self.transfers unless explicitly removed by _execute_send's resume logic.
+        # The current _execute_send logic for resume does not remove the old transfer object explicitly.
+        # This means `self.transfers` might accumulate multiple attempts for the same logical file if resume is tried multiple times.
+        # This might be desired for history, or might need cleanup later.
+
+        return self._execute_send(
+            peer_nick=resumable_transfer.peer_nick,
+            local_filepath=resumable_transfer.local_filepath,
+            original_filename=resumable_transfer.original_filename,
+            filesize=resumable_transfer.filesize,
+            passive=False # User-initiated resume is for active sends for now
+        )

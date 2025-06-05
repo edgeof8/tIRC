@@ -117,6 +117,9 @@ Key settings from `pyterm_irc_config.ini`:
   - `dcc_passive_mode_token_timeout` (integer): How long a passive DCC SEND offer (token) remains valid if not accepted by the peer (seconds).
   - `dcc_checksum_verify` (true/false): Enable verification of file integrity using checksums after transfer.
   - `dcc_checksum_algorithm` (string, e.g., "md5", "sha1", "sha256"): Preferred checksum algorithm. Both sender and receiver must support it.
+  - `dcc_bandwidth_limit_send_kbps` (integer): Bandwidth limit in KB/s for outgoing transfers (0 for unlimited).
+  - `dcc_bandwidth_limit_recv_kbps` (integer): Bandwidth limit in KB/s for incoming transfers (0 for unlimited).
+  - `dcc_resume_enabled` (true/false): Enables the DCC RESUME functionality.
 
 You can view and modify many settings on-the-fly using the `/set` command. Changes are saved automatically. Use `/rehash` to reload the INI file.
 
@@ -221,6 +224,7 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 - `/dcc cancel <id_or_token_prefix>` (Alias: `/dcc close`): Cancels an active transfer by its ID prefix or a pending passive offer by its token prefix.
 - `/dcc auto [on|off]`: Toggles or sets the global auto-accept feature for incoming DCC offers. Displays current status if no argument.
 - `/dcc browse [path]`: Lists contents of the specified local directory path (or current directory if no path given). Useful for finding files to send.
+- `/dcc resume <id_or_filename>`: Attempts to resume a previously failed/cancelled outgoing DCC SEND transfer.
 
 ## Headless Operation
 
@@ -306,6 +310,9 @@ Events are dispatched with a consistent `event_data` dictionary including `times
   - **`/dcc list` Enhancement:** Now displays active transfers, recently completed/failed ones, and pending passive offers received by the user.
   - **`/dcc cancel` Enhancement:** Can now cancel pending passive offers by token prefix, in addition to active transfers by ID prefix.
   - **Configuration:** Added `DCC_PASSIVE_MODE_TOKEN_TIMEOUT`, `DCC_CHECKSUM_VERIFY`, `DCC_CHECKSUM_ALGORITHM` to `pyterm_irc_config.ini`.
+- **DCC Phase 4 (Partial):**
+- **Bandwidth Throttling:** Implemented configurable bandwidth limits for both sending and receiving DCC transfers (`dcc_bandwidth_limit_send_kbps`, `dcc_bandwidth_limit_recv_kbps`).
+- **DCC Resume (Sends):** Implemented sender-initiated resume for outgoing DCC SEND transfers. The client will now offer to resume a transfer if a previous attempt for the same file and peer failed. Added `/dcc resume <id_or_filename>` command to manually trigger this.
 - **Initial DCC Implementation (Phase 1 - Active DCC):** Added core functionality for DCC SEND and DCC ACCEPT (receive) using active DCC connections. This includes new `/dcc` commands, DCC-specific configuration, and underlying modules (`DCCManager`, `DCCTransfer`, `DCCProtocol`, `DCCSecurity`). CTCP handling for DCC negotiation has been integrated into `IRCClient_Logic`.
 - **Complete Core Command Modularization:** All core client commands are now located in individual modules within the `commands/` directory and are dynamically loaded. This includes commands for UI navigation, user interactions (ignore, away, etc.), server management, and utilities.
 - **Trigger System Stability:** Successfully resolved a trigger execution loop issue, leading to improved stability and reliability of the `/on` command and Python-based triggers.
