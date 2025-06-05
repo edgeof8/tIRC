@@ -40,7 +40,8 @@ class DCCTransfer:
         local_filepath: str, # Sanitized, absolute local path for the file
         dcc_manager_ref: Any, # Actual type DCCManager, but Any to avoid circular import for now
         dcc_event_logger: Optional[logging.Logger] = None,
-        resume_offset: int = 0 # For resuming transfers
+        resume_offset: int = 0, # For resuming transfers
+        peer_ip: Optional[str] = None # Store peer's IP, useful for resume
         # progress_callback: Callable[[str, int, int, float, float], None], # id, transferred, total, rate, eta
         # status_update_callback: Callable[[str, DCCTransferStatus, Optional[str]], None] # id, status, error_msg
     ):
@@ -51,6 +52,7 @@ class DCCTransfer:
         self.filesize: int = filesize # Proposed size
         self.local_filepath: str = local_filepath # Full path to local file
         self.resume_offset: int = resume_offset if resume_offset >= 0 else 0
+        self.peer_ip: Optional[str] = peer_ip # Store the peer's IP address
 
         self.status: DCCTransferStatus = DCCTransferStatus.QUEUED
         self.bytes_transferred: int = self.resume_offset if self.resume_offset > 0 else 0

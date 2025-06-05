@@ -289,7 +289,7 @@ sequenceDiagram
   - **Modules**: `DCCTransfer` (full resume), `dcc_security.py` (virus scan hooks).
   - **Config**: `DCC_BANDWIDTH_LIMIT_SEND_KBPS`, `DCC_BANDWIDTH_LIMIT_RECV_KBPS`, `DCC_RESUME_ENABLED`, `DCC_VIRUS_SCAN_CMD`.
   - **Network**: Bandwidth throttling (COMPLETED), (Optional) UPnP.
-  - **Commands**: `/dcc resume` (COMPLETED - for sender-initiated resume of outgoing sends).
+  - **Commands & Resume Logic**: `/dcc resume` (COMPLETED - for sender-initiated resume of outgoing sends). Robust handling of incoming `DCC RESUME` offers (peer IP, total filesize from prior records) also COMPLETED.
   - **Security**: Virus scan hook.
 
 - **Phase 5: Testing and Optimization**
