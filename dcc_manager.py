@@ -260,7 +260,46 @@ class DCCManager:
                     f"Use /dcc accept {nick} \"{filename}\" {ip_str} {port} {filesize} to receive.",
                     "system", context_name="DCC"
                 )
-            # TODO: Add auto_accept logic here if configured
+                # Auto-accept logic
+                if self.dcc_config.get("auto_accept", False):
+                    if is_passive_offer:
+                        # For passive auto-accept, filename and token must be present.
+                        # Filesize is retrieved from the stored pending offer.
+                        if filename is not None and token is not None:
+                            logger.info(f"Attempting auto-accept for PASSIVE offer from {nick} for '{filename}' with token {token}")
+                            # Variables filename and token are now confirmed non-None.
+                            result = self.accept_passive_offer_by_token(nick, filename, token)
+                            if result.get("success"):
+                                transfer_id_val = result.get('transfer_id')
+                                transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
+                                self.client_logic.add_message(f"Auto-accepted PASSIVE DCC SEND from {nick} for '{filename}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
+                                return # Offer handled
+                            else:
+                                self.client_logic.add_message(f"Auto-accept for PASSIVE DCC SEND from {nick} for '{filename}' failed: {result.get('error')}", "error", context_name="DCC")
+                                return
+                        else:
+                            logger.warning(f"Skipping auto-accept for passive offer from {nick} due to missing parameters: filename='{filename}', token='{token}'")
+                    else: # Active offer auto-accept
+                        # For active auto-accept, all these must be present (already checked by line 225's `if None in [...]` for the general case)
+                        # This explicit check satisfies Pylance for this specific block.
+                        if filename is not None and ip_str is not None and port is not None and filesize is not None:
+                            logger.info(f"Attempting auto-accept for ACTIVE offer from {nick} for '{filename}'")
+                            result = self.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
+                            if result.get("success"):
+                                transfer_id_val = result.get('transfer_id')
+                                transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
+                                self.client_logic.add_message(f"Auto-accepted ACTIVE DCC SEND from {nick} for '{filename}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
+                                return # Offer handled
+                            else:
+                                self.client_logic.add_message(f"Auto-accept for ACTIVE DCC SEND from {nick} for '{filename}' failed: {result.get('error')}", "error", context_name="DCC")
+                                return
+                        else:
+                            # This path should ideally not be hit if the initial check on line 225 is effective.
+                            logger.warning(f"Skipping auto-accept for active offer from {nick} due to missing parameters (should have been caught earlier): file='{filename}', ip='{ip_str}', port='{port}', size='{filesize}'")
+
+            # If not auto-accepted (e.g., auto_accept is false, or required params for auto-accept were missing),
+            # then proceed to manual prompt logic. The return statements in the auto-accept blocks
+            # prevent falling through if auto-accept was attempted (successfully or with validation failure).
 
         elif dcc_command == "ACCEPT":
             is_passive_dcc_accept = parsed_dcc.get("is_passive_accept", False)
@@ -316,6 +355,12 @@ class DCCManager:
                 logger.warning(f"Malformed DCCCHECKSUM from {nick}: {parsed_dcc}")
                 return
 
+            # At this point, algorithm and checksum_value are guaranteed not to be None by the all() check.
+            # We can cast them to str for Pylance if it's still an issue, or rely on the runtime check.
+            # For now, let's assume the all() check is sufficient for runtime, Pylance might need explicit cast.
+            # However, the .get() still returns Optional[str], so Pylance is correct to warn without a cast/check.
+            # The `all()` check ensures they are truthy (not None and not empty string).
+
             logger.info(f"Received DCCCHECKSUM from {nick} for transfer '{transfer_identifier}', file '{filename}', algo '{algorithm}'.")
 
             transfer_to_update = None
@@ -323,13 +368,18 @@ class DCCManager:
                 # Try to find by transfer_id first
                 if transfer_identifier in self.transfers:
                     potential_transfer = self.transfers[transfer_identifier]
-                    if isinstance(potential_transfer, DCCReceiveTransfer) and potential_transfer.peer_nick == nick and potential_transfer.original_filename == filename:
+                    if isinstance(potential_transfer, DCCReceiveTransfer) and \
+                       potential_transfer.peer_nick == nick and \
+                       potential_transfer.original_filename == filename:
                         transfer_to_update = potential_transfer
 
                 # Fallback: If not found by ID, maybe by filename and nick (less reliable if multiple transfers of same file)
                 if not transfer_to_update:
                     for tid, tr_obj in self.transfers.items():
-                        if isinstance(tr_obj, DCCReceiveTransfer) and tr_obj.peer_nick == nick and tr_obj.original_filename == filename and tr_obj.status == DCCTransferStatus.COMPLETED:
+                        if isinstance(tr_obj, DCCReceiveTransfer) and \
+                           tr_obj.peer_nick == nick and \
+                           tr_obj.original_filename == filename and \
+                           tr_obj.status == DCCTransferStatus.COMPLETED:
                             # Only apply to completed transfers if ID didn't match, to avoid ambiguity
                             transfer_to_update = tr_obj
                             logger.info(f"DCCCHECKSUM matched by filename/nick for completed transfer {tid}")
@@ -337,7 +387,11 @@ class DCCManager:
 
             if transfer_to_update:
                 if hasattr(transfer_to_update, 'set_expected_checksum'):
-                    transfer_to_update.set_expected_checksum(algorithm, checksum_value)
+                    # The `all()` check above ensures algorithm and checksum_value are not None.
+                    # Tell Pylance these are strings.
+                    cast_algorithm: str = str(algorithm)
+                    cast_checksum_value: str = str(checksum_value)
+                    transfer_to_update.set_expected_checksum(cast_algorithm, cast_checksum_value)
                 else:
                     logger.error(f"Transfer object {transfer_to_update.transfer_id} does not have set_expected_checksum method.")
             else:
@@ -589,8 +643,14 @@ class DCCManager:
                 rate_str = f"{t.current_rate_bps / 1024:.1f} KB/s" if t.current_rate_bps > 0 else ""
                 eta_str = f"ETA: {int(t.estimated_eta_seconds // 60)}m{int(t.estimated_eta_seconds % 60)}s" if t.estimated_eta_seconds is not None else ""
 
+                checksum_info = ""
+                if hasattr(t, 'checksum_status') and t.checksum_status and t.checksum_status != "Pending" and t.checksum_status != "NotChecked":
+                    checksum_info = f" Checksum: {t.checksum_status}"
+                    if hasattr(t, 'checksum_algorithm') and t.checksum_algorithm:
+                        checksum_info += f" ({t.checksum_algorithm})"
+
                 line = (f"ID: {tid[:8]} [{t.transfer_type.name}] {t.peer_nick} - '{t.original_filename}' "
-                        f"({size_str}, {progress_percent:.1f}%) Status: {t.status.name} {rate_str} {eta_str}")
+                        f"({size_str}, {progress_percent:.1f}%) Status: {t.status.name}{checksum_info} {rate_str} {eta_str}")
                 if t.error_message:
                     line += f" Error: {t.error_message}"
                 status_lines.append(line)

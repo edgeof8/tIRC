@@ -104,6 +104,7 @@ class IRCClient_Logic:
         self.stdscr = stdscr
         self.is_headless = stdscr is None
         self.args = args
+        self.app_config = app_config # Make app_config module accessible
         self.all_server_configs = app_config.ALL_SERVER_CONFIGS
         self.active_server_config_name: Optional[str] = None
         self.active_server_config: Optional[ServerConfig] = None
@@ -260,9 +261,9 @@ class IRCClient_Logic:
             f"IRCClient_Logic initialized for {self.server or 'Not configured'}:{self.port or 'N/A'} as {self.nick}. Channels: {initial_channels_display}"
         )
         self.max_history = max_hist_to_use
-        self.reconnect_delay = RECONNECT_INITIAL_DELAY
-        self.max_reconnect_delay = RECONNECT_MAX_DELAY
-        self.connection_timeout = CONNECTION_TIMEOUT
+        self.reconnect_delay = int(app_config.RECONNECT_INITIAL_DELAY)
+        self.max_reconnect_delay = int(app_config.RECONNECT_MAX_DELAY)
+        self.connection_timeout = int(app_config.CONNECTION_TIMEOUT)
         self.last_attempted_nick_change: Optional[str] = None
 
     def _add_status_message(self, text: str, color_key: str = "system"):
@@ -755,7 +756,7 @@ class IRCClient_Logic:
         if self.reconnect_delay < self.max_reconnect_delay: self.reconnect_delay *= 2
         logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
 
-    def reset_reconnect_delay(self) -> None: self.reconnect_delay = RECONNECT_INITIAL_DELAY
+    def reset_reconnect_delay(self) -> None: self.reconnect_delay = int(app_config.RECONNECT_INITIAL_DELAY)
 
     def _reset_state_for_new_connection(self):
         logger.debug("Resetting client state for new server connection.")
