@@ -124,6 +124,11 @@ Key settings from `pyterm_irc_config.ini`:
   - `dcc_bandwidth_limit_send_kbps` (integer): Bandwidth limit in KB/s for outgoing transfers (0 for unlimited).
   - `dcc_bandwidth_limit_recv_kbps` (integer): Bandwidth limit in KB/s for incoming transfers (0 for unlimited).
   - `dcc_resume_enabled` (true/false): Enables the DCC RESUME functionality.
+  - `dcc_log_enabled` (true/false): Enables detailed DCC event logging.
+  - `dcc_log_file` (string): Name of the DCC log file (stored in `logs/` directory).
+  - `dcc_log_level` (string): Logging level for DCC events (e.g., "INFO", "DEBUG").
+  - `dcc_log_max_bytes` (integer): Maximum size of DCC log file before rotation.
+  - `dcc_log_backup_count` (integer): Number of backup DCC log files to keep.
 
 You can view and modify many settings on-the-fly using the `/set` command. Changes are saved automatically. Use `/rehash` to reload the INI file.
 
@@ -221,7 +226,7 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ### DCC (Direct Client-to-Client) Commands:
 
-- `/dcc send [-p|--passive] <nick> <filepath>`: Initiates a DCC SEND to the specified user. Use `-p` for a passive (reverse) send, where the recipient connects to you after you send them a token.
+- `/dcc send [-p|--passive] <nick> <filepath> [filepath2 ...]`: Initiates a DCC SEND to the specified user. Multiple files can be specified and will be queued for sequential transfer. Use `-p` for a passive (reverse) send, where the recipient connects to you after you send them a token.
 - `/dcc get <nick> "<filename>" --token <token>`: Accepts a passive DCC SEND offer from `<nick>` for `<filename>` using the provided `<token>`.
 - `/dcc accept <nick> "<filename>" <ip> <port> <size>`: Accepts an _active_ incoming DCC SEND offer from a user (where the sender is listening).
 - `/dcc list`: Lists current active DCC transfers, recently completed/failed ones, and pending passive offers you've received.
@@ -309,6 +314,14 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 - **DCC Core Logic & Command Refactoring:**
   - Further modularized `DCCManager` by extracting core responsibilities into new, focused classes: `DCCCTCPHandler` (for CTCP protocol messages), `DCCPassiveOfferManager` (for managing passive/reverse DCC offers), and `DCCSendManager` (for orchestrating outgoing file sends and queuing).
   - Began refactoring `commands/dcc/dcc_commands.py` by splitting individual DCC subcommands (e.g., `/dcc send`, `/dcc get`, `/dcc accept`, etc.) into their own dedicated files within the `commands/dcc/` directory to improve organization and align with the project's command modularity pattern.
+- **DCC Send Queue & Logging Improvements:**
+  - Added support for queuing multiple files in a single `/dcc send` command, with automatic sequential transfer.
+  - Implemented per-user send queues in `DCCManager` with automatic processing of queued files.
+  - Added comprehensive DCC event logging system with configurable settings:
+    - Dedicated DCC log file with rotation support
+    - Detailed logging of CTCP negotiation, socket events, file operations, and transfer progress
+    - Configurable log levels and file management
+  - Enhanced user feedback for queued transfers and file validation
 - **DCC Phase 2 Completion:**
   - **Passive DCC:** Implemented full passive DCC SEND (sender offers token, waits for ACCEPT) and passive DCC RECV (receiver listens after sending ACCEPT with token).
   - **Checksum Verification:** Added support for MD5/SHA1/etc. checksums for file integrity. Senders transmit checksums post-transfer; receivers verify. Configurable via `dcc_checksum_verify` and `dcc_checksum_algorithm`.
@@ -318,19 +331,9 @@ Events are dispatched with a consistent `event_data` dictionary including `times
   - **`/dcc cancel` Enhancement:** Can now cancel pending passive offers by token prefix, in addition to active transfers by ID prefix.
   - **Configuration:** Added `DCC_PASSIVE_MODE_TOKEN_TIMEOUT`, `DCC_CHECKSUM_VERIFY`, `DCC_CHECKSUM_ALGORITHM` to `pyterm_irc_config.ini`.
 - **DCC Phase 4 (Partial):**
-- **Bandwidth Throttling:** Implemented configurable bandwidth limits for both sending and receiving DCC transfers (`dcc_bandwidth_limit_send_kbps`, `dcc_bandwidth_limit_recv_kbps`).
-- **DCC Resume (Sends):** Implemented sender-initiated resume for outgoing DCC SEND transfers. The client will now offer to resume a transfer if a previous attempt for the same file and peer failed. Added `/dcc resume <id_or_filename>` command to manually trigger this.
+  - **Bandwidth Throttling:** Implemented configurable bandwidth limits for both sending and receiving DCC transfers (`dcc_bandwidth_limit_send_kbps`, `dcc_bandwidth_limit_recv_kbps`).
+  - **DCC Resume (Sends):** Implemented sender-initiated resume for outgoing DCC SEND transfers. The client will now offer to resume a transfer if a previous attempt for the same file and peer failed. Added `/dcc resume <id_or_filename>` command to manually trigger this.
 - **Initial DCC Implementation (Phase 1 - Active DCC):** Added core functionality for DCC SEND and DCC ACCEPT (receive) using active DCC connections. This includes new `/dcc` commands, DCC-specific configuration, and underlying modules (`DCCManager`, `DCCTransfer`, `DCCProtocol`, `DCCSecurity`). CTCP handling for DCC negotiation has been integrated into `IRCClient_Logic`.
-- **Complete Core Command Modularization:** All core client commands are now located in individual modules within the `commands/` directory and are dynamically loaded. This includes commands for UI navigation, user interactions (ignore, away, etc.), server management, and utilities.
-- **Trigger System Stability:** Successfully resolved a trigger execution loop issue, leading to improved stability and reliability of the `/on` command and Python-based triggers.
-- **Help System Accuracy:** Fixed the general `/help` command to accurately display all command groups and their respective commands, sourcing information dynamically from modules and scripts.
-- **Hyper-Modular Commands:** Core client command logic has been refactored out of `CommandHandler` into individual files within a structured `commands/` directory. These are dynamically loaded.
-- **Modular Help System:** The `/help` command now dynamically sources its information from these command modules as well as from scripts.
-- **EventManager:** Introduced a dedicated `EventManager` to centralize the creation and dispatch of script-facing events, ensuring consistent data.
-- **PythonTriggerAPI Relocation:** The API for Python-based triggers (`/on ... PY ...`) moved to [`python_trigger_api.py`](python_trigger_api.py:1).
-- **Protocol Handler Refactoring:** [`irc_protocol.py`](irc_protocol.py:1) has been significantly slimmed down into a dispatcher, with specific command handling logic moved to new modules: [`message_handlers.py`](message_handlers.py:1), [`membership_handlers.py`](membership_handlers.py:1), [`state_change_handlers.py`](state_change_handlers.py:1), [`protocol_flow_handlers.py`](protocol_flow_handlers.py:1).
-- **Centralized Color Handling:** Core logic components now pass semantic color keys (e.g., "system", "error") to `IRCClient_Logic.add_message`, which handles UI color resolution.
-- **Initialization Order Fix:** Corrected an issue where `CommandHandler` was initialized before `ScriptManager` in `IRCClient_Logic`, affecting dynamic command loading.
 
 ## Contributing
 

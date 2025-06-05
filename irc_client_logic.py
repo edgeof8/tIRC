@@ -257,6 +257,10 @@ class IRCClient_Logic:
         self.network_handler = NetworkHandler(self)
         self.network_handler.channels_to_join_on_connect = self.initial_channels_list[:]
 
+        # Initialize network thread if we have server/port info
+        if self.server and self.port is not None:
+            self.network_handler.start()
+
         if self.is_headless:
             self.ui = DummyUI()
             self.input_handler = None
@@ -360,6 +364,9 @@ class IRCClient_Logic:
         self.max_reconnect_delay = int(app_config.RECONNECT_MAX_DELAY)
         self.connection_timeout = int(app_config.CONNECTION_TIMEOUT)
         self.last_attempted_nick_change: Optional[str] = None
+        self._final_quit_message = None
+        self._handle_user_input = self._handle_user_input_impl
+        self._update_ui = self._update_ui_impl
 
     def _add_status_message(self, text: str, color_key: str = "system"):
         color_attr = self.ui.colors.get(color_key, self.ui.colors.get("system", 0))
@@ -1087,98 +1094,50 @@ class IRCClient_Logic:
             self.ui_needs_update.set()
 
     def run_main_loop(self):
-        logger.info(f"Starting main client loop (headless={self.is_headless}).")
-        if not self.is_headless:
-            self.ui.refresh_all_windows()
-        if (
-            not self.network_handler.network_thread
-            or not self.network_handler.network_thread.is_alive()
-        ):
-            if self.server and self.port:
-                self.network_handler.start()
-            else:
-                logger.warning(
-                    "Network connection not started: server or port not configured."
-                )
-                if not self.active_server_config:
-                    self._add_status_message(
-                        "Cannot connect: No server specified and no default configuration. Use /server <name> or /connect <host>.",
-                        "error",
-                    )
+        """Main client loop that handles user input and UI updates."""
+        logger.info("Starting main client loop (headless=%s).", self.is_headless)
         try:
+            # Start network connection if needed
+            if (
+                self.server
+                and self.port is not None
+                and not self.network_handler._network_thread
+            ):
+                self.network_handler.start()
+
             while not self.should_quit:
-                if not self.is_headless and self.input_handler and self.ui:
-                    key_code = self.ui.get_input_char()
-                    if key_code != curses.ERR:
-                        self.input_handler.handle_key_press(key_code)
-                    if self.ui_needs_update.is_set() or key_code != curses.ERR:
-                        self.ui.refresh_all_windows()
-                        if self.ui_needs_update.is_set():
-                            self.ui_needs_update.clear()
-                else:
-                    if self.ui_needs_update.is_set():
-                        if not self.is_headless and self.ui:
-                            self.ui.refresh_all_windows()
-                        self.ui_needs_update.clear()
-                time.sleep(0.05)
-        except KeyboardInterrupt:
-            logger.info(
-                "Keyboard interrupt received in main client loop. Initiating quit."
-            )
-            self.should_quit = True
-        except curses.error as e:
-            if not self.is_headless:
-                logger.error(f"Curses error in main loop: {e}", exc_info=True)
                 try:
-                    self._add_status_message(f"Curses error: {e}. Quitting.", "error")
-                except:
-                    # Best-effort notification during critical error
-                    pass
-            else:
-                logger.error(
-                    f"Curses-related error in headless main loop: {e}", exc_info=True
-                )
-            self.should_quit = True
+                    if not self.is_headless:
+                        self._handle_user_input()
+                    self._update_ui()
+                    time.sleep(0.01)  # Small sleep to prevent CPU hogging
+
+                except KeyboardInterrupt:
+                    logger.info("Keyboard interrupt received, initiating shutdown...")
+                    self.should_quit = True
+                    break
+                except curses.error as e:
+                    logger.error(f"curses error in main loop: {e}")
+                    if not self.is_headless:
+                        self.ui_needs_update.set()
+                except Exception as e:
+                    logger.error(f"Error in main loop: {e}", exc_info=True)
+                    if not self.is_headless:
+                        self.ui_needs_update.set()
+
         except Exception as e:
-            logger.critical(
-                f"Unhandled exception in main client loop: {e}", exc_info=True
-            )
-            try:
-                self._add_status_message(
-                    f"CRITICAL ERROR: {e}. Attempting to quit.", "error"
-                )
-            except:
-                # It's often better to catch specific exceptions,
-                # but in this critical shutdown path, we want to ensure
-                # _add_status_message doesn't cause a further crash.
-                pass
-            self.should_quit = True
+            logger.critical(f"Critical error in main client loop: {e}", exc_info=True)
         finally:
-            logger.info("IRCClient_Logic.run_main_loop() finally block executing.")
-            self.should_quit = True
-            quit_message_to_send = "PyRC - Exiting"
-            if hasattr(self, "script_manager") and self.script_manager:
-                temp_nick_for_quit = self.nick if self.nick else app_config.DEFAULT_NICK
-                temp_server_for_quit = self.server if self.server else "UnknownServer"
-                random_msg = self.script_manager.get_random_quit_message_from_scripts(
-                    {"nick": temp_nick_for_quit, "server": temp_server_for_quit}
-                )
-                if random_msg:
-                    quit_message_to_send = random_msg
-            if hasattr(self, "event_manager") and self.event_manager:
-                try:
-                    self.event_manager.dispatch_client_shutdown_final(raw_line="")
-                except Exception as e_dispatch:
-                    logger.error(
-                        f"Error dispatching CLIENT_SHUTDOWN_FINAL: {e_dispatch}",
-                        exc_info=True,
-                    )
-            self._final_quit_message = quit_message_to_send
+            # Ensure we send a quit message and disconnect gracefully
+            if hasattr(self, "_final_quit_message"):
+                quit_message = self._final_quit_message
+            else:
+                quit_message = "Client shutting down"
+
             if self.network_handler:
-                self.network_handler.disconnect_gracefully(
-                    quit_message=quit_message_to_send
-                )
-            logger.info("IRCClient_Logic.run_main_loop() completed.")
+                self.network_handler.disconnect_gracefully(quit_message)
+
+            logger.info("Main client loop ended.")
 
     def initialize(self) -> bool:
         try:
@@ -1256,6 +1215,24 @@ class IRCClient_Logic:
             f"Client state reset. Active context set to '{self.context_manager.active_context_name}'."
         )
         self.ui_needs_update.set()
+
+    def _handle_user_input_impl(self):
+        """Handle user input in the main loop."""
+        if self.input_handler and self.ui:
+            key_code = self.ui.get_input_char()
+            if key_code != curses.ERR:
+                self.input_handler.handle_key_press(key_code)
+            if self.ui_needs_update.is_set() or key_code != curses.ERR:
+                self.ui.refresh_all_windows()
+                if self.ui_needs_update.is_set():
+                    self.ui_needs_update.clear()
+
+    def _update_ui_impl(self):
+        """Update UI in the main loop."""
+        if self.ui_needs_update.is_set():
+            if not self.is_headless and self.ui:
+                self.ui.refresh_all_windows()
+            self.ui_needs_update.clear()
 
 
 # END OF MODIFIED FILE: irc_client_logic.py

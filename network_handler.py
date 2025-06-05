@@ -526,5 +526,35 @@ class NetworkHandler:
             self._thread_shutdown_complete.set()
             logger.info("Network thread shutdown complete")
 
+    def _process_received_data(self, data: bytes) -> None:
+        """Process received data from the network socket.
+
+        Args:
+            data: Raw bytes received from the socket
+        """
+        try:
+            # Add new data to buffer
+            self.buffer += data
+
+            # Process complete lines
+            while b"\r\n" in self.buffer:
+                line, self.buffer = self.buffer.split(b"\r\n", 1)
+                try:
+                    # Decode the line and handle it
+                    decoded_line = line.decode("utf-8", errors="replace")
+                    if self.client_logic_ref:
+                        self.client_logic_ref.handle_server_message(decoded_line)
+                except UnicodeDecodeError as e:
+                    logger.error(f"Error decoding received data: {e}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Error processing received line: {e}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"Error in _process_received_data: {e}", exc_info=True)
+            # Don't clear buffer on error to avoid losing data
+            pass
+
 
 # END OF MODIFIED FILE: network_handler.py
