@@ -306,6 +306,9 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 
 ## Recent Changes (Summary)
 
+- **DCC Core Logic & Command Refactoring:**
+  - Further modularized `DCCManager` by extracting core responsibilities into new, focused classes: `DCCCTCPHandler` (for CTCP protocol messages), `DCCPassiveOfferManager` (for managing passive/reverse DCC offers), and `DCCSendManager` (for orchestrating outgoing file sends and queuing).
+  - Began refactoring `commands/dcc/dcc_commands.py` by splitting individual DCC subcommands (e.g., `/dcc send`, `/dcc get`, `/dcc accept`, etc.) into their own dedicated files within the `commands/dcc/` directory to improve organization and align with the project's command modularity pattern.
 - **DCC Phase 2 Completion:**
   - **Passive DCC:** Implemented full passive DCC SEND (sender offers token, waits for ACCEPT) and passive DCC RECV (receiver listens after sending ACCEPT with token).
   - **Checksum Verification:** Added support for MD5/SHA1/etc. checksums for file integrity. Senders transmit checksums post-transfer; receivers verify. Configurable via `dcc_checksum_verify` and `dcc_checksum_algorithm`.
