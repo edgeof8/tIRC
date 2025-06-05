@@ -15,13 +15,20 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
   - Robust CAP negotiation (including `sasl`, `multi-prefix`, `server-time`, `message-tags`, `account-tag`, `echo-message`, `away-notify`, `chghost`, `userhost-in-names`, `cap-notify`, `extended-join`, `account-notify`, `invite-notify`). Server-specific desired capabilities can be configured.
   - SASL PLAIN authentication for secure login.
   - IRCv3 Message Tag parsing and inclusion in relevant script events.
-- **Highly Modular Command System:**
-  - Core client commands are implemented in individual, self-contained Python modules within a structured `commands/` directory (e.g., `commands/utility/set_command.py`, `commands/ui/split_screen_commands.py`).
-  - Commands are dynamically discovered and registered at startup.
-  - Each command module defines its own handler(s), help text (usage, description), and aliases.
-  - This structure makes adding or modifying core commands straightforward and isolated.
+- **Highly Modular Command System:** _All_ core client commands are now implemented in individual, self-contained Python modules within a structured `commands/` directory (e.g., [`commands/utility/set_command.py`](commands/utility/set_command.py:1), [`commands/ui/split_screen_commands.py`](commands/ui/split_screen_commands.py:1)). These commands are dynamically discovered and registered at startup, making the system highly extensible and maintainable. Each command module defines its own handler(s), help text (usage, description), and aliases, ensuring that adding or modifying core commands is straightforward and isolated.
+  ```mermaid
+  graph TD
+    A[PyRC Startup] --> B{Scan `commands/` directory};
+    B --> C[Load Core Command Modules];
+    C --> D{Scan `scripts/` directory};
+    D --> E[Load Script Modules];
+    E --> F[Register Commands & Help Text];
+    F --> G[User Issues /help];
+    G --> H[Dynamic Help Displayed];
+  ```
+- **Dynamic Help System:** The `/help` system is now fully dynamic, sourcing its information directly from the core command modules' definitions and from script registrations. This ensures help text is always up-to-date with available commands and their functionalities.
 - **Comprehensive Command Set:** Supports a wide array of standard IRC commands and client-specific utility commands. (See "Basic Commands" section).
-- **Dynamic Configuration:** View and modify client settings on-the-fly using the `/set` command. Changes are saved to `pyterm_irc_config.ini`. Reload configuration with `/rehash`.
+- **Dynamic Configuration:** View and modify client settings on-the-fly using the `/set` command. Changes are saved to [`pyterm_irc_config.ini`](pyterm_irc_config.ini:1). Reload configuration with `/rehash`.
 - **Ignore System:** Powerful ignore list for users/hostmasks with wildcard support, managed via `/ignore`, `/unignore`, `/listignores`.
 - **Extensible Scripting System (Python):**
   - Load custom Python scripts from a `scripts/` directory to add new commands, respond to IRC/client events, and modify client behavior.
@@ -29,7 +36,7 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
   - Scripts have access to a rich `ScriptAPIHandler` for safe and powerful interaction with the client (see "Scripting System" section below for API details).
 - **Advanced Event-Driven Trigger System (`/on` command & API):**
   - Define custom actions based on IRC events (TEXT, ACTION, JOIN, PART, QUIT, KICK, MODE, TOPIC, NICK, NOTICE, INVITE, CTCP, RAW).
-  - Actions can be standard client commands or arbitrary Python code snippets (executed via a sandboxed `PythonTriggerAPI`).
+  - Actions can be standard client commands or arbitrary Python code snippets (executed via a sandboxed [`PythonTriggerAPI`](python_trigger_api.py:1)). The `/on` command and its underlying Python execution API ([`PythonTriggerAPI`](python_trigger_api.py:1)) are stable and robust.
   - Utilize regex capture groups ($0, $1, etc.) and extensive event-specific variables ($nick, $channel, $$1, $1-, etc.).
   - Triggers are persistent and saved to `config/triggers.json`.
   - Fully manageable via the `/on` command or programmatically through the `ScriptAPIHandler`.
@@ -47,9 +54,9 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
   - Robust collision avoidance for log filenames.
   - Raw IRC message logging to UI toggleable with `/rawlog`.
 - **Code Modularity:** Significantly improved structure throughout the core:
-  - **Protocol Handling:** IRC command processing is broken down into multiple focused handler modules (e.g., `message_handlers.py`, `membership_handlers.py`, `state_change_handlers.py`, `protocol_flow_handlers.py`, `irc_numeric_handlers.py`), making `irc_protocol.py` a lean dispatcher.
+  - **Protocol Handling:** IRC command processing is broken down into multiple focused handler modules (e.g., [`message_handlers.py`](message_handlers.py:1), [`membership_handlers.py`](membership_handlers.py:1), [`state_change_handlers.py`](state_change_handlers.py:1), [`protocol_flow_handlers.py`](protocol_flow_handlers.py:1), [`irc_numeric_handlers.py`](irc_numeric_handlers.py:1)), making [`irc_protocol.py`](irc_protocol.py:1) a lean dispatcher.
   - **Command Handling:** Core client command logic is highly modularized into individual files within `commands/` subdirectories.
-  - **Centralized Message Output:** Internal components consistently use `IRCClient_Logic.add_message` (or helpers) for UI feedback, which now handles semantic color key resolution.
+- **Centralized Color Handling:** Client feedback and messages utilize a semantic color key system, resolved centrally for consistent UI presentation.
 - **Tab Completion:** For commands (core, script-added, dynamically loaded) and nicks in the current context (UI mode only).
 - **SSL/TLS Encryption:** Secure connections, with an option (`verify_ssl_cert` in config) to allow connections to servers with self-signed certificates.
 - **Color Themes:** Basic support, with potential for expansion.
@@ -94,7 +101,7 @@ Key settings from `pyterm_irc_config.ini`:
   - `sasl_username`, `sasl_password` (optional, default to nick/nickserv_password)
   - `verify_ssl_cert` (true/false)
   - `auto_connect` (true for one server to connect on startup)
-  - `desired_caps` (optional, comma-separated list of IRCv3 capabilities to request, e.g., `sasl,multi-prefix,server-time`)
+  - `desired_caps` (optional, e.g., `sasl,multi-prefix,server-time`): Comma-separated list of IRCv3 capabilities to request from this specific server.
 - **UI Settings:** (`[UI]`)
   - `message_history_lines`
   - `headless_message_history_lines` (for `--headless` mode)
@@ -106,7 +113,7 @@ Key settings from `pyterm_irc_config.ini`:
   - `enable_trigger_system` (true/false)
 - **Scripts:** (`[Scripts]`)
   - `disabled_scripts` (comma-separated list of script module names to disable)
-- **IgnoreList:** (`[IgnoreList]`) - Managed via `/ignore` commands, patterns are stored as keys.
+- **IgnoreList:** (`[IgnoreList]`): This section is automatically managed by the `/ignore`, `/unignore`, and `/listignores` commands. Ignored patterns (e.g., `*!*@*.example.com`) are stored here.
 
 You can view and modify many settings on-the-fly using the `/set` command. Changes are saved automatically. Use `/rehash` to reload the INI file.
 
@@ -126,70 +133,70 @@ python pyrc.py [--server <server>] [--port <port>] [--nick <nick>] [--channel <#
 
 ## Basic Commands
 
-PyRC supports a variety of commands. Type `/help` within the client for a list of commands and their aliases, or `/help <command>` for specific command usage. The help system is now dynamically built from command module definitions and script registrations.
+PyRC supports a variety of commands, all dynamically loaded. Type `/help` within the client for a list of commands and their aliases, or `/help <command>` for specific command usage. The help system is dynamically built from command module definitions and script registrations, ensuring up-to-date information.
 
 ### Connection & Session Management:
 
-- `/connect <server[:port]> [ssl|nossl]`: Connects to a specified server, creating a temporary configuration.
-- `/server <config_name>`: Switches to a server defined in `pyterm_irc_config.ini`.
+- `/connect <server[:port]> [ssl|nossl]`: Connects to the specified IRC server. Uses SSL if 'ssl' is provided, or attempts to infer from port.
+- `/server <config_name>` (Alias: `/s`): Switches to a pre-defined server configuration and attempts to connect.
 - `/disconnect [reason]` (Alias: `/d`): Disconnects from the current server.
-- `/quit [message]` (Alias: `/q`): Disconnects and exits PyRC. Uses random messages if no message is provided (from default_random_messages.py script).
-- `/reconnect`: Disconnects and reconnects to the current server.
+- `/quit [message]` (Alias: `/q`): Disconnects from the server and exits PyRC.
+- `/reconnect`: Disconnects and then reconnects to the current server.
 - `/nick <newnickname>` (Alias: `/n`): Changes your nickname.
-- `/away [message]`: Sets your away status. No message marks you as back.
+- `/away [message]`: Sets your away status with an optional message. If no message is provided, marks you as no longer away.
 
 ### Channel Operations:
 
-- `/join <channel>` (Alias: `/j`): Joins a channel.
-- `/part [channel] [reason]` (Alias: `/p`): Leaves a channel. Uses random messages if no reason is provided (from default_random_messages.py script).
-- `/topic [newtopic]` (Alias: `/t`): Shows or sets the channel topic.
-- `/invite <nick> [channel]` (Alias: `/i`): Invites a user to a channel.
+- `/join <channel> [#channel2 ...]` (Alias: `/j`): Joins the specified IRC channel(s).
+- `/part [channel] [reason]` (Alias: `/p`): Leaves the specified channel or the current channel if none is specified.
+- `/topic [<channel>] [<new_topic>]` (Alias: `/t`): Views or sets the topic for a channel. If no channel is specified, uses the current channel. If no new_topic is specified, views the current topic.
+- `/invite <nick> [channel]` (Alias: `/i`): Invites a user to a channel. If no channel is specified, uses the current channel.
 - `/kick <nick> [reason]` (Alias: `/k`): Kicks a user from the current channel.
-- `/cyclechannel` (Alias: `/cc`): Parts and rejoins the current channel.
-- `/ban <nick|hostmask>`: Bans a user/hostmask from the current channel.
-- `/unban <hostmask>`: Removes a ban.
-- `/mode [<target>] <modes_and_params>`: Sets or views modes.
-- `/op <nick>` (Alias: `/o`): Grants operator status.
-- `/deop <nick>` (Alias: `/do`): Removes operator status.
-- `/voice <nick>` (Alias: `/v`): Grants voice status.
-- `/devoice <nick>` (Alias: `/dv`): Removes voice status.
+- `/cyclechannel` (Alias: `/cc`): Parts and then rejoins the current channel.
+- `/ban <nick|hostmask>`: Bans a user or hostmask from the current channel.
+- `/unban <hostmask>`: Removes a ban (specified by hostmask) from the current channel.
+- `/mode [<target>] <modes_and_params>`: Sets or views channel or user modes. If <target> is omitted for a channel mode, it defaults to the current channel.
+- `/op <nick>` (Alias: `/o`): Grants operator status to <nick> in the current channel.
+- `/deop <nick>` (Alias: `/do`): Removes operator status from <nick> in the current channel.
+- `/voice <nick>` (Alias: `/v`): Grants voice status to <nick> in the current channel.
+- `/devoice <nick>` (Alias: `/dv`): Removes voice status from <nick> in the current channel.
 
 ### Messaging & Information:
 
-- `/msg <nickname> <message>` (Alias: `/m`): Sends a private message.
-- `/query <nickname> [message]`: Opens a query window.
-- `/notice <target> <message>` (Alias: `/no`): Sends a NOTICE.
-- `/me <action text>`: Sends a CTCP ACTION (e.g., `/me waves`).
-- `/whois <nick>` (Alias: `/w`): Retrieves WHOIS information.
-- `/who [<target>]`: Retrieves WHO information.
-- `/whowas <nick> [count [target_server]]`: Retrieves WHOWAS information.
-- `/list [pattern]`: Lists channels on the server. Output goes to a temporary `##LIST_RESULTS...##` window.
-- `/names [channel]`: Lists users in a channel.
+- `/msg <target> <message>` (Alias: `/m`): Sends a private message to a user or a message to a channel.
+- `/query <nick> [message]`: Opens a query window with <nick> and optionally sends an initial message.
+- `/notice <target> <message>` (Alias: `/no`): Sends a NOTICE to the specified target.
+- `/me <action text>`: Sends an action message (CTCP ACTION) to the current channel or query.
+- `/whois <nick>` (Alias: `/w`): Retrieves WHOIS information for the specified nickname.
+- `/who [channel|nick]`: Shows WHO information for a channel or user.
+- `/whowas <nick> [count] [server]`: Shows WHOWAS information for a user, providing historical data about a nickname.
+- `/list [pattern]`: Lists channels on the server, optionally filtering by a pattern. Results appear in a new temporary window.
+- `/names [channel]`: Shows the list of users in a channel. If no channel is specified, it may list users in the current channel or all visible users depending on the server.
 
 ### Client Utility & UI:
 
-- `/clear` (Alias: `/c`): Clears messages from the current window.
-- `/close` (Aliases: `/wc`, `/partchannel`): Closes the current query/channel window.
-- `/help [command]` (Alias: `/h`): Displays help.
+- `/clear` (Alias: `/c`): Clears the message history of the current active window.
+- `/close [context_name]` (Aliases: `/wc`, `/partchannel`): Closes the specified window or the current window if none is specified. For channels, this parts the channel.
+- `/help [command_name]` (Alias: `/h`): Displays general help or help for a specific command.
 - PageUp/PageDown: Scroll message buffer.
-- Ctrl+N (or `/nextwindow`, `/next`): Switch to the next window.
-- Ctrl+P (or `/prevwindow`, `/prev`): Switch to the previous window.
-- `/window <name|number>` (Alias: `/win`): Switches to a specific window.
+- Ctrl+N (or `/nextwindow`, Alias: `/next`): Switch to the next window.
+- Ctrl+P (or `/prevwindow`, Alias: `/prev`): Switch to the previous window.
+- `/window <name|number>` (Alias: `/win`): Switches to the window specified by name or number.
 - `/status`: Switches to the Status window.
-- `/prevchannel` (Alias: `/pc`): Switches to the previously active channel or Status.
-- `/split`: Toggles split-screen mode.
-- `/focus <top|bottom>`: Switches focus between split-screen panes.
-- `/setpane <top|bottom> <context_name>`: Assigns a context to a specific pane.
-- Ctrl+U (or `/u [offset|direction]`, `/userlistscroll [offset|direction]`): Scrolls the user list.
-- `/set [<section.key> [<value>]]` (Alias: `/se`): Views or modifies client configuration.
-- `/rehash`: Reloads `pyterm_irc_config.ini`.
-- `/save`: Saves current configuration changes to `pyterm_irc_config.ini`.
-- `/ignore <nick|hostmask>`: Ignores a user/hostmask.
-- `/unignore <nick|hostmask>`: Removes an ignore.
-- `/listignores`: Lists ignored patterns.
-- `/rawlog [on|off|toggle]`: Toggles display of raw IRC messages in Status window.
-- `/lastlog <pattern>`: Searches message history of the active window.
-- `/raw <raw_irc_command>` (Aliases: `/quote`, `/r`): Sends a raw command to the server.
+- `/prevchannel` (Alias: `/pc`): Switches to the previously active channel or Status window.
+- `/split`: Toggle split-screen mode on/off.
+- `/focus <top|bottom>`: Switch focus between split panes (top or bottom).
+- `/setpane <top|bottom> <context_name>`: Set a context in a specific pane.
+- Ctrl+U (or `/userlistscroll [offset|direction]`, Alias: `/u`): Scrolls the user list.
+- `/set [<section.key> [<value>]]` (Alias: `/se`): Views or modifies client configuration settings.
+- `/rehash`: Reloads the client configuration from the INI file.
+- `/save`: Saves the current client configuration to the INI file.
+- `/ignore <nick|hostmask>`: Adds a user/hostmask to the ignore list. Simple nicks are converted to nick!_@_.
+- `/unignore <nick|hostmask>`: Removes a user/hostmask from the ignore list. Tries to match exact pattern or derived nick!_@_.
+- `/listignores` (Alias: `/ignores`): Lists all currently ignored patterns.
+- `/rawlog [on|off|toggle]`: Toggles or sets the display of raw IRC messages in the Status window.
+- `/lastlog <pattern>`: Searches the message history of the active window for lines containing <pattern>.
+- `/raw <raw IRC command>` (Aliases: `/quote`, `/r`): Sends a raw command directly to the IRC server.
 - `/on ...`: Manages event-based triggers (see `/help on`).
 
 ### Fun Commands (from default_fun_commands.py script):
@@ -278,11 +285,14 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 
 ## Recent Changes (Summary)
 
+- **Complete Core Command Modularization:** All core client commands are now located in individual modules within the `commands/` directory and are dynamically loaded. This includes commands for UI navigation, user interactions (ignore, away, etc.), server management, and utilities.
+- **Trigger System Stability:** Successfully resolved a trigger execution loop issue, leading to improved stability and reliability of the `/on` command and Python-based triggers.
+- **Help System Accuracy:** Fixed the general `/help` command to accurately display all command groups and their respective commands, sourcing information dynamically from modules and scripts.
 - **Hyper-Modular Commands:** Core client command logic has been refactored out of `CommandHandler` into individual files within a structured `commands/` directory. These are dynamically loaded.
 - **Modular Help System:** The `/help` command now dynamically sources its information from these command modules as well as from scripts.
 - **EventManager:** Introduced a dedicated `EventManager` to centralize the creation and dispatch of script-facing events, ensuring consistent data.
-- **PythonTriggerAPI Relocation:** The API for Python-based triggers (`/on ... PY ...`) moved to `python_trigger_api.py`.
-- **Protocol Handler Refactoring:** `irc_protocol.py` has been significantly slimmed down into a dispatcher, with specific command handling logic moved to new modules: `message_handlers.py`, `membership_handlers.py`, `state_change_handlers.py`, `protocol_flow_handlers.py`.
+- **PythonTriggerAPI Relocation:** The API for Python-based triggers (`/on ... PY ...`) moved to [`python_trigger_api.py`](python_trigger_api.py:1).
+- **Protocol Handler Refactoring:** [`irc_protocol.py`](irc_protocol.py:1) has been significantly slimmed down into a dispatcher, with specific command handling logic moved to new modules: [`message_handlers.py`](message_handlers.py:1), [`membership_handlers.py`](membership_handlers.py:1), [`state_change_handlers.py`](state_change_handlers.py:1), [`protocol_flow_handlers.py`](protocol_flow_handlers.py:1).
 - **Centralized Color Handling:** Core logic components now pass semantic color keys (e.g., "system", "error") to `IRCClient_Logic.add_message`, which handles UI color resolution.
 - **Initialization Order Fix:** Corrected an issue where `CommandHandler` was initialized before `ScriptManager` in `IRCClient_Logic`, affecting dynamic command loading.
 
