@@ -1,24 +1,39 @@
 import logging
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Dict
+
+from commands.dcc.dcc_command_base import DCCCommandHandler
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.commands.dcc.list")
 
-class DCCListCommandHandler:
-    def __init__(self, client_logic: 'IRCClient_Logic'):
-        self.client_logic = client_logic
-        self.dcc_m = client_logic.dcc_manager
-        self.active_context_name = client_logic.context_manager.active_context_name or "Status" # Should not be needed here
-        self.dcc_context_name = "DCC"
+class DCCListCommandHandler(DCCCommandHandler):
+    """
+    Handles the /dcc list command, displaying current DCC transfer statuses.
+    Inherits common DCC command functionality from DCCCommandHandler.
+    """
+    command_name: str = "list"
+    command_aliases: List[str] = ["ls"]
+    command_help: Dict[str, str] = {
+        "usage": "/dcc list",
+        "description": "Displays a list of all active and pending DCC file transfers.",
+        "aliases": "ls"
+    }
 
-    def execute(self, cmd_args: List[str]): # cmd_args is not used for list
-        if not self.dcc_m:
-            self.client_logic.add_message("DCC system not available.", "error", context_name=self.dcc_context_name)
+    def __init__(self, client_logic: 'IRCClient_Logic'):
+        super().__init__(client_logic)
+
+    def execute(self, cmd_args: List[str]):
+        """
+        Executes the /dcc list command.
+        Retrieves and displays the status of all DCC transfers.
+        """
+        if not self.check_dcc_available(self.command_name):
             return
-        if not self.dcc_m.dcc_config.get("enabled"):
-            self.client_logic.add_message("DCC is currently disabled.", "error", context_name=self.dcc_context_name)
+
+        if cmd_args:
+            self.client_logic.add_message(f"Usage: {self.command_help['usage']}", "error", context_name=self.active_context_name)
             return
 
         try:
@@ -28,8 +43,6 @@ class DCCListCommandHandler:
                 self.client_logic.add_message(status_line, "system", context_name=self.dcc_context_name)
             self.client_logic.add_message("---------------------", "system", context_name=self.dcc_context_name)
 
-            if self.client_logic.context_manager.active_context_name != self.dcc_context_name:
-                self.client_logic.switch_active_context(self.dcc_context_name)
+            self.ensure_dcc_context()
         except Exception as e:
-            logger.error(f"Error processing /dcc list: {e}", exc_info=True)
-            self.client_logic.add_message(f"Error retrieving DCC status: {e}", "error", context_name=self.dcc_context_name)
+            self.handle_error(f"Error retrieving DCC status: {e}", exc_info=True, context_name=self.dcc_context_name)

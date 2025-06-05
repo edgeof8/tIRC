@@ -1,1 +1,72 @@
-[]
+[
+    {
+        "id": 1,
+        "event_type": "RAW",
+        "pattern": "^:(\\S+)!(\\S+)@(\\S+) PRIVMSG (\\S+) :(.+)$",
+        "action_type": "PYTHON",
+        "action_content": "\nif event_data['command'] == 'PRIVMSG':\n    nick = event_data['prefix'].split('!')[0]\n    target = event_data['params_list'][0]\n    message = event_data['trailing']\n    if target.startswith('#'):\n        client.add_message(f\"{nick}: {message}\", \"other_message\", context_name=target)\n    else:\n        client.add_message(f\"{nick}: {message}\", \"pm\", context_name=nick)\n",
+        "is_enabled": true,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749106977.689646,
+        "updated_at": 1749106977.6896465,
+        "created_by": "system",
+        "description": "Handle PRIVMSG events"
+    },
+    {
+        "id": 2,
+        "event_type": "RAW",
+        "pattern": "^:(\\S+)!(\\S+)@(\\S+) NOTICE (\\S+) :(.+)$",
+        "action_type": "PYTHON",
+        "action_content": "\nif event_data['command'] == 'NOTICE':\n    nick = event_data['prefix'].split('!')[0]\n    target = event_data['params_list'][0]\n    message = event_data['trailing']\n    client.add_message(f\"-{nick}- {message}\", \"system\", context_name=target)\n",
+        "is_enabled": true,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749106977.6911097,
+        "updated_at": 1749106977.69111,
+        "created_by": "system",
+        "description": "Handle NOTICE events"
+    },
+    {
+        "id": 3,
+        "event_type": "RAW",
+        "pattern": "^:(\\S+)!(\\S+)@(\\S+) JOIN :?(\\S+)$",
+        "action_type": "PYTHON",
+        "action_content": "\nif event_data['command'] == 'JOIN':\n    nick = event_data['prefix'].split('!')[0]\n    channel = event_data['params_list'][0]\n    client.add_message(f\"{nick} joined {channel}\", \"join_part\", context_name=channel)\n",
+        "is_enabled": true,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749106977.6922338,
+        "updated_at": 1749106977.692234,
+        "created_by": "system",
+        "description": "Handle JOIN events"
+    },
+    {
+        "id": 4,
+        "event_type": "RAW",
+        "pattern": "^:(\\S+)!(\\S+)@(\\S+) PART (\\S+)(?: :(.+))?$",
+        "action_type": "PYTHON",
+        "action_content": "\nif event_data['command'] == 'PART':\n    nick = event_data['prefix'].split('!')[0]\n    channel = event_data['params_list'][0]\n    reason = event_data['trailing'] if event_data['trailing'] else \"\"\n    client.add_message(f\"{nick} left {channel}{' (' + reason + ')' if reason else ''}\", \"join_part\", context_name=channel)\n",
+        "is_enabled": true,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749106977.69335,
+        "updated_at": 1749106977.6933503,
+        "created_by": "system",
+        "description": "Handle PART events"
+    },
+    {
+        "id": 5,
+        "event_type": "RAW",
+        "pattern": "^:(\\S+)!(\\S+)@(\\S+) QUIT(?: :(.+))?$",
+        "action_type": "PYTHON",
+        "action_content": "\nif event_data['command'] == 'QUIT':\n    nick = event_data['prefix'].split('!')[0]\n    reason = event_data['trailing'] if event_data['trailing'] else \"\"\n    for ctx_name, ctx in client.context_manager.contexts.items():\n        if ctx.type == \"channel\" and nick in ctx.users:\n            client.add_message(f\"{nick} quit{' (' + reason + ')' if reason else ''}\", \"join_part\", context_name=ctx_name)\n",
+        "is_enabled": true,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749106977.6945076,
+        "updated_at": 1749106977.6945078,
+        "created_by": "system",
+        "description": "Handle QUIT events"
+    }
+]

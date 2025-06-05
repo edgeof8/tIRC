@@ -37,7 +37,7 @@ def _handle_rpl_welcome(
         client.event_manager.dispatch_client_registered(
             nick=confirmed_nick,
             server_message=(trailing if trailing else ""),
-            raw_line=raw_line
+            raw_line=raw_line,
         )
 
     if hasattr(client, "registration_handler") and client.registration_handler:
@@ -196,13 +196,17 @@ def _handle_rpl_endofnames(
             )
 
             # Add distinct logging before and after the client.add_message(...) call
-            logger.info(f"[ENDOFNAMES_DEBUG] About to add user count message for {channel_ended}. Current user count: {user_count}")
+            logger.info(
+                f"[ENDOFNAMES_DEBUG] About to add user count message for {channel_ended}. Current user count: {user_count}"
+            )
             client.add_message(
                 f"Users in {channel_ended}: {user_count}",
-                "system", # semantic key
+                "system",  # semantic key
                 context_name=channel_ended,
             )
-            logger.info(f"[ENDOFNAMES_DEBUG] Finished adding user count message for {channel_ended}.")
+            logger.info(
+                f"[ENDOFNAMES_DEBUG] Finished adding user count message for {channel_ended}."
+            )
     else:
         logger.warning(
             f"RPL_ENDOFNAMES for {channel_ended}, but context not found or not a channel."
@@ -306,12 +310,15 @@ def _handle_err_nicknameinuse(
         "Status",
     )
 
-    if client.last_attempted_nick_change is not None and \
-       client.last_attempted_nick_change.lower() == failed_nick.lower():
-        logger.info(f"ERR_NICKNAMEINUSE for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change.")
+    if (
+        client.last_attempted_nick_change is not None
+        and client.last_attempted_nick_change.lower() == failed_nick.lower()
+    ):
+        logger.info(
+            f"ERR_NICKNAMEINUSE for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change."
+        )
         client.last_attempted_nick_change = None
-    # The existing logic for automatic nick change retries during registration should still apply
-    # if it's the initial registration phase. For a user-issued /nick, the feedback above is primary.
+        return  # Don't auto-retry for user-initiated nick changes
 
     is_our_nick_colliding = client.nick and client.nick.lower() == failed_nick.lower()
 
@@ -320,15 +327,31 @@ def _handle_err_nicknameinuse(
             current_nick_for_logic = client.nick
             initial_nick_for_logic = client.initial_nick
 
+            # Generate a new nickname based on the current state
             if current_nick_for_logic.lower() == initial_nick_for_logic.lower():
+                # First collision with initial nick, try with underscore
                 new_try_nick = f"{initial_nick_for_logic}_"
             else:
+                # Handle subsequent collisions
                 if current_nick_for_logic.endswith("_"):
+                    # If current nick ends with underscore, switch to number suffix
                     new_try_nick = f"{current_nick_for_logic[:-1]}1"
                 elif current_nick_for_logic[-1].isdigit():
-                    new_try_nick = f"{current_nick_for_logic[:-1]}{int(current_nick_for_logic[-1])+1}"
+                    # If current nick ends with a number, increment it
+                    try:
+                        base_nick = current_nick_for_logic[:-1]
+                        current_num = int(current_nick_for_logic[-1])
+                        new_try_nick = f"{base_nick}{current_num + 1}"
+                    except ValueError:
+                        # Fallback if number parsing fails
+                        new_try_nick = f"{current_nick_for_logic}_"
                 else:
+                    # Default case: append underscore
                     new_try_nick = f"{current_nick_for_logic}_"
+
+            # Ensure the new nickname isn't too long (IRC limit is typically 9 chars)
+            if len(new_try_nick) > 9:
+                new_try_nick = new_try_nick[:9]
 
             logger.info(f"Nickname {failed_nick} in use, trying {new_try_nick}.")
             client.add_message(
@@ -347,6 +370,12 @@ def _handle_err_nicknameinuse(
         logger.info(
             f"ERR_NICKNAMEINUSE for {failed_nick}, but already handling a nick collision. Manual /NICK needed if this fails."
         )
+        client.add_message(
+            "Nickname collision handling failed. Please use /nick to choose a different nickname.",
+            client.ui.colors["error"],
+            "Status",
+        )
+        client.network_handler.is_handling_nick_collision = False
 
 
 def _handle_sasl_loggedin_success(
@@ -742,10 +771,15 @@ def _handle_err_erroneusnickname(
         client.ui.colors["error"],
         "Status",
     )
-    if client.last_attempted_nick_change is not None and \
-       client.last_attempted_nick_change.lower() == failed_nick.lower():
-        logger.info(f"ERR_ERRONEUSNICKNAME for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change.")
+    if (
+        client.last_attempted_nick_change is not None
+        and client.last_attempted_nick_change.lower() == failed_nick.lower()
+    ):
+        logger.info(
+            f"ERR_ERRONEUSNICKNAME for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change."
+        )
         client.last_attempted_nick_change = None
+
 
 def _handle_err_nickcollision(
     client,
@@ -764,15 +798,25 @@ def _handle_err_nickcollision(
         client.ui.colors["error"],
         "Status",
     )
-    if client.last_attempted_nick_change is not None and \
-       client.last_attempted_nick_change.lower() == collided_nick.lower():
-        logger.info(f"ERR_NICKCOLLISION for user-attempted nick {collided_nick}. Resetting last_attempted_nick_change.")
+    if (
+        client.last_attempted_nick_change is not None
+        and client.last_attempted_nick_change.lower() == collided_nick.lower()
+    ):
+        logger.info(
+            f"ERR_NICKCOLLISION for user-attempted nick {collided_nick}. Resetting last_attempted_nick_change."
+        )
         client.last_attempted_nick_change = None
 
     # Attempt to reclaim initial nick or a variant if collision occurs
-    if client.nick.lower() == collided_nick.lower(): # If our current nick is the one that collided
+    if (
+        client.nick.lower() == collided_nick.lower()
+    ):  # If our current nick is the one that collided
         client.network_handler.send_raw(f"NICK {client.initial_nick}")
-        client.add_message(f"Attempting to restore nick to {client.initial_nick}.", client.ui.colors["system"], "Status")
+        client.add_message(
+            f"Attempting to restore nick to {client.initial_nick}.",
+            client.ui.colors["system"],
+            "Status",
+        )
 
 
 NUMERIC_HANDLERS = {
@@ -795,9 +839,9 @@ NUMERIC_HANDLERS = {
     376: _handle_motd_and_server_info,
     401: _handle_err_nosuchnick,
     403: _handle_err_nosuchchannel,
-    432: _handle_err_erroneusnickname, # Added
+    432: _handle_err_erroneusnickname,  # Added
     433: _handle_err_nicknameinuse,
-    436: _handle_err_nickcollision,   # Added
+    436: _handle_err_nickcollision,  # Added
     471: _handle_err_channel_join_group,
     473: _handle_err_channel_join_group,
     474: _handle_err_channel_join_group,
@@ -833,9 +877,13 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
     # Dispatch RAW_IRC_NUMERIC event
     if hasattr(client, "event_manager") and client.event_manager:
         client.event_manager.dispatch_raw_irc_numeric(
-            numeric=code, source=parsed_msg.prefix, params_list=list(params),
-            display_params_list=list(display_params), trailing=trailing,
-            tags=parsed_msg.get_all_tags(), raw_line=raw_line
+            numeric=code,
+            source=parsed_msg.prefix,
+            params_list=list(params),
+            display_params_list=list(display_params),
+            trailing=trailing,
+            tags=parsed_msg.get_all_tags(),
+            raw_line=raw_line,
         )
 
     # Handle specific numeric replies
@@ -855,7 +903,7 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
         _handle_err_nosuchchannel(
             client, parsed_msg, raw_line, display_params, trailing
         )
-    elif code == 432: # ERR_ERRONEUSNICKNAME
+    elif code == 432:  # ERR_ERRONEUSNICKNAME
         _handle_err_erroneusnickname(
             client, parsed_msg, raw_line, display_params, trailing
         )
@@ -867,7 +915,7 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
         _handle_err_nicknameinuse(
             client, parsed_msg, raw_line, display_params, trailing
         )
-    elif code == 436: # ERR_NICKCOLLISION
+    elif code == 436:  # ERR_NICKCOLLISION
         _handle_err_nickcollision(
             client, parsed_msg, raw_line, display_params, trailing
         )

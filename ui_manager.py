@@ -439,109 +439,122 @@ class UIManager:
                 self._draw_messages_in_window(self.msg_win_bottom, bottom_ctx)
 
     def _draw_messages_in_window(self, window, context_obj):
-        """Helper method to draw messages or specific content in a window based on context type."""
         if not window or not context_obj:
             return
 
-        if context_obj.type == "dcc_transfers":
-            self._draw_dcc_transfer_list(window, context_obj)
-        else:
-            # Existing message drawing logic
-            try:
-                max_y, max_x = window.getmaxyx()
-                messages = list(context_obj.messages)  # Convert to list to support slicing
-                scrollback_offset = context_obj.scrollback_offset
+        try:
+            window.erase()
+            max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0:
+                return
 
-                available_lines = max_y - 2  # Leave room for border
-                if available_lines <= 0:
-                    return
+            # Special handling for DCC windows
+            if context_obj.type == "dcc":
+                self._draw_dcc_transfer_list(window, context_obj)
+                return
 
-                start_idx = max(0, len(messages) - available_lines - scrollback_offset)
-                # Ensure end_idx doesn't exceed length of messages after adjusting for scrollback
-                end_idx = max(0, len(messages) - scrollback_offset)
+            # Regular message display for other contexts
+            messages = list(
+                context_obj.messages
+            )  # Convert deque to list for safe slicing
+            if not messages:
+                return
 
-                # We want to display messages from start_idx up to end_idx, but only 'available_lines' number of them.
-                # So, the actual slice should be messages[start_idx : start_idx + available_lines]
-                # but we must also ensure that start_idx + available_lines does not exceed len(messages)
-                # The current logic with start_idx and end_idx for slicing messages[start_idx:end_idx]
-                # and then breaking if i >= available_lines seems okay.
+            # Calculate visible lines based on scrollback
+            visible_lines = max_y - 1  # Leave room for border
+            total_messages = len(messages)
 
-                visible_messages = messages[start_idx:end_idx]
+            # Ensure scrollback_offset is non-negative
+            scrollback_offset = max(0, context_obj.scrollback_offset)
 
-                for i, msg_tuple in enumerate(visible_messages):
-                    if i >= available_lines: # Should not happen if start_idx and end_idx are calculated correctly relative to available_lines
-                        break
+            # Calculate start and end indices
+            start_idx = max(0, total_messages - visible_lines - scrollback_offset)
+            end_idx = min(total_messages, start_idx + visible_lines)
 
-                    y_pos = i + 1 # Start drawing from the first line inside the border
+            # Ensure indices are valid
+            if start_idx >= total_messages or start_idx >= end_idx:
+                return
 
-                    # Handle both tuple and dict message formats (though Context.messages should be Tuple[str, Any])
-                    if isinstance(msg_tuple, tuple) and len(msg_tuple) >= 2:
-                        text, color_attr = msg_tuple[0], msg_tuple[1]
-                    elif isinstance(msg_tuple, dict): # Fallback, ideally not used
-                        text = msg_tuple.get("text", "")
-                        color_attr = msg_tuple.get("color_attr", self.colors.get("default", 0))
-                    else: # Malformed message, skip or log
-                        logger.warning(f"Skipping malformed message in context '{context_obj.name}': {msg_tuple}")
-                        continue
+            # Draw messages
+            for i, (text, color_attr) in enumerate(
+                messages[start_idx:end_idx], start=1
+            ):
+                if i > max_y - 1:  # Leave room for border
+                    break
+                self._safe_addstr(
+                    window, i, 1, text[: max_x - 2], color_attr, "message"
+                )
 
-                    # Truncate text to fit window width
-                    # max_x is full window width. Content area is max_x - 2 (for borders).
-                    # We draw at x=1, so available text width is (max_x - 1) - 1 = max_x - 2.
-                    max_text_len = max_x - 2
-                    if max_text_len <=0: continue # No space to draw text
-
-                    display_text = text
-                    if len(text) > max_text_len:
-                        display_text = text[:max_text_len - 3] + "..." if max_text_len > 3 else text[:max_text_len]
-
-                    self._safe_addstr(window, y_pos, 1, display_text, color_attr, f"msg_ctx_{context_obj.name}")
-
-            except curses.error as e:
-                logger.warning(f"Error drawing messages in window for context '{context_obj.name}': {e}")
-            except Exception as ex:
-                logger.error(f"Unexpected error drawing messages for context '{context_obj.name}': {ex}", exc_info=True)
+        except (TypeError, IndexError) as e:
+            logger.error(f"Error indexing messages in window: {e}", exc_info=True)
+        except curses.error as e:
+            logger.error(f"Error drawing messages in window: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(
+                f"Unexpected error in _draw_messages_in_window: {e}", exc_info=True
+            )
 
     def _draw_dcc_transfer_list(self, window, context_obj):
-        """Draws the DCC transfer list in the provided window."""
-        if not window or not self.client.dcc_manager:
+        if not window or not context_obj:
             return
 
         try:
+            window.erase()
             max_y, max_x = window.getmaxyx()
-            available_lines = max_y - 2  # Leave room for border
-            if available_lines <= 0:
+            if max_y <= 0 or max_x <= 0:
                 return
 
-            transfer_statuses = self.client.dcc_manager.get_transfer_statuses()
+            # Get DCC transfers from the client's DCC manager
+            transfers = list(
+                self.client.dcc_manager.get_transfer_statuses()
+            )  # Convert to list for safe slicing
+            if not transfers:
+                self._safe_addstr(
+                    window,
+                    1,
+                    1,
+                    "No active DCC transfers",
+                    self.colors["system"],
+                    "dcc_empty",
+                )
+                return
 
-            # For now, display the most recent 'available_lines'.
-            # Scrollback for DCC list can be added later if context_obj.scrollback_offset is used.
-            start_idx = max(0, len(transfer_statuses) - available_lines)
+            # Calculate visible lines based on scrollback
+            visible_lines = max_y - 1  # Leave room for border
+            total_transfers = len(transfers)
 
-            lines_to_display = transfer_statuses[start_idx:]
+            # Ensure scrollback_offset is non-negative
+            scrollback_offset = max(0, context_obj.scrollback_offset)
 
-            for i, status_line in enumerate(lines_to_display):
-                if i >= available_lines:
+            # Calculate start and end indices
+            start_idx = max(0, total_transfers - visible_lines - scrollback_offset)
+            end_idx = min(total_transfers, start_idx + visible_lines)
+
+            # Ensure indices are valid
+            if start_idx >= total_transfers or start_idx >= end_idx:
+                return
+
+            # Draw transfer statuses
+            for i, status in enumerate(transfers[start_idx:end_idx], start=1):
+                if i > max_y - 1:  # Leave room for border
                     break
+                self._safe_addstr(
+                    window,
+                    i,
+                    1,
+                    status[: max_x - 2],
+                    self.colors["system"],
+                    "dcc_status",
+                )
 
-                y_pos = i + 1 # Start below the border
-
-                # Truncate status_line to fit window width
-                max_text_len = max_x - 2 # Leave room for border
-                if max_text_len <=0: continue
-
-                display_text = status_line
-                if len(status_line) > max_text_len:
-                    display_text = status_line[:max_text_len - 3] + "..." if max_text_len > 3 else status_line[:max_text_len]
-
-                # Use a default system color for DCC status lines
-                color_attr = self.colors.get("system", self.colors.get("default", 0))
-                self._safe_addstr(window, y_pos, 1, display_text, color_attr, f"dcc_status_{context_obj.name}")
-
+        except (TypeError, IndexError) as e:
+            logger.error(f"Error indexing DCC transfers in window: {e}", exc_info=True)
         except curses.error as e:
-            logger.warning(f"Error drawing DCC transfer list in window: {e}")
-        except Exception as ex:
-            logger.error(f"Unexpected error drawing DCC transfer list: {ex}", exc_info=True)
+            logger.error(f"Error drawing DCC transfer list: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(
+                f"Unexpected error in _draw_dcc_transfer_list: {e}", exc_info=True
+            )
 
     def _draw_sidebar_context_list(
         self, max_y: int, max_x: int, current_active_ctx_name_str: str
@@ -780,65 +793,33 @@ class UIManager:
         if not self.sidebar_win:
             return
 
-        # Attempt to get dimensions first; if this fails, window is likely unusable
         try:
+            self.sidebar_win.erase()
             max_y, max_x = self.sidebar_win.getmaxyx()
-        except curses.error as e:
-            logger.warning(
-                f"curses.error getting getmaxyx for sidebar_win in draw_sidebar: {e}. Aborting draw."
+            if max_y <= 0 or max_x <= 0:
+                return
+
+            # Draw context list
+            line_num = self._draw_sidebar_context_list(
+                max_y, max_x, current_active_ctx_name_str
             )
-            return
-        except Exception as ex:
-            logger.error(
-                f"Unexpected error getting getmaxyx for sidebar_win in draw_sidebar: {ex}",
-                exc_info=True,
-            )
-            return
 
-        if max_y <= 0 or max_x <= 0:
-            logger.debug(f"Sidebar dimensions too small to draw: {max_y}x{max_x}")
-            return
-
-        self._draw_window_border_and_bkgd(
-            self.sidebar_win, self.colors.get("sidebar_item", 0)
-        )
-        # Note: _draw_window_border_and_bkgd itself now uses getmaxyx internally for title.
-
-        line_num = self._draw_sidebar_context_list(
-            max_y, max_x, current_active_ctx_name_str
-        )
-
-        active_ctx_obj_for_users = current_active_ctx_obj
-
-        should_show_user_list = False
-        if (
-            active_ctx_obj_for_users
-            and active_ctx_obj_for_users.type == "channel"
-            and hasattr(active_ctx_obj_for_users, "join_status")
-        ):
-            if active_ctx_obj_for_users.join_status in [
-                ChannelJoinStatus.SELF_JOIN_RECEIVED,
-                ChannelJoinStatus.FULLY_JOINED,
-            ]:
-                should_show_user_list = True
-
-        if should_show_user_list:
-            if line_num < max_y - 1:
+            # Draw user list header and items if applicable
+            if current_active_ctx_obj and current_active_ctx_obj.type != "dcc":
                 line_num = self._draw_sidebar_user_list_header(
                     line_num,
                     max_y,
                     max_x,
-                    active_ctx_obj_for_users,
+                    current_active_ctx_obj,
                     current_active_ctx_name_str,
                 )
-                if line_num < max_y:  # Check if space remains after header
-                    line_num = self._draw_sidebar_user_list_items_and_indicators(
-                        line_num, max_y, max_x, active_ctx_obj_for_users
+                if line_num < max_y:
+                    self._draw_sidebar_user_list_items_and_indicators(
+                        line_num, max_y, max_x, current_active_ctx_obj
                     )
-        try:
-            self.sidebar_win.noutrefresh()
+
         except curses.error as e:
-            logger.warning(f"curses.error on noutrefresh in draw_sidebar: {e}")
+            logger.error(f"Error drawing sidebar: {e}", exc_info=True)
 
     def draw_status_bar(self, current_active_ctx_obj, current_active_ctx_name_str):
         """Draw the status bar"""
@@ -1012,156 +993,104 @@ class UIManager:
                     logger.warning(
                         f"Terminal dimensions are non-positive ({self.height}x{self.width}). Skipping resizeterm."
                     )
+                    self.ui_is_too_small = True
+                    return
 
+                # Clear and refresh stdscr first
                 self.stdscr.erase()
                 self.stdscr.clear()
                 self.stdscr.refresh()
+
+                # Recreate all windows
                 self.setup_layout()
 
                 # Touch all windows and set clearok to mark them for full redraw
-                try:
-                    self.stdscr.touchwin()
-                    self.stdscr.clearok(True)
-                    if self.split_mode_active:
-                        if self.msg_win_top:
-                            self.msg_win_top.touchwin()
-                            self.msg_win_top.clearok(True)
-                        if self.msg_win_bottom:
-                            self.msg_win_bottom.touchwin()
-                            self.msg_win_bottom.clearok(True)
-                    else:
-                        if self.msg_win:
-                            self.msg_win.touchwin()
-                            self.msg_win.clearok(True)
-                    if self.sidebar_win:
-                        self.sidebar_win.touchwin()
-                        self.sidebar_win.clearok(True)
-                    if self.status_win:
-                        self.status_win.touchwin()
-                        self.status_win.clearok(True)
-                    if self.input_win:
-                        self.input_win.touchwin()
-                        self.input_win.clearok(True)
-                except curses.error as te:
-                    logger.warning(
-                        f"Curses error during touchwin/clearok operations: {te}"
-                    )
-                except Exception as tex:
-                    logger.error(
-                        f"Unexpected error during touchwin/clearok operations: {tex}",
-                        exc_info=True,
-                    )
+                for win in [
+                    self.stdscr,
+                    self.msg_win,
+                    self.msg_win_top,
+                    self.msg_win_bottom,
+                    self.sidebar_win,
+                    self.status_win,
+                    self.input_win,
+                ]:
+                    if win:
+                        try:
+                            win.touchwin()
+                            win.clearok(True)
+                        except curses.error as e:
+                            logger.warning(f"Error touching window: {e}")
 
                 # Scroll to end of messages on resize
                 try:
                     self.scroll_messages("end")
-                    logger.debug("Called scroll_messages('end') after resize.")
-                except Exception as e_scroll_end:
-                    logger.error(
-                        f"Error calling scroll_messages('end') after resize: {e_scroll_end}",
-                        exc_info=True,
-                    )
+                except Exception as e:
+                    logger.error(f"Error scrolling messages after resize: {e}")
 
             except Exception as e:
-                logger.error(
-                    f"Error during resize handling sequence: {e}", exc_info=True
-                )
-                if (
-                    "Terminal too small" in str(e)
-                    or self.height <= 0
-                    or self.width <= 0
-                ):
-                    self.ui_is_too_small = True
-                    try:
-                        self.stdscr.erase()
-                        msg = "Terminal too small. Please resize."
-                        if self.height > 0 and self.width > 0:
-                            msg_y = self.height // 2
-                            msg_x = max(0, (self.width - len(msg)) // 2)
-                            if msg_x + len(msg) <= self.width:
-                                error_attr = self.colors.get(
-                                    "error", curses.A_BOLD | curses.color_pair(0)
-                                )
-                                self.stdscr.addstr(msg_y, msg_x, msg, error_attr)
-                        self.stdscr.refresh()
-                    except curses.error as ce_small_msg:
-                        logger.error(
-                            f"Curses error displaying 'Terminal too small' message: {ce_small_msg}"
-                        )
-                    except Exception as ex_small_msg:
-                        logger.error(
-                            f"Unexpected error displaying 'Terminal too small' message: {ex_small_msg}",
-                            exc_info=True,
-                        )
-                    return
-                else:
-                    try:
-                        self.stdscr.erase()
-                        generic_error_msg = "Resize Error!"
-                        if self.height > 0 and self.width > 0:
-                            err_y = self.height // 2
-                            err_x = max(0, (self.width - len(generic_error_msg)) // 2)
-                            if err_x + len(generic_error_msg) <= self.width:
-                                self.stdscr.addstr(
-                                    err_y,
-                                    err_x,
-                                    generic_error_msg,
-                                    self.colors.get("error", curses.color_pair(0)),
-                                )
-                        self.stdscr.refresh()
-                    except curses.error as ce_resize_err:
-                        logger.error(
-                            f"Curses error displaying 'Resize Error!' message: {ce_resize_err}"
-                        )
-                    except Exception as ex_resize_err:
-                        logger.error(
-                            f"Unexpected error displaying 'Resize Error!' message: {ex_resize_err}",
-                            exc_info=True,
-                        )
-                    return
+                logger.error(f"Error during resize handling: {e}", exc_info=True)
+                self.ui_is_too_small = True
+                return
 
         # If UI is too small, show message and return
         if self.ui_is_too_small:
-            if not resize_occurred:
-                try:
-                    self.stdscr.erase()
-                    msg = "Terminal too small. Please resize."
-                    if self.height > 0 and self.width > 0:
-                        msg_y = self.height // 2
-                        msg_x = max(0, (self.width - len(msg)) // 2)
-                        if msg_x + len(msg) <= self.width:
-                            error_attr = self.colors.get(
-                                "error", curses.A_BOLD | curses.color_pair(0)
-                            )
-                            self.stdscr.addstr(msg_y, msg_x, msg, error_attr)
-                    self.stdscr.refresh()
-                except curses.error as ce_small_msg_repeat:
-                    logger.error(
-                        f"Curses error re-displaying 'Terminal too small' message: {ce_small_msg_repeat}"
-                    )
-                except Exception as ex_small_msg_repeat:
-                    logger.error(
-                        f"Unexpected error re-displaying 'Terminal too small' message: {ex_small_msg_repeat}",
-                        exc_info=True,
-                    )
+            try:
+                self.stdscr.erase()
+                msg = "Terminal too small. Please resize."
+                if self.height > 0 and self.width > 0:
+                    msg_y = self.height // 2
+                    msg_x = max(0, (self.width - len(msg)) // 2)
+                    if msg_x + len(msg) <= self.width:
+                        error_attr = self.colors.get(
+                            "error", curses.A_BOLD | curses.color_pair(0)
+                        )
+                        self.stdscr.addstr(msg_y, msg_x, msg, error_attr)
+                self.stdscr.refresh()
+            except Exception as e:
+                logger.error(f"Error displaying 'Terminal too small' message: {e}")
             return
 
         # Get active context info
-        active_ctx_name_snapshot = self.client.context_manager.active_context_name
-        active_ctx_obj_snapshot = (
-            self.client.context_manager.get_context(active_ctx_name_snapshot)
-            if active_ctx_name_snapshot
-            else None
-        )
+        try:
+            active_ctx_name_snapshot = self.client.context_manager.active_context_name
+            active_ctx_obj_snapshot = (
+                self.client.context_manager.get_context(active_ctx_name_snapshot)
+                if active_ctx_name_snapshot
+                else None
+            )
+        except Exception as e:
+            logger.error(f"Error getting active context: {e}")
+            active_ctx_name_snapshot = None
+            active_ctx_obj_snapshot = None
 
+        # Draw UI components with individual error handling
         try:
             self.stdscr.noutrefresh()
-            self.draw_messages(active_ctx_obj_snapshot, active_ctx_name_snapshot)
-            self.draw_sidebar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
-            self.draw_status_bar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
-            self.draw_input_line()
+        except curses.error as e:
+            logger.error(f"Error refreshing stdscr: {e}")
 
-            # Refresh all windows
+        try:
+            self.draw_messages(active_ctx_obj_snapshot, active_ctx_name_snapshot)
+        except Exception as e:
+            logger.error(f"Error drawing messages: {e}")
+
+        try:
+            self.draw_sidebar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
+        except Exception as e:
+            logger.error(f"Error drawing sidebar: {e}")
+
+        try:
+            self.draw_status_bar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
+        except Exception as e:
+            logger.error(f"Error drawing status bar: {e}")
+
+        try:
+            self.draw_input_line()
+        except Exception as e:
+            logger.error(f"Error drawing input line: {e}")
+
+        # Refresh all windows with individual error handling
+        try:
             if self.split_mode_active:
                 if self.msg_win_top:
                     self.msg_win_top.noutrefresh()
@@ -1170,70 +1099,31 @@ class UIManager:
             else:
                 if self.msg_win:
                     self.msg_win.noutrefresh()
+        except curses.error as e:
+            logger.error(f"Error refreshing message windows: {e}")
+
+        try:
             if self.sidebar_win:
                 self.sidebar_win.noutrefresh()
+        except curses.error as e:
+            logger.error(f"Error refreshing sidebar: {e}")
+
+        try:
             if self.status_win:
                 self.status_win.noutrefresh()
+        except curses.error as e:
+            logger.error(f"Error refreshing status window: {e}")
+
+        try:
             if self.input_win:
                 self.input_win.noutrefresh()
+        except curses.error as e:
+            logger.error(f"Error refreshing input window: {e}")
 
+        try:
             curses.doupdate()
-        except curses.error as e_draw:
-            logger.error(
-                f"Curses error during main window drawing phase: {e_draw}",
-                exc_info=True,
-            )
-            try:
-                self.stdscr.erase()
-                draw_error_msg = "UI Draw Error!"
-                if self.height > 0 and self.width > 0:
-                    err_y = self.height // 2
-                    err_x = max(0, (self.width - len(draw_error_msg)) // 2)
-                    if err_x + len(draw_error_msg) <= self.width:
-                        self.stdscr.addstr(
-                            err_y,
-                            err_x,
-                            draw_error_msg,
-                            self.colors.get("error", curses.color_pair(0)),
-                        )
-                self.stdscr.refresh()
-            except curses.error as ce_draw_err_msg:
-                logger.error(
-                    f"Curses error displaying 'UI Draw Error!' message: {ce_draw_err_msg}"
-                )
-            except Exception as ex_draw_err_msg:
-                logger.error(
-                    f"Unexpected error displaying 'UI Draw Error!' message: {ex_draw_err_msg}",
-                    exc_info=True,
-                )
-        except Exception as e_critical_draw:
-            logger.critical(
-                f"Unexpected critical error during refresh_all_windows draw phase: {e_critical_draw}",
-                exc_info=True,
-            )
-            try:
-                self.stdscr.erase()
-                critical_error_msg = "Critical UI Error!"
-                if self.height > 0 and self.width > 0:
-                    err_y = self.height // 2
-                    err_x = max(0, (self.width - len(critical_error_msg)) // 2)
-                    if err_x + len(critical_error_msg) <= self.width:
-                        self.stdscr.addstr(
-                            err_y,
-                            err_x,
-                            critical_error_msg,
-                            self.colors.get("error", curses.color_pair(0)),
-                        )
-                self.stdscr.refresh()
-            except curses.error as ce_crit_err_msg:
-                logger.error(
-                    f"Curses error displaying 'Critical UI Error!' message: {ce_crit_err_msg}"
-                )
-            except Exception as ex_crit_err_msg:
-                logger.error(
-                    f"Unexpected error displaying 'Critical UI Error!' message: {ex_crit_err_msg}",
-                    exc_info=True,
-                )
+        except curses.error as e:
+            logger.error(f"Error in doupdate: {e}")
 
     def get_input_char(self):
         if not self.input_win:

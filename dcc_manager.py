@@ -89,14 +89,15 @@ class DCCManager:
         # self.send_queues: Dict[str, Deque[Dict[str, Any]]] = {} # Replaced by send_manager
         self.dcc_config = self._load_dcc_config()
         self._lock = threading.Lock() # Protects self.transfers. Used by sub-managers.
-        self.ctcp_handler = DCCCTCPHandler(self)
-        self.passive_offer_manager = DCCPassiveOfferManager(self)
-        self.send_manager = DCCSendManager(self) # Instantiate send manager
 
-        # Setup the dedicated DCC logger instance
+        # Setup the dedicated DCC logger instance BEFORE instantiating sub-managers
         # This logger will be used by DCCManager and passed to DCCTransfer instances
         setup_dcc_specific_logger() # Call the setup function
         self.dcc_event_logger = dcc_event_logger # Store a reference if needed, or just use the global one.
+
+        self.ctcp_handler = DCCCTCPHandler(self)
+        self.passive_offer_manager = DCCPassiveOfferManager(self)
+        self.send_manager = DCCSendManager(self) # Instantiate send manager
 
         if not self.dcc_config.get("enabled", False):
             logger.info("DCCManager initialized, but DCC is disabled in configuration.")

@@ -124,6 +124,15 @@ class ContextManager:
             )
             return False
 
+        # Special handling for DCC windows
+        if context_type == "dcc":
+            # Ensure DCC windows have a unique name
+            if normalized_name in self.contexts:
+                logger.debug(
+                    f"DCC context '{normalized_name}' already exists, skipping creation."
+                )
+                return False
+
         if normalized_name not in self.contexts:
             self.contexts[normalized_name] = Context(
                 name=normalized_name,
@@ -155,13 +164,32 @@ class ContextManager:
         original_passed_name = context_name
         normalized_name = self._normalize_context_name(context_name)
         if normalized_name in self.contexts:
+            context = self.contexts[normalized_name]
             is_active = self.active_context_name == normalized_name
+
+            # Special handling for DCC windows
+            if context.type == "dcc":
+                # If this is the active context, switch to Status before removing
+                if is_active:
+                    status_context = self.get_context("Status")
+                    if status_context:
+                        self.set_active_context("Status")
+                    else:
+                        # If no Status context, switch to any available context
+                        other_contexts = [
+                            name
+                            for name in self.contexts.keys()
+                            if name != normalized_name
+                        ]
+                        if other_contexts:
+                            self.set_active_context(other_contexts[0])
+                        else:
+                            self.active_context_name = None
+
             del self.contexts[normalized_name]
             logger.info(
                 f"Removed context: '{normalized_name}' (original: '{original_passed_name}')"
             )
-            if is_active:
-                self.active_context_name = None
             return True
         logger.warning(
             f"Context '{normalized_name}' (original: '{original_passed_name}') not found, cannot remove."

@@ -1,28 +1,39 @@
 import argparse
 import logging
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Dict
+
+from commands.dcc.dcc_command_base import DCCCommandHandler, DCCCommandResult
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.commands.dcc.get")
 
-class DCCGetCommandHandler:
+class DCCGetCommandHandler(DCCCommandHandler):
+    """
+    Handles the /dcc get command, used to accept passive DCC SEND offers.
+    Inherits common DCC command functionality from DCCCommandHandler.
+    """
+    command_name: str = "get"
+    command_aliases: List[str] = []
+    command_help: Dict[str, str] = {
+        "usage": "/dcc get <nick> \"<filename>\" --token <token>",
+        "description": "Accepts a passive (reverse) DCC SEND offer from a specified nickname and filename, using a provided token.",
+        "aliases": "None"
+    }
+
     def __init__(self, client_logic: 'IRCClient_Logic'):
-        self.client_logic = client_logic
-        self.dcc_m = client_logic.dcc_manager
-        self.active_context_name = client_logic.context_manager.active_context_name or "Status"
-        self.dcc_context_name = "DCC"
+        super().__init__(client_logic)
 
     def execute(self, cmd_args: List[str]):
-        if not self.dcc_m:
-            self.client_logic.add_message("DCC system not available.", "error", context_name=self.active_context_name)
-            return
-        if not self.dcc_m.dcc_config.get("enabled"):
-            self.client_logic.add_message("DCC is currently disabled.", "error", context_name=self.active_context_name)
+        """
+        Executes the /dcc get command.
+        Parses arguments and attempts to accept a passive DCC offer.
+        """
+        if not self.check_dcc_available(self.command_name):
             return
 
-        parser = argparse.ArgumentParser(prog="/dcc get", add_help=False)
+        parser = argparse.ArgumentParser(prog=f"/dcc {self.command_name}", add_help=False)
         parser.add_argument("nick", help="Sender's nickname.")
         parser.add_argument("filename", help="Filename offered (can be quoted).")
         parser.add_argument("--token", required=True, help="The token provided with the passive offer.")
@@ -38,18 +49,15 @@ class DCCGetCommandHandler:
                 if result.get("success"):
                     self.client_logic.add_message(f"Attempting to GET '{filename}' from {nick} via passive DCC (ID: {result.get('transfer_id', 'N/A')[:8]}).", "system", context_name=self.dcc_context_name)
                 else:
-                    self.client_logic.add_message(f"DCC GET for '{filename}' from {nick} failed: {result.get('error', 'Unknown error')}", "error", context_name=self.dcc_context_name)
+                    self.handle_error(f"DCC GET for '{filename}' from {nick} failed: {result.get('error', 'Unknown error')}", context_name=self.dcc_context_name)
             else:
-                self.client_logic.add_message(f"DCC GET command logic not fully implemented in DCCManager yet.", "error", context_name=self.dcc_context_name)
+                self.handle_error(f"DCC GET command logic not fully implemented in DCCManager.", context_name=self.dcc_context_name)
 
-            if self.client_logic.context_manager.active_context_name != self.dcc_context_name:
-                self.client_logic.switch_active_context(self.dcc_context_name)
+            self.ensure_dcc_context()
 
         except argparse.ArgumentError as e:
-            logger.warning(f"Argument parsing error for /dcc get: {e}")
-            self.client_logic.add_message(f"Error: {e.message}\nUsage: /dcc get <nick> \"<filename>\" --token <token>", "error", context_name=self.active_context_name)
+            self.handle_error(f"Error: {e.message}\nUsage: {self.command_help['usage']}", log_level=logging.WARNING)
         except SystemExit:
-            self.client_logic.add_message("Usage: /dcc get <nick> \"<filename>\" --token <token>", "error", context_name=self.active_context_name)
+            self.client_logic.add_message(f"Usage: {self.command_help['usage']}", "error", context_name=self.active_context_name)
         except Exception as e:
-            logger.error(f"Error processing /dcc get: {e}", exc_info=True)
-            self.client_logic.add_message(f"Error in /dcc get: {e}. Usage: /dcc get <nick> \"<filename>\" --token <token>", "error", context_name=self.active_context_name)
+            self.handle_error(f"Error processing /dcc {self.command_name}: {e}. Usage: {self.command_help['usage']}", exc_info=True)

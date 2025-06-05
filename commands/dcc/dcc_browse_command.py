@@ -1,20 +1,37 @@
 import logging
 import os
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Dict
+
+from commands.dcc.dcc_command_base import DCCCommandHandler
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.commands.dcc.browse")
 
-class DCCBrowseCommandHandler:
+class DCCBrowseCommandHandler(DCCCommandHandler):
+    """
+    Handles the /dcc browse command, allowing local directory listing.
+    Inherits common DCC command functionality from DCCCommandHandler.
+    """
+    command_name: str = "browse"
+    command_aliases: List[str] = ["dir"]
+    command_help: Dict[str, str] = {
+        "usage": "/dcc browse [path]",
+        "description": "Lists the contents of a local directory. Defaults to the current working directory if no path is provided.",
+        "aliases": "dir"
+    }
+
     def __init__(self, client_logic: 'IRCClient_Logic'):
-        self.client_logic = client_logic
+        super().__init__(client_logic)
         # dcc_m is not strictly needed for browse, but keeping pattern if future DCC interactions arise
-        self.dcc_m = client_logic.dcc_manager
-        self.dcc_context_name = "DCC" # Or a more general context if preferred for browse
+        # self.dcc_m = client_logic.dcc_manager # Handled by base class now
 
     def execute(self, cmd_args: List[str]):
+        """
+        Executes the /dcc browse command.
+        Lists the contents of the specified local directory.
+        """
         # No specific DCC config check needed for browse, it's a local FS operation.
 
         target_dir = " ".join(cmd_args) if cmd_args else "."
@@ -25,7 +42,7 @@ class DCCBrowseCommandHandler:
             abs_target_dir = os.path.abspath(target_dir)
 
             if not os.path.isdir(abs_target_dir):
-                self.client_logic.add_message(f"Error: '{target_dir}' (abs: {abs_target_dir}) is not a valid directory.", "error", context_name=self.dcc_context_name)
+                self.handle_error(f"Error: '{target_dir}' (abs: {abs_target_dir}) is not a valid directory.", context_name=self.dcc_context_name)
                 return
 
             self.client_logic.add_message(f"Contents of '{abs_target_dir}':", "system", context_name=self.dcc_context_name)
@@ -41,16 +58,11 @@ class DCCBrowseCommandHandler:
                 for item_line in items:
                     self.client_logic.add_message(item_line, "system", context_name=self.dcc_context_name)
 
-        except PermissionError:
-            logger.warning(f"Permission denied browsing '{target_dir}' (abs: {abs_target_dir}).")
-            self.client_logic.add_message(f"Error browsing '{target_dir}': Permission denied.", "error", context_name=self.dcc_context_name)
-        except FileNotFoundError:
-            logger.warning(f"Directory not found for browsing '{target_dir}' (abs: {abs_target_dir}).")
-            self.client_logic.add_message(f"Error browsing '{target_dir}': Directory not found.", "error", context_name=self.dcc_context_name)
-        except Exception as e:
-            logger.error(f"Error processing /dcc browse for '{target_dir}': {e}", exc_info=True)
-            self.client_logic.add_message(f"Error browsing '{target_dir}': {e}", "error", context_name=self.dcc_context_name)
+            self.ensure_dcc_context()
 
-        # Switch context if needed, though browse might be less DCC-specific
-        if self.client_logic.context_manager.active_context_name != self.dcc_context_name:
-            self.client_logic.switch_active_context(self.dcc_context_name)
+        except PermissionError:
+            self.handle_error(f"Error browsing '{target_dir}': Permission denied.", log_level=logging.WARNING, context_name=self.dcc_context_name)
+        except FileNotFoundError:
+            self.handle_error(f"Error browsing '{target_dir}': Directory not found.", log_level=logging.WARNING, context_name=self.dcc_context_name)
+        except Exception as e:
+            self.handle_error(f"Error processing /dcc {self.command_name} for '{target_dir}': {e}", exc_info=True, context_name=self.dcc_context_name)

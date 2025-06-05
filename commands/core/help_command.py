@@ -42,7 +42,6 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
     active_context_name = client.context_manager.active_context_name
 
     if not args_str:
-        # logger.debug("--- handle_help_command: General Help ---") # Keep for actual debugging if needed
         client.add_message(
             "\nAvailable commands:", system_color, context_name=active_context_name
         )
@@ -58,7 +57,7 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
             "utility",
         ]
 
-        # logger.debug("Processing core commands from CommandHandler.registered_command_help...")
+        # Process core commands
         for (
             cmd_name,
             help_data_val,
@@ -72,9 +71,7 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                     category = module_path.split(".")[1].lower()
                     if category in core_categories:
                         group_key = category
-                    # logger.debug(f"Help core: cmd='{cmd_name}', module_path='{module_path}', derived_category='{category}', final_group_key='{group_key}'")
                 except IndexError:
-                    # logger.debug(f"Help core: cmd='{cmd_name}', module_path='{module_path}', IndexError, group_key='{group_key}'")
                     pass
 
             summary = get_summary_from_help_text(
@@ -103,7 +100,7 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         # Display script commands
         script_commands = client.script_manager.get_all_script_commands_with_help()
         if script_commands:
-            for script_name, commands in script_commands.items():
+            for script_name, commands in sorted(script_commands.items()):
                 if commands:
                     client.add_message(
                         f"\nCommands from script {script_name.title()}:",
@@ -112,14 +109,25 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                     )
                     for cmd_name, cmd_data in sorted(commands.items()):
                         if isinstance(cmd_data, dict):
-                            summary = get_summary_from_help_text(
-                                cmd_data.get("help_text", ""), is_core_format=False
-                            )
-                            client.add_message(
-                                f"  /{cmd_name}: {summary}",
-                                system_color,
-                                context_name=active_context_name,
-                            )
+                            help_text = cmd_data.get("help_text", "")
+                            if help_text:
+                                summary = get_summary_from_help_text(
+                                    help_text, is_core_format=False
+                                )
+                                client.add_message(
+                                    f"  /{cmd_name}: {summary}",
+                                    system_color,
+                                    context_name=active_context_name,
+                                )
+                                if cmd_data.get("aliases"):
+                                    aliases = [
+                                        f"/{alias}" for alias in cmd_data["aliases"]
+                                    ]
+                                    client.add_message(
+                                        f"    Aliases: {', '.join(aliases)}",
+                                        system_color,
+                                        context_name=active_context_name,
+                                    )
 
         client.add_message(
             "\nUse /help <command> for detailed help",
