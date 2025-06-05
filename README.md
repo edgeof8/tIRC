@@ -304,36 +304,108 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 - `RAW_IRC_NUMERIC`: Fired for all numeric replies from the server.
   - `event_data` keys: `numeric` (int), `source` (str - server name), `params_list` (List[str] - full parameters), `display_params_list` (List[str] - parameters with client nick removed if first), `trailing` (Optional[str]), `tags` (Dict[str, Any]).
 
-## Default Scripts & Modular Core Commands
+## State Management System
 
-- Default utility/fun scripts are in `scripts/`.
-- Core client commands are now modularly defined in `commands/core/`, `commands/utility/`, `commands/ui/`, and `commands/user/`. Each command module specifies its own help text via a `COMMAND_DEFINITIONS` structure.
+PyRC includes a robust state management system that provides centralized state handling with persistence, validation, and change notifications.
 
-## Recent Changes (Summary)
+### Key Features
 
-- **DCC Core Logic & Command Refactoring:**
-  - Further modularized `DCCManager` by extracting core responsibilities into new, focused classes: `DCCCTCPHandler` (for CTCP protocol messages), `DCCPassiveOfferManager` (for managing passive/reverse DCC offers), and `DCCSendManager` (for orchestrating outgoing file sends and queuing).
-  - Began refactoring `commands/dcc/dcc_commands.py` by splitting individual DCC subcommands (e.g., `/dcc send`, `/dcc get`, `/dcc accept`, etc.) into their own dedicated files within the `commands/dcc/` directory to improve organization and align with the project's command modularity pattern.
-- **DCC Send Queue & Logging Improvements:**
-  - Added support for queuing multiple files in a single `/dcc send` command, with automatic sequential transfer.
-  - Implemented per-user send queues in `DCCManager` with automatic processing of queued files.
-  - Added comprehensive DCC event logging system with configurable settings:
-    - Dedicated DCC log file with rotation support
-    - Detailed logging of CTCP negotiation, socket events, file operations, and transfer progress
-    - Configurable log levels and file management
-  - Enhanced user feedback for queued transfers and file validation
-- **DCC Phase 2 Completion:**
-  - **Passive DCC:** Implemented full passive DCC SEND (sender offers token, waits for ACCEPT) and passive DCC RECV (receiver listens after sending ACCEPT with token).
-  - **Checksum Verification:** Added support for MD5/SHA1/etc. checksums for file integrity. Senders transmit checksums post-transfer; receivers verify. Configurable via `dcc_checksum_verify` and `dcc_checksum_algorithm`.
-  - **`/dcc auto [on|off]`:** Implemented a global auto-accept feature for incoming DCC offers (both active and passive).
-  - **`/dcc get <nick> "<filename>" --token <token>`:** New command to accept passive offers.
-  - **`/dcc list` Enhancement:** Now displays active transfers, recently completed/failed ones, and pending passive offers received by the user.
-  - **`/dcc cancel` Enhancement:** Can now cancel pending passive offers by token prefix, in addition to active transfers by ID prefix.
-  - **Configuration:** Added `DCC_PASSIVE_MODE_TOKEN_TIMEOUT`, `DCC_CHECKSUM_VERIFY`, `DCC_CHECKSUM_ALGORITHM` to `pyterm_irc_config.ini`.
-- **DCC Phase 4 (Partial):**
-  - **Bandwidth Throttling:** Implemented configurable bandwidth limits for both sending and receiving DCC transfers (`dcc_bandwidth_limit_send_kbps`, `dcc_bandwidth_limit_recv_kbps`).
-  - **DCC Resume (Sends):** Implemented sender-initiated resume for outgoing DCC SEND transfers. The client will now offer to resume a transfer if a previous attempt for the same file and peer failed. Added `/dcc resume <id_or_filename>` command to manually trigger this.
-- **Initial DCC Implementation (Phase 1 - Active DCC):** Added core functionality for DCC SEND and DCC ACCEPT (receive) using active DCC connections. This includes new `/dcc` commands, DCC-specific configuration, and underlying modules (`DCCManager`, `DCCTransfer`, `DCCProtocol`, `DCCSecurity`). CTCP handling for DCC negotiation has been integrated into `IRCClient_Logic`.
+1. **Centralized State Management**
+
+   - Thread-safe operations using `RLock`
+   - Generic type support for state values
+   - Key-value storage with metadata
+   - Bulk operations (get_all, clear)
+
+2. **State Persistence**
+
+   - Automatic state loading from JSON file
+   - Configurable auto-save with interval
+   - Manual save capability
+   - Error handling for file operations
+
+3. **State Validation**
+
+   - Extensible validator system with `StateValidator` base class
+   - Per-key validators
+   - Validation on state changes
+   - Bulk validation capability
+   - Error message support
+
+4. **State Change Notifications**
+   - Event-based notification system
+   - Support for key-specific and global handlers
+   - Detailed change events with metadata
+   - Error handling for handlers
+
+### Usage Example
+
+```python
+from state_manager import StateManager, StateValidator
+
+# Create a custom validator
+class NumberValidator(StateValidator[int]):
+    def __init__(self, min_value: int, max_value: int):
+        self.min_value = min_value
+        self.max_value = max_value
+
+    def validate(self, value: int) -> bool:
+        return self.min_value <= value <= self.max_value
+
+    def get_error_message(self, value: int) -> Optional[str]:
+        if value < self.min_value:
+            return f"Value {value} is below minimum {self.min_value}"
+        if value > self.max_value:
+            return f"Value {value} is above maximum {self.max_value}"
+        return None
+
+# Initialize state manager
+state_manager = StateManager(
+    state_file="app_state.json",
+    auto_save=True,
+    save_interval=30,  # Save every 30 seconds
+    validate_on_change=True
+)
+
+# Register a validator
+state_manager.register_validator("score", NumberValidator(0, 100))
+
+# Register change handlers
+def on_score_change(change):
+    print(f"Score changed from {change.old_value} to {change.new_value}")
+
+state_manager.register_change_handler("score", on_score_change)
+
+# Use the state manager
+state_manager.set("score", 50)  # Valid value
+state_manager.set("score", 150)  # Invalid value, will be rejected
+score = state_manager.get("score", default=0)  # Get current score
+```
+
+### Best Practices
+
+1. **Validation**
+
+   - Always validate state changes
+   - Use specific validators for different types
+   - Provide clear error messages
+
+2. **Persistence**
+
+   - Enable auto-save for critical state
+   - Use appropriate save intervals
+   - Handle file operation errors
+
+3. **Change Handling**
+
+   - Register handlers for important state changes
+   - Use global handlers for system-wide changes
+   - Handle errors in change handlers
+
+4. **Thread Safety**
+   - Use the provided thread-safe methods
+   - Don't bypass the state manager
+   - Handle concurrent access properly
 
 ## Contributing
 
