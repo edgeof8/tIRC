@@ -108,11 +108,15 @@ Key settings from `pyterm_irc_config.ini`:
 - **DCC Settings:** (`[DCC]`)
   - `dcc_enabled` (true/false): Enables or disables DCC functionality.
   - `dcc_download_dir` (string): Default directory for downloaded files (e.g., `downloads/`).
+  - `dcc_upload_dir` (string): Default directory to search for files when sending (less critical as full paths can be used).
   - `dcc_max_file_size` (integer): Maximum file size in bytes for transfers (e.g., `104857600` for 100MB).
-  - `dcc_auto_accept` (true/false): Whether to automatically accept incoming file offers (use with caution).
+  - `dcc_auto_accept` (true/false): Whether to automatically accept incoming file offers (both active and passive). Use with caution.
   - `dcc_blocked_extensions` (comma-separated string): File extensions to block (e.g., `exe,bat,sh,vbs`).
-  - `dcc_port_range_start`, `dcc_port_range_end` (integers): Port range for listening sockets in active DCC.
+  - `dcc_port_range_start`, `dcc_port_range_end` (integers): Port range for listening sockets in active DCC sends or passive DCC receives.
   - `dcc_timeout` (integer): Timeout in seconds for DCC connections/transfers.
+  - `dcc_passive_mode_token_timeout` (integer): How long a passive DCC SEND offer (token) remains valid if not accepted by the peer (seconds).
+  - `dcc_checksum_verify` (true/false): Enable verification of file integrity using checksums after transfer.
+  - `dcc_checksum_algorithm` (string, e.g., "md5", "sha1", "sha256"): Preferred checksum algorithm. Both sender and receiver must support it.
 
 You can view and modify many settings on-the-fly using the `/set` command. Changes are saved automatically. Use `/rehash` to reload the INI file.
 
@@ -210,11 +214,13 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ### DCC (Direct Client-to-Client) Commands:
 
-- `/dcc send <nick> <filepath>`: Initiates a DCC SEND (file transfer) to the specified user.
-- `/dcc accept <nick> <filename> <ip> <port> <size>`: Accepts an incoming DCC SEND offer from a user.
-- `/dcc list`: Lists current DCC transfers and their statuses.
-- `/dcc cancel <transfer_id>`: Cancels an active or queued DCC transfer.
-- `/dcc browse [path]`: (Future functionality) Opens a file browser, planned for easier file selection.
+- `/dcc send [-p|--passive] <nick> <filepath>`: Initiates a DCC SEND to the specified user. Use `-p` for a passive (reverse) send, where the recipient connects to you after you send them a token.
+- `/dcc get <nick> "<filename>" --token <token>`: Accepts a passive DCC SEND offer from `<nick>` for `<filename>` using the provided `<token>`.
+- `/dcc accept <nick> "<filename>" <ip> <port> <size>`: Accepts an _active_ incoming DCC SEND offer from a user (where the sender is listening).
+- `/dcc list`: Lists current active DCC transfers, recently completed/failed ones, and pending passive offers you've received.
+- `/dcc cancel <id_or_token_prefix>` (Alias: `/dcc close`): Cancels an active transfer by its ID prefix or a pending passive offer by its token prefix.
+- `/dcc auto [on|off]`: Toggles or sets the global auto-accept feature for incoming DCC offers. Displays current status if no argument.
+- `/dcc browse [path]`: Lists contents of the specified local directory path (or current directory if no path given). Useful for finding files to send.
 
 ## Headless Operation
 
@@ -292,6 +298,14 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 
 ## Recent Changes (Summary)
 
+- **DCC Phase 2 Completion:**
+  - **Passive DCC:** Implemented full passive DCC SEND (sender offers token, waits for ACCEPT) and passive DCC RECV (receiver listens after sending ACCEPT with token).
+  - **Checksum Verification:** Added support for MD5/SHA1/etc. checksums for file integrity. Senders transmit checksums post-transfer; receivers verify. Configurable via `dcc_checksum_verify` and `dcc_checksum_algorithm`.
+  - **`/dcc auto [on|off]`:** Implemented a global auto-accept feature for incoming DCC offers (both active and passive).
+  - **`/dcc get <nick> "<filename>" --token <token>`:** New command to accept passive offers.
+  - **`/dcc list` Enhancement:** Now displays active transfers, recently completed/failed ones, and pending passive offers received by the user.
+  - **`/dcc cancel` Enhancement:** Can now cancel pending passive offers by token prefix, in addition to active transfers by ID prefix.
+  - **Configuration:** Added `DCC_PASSIVE_MODE_TOKEN_TIMEOUT`, `DCC_CHECKSUM_VERIFY`, `DCC_CHECKSUM_ALGORITHM` to `pyterm_irc_config.ini`.
 - **Initial DCC Implementation (Phase 1 - Active DCC):** Added core functionality for DCC SEND and DCC ACCEPT (receive) using active DCC connections. This includes new `/dcc` commands, DCC-specific configuration, and underlying modules (`DCCManager`, `DCCTransfer`, `DCCProtocol`, `DCCSecurity`). CTCP handling for DCC negotiation has been integrated into `IRCClient_Logic`.
 - **Complete Core Command Modularization:** All core client commands are now located in individual modules within the `commands/` directory and are dynamically loaded. This includes commands for UI navigation, user interactions (ignore, away, etc.), server management, and utilities.
 - **Trigger System Stability:** Successfully resolved a trigger execution loop issue, leading to improved stability and reliability of the `/on` command and Python-based triggers.

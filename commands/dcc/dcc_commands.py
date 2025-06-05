@@ -179,25 +179,47 @@ def dcc_command_handler(client_logic: 'IRCClient_Logic', args_str: str):
             client_logic.add_message("Usage: /dcc close <transfer_id_prefix>", "error", context_name=active_context_name)
             return
         transfer_id_prefix = cmd_args[0]
+        cancelled = False
 
-        transfer_to_cancel = None
-        # This lock usage assumes DCCManager's transfers dict might be modified by other threads.
-        # If DCCManager provides a thread-safe method to find/cancel, that's preferred.
-        with dcc_m._lock:
-            for tid, transfer_obj in dcc_m.transfers.items():
+        # First, try to cancel an active transfer
+        # The DCCManager's cancel_transfer method already handles finding by prefix if we pass the prefix.
+        # However, the current cancel_transfer in dcc_manager.py expects a full ID.
+        # Let's adjust the logic here to find the full ID first, then call cancel_transfer.
+
+        actual_transfer_id_to_cancel = None
+        ambiguous = False
+        with dcc_m._lock: # Still need lock to safely iterate self.transfers
+            for tid in dcc_m.transfers.keys():
                 if tid.startswith(transfer_id_prefix):
-                    if transfer_to_cancel is not None: # Ambiguous
-                         client_logic.add_message(f"Ambiguous transfer ID prefix '{transfer_id_prefix}'. Multiple matches.", "error", context_name=dcc_context_name)
-                         return
-                    transfer_to_cancel = tid
+                    if actual_transfer_id_to_cancel is not None:
+                        ambiguous = True
+                        break
+                    actual_transfer_id_to_cancel = tid
 
-        if transfer_to_cancel:
-            if dcc_m.cancel_transfer(transfer_to_cancel):
-                client_logic.add_message(f"DCC transfer {transfer_to_cancel[:8]} cancellation requested.", "system", context_name=dcc_context_name)
+        if ambiguous:
+            client_logic.add_message(f"Ambiguous transfer ID/token prefix '{transfer_id_prefix}'. Multiple active transfers match.", "error", context_name=dcc_context_name)
+            return
+
+        if actual_transfer_id_to_cancel:
+            if dcc_m.cancel_transfer(actual_transfer_id_to_cancel):
+                client_logic.add_message(f"DCC transfer {actual_transfer_id_to_cancel[:8]} cancellation requested.", "system", context_name=dcc_context_name)
+                cancelled = True
+            # else: # cancel_transfer already logs failure if ID is somehow not found after this check
+                # client_logic.add_message(f"Failed to cancel DCC transfer {actual_transfer_id_to_cancel[:8]}.", "error", context_name=dcc_context_name)
+
+        # If not cancelled (i.e., no active transfer matched or cancellation failed for some reason),
+        # try to cancel a pending passive offer.
+        if not cancelled:
+            if hasattr(dcc_m, "cancel_pending_passive_offer"):
+                if dcc_m.cancel_pending_passive_offer(transfer_id_prefix):
+                    # Message is handled by cancel_pending_passive_offer method itself
+                    cancelled = True
+                # else: # No message here, as it might just mean no passive offer matched
             else:
-                client_logic.add_message(f"Failed to cancel DCC transfer {transfer_to_cancel[:8]}.", "error", context_name=dcc_context_name)
-        else:
-            client_logic.add_message(f"Transfer ID starting with '{transfer_id_prefix}' not found.", "error", context_name=dcc_context_name)
+                logger.warning("DCCManager does not have 'cancel_pending_passive_offer' method.")
+
+        if not cancelled:
+            client_logic.add_message(f"No active transfer or pending passive offer found matching ID/token prefix '{transfer_id_prefix}'.", "error", context_name=dcc_context_name)
 
         if client_logic.context_manager.active_context_name != dcc_context_name:
             client_logic.switch_active_context(dcc_context_name)

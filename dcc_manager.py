@@ -633,28 +633,57 @@ class DCCManager:
         """Returns a list of formatted strings representing current transfer statuses."""
         status_lines = []
         with self._lock:
-            if not self.transfers:
-                return ["No active or queued DCC transfers."]
+            # List active/completed/failed transfers
+            if self.transfers:
+                status_lines.append("--- Active/Recent Transfers ---")
+                # Sort by start time or add time? For now, just iterate.
+                # Consider sorting by a 'last_updated' timestamp if available on DCCTransfer objects.
+                sorted_transfers = sorted(self.transfers.items(), key=lambda item: getattr(item[1], 'start_time', 0) or getattr(item[1], 'queue_time', 0), reverse=True)
 
-            # Sort by start time or add time? For now, just iterate.
-            for tid, t in self.transfers.items():
-                progress_percent = (t.bytes_transferred / t.filesize * 100) if t.filesize > 0 else 0
-                size_str = f"{t.bytes_transferred / (1024*1024):.2f}MB / {t.filesize / (1024*1024):.2f}MB"
-                rate_str = f"{t.current_rate_bps / 1024:.1f} KB/s" if t.current_rate_bps > 0 else ""
-                eta_str = f"ETA: {int(t.estimated_eta_seconds // 60)}m{int(t.estimated_eta_seconds % 60)}s" if t.estimated_eta_seconds is not None else ""
+                for tid, t in sorted_transfers:
+                    progress_percent = (t.bytes_transferred / t.filesize * 100) if t.filesize > 0 else 0
+                    size_str = f"{t.bytes_transferred / (1024*1024):.2f}MB / {t.filesize / (1024*1024):.2f}MB"
+                    rate_str = f"{t.current_rate_bps / 1024:.1f} KB/s" if t.current_rate_bps is not None and t.current_rate_bps > 0 else ""
+                    eta_str = f"ETA: {int(t.estimated_eta_seconds // 60)}m{int(t.estimated_eta_seconds % 60)}s" if t.estimated_eta_seconds is not None else ""
 
-                checksum_info = ""
-                if hasattr(t, 'checksum_status') and t.checksum_status and t.checksum_status != "Pending" and t.checksum_status != "NotChecked":
-                    checksum_info = f" Checksum: {t.checksum_status}"
-                    if hasattr(t, 'checksum_algorithm') and t.checksum_algorithm:
-                        checksum_info += f" ({t.checksum_algorithm})"
+                    checksum_info = ""
+                    if hasattr(t, 'checksum_status') and t.checksum_status and t.checksum_status not in ["Pending", "NotChecked", None]:
+                        checksum_info = f" Checksum: {t.checksum_status}"
+                        if hasattr(t, 'checksum_algorithm') and t.checksum_algorithm:
+                            checksum_info += f" ({t.checksum_algorithm})"
 
-                line = (f"ID: {tid[:8]} [{t.transfer_type.name}] {t.peer_nick} - '{t.original_filename}' "
-                        f"({size_str}, {progress_percent:.1f}%) Status: {t.status.name}{checksum_info} {rate_str} {eta_str}")
-                if t.error_message:
-                    line += f" Error: {t.error_message}"
-                status_lines.append(line)
-        return status_lines
+                    line = (f"ID: {tid[:8]} [{t.transfer_type.name}] {t.peer_nick} - '{t.original_filename}' "
+                            f"({size_str}, {progress_percent:.1f}%) Status: {t.status.name}{checksum_info} {rate_str} {eta_str}")
+                    if t.error_message:
+                        line += f" Error: {t.error_message}"
+                    status_lines.append(line)
+
+            # List pending passive offers
+            if self.pending_passive_offers:
+                status_lines.append("--- Pending Passive Offers (Incoming) ---")
+                # Sort by timestamp, newest first
+                sorted_passive_offers = sorted(self.pending_passive_offers.items(), key=lambda item: item[1].get("timestamp", 0), reverse=True)
+
+                for token, offer_details in sorted_passive_offers:
+                    nick = offer_details.get("nick", "Unknown")
+                    filename = offer_details.get("filename", "UnknownFile")
+                    filesize_bytes = offer_details.get("filesize", 0)
+                    filesize_mb = filesize_bytes / (1024*1024)
+                    timestamp = offer_details.get("timestamp", 0)
+                    age_seconds = time.time() - timestamp
+
+                    line = (f"Token: {token[:8]}... From: {nick}, File: '{filename}' ({filesize_mb:.2f}MB). "
+                            f"Received: {age_seconds:.0f}s ago. "
+                            f"Use: /dcc get {nick} \"{filename}\" --token {token}")
+                    status_lines.append(line)
+
+            if not status_lines: # If both lists were empty
+                return ["No active DCC transfers or pending passive offers."]
+
+            # The previously duplicated/commented out code from line 683 to 702 has been removed by this diff.
+            # The loop for self.transfers is already handled correctly above.
+            # The final return statement's indentation is also corrected.
+        return status_lines # This line is now correctly indented.
 
     def cancel_transfer(self, transfer_id: str) -> bool:
         with self._lock:
@@ -667,6 +696,37 @@ class DCCManager:
             return True
         logger.warning(f"Cannot cancel: Transfer ID {transfer_id} not found.")
         return False
+
+    def cancel_pending_passive_offer(self, token_prefix: str) -> bool:
+        """Cancels a pending passive DCC SEND offer based on a token or its prefix."""
+        if not token_prefix:
+            return False
+
+        cancelled_offer_details: Optional[Dict[str, Any]] = None
+        actual_token_cancelled: Optional[str] = None
+
+        with self._lock:
+            # Iterate to find a match by prefix
+            for token, offer_details in list(self.pending_passive_offers.items()): # list() for safe iteration while modifying
+                if token.startswith(token_prefix):
+                    actual_token_cancelled = token
+                    cancelled_offer_details = self.pending_passive_offers.pop(token)
+                    break # Cancel only the first match
+
+        if cancelled_offer_details and actual_token_cancelled:
+            peer_nick = cancelled_offer_details.get('nick', 'UnknownNick')
+            filename = cancelled_offer_details.get('filename', 'UnknownFile')
+            logger.info(f"Cancelled pending passive DCC SEND offer from {peer_nick} for '{filename}' with token {actual_token_cancelled} (matched by prefix '{token_prefix}').")
+            self.client_logic.add_message(
+                f"Cancelled pending passive DCC SEND offer from {peer_nick} for '{filename}' (token: {actual_token_cancelled[:8]}...).",
+                "system", context_name="DCC"
+            )
+            return True
+        else:
+            # No message here, as the command handler will try active transfers first
+            # and then report if neither was found.
+            logger.debug(f"No pending passive offer found starting with token prefix '{token_prefix}'.")
+            return False
 
     def cleanup_old_transfers(self):
         # Placeholder for future: remove very old completed/failed transfers

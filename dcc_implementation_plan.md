@@ -244,21 +244,47 @@ sequenceDiagram
   - **Security**: Download dir restriction, filename sanitization.
   - **NAT**: Document limitations, manual port forwarding suggestion, error messages.
 
-- **Phase 2: Transfer Management, Passive DCC, Checksums**
+- **Phase 2: Transfer Management, Passive DCC, Checksums (COMPLETED)**
 
-  - **Modules**: `DCCManager` (queue), `DCCTransfer` (checksums), `dcc_protocol.py` (passive DCC CTCPs, `DCC ACCEPT` for resume).
-  - **Config**: `DCC_CHECKSUM_VERIFY`, `DCC_PASSIVE_MODE_TOKEN_TIMEOUT`.
-  - **Network**: Passive DCC SEND/RECV.
-  - **Commands**: `/dcc get`, `/dcc list`, `/dcc close`, `/dcc auto`.
-  - **UI**: Detailed transfer list, checksum status.
-  - **Events**: `DCC_TRANSFER_QUEUED`, `DCC_TRANSFER_CANCELLED`, `DCC_RESUME_OFFERED`.
+  - **Modules**: `DCCManager` (queue, pending passive offer management, cleanup), `DCCTransfer` (checksum calculation and status), `dcc_protocol.py` (passive DCC CTCPs, `DCC ACCEPT` for passive flow, `DCCCHECKSUM` CTCP).
+  - **Config**: `DCC_CHECKSUM_VERIFY`, `DCC_CHECKSUM_ALGORITHM`, `DCC_PASSIVE_MODE_TOKEN_TIMEOUT`, `DCC_AUTO_ACCEPT` (global on/off).
+  - **Network**: Passive DCC SEND (sender offers with token, waits for ACCEPT) and Passive DCC RECV (receiver listens, sends ACCEPT with token).
+  - **Commands**:
+    - `/dcc get <nick> "<filename>" --token <token>`: Accepts a pending passive offer.
+    - `/dcc list`: Now lists active transfers AND pending passive offers (incoming offers awaiting user action).
+    - `/dcc cancel <id_or_token_prefix>` (alias `/dcc close`): Cancels active transfers or pending passive offers.
+    - `/dcc auto [on|off]`: Toggles global auto-acceptance of DCC offers (both active and passive).
+  - **UI**: `DCCManager.get_transfer_statuses()` provides detailed transfer list including checksum status and pending passive offers.
+  - **Events**: `DCC_TRANSFER_QUEUED`, `DCC_TRANSFER_CANCELLED`, `DCC_SEND_OFFER_INCOMING` (distinguishes passive), `DCC_TRANSFER_CHECKSUM_VALIDATED`.
 
-- **Phase 3: Enhanced UI & Progress Display**
+- **Phase 3: UI/UX Enhancements & Robustness**
 
-  - **UI**: Interactive Curses file navigator, graphical progress bars, rates/ETAs, config menu.
-  - **Events**: Refined `DCC_TRANSFER_PROGRESS` (rate, ETA).
+  - **Detailed DCC Window/Tab:**
+    - Create/Enhance a dedicated UI context (e.g., "DCC Transfers") if the current "DCC" context isn't sufficient.
+    - Display a sortable, filterable list of all transfers (active, pending, completed, failed) using `UIManager`.
+    - Show detailed progress: percentage, speed (KB/s, MB/s), ETA, bytes transferred/total.
+    - Allow actions directly from this UI (e.g., selecting a transfer and hitting 'c' to cancel, 'o' to open file/folder, 'x' to clear completed).
+  - **Notifications:**
+    - Implement more prominent notifications for new DCC offers, transfer completions, and errors.
+    - This could involve a specific area in the UI, or if feasible, system tray notifications (requires platform-specific libraries, likely out of scope for terminal UI, but consider distinct UI alerts/highlights).
+  - **Bandwidth Limiting (Optional/Advanced - Consider for Phase 4 if complex):**
+    - Add configuration option `DCC_BANDWIDTH_LIMIT_SEND` and `DCC_BANDWIDTH_LIMIT_RECV` (in KB/s, 0 for unlimited).
+    - Modify `DCCSendTransfer` and `DCCReceiveTransfer` to throttle data transfer if a limit is set. This involves careful timing and buffer management.
+  - **File Queueing for Sending (Basic):**
+    - Allow `/dcc send <nick> <file1> <file2> ...` or a way to queue multiple files to the _same user_.
+    - `DCCManager` would manage a send queue per user, initiating the next transfer automatically after the current one completes. This does _not_ mean sending multiple files over a single DCC connection.
+  - **Logging Improvements:**
+    - Implement a dedicated DCC log file (e.g., `logs/dcc.log`).
+    - Configure `DCCManager` and `DCCTransfer` instances to log detailed information (negotiation, connection attempts, data transfer, errors, checksums) to this file.
+    - Ensure log entries are structured and informative for debugging.
+  - **Refine `/dcc browse`:**
+    - Currently lists directory contents.
+    - Phase 3 could make this more interactive within the Curses UI if a file navigator is built, allowing selection of a file to send. For now, ensure it's robust for path display.
+  - **Error Handling and Edge Cases:**
+    - Review and test various error scenarios (disk full, permissions, network drops during transfer, malformed CTCPs beyond initial parsing).
+    - Ensure graceful failure and clear user feedback.
 
-- **Phase 4: Advanced Features (Resume, Security, Throttling, UPnP)**
+- **Phase 4: Advanced Features (Resume, Advanced Security, UPnP)**
 
   - **Modules**: `DCCTransfer` (full resume), `dcc_security.py` (virus scan hooks).
   - **Config**: `DCC_BANDWIDTH_LIMIT`, `DCC_RESUME_ENABLED`, `DCC_VIRUS_SCAN_CMD`.
