@@ -439,49 +439,109 @@ class UIManager:
                 self._draw_messages_in_window(self.msg_win_bottom, bottom_ctx)
 
     def _draw_messages_in_window(self, window, context_obj):
-        """Helper method to draw messages in a specific window"""
+        """Helper method to draw messages or specific content in a window based on context type."""
         if not window or not context_obj:
+            return
+
+        if context_obj.type == "dcc_transfers":
+            self._draw_dcc_transfer_list(window, context_obj)
+        else:
+            # Existing message drawing logic
+            try:
+                max_y, max_x = window.getmaxyx()
+                messages = list(context_obj.messages)  # Convert to list to support slicing
+                scrollback_offset = context_obj.scrollback_offset
+
+                available_lines = max_y - 2  # Leave room for border
+                if available_lines <= 0:
+                    return
+
+                start_idx = max(0, len(messages) - available_lines - scrollback_offset)
+                # Ensure end_idx doesn't exceed length of messages after adjusting for scrollback
+                end_idx = max(0, len(messages) - scrollback_offset)
+
+                # We want to display messages from start_idx up to end_idx, but only 'available_lines' number of them.
+                # So, the actual slice should be messages[start_idx : start_idx + available_lines]
+                # but we must also ensure that start_idx + available_lines does not exceed len(messages)
+                # The current logic with start_idx and end_idx for slicing messages[start_idx:end_idx]
+                # and then breaking if i >= available_lines seems okay.
+
+                visible_messages = messages[start_idx:end_idx]
+
+                for i, msg_tuple in enumerate(visible_messages):
+                    if i >= available_lines: # Should not happen if start_idx and end_idx are calculated correctly relative to available_lines
+                        break
+
+                    y_pos = i + 1 # Start drawing from the first line inside the border
+
+                    # Handle both tuple and dict message formats (though Context.messages should be Tuple[str, Any])
+                    if isinstance(msg_tuple, tuple) and len(msg_tuple) >= 2:
+                        text, color_attr = msg_tuple[0], msg_tuple[1]
+                    elif isinstance(msg_tuple, dict): # Fallback, ideally not used
+                        text = msg_tuple.get("text", "")
+                        color_attr = msg_tuple.get("color_attr", self.colors.get("default", 0))
+                    else: # Malformed message, skip or log
+                        logger.warning(f"Skipping malformed message in context '{context_obj.name}': {msg_tuple}")
+                        continue
+
+                    # Truncate text to fit window width
+                    # max_x is full window width. Content area is max_x - 2 (for borders).
+                    # We draw at x=1, so available text width is (max_x - 1) - 1 = max_x - 2.
+                    max_text_len = max_x - 2
+                    if max_text_len <=0: continue # No space to draw text
+
+                    display_text = text
+                    if len(text) > max_text_len:
+                        display_text = text[:max_text_len - 3] + "..." if max_text_len > 3 else text[:max_text_len]
+
+                    self._safe_addstr(window, y_pos, 1, display_text, color_attr, f"msg_ctx_{context_obj.name}")
+
+            except curses.error as e:
+                logger.warning(f"Error drawing messages in window for context '{context_obj.name}': {e}")
+            except Exception as ex:
+                logger.error(f"Unexpected error drawing messages for context '{context_obj.name}': {ex}", exc_info=True)
+
+    def _draw_dcc_transfer_list(self, window, context_obj):
+        """Draws the DCC transfer list in the provided window."""
+        if not window or not self.client.dcc_manager:
             return
 
         try:
             max_y, max_x = window.getmaxyx()
-            messages = list(context_obj.messages)  # Convert to list to support slicing
-            scrollback_offset = context_obj.scrollback_offset
-
-            # Calculate how many messages we can display
             available_lines = max_y - 2  # Leave room for border
             if available_lines <= 0:
                 return
 
-            # Calculate start index for messages
-            start_idx = max(0, len(messages) - available_lines - scrollback_offset)
-            end_idx = len(messages)
+            transfer_statuses = self.client.dcc_manager.get_transfer_statuses()
 
-            # Draw messages
-            for i, msg in enumerate(messages[start_idx:end_idx]):
+            # For now, display the most recent 'available_lines'.
+            # Scrollback for DCC list can be added later if context_obj.scrollback_offset is used.
+            start_idx = max(0, len(transfer_statuses) - available_lines)
+
+            lines_to_display = transfer_statuses[start_idx:]
+
+            for i, status_line in enumerate(lines_to_display):
                 if i >= available_lines:
                     break
 
-                y = i + 1  # Start below the border
-                # Handle both tuple and dict message formats
-                if isinstance(msg, tuple):
-                    color_attr = msg[1] if len(msg) > 1 else self.colors["default"]
-                    text = msg[0] if len(msg) > 0 else ""
-                else:
-                    color_attr = msg.get("color_attr", self.colors["default"])
-                    text = msg.get("text", "")
+                y_pos = i + 1 # Start below the border
 
-                # Truncate text to fit window width
-                max_text_width = max_x - 2  # Leave room for border
-                if len(text) > max_text_width:
-                    text = text[: max_text_width - 3] + "..."
+                # Truncate status_line to fit window width
+                max_text_len = max_x - 2 # Leave room for border
+                if max_text_len <=0: continue
 
-                self._safe_addstr(window, y, 1, text, color_attr, "message")
+                display_text = status_line
+                if len(status_line) > max_text_len:
+                    display_text = status_line[:max_text_len - 3] + "..." if max_text_len > 3 else status_line[:max_text_len]
+
+                # Use a default system color for DCC status lines
+                color_attr = self.colors.get("system", self.colors.get("default", 0))
+                self._safe_addstr(window, y_pos, 1, display_text, color_attr, f"dcc_status_{context_obj.name}")
 
         except curses.error as e:
-            logger.warning(f"Error drawing messages in window: {e}")
+            logger.warning(f"Error drawing DCC transfer list in window: {e}")
         except Exception as ex:
-            logger.error(f"Unexpected error drawing messages: {ex}", exc_info=True)
+            logger.error(f"Unexpected error drawing DCC transfer list: {ex}", exc_info=True)
 
     def _draw_sidebar_context_list(
         self, max_y: int, max_x: int, current_active_ctx_name_str: str
