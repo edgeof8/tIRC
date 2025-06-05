@@ -263,43 +263,43 @@ class DCCManager:
                 # Auto-accept logic
                 if self.dcc_config.get("auto_accept", False):
                     if is_passive_offer:
-                        # For passive auto-accept, filename and token must be present.
-                        # Filesize is retrieved from the stored pending offer.
-                        if filename is not None and token is not None:
+                        if filename is not None and token is not None: # Crucial check for passive auto-accept
                             logger.info(f"Attempting auto-accept for PASSIVE offer from {nick} for '{filename}' with token {token}")
-                            # Variables filename and token are now confirmed non-None.
+                            # filename and token are confirmed non-None here
                             result = self.accept_passive_offer_by_token(nick, filename, token)
                             if result.get("success"):
                                 transfer_id_val = result.get('transfer_id')
                                 transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
-                                self.client_logic.add_message(f"Auto-accepted PASSIVE DCC SEND from {nick} for '{filename}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
+                                self.client_logic.add_message(f"Auto-accepted PASSIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
                                 return # Offer handled
                             else:
-                                self.client_logic.add_message(f"Auto-accept for PASSIVE DCC SEND from {nick} for '{filename}' failed: {result.get('error')}", "error", context_name="DCC")
+                                self.client_logic.add_message(f"Auto-accept for PASSIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}", "error", context_name="DCC")
                                 return
                         else:
-                            logger.warning(f"Skipping auto-accept for passive offer from {nick} due to missing parameters: filename='{filename}', token='{token}'")
+                            logger.warning(f"Skipping auto-accept for passive offer from {nick} due to missing filename or token.")
+                            # Fall through to manual prompt logic below, as auto-accept cannot proceed.
                     else: # Active offer auto-accept
-                        # For active auto-accept, all these must be present (already checked by line 225's `if None in [...]` for the general case)
-                        # This explicit check satisfies Pylance for this specific block.
-                        if filename is not None and ip_str is not None and port is not None and filesize is not None:
-                            logger.info(f"Attempting auto-accept for ACTIVE offer from {nick} for '{filename}'")
-                            result = self.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
-                            if result.get("success"):
-                                transfer_id_val = result.get('transfer_id')
-                                transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
-                                self.client_logic.add_message(f"Auto-accepted ACTIVE DCC SEND from {nick} for '{filename}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
-                                return # Offer handled
-                            else:
-                                self.client_logic.add_message(f"Auto-accept for ACTIVE DCC SEND from {nick} for '{filename}' failed: {result.get('error')}", "error", context_name="DCC")
-                                return
+                        # The `if None in [filename, ip_str, port, filesize]:` check on line 225 already covers this.
+                        # If we reach here, all these parameters are guaranteed to be non-None.
+                        logger.info(f"Attempting auto-accept for ACTIVE offer from {nick} for '{str(filename)}'")
+                        # Explicitly assert types for Pylance if direct pass-through is still an issue,
+                        # but the prior check should make them valid.
+                        assert filename is not None
+                        assert ip_str is not None
+                        assert port is not None
+                        assert filesize is not None
+                        result = self.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
+                        if result.get("success"):
+                            transfer_id_val = result.get('transfer_id')
+                            transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
+                            self.client_logic.add_message(f"Auto-accepted ACTIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
+                            return # Offer handled
                         else:
-                            # This path should ideally not be hit if the initial check on line 225 is effective.
-                            logger.warning(f"Skipping auto-accept for active offer from {nick} due to missing parameters (should have been caught earlier): file='{filename}', ip='{ip_str}', port='{port}', size='{filesize}'")
-
-            # If not auto-accepted (e.g., auto_accept is false, or required params for auto-accept were missing),
-            # then proceed to manual prompt logic. The return statements in the auto-accept blocks
-            # prevent falling through if auto-accept was attempted (successfully or with validation failure).
+                            self.client_logic.add_message(f"Auto-accept for ACTIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}", "error", context_name="DCC")
+                            return
+                # If auto_accept is false, or if conditions for auto-accept weren't met (e.g. missing params for passive),
+                # the code will fall through to the manual prompt logic below.
+                # The return statements above prevent falling through if auto-accept was decisively processed (success or failure after attempt).
 
         elif dcc_command == "ACCEPT":
             is_passive_dcc_accept = parsed_dcc.get("is_passive_accept", False)
