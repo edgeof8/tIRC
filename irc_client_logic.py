@@ -1098,12 +1098,24 @@ class IRCClient_Logic:
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
         try:
             # Start network connection if needed
-            if (
-                self.server
-                and self.port is not None
-                and not self.network_handler._network_thread
-            ):
-                self.network_handler.start()
+            if self.server and self.port is not None:
+                logger.info(f"Initializing connection to {self.server}:{self.port}")
+                if not self.network_handler:
+                    logger.error("Network handler not initialized")
+                    return
+
+                # Update connection parameters
+                self.network_handler.update_connection_params(
+                    server=self.server,
+                    port=self.port,
+                    use_ssl=self.use_ssl,
+                    channels_to_join=self.initial_channels_list,
+                )
+
+                # Start network handler if not already running
+                if not self.network_handler._network_thread:
+                    self.network_handler.start()
+                    logger.info("Network handler started")
 
             while not self.should_quit:
                 try:

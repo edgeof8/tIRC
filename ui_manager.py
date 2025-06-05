@@ -983,6 +983,35 @@ class UIManager:
             self.ui_is_too_small = False  # Reset flag before attempting layout
 
             try:
+                # Before resizing and recreating, explicitly clear and delete old windows
+                # Use a list of current window objects to iterate safely
+                current_windows = [
+                    self.msg_win,
+                    self.msg_win_top,
+                    self.msg_win_bottom,
+                    self.sidebar_win,
+                    self.status_win,
+                    self.input_win,
+                ]
+                for win in current_windows:
+                    if win:
+                        try:
+                            win.erase()  # Erase contents
+                            win.refresh()  # Refresh to show erase
+                            del win  # Attempt to delete the window object
+                        except curses.error as e:
+                            logger.warning(
+                                f"Error clearing or deleting old window during resize: {e}"
+                            )
+                        except Exception as ex:
+                            logger.warning(
+                                f"Unexpected error clearing or deleting old window during resize: {ex}"
+                            )
+                # Explicitly set references to None after attempting deletion
+                self.msg_win = self.msg_win_top = self.msg_win_bottom = (
+                    self.sidebar_win
+                ) = self.status_win = self.input_win = None
+
                 # It's crucial that resizeterm is called if dimensions change.
                 if self.height > 0 and self.width > 0:
                     curses.resizeterm(self.height, self.width)
@@ -1005,7 +1034,8 @@ class UIManager:
                 self.setup_layout()
 
                 # Touch all windows and set clearok to mark them for full redraw
-                for win in [
+                # Iterate through newly created windows
+                newly_created_windows = [
                     self.stdscr,
                     self.msg_win,
                     self.msg_win_top,
@@ -1013,7 +1043,8 @@ class UIManager:
                     self.sidebar_win,
                     self.status_win,
                     self.input_win,
-                ]:
+                ]
+                for win in newly_created_windows:
                     if win:
                         try:
                             win.touchwin()
@@ -1023,7 +1054,27 @@ class UIManager:
 
                 # Scroll to end of messages on resize
                 try:
-                    self.scroll_messages("end")
+                    # Scroll all contexts to end after resize
+                    all_context_names = (
+                        self.client.context_manager.get_all_context_names()
+                    )
+                    for ctx_name in all_context_names:
+                        ctx = self.client.context_manager.get_context(ctx_name)
+                        if ctx:
+                            ctx.scrollback_offset = (
+                                0  # Reset scroll to show latest messages
+                            )
+
+                    # Also ensure the active message window scrolls to the bottom if it's not split
+                    # If split, the drawing logic handles the viewable part based on offset=0
+                    if not self.split_mode_active and self.msg_win:
+                        # Ensure scrollok and idlok are true for scrolling to end (might be redundant but safe)
+                        self.msg_win.scrollok(True)
+                        self.msg_win.idlok(True)
+                        self.msg_win.scroll(
+                            1000000
+                        )  # Attempt to scroll to the very end
+
                 except Exception as e:
                     logger.error(f"Error scrolling messages after resize: {e}")
 

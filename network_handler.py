@@ -334,6 +334,7 @@ class NetworkHandler:
                 context_name="Status",
             )
 
+            # Start CAP negotiation if available
             if (
                 hasattr(self.client_logic_ref, "cap_negotiator")
                 and self.client_logic_ref.cap_negotiator
@@ -347,6 +348,7 @@ class NetworkHandler:
                     "Error: CAP negotiator not initialized.", "error"
                 )
 
+            # Dispatch connection event
             if (
                 self.client_logic_ref
                 and hasattr(self.client_logic_ref, "event_manager")
@@ -485,7 +487,26 @@ class NetworkHandler:
         try:
             while not self._stop_event.is_set():
                 if not self.connected or not self.socket:
-                    time.sleep(0.1)
+                    # Attempt to connect if we have connection parameters
+                    if (
+                        self.client_logic_ref
+                        and self.client_logic_ref.server
+                        and self.client_logic_ref.port is not None
+                    ):
+                        logger.info(
+                            f"Attempting to connect to {self.client_logic_ref.server}:{self.client_logic_ref.port}"
+                        )
+                        if self._connect_socket():
+                            logger.info("Successfully connected to server")
+                            self.connected = True
+                        else:
+                            logger.warning(
+                                "Failed to connect, will retry in next iteration"
+                            )
+                            time.sleep(0.1)  # Small delay before retry
+                    else:
+                        logger.debug("No connection parameters available, waiting...")
+                        time.sleep(0.1)
                     continue
 
                 try:
@@ -495,7 +516,8 @@ class NetworkHandler:
 
                     if not data:
                         logger.info("Connection closed by server")
-                        break
+                        self._reset_connection_state()
+                        continue
 
                     # Process received data
                     self._process_received_data(data)
@@ -504,10 +526,12 @@ class NetworkHandler:
                     continue
                 except ConnectionError as e:
                     logger.error(f"Connection error: {e}")
-                    break
+                    self._reset_connection_state()
+                    continue
                 except Exception as e:
                     logger.error(f"Error in network loop: {e}")
-                    break
+                    self._reset_connection_state()
+                    continue
 
         except Exception as e:
             logger.error(f"Critical error in network loop: {e}")

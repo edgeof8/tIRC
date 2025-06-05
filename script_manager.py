@@ -74,9 +74,10 @@ class ScriptManager:
         self, script_name: str, data_filename: str
     ) -> str:
         # script_name is module name like "ai_api_test_script"
+        # Corrected path to look inside the 'scripts' directory
         data_dir = os.path.join(
-            self.base_dir, "data", script_name
-        )  # Store data in <project_root>/data/<script_name>/
+            self.scripts_dir, "data", script_name
+        )  # Store data in <project_root>/scripts/data/<script_name>/
         if not os.path.exists(data_dir):
             try:
                 os.makedirs(data_dir, exist_ok=True)
@@ -511,6 +512,10 @@ class ScriptManager:
         # First, collect commands from registered_commands
         for cmd_name, cmd_data in self.registered_commands.items():
             script_name = cmd_data.get("script_name", "UnknownScript")
+            # Normalize script name (remove any module prefixes)
+            if "." in script_name:
+                script_name = script_name.split(".")[-1]
+
             if script_name not in commands_by_script:
                 commands_by_script[script_name] = {}
 
@@ -526,6 +531,10 @@ class ScriptManager:
         for cmd_name, help_data in self.registered_help_texts.items():
             if not help_data.get("is_alias"):  # Only process primary commands
                 script_name = help_data.get("script_name", "UnknownScript")
+                # Normalize script name (remove any module prefixes)
+                if "." in script_name:
+                    script_name = script_name.split(".")[-1]
+
                 if script_name not in commands_by_script:
                     commands_by_script[script_name] = {}
 

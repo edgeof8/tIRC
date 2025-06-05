@@ -102,8 +102,10 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
         if script_commands:
             for script_name, commands in sorted(script_commands.items()):
                 if commands:
+                    # Format script name for display (remove underscores, capitalize words)
+                    display_name = script_name.replace("_", " ").title()
                     client.add_message(
-                        f"\nCommands from script {script_name.title()}:",
+                        f"\nCommands from script {display_name}:",
                         system_color,
                         context_name=active_context_name,
                     )
