@@ -19,6 +19,7 @@ import config as app_config # Use this to access config values
 from dcc_transfer import DCCTransfer, DCCSendTransfer, DCCReceiveTransfer, DCCTransferStatus, DCCTransferType
 from dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp, format_dcc_accept_ctcp, format_dcc_checksum_ctcp, format_dcc_resume_ctcp
 from dcc_security import validate_download_path, sanitize_filename
+from dcc_ctcp_handler import DCCCTCPHandler # Added import
 
 logger = logging.getLogger("pyrc.dcc.manager") # For general manager operations
 dcc_event_logger = logging.getLogger("pyrc.dcc.events") # For detailed DCC events
@@ -86,6 +87,7 @@ class DCCManager:
         self.send_queues: Dict[str, Deque[Dict[str, Any]]] = {} # Key: peer_nick, Value: Deque of file_info dicts
         self.dcc_config = self._load_dcc_config()
         self._lock = threading.Lock() # To protect access to self.transfers, pending_passive_offers, and send_queues
+        self.ctcp_handler = DCCCTCPHandler(self) # Instantiate the CTCP handler
 
         # Setup the dedicated DCC logger instance
         # This logger will be used by DCCManager and passed to DCCTransfer instances
@@ -463,7 +465,7 @@ class DCCManager:
             )
 
     def handle_incoming_dcc_ctcp(self, nick: str, userhost: str, ctcp_payload: str):
-        """Handles a parsed DCC CTCP command from a peer."""
+        """Handles a parsed DCC CTCP command from a peer by delegating to DCCCTCPHandler."""
         if not self.dcc_config.get("enabled"):
             self.dcc_event_logger.info(f"DCC disabled, ignoring incoming DCC CTCP from {nick}: {ctcp_payload}")
             return
@@ -475,395 +477,76 @@ class DCCManager:
             self.client_logic.add_message(f"Received malformed DCC request from {nick}.", "error", context_name="Status")
             return
 
-        dcc_command = parsed_dcc.get("dcc_command")
-        self.dcc_event_logger.info(f"Received DCC Command '{dcc_command}' from {nick} with data: {parsed_dcc}")
+        # Log before delegating to the handler, so we know manager received it
+        self.dcc_event_logger.info(f"DCCManager: Delegating DCC Command '{parsed_dcc.get('dcc_command')}' from {nick} to CTCP Handler. Data: {parsed_dcc}")
+        self.ctcp_handler.process_ctcp(nick, userhost, parsed_dcc)
 
-        if dcc_command == "SEND":
-            filename = parsed_dcc.get("filename")
-            ip_str = parsed_dcc.get("ip_str")
-            port = parsed_dcc.get("port")
-            filesize = parsed_dcc.get("filesize")
-            is_passive_offer = parsed_dcc.get("is_passive_offer", False)
-            token = parsed_dcc.get("token")
 
-            if None in [filename, ip_str, port, filesize]: # filesize can be 0 for empty file
-                self.dcc_event_logger.warning(f"DCC SEND from {nick} missing critical information: {parsed_dcc}")
+    def accept_incoming_resume_offer(
+        self,
+        nick: str,
+        resume_filename: str,
+        peer_ip_address: str,
+        resume_peer_port: int,
+        resume_position_offered_by_peer: int,
+        total_filesize: int, # This was determined from our prior transfer record
+        local_file_path_to_check: str # This is the validated path from our prior record
+    ) -> None:
+        """
+        Handles the logic for accepting a DCC RESUME offer from a peer.
+        This method is called by DCCCTCPHandler after initial parsing and validation.
+        """
+        self.dcc_event_logger.info(f"DCCManager: Processing acceptance of RESUME offer for '{resume_filename}' from {nick}.")
+
+        actual_resume_offset = 0
+        can_resume_this_offer = False
+
+        if os.path.exists(local_file_path_to_check):
+            current_local_size = os.path.getsize(local_file_path_to_check)
+            if current_local_size == resume_position_offered_by_peer:
+                actual_resume_offset = current_local_size
+                can_resume_this_offer = True
+                self.dcc_event_logger.info(f"Local file '{local_file_path_to_check}' size {current_local_size} matches peer's offered RESUME offset {resume_position_offered_by_peer}. Will accept.")
+            else:
+                self.dcc_event_logger.warning(f"DCC RESUME from {nick}: local file '{local_file_path_to_check}' size {current_local_size} mismatches peer's offered offset {resume_position_offered_by_peer}. Cannot accept this RESUME offer as is.")
+        elif resume_position_offered_by_peer == 0:
+             can_resume_this_offer = True
+             actual_resume_offset = 0
+             self.dcc_event_logger.info(f"DCC RESUME from {nick} for '{resume_filename}' is from offset 0. Local file missing/re-downloading to '{local_file_path_to_check}'.")
+
+        if can_resume_this_offer:
+            ctcp_accept_msg = format_dcc_accept_ctcp(resume_filename, "0", 0, actual_resume_offset, token=None)
+            if not ctcp_accept_msg:
+                self.dcc_event_logger.error(f"Failed to format DCC ACCEPT for RESUME from {nick}.")
                 return
 
-            event_data = {
-                "nick": nick, "userhost": userhost, "filename": filename, "size": filesize,
-                "ip": ip_str, "port": port, "is_passive_offer": is_passive_offer
+            self.client_logic.send_ctcp_privmsg(nick, ctcp_accept_msg)
+            new_transfer_id = self._generate_transfer_id()
+
+            recv_resume_args = {
+                "transfer_id": new_transfer_id,
+                "peer_nick": nick,
+                "filename": resume_filename,
+                "filesize": total_filesize,
+                "local_filepath": local_file_path_to_check,
+                "dcc_manager_ref": self,
+                "connect_to_ip": peer_ip_address,
+                "connect_to_port": resume_peer_port,
+                "resume_offset": actual_resume_offset,
+                "peer_ip": peer_ip_address, # Store peer's IP for the transfer object
+                "dcc_event_logger": self.dcc_event_logger
             }
-            if token:
-                event_data["token"] = token
-            self.event_manager.dispatch_event("DCC_SEND_OFFER_INCOMING", event_data)
 
-            if is_passive_offer:
-                if token: # Passive offers must have a token by our design
-                    with self._lock:
-                        self.pending_passive_offers[token] = {
-                            "nick": nick,
-                            "filename": filename,
-                            "filesize": filesize,
-                            "ip_str": ip_str, # Store sender's IP for passive offers
-                            "userhost": userhost,
-                            "timestamp": time.time()
-                        }
-                    self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' (IP: {ip_str}) with token {token}.")
-                    self._cleanup_stale_passive_offers() # Opportunistic cleanup
-                    self.client_logic.add_message(
-                        f"Passive DCC SEND offer from {nick} ({userhost}): '{filename}' ({filesize} bytes). "
-                        f"Use /dcc get {nick} \"{filename}\" --token {token} to receive.",
-                        "system", context_name="DCC"
-                    )
-                else: # Passive offer without a token - spec might allow, but our flow expects it.
-                    self.dcc_event_logger.warning(f"Passive DCC SEND offer from {nick} for '{filename}' missing token. Ignoring.")
-                    self.client_logic.add_message(f"Malformed passive DCC SEND offer from {nick} (missing token).", "error", context_name="Status")
-            else: # Active offer
-                self.dcc_event_logger.info(f"Received active DCC SEND offer from {nick} for '{filename}'. IP={ip_str}, Port={port}, Size={filesize}")
-                self.client_logic.add_message(
-                    f"DCC SEND offer from {nick} ({userhost}): '{filename}' ({filesize} bytes) from {ip_str}:{port}. "
-                    f"Use /dcc accept {nick} \"{filename}\" {ip_str} {port} {filesize} to receive.",
-                    "system", context_name="DCC"
-                )
-                # Auto-accept logic
-                if self.dcc_config.get("auto_accept", False):
-                    if is_passive_offer:
-                        if filename is not None and token is not None: # Crucial check for passive auto-accept
-                            self.dcc_event_logger.info(f"Attempting auto-accept for PASSIVE offer from {nick} for '{filename}' with token {token}")
-                            # filename and token are confirmed non-None here
-                            result = self.accept_passive_offer_by_token(nick, filename, token)
-                            if result.get("success"):
-                                transfer_id_val = result.get('transfer_id')
-                                transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
-                                self.dcc_event_logger.info(f"Auto-accepted PASSIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}")
-                                self.client_logic.add_message(f"Auto-accepted PASSIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
-                                return # Offer handled
-                            else:
-                                self.dcc_event_logger.error(f"Auto-accept for PASSIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}")
-                                self.client_logic.add_message(f"Auto-accept for PASSIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}", "error", context_name="DCC")
-                                return
-                        else:
-                            self.dcc_event_logger.warning(f"Skipping auto-accept for passive offer from {nick} due to missing filename or token.")
-                            # Fall through to manual prompt logic below, as auto-accept cannot proceed.
-                    else: # Active offer auto-accept
-                        # The `if None in [filename, ip_str, port, filesize]:` check earlier covers this.
-                        # If we reach here, all these parameters are guaranteed to be non-None.
-                        self.dcc_event_logger.info(f"Attempting auto-accept for ACTIVE offer from {nick} for '{str(filename)}'")
-                        # Explicitly assert types for Pylance if direct pass-through is still an issue,
-                        # but the prior check should make them valid.
-                        assert filename is not None
-                        assert ip_str is not None
-                        assert port is not None
-                        assert filesize is not None
-                        result = self.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
-                        if result.get("success"):
-                            transfer_id_val = result.get('transfer_id')
-                            transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
-                            self.dcc_event_logger.info(f"Auto-accepted ACTIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}")
-                            self.client_logic.add_message(f"Auto-accepted ACTIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
-                            return # Offer handled
-                        else:
-                            self.dcc_event_logger.error(f"Auto-accept for ACTIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}")
-                            self.client_logic.add_message(f"Auto-accept for ACTIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}", "error", context_name="DCC")
-                            return
-                # If auto_accept is false, or if conditions for auto-accept weren't met (e.g. missing params for passive),
-                # the code will fall through to the manual prompt logic below.
-                # The return statements above prevent falling through if auto-accept was decisively processed (success or failure after attempt).
-
-        elif dcc_command == "ACCEPT":
-            is_passive_dcc_accept = parsed_dcc.get("is_passive_accept", False)
-            is_resume_accept = parsed_dcc.get("is_resume_accept", False)
-            filename = parsed_dcc.get("filename") # Should always be present for ACCEPT
-
-            if is_passive_dcc_accept:
-                accepted_ip = parsed_dcc.get("ip_str")
-                accepted_port = parsed_dcc.get("port")
-                accepted_token = parsed_dcc.get("token")
-                self.dcc_event_logger.info(f"Received Passive DCC ACCEPT from {nick} for '{filename}' (IP: {accepted_ip}, Port: {accepted_port}, Token: {accepted_token})")
-
-                if not all([filename, accepted_ip, accepted_port is not None, accepted_token]): # Port can be 0, but must exist
-                    self.dcc_event_logger.warning(f"Passive DCC ACCEPT from {nick} for '{filename}' missing critical info: {parsed_dcc}")
-                    return
-
-                found_transfer = None
-                with self._lock:
-                    for tid, transfer in self.transfers.items():
-                        if (isinstance(transfer, DCCSendTransfer) and
-                            transfer.is_passive_offer and
-                            transfer.passive_token == accepted_token and
-                            transfer.original_filename == filename and
-                            transfer.peer_nick == nick):
-                            found_transfer = transfer
-                            break
-
-                if found_transfer:
-                    self.dcc_event_logger.info(f"Matching passive SEND offer found (ID: {found_transfer.transfer_id}). Initiating connection to {nick} at {accepted_ip}:{accepted_port}")
-                    found_transfer.connect_to_ip = accepted_ip # Store for DCCSendTransfer.run()
-                    found_transfer.connect_to_port = accepted_port
-                    found_transfer._report_status(DCCTransferStatus.CONNECTING, f"Peer accepted passive offer. Connecting to {accepted_ip}:{accepted_port}.")
-                    found_transfer.start_transfer_thread() # Now the sender connects
-                else:
-                    self.dcc_event_logger.warning(f"Received Passive DCC ACCEPT from {nick} for '{filename}' with token '{accepted_token}', but no matching passive offer found.")
-                    self.client_logic.add_message(f"Received unexpected Passive DCC ACCEPT from {nick} for '{filename}'.", "warning", context_name="Status")
-
-            elif is_resume_accept:
-                # This is when peer ACKs our RESUME offer.
-                # Our DCCSendTransfer (created when we sent DCC RESUME) should be listening.
-                # The accept() call in its run() method will handle the connection.
-                # This CTCP ACCEPT is mostly an acknowledgment.
-                accepted_filename = parsed_dcc.get("filename")
-                accepted_port = parsed_dcc.get("port") # This should be the port we told them we're listening on for resume
-                accepted_position = parsed_dcc.get("position") # This should be the offset we offered
-
-                self.dcc_event_logger.info(f"Received Resume DCC ACCEPT from {nick} for '{accepted_filename}' (Port: {accepted_port}, Position: {accepted_position}).")
-
-                found_resuming_send_transfer = None
-                with self._lock:
-                    for tid, transfer_obj in self.transfers.items():
-                        if (isinstance(transfer_obj, DCCSendTransfer) and
-                            transfer_obj.peer_nick == nick and
-                            transfer_obj.original_filename == accepted_filename and
-                            hasattr(transfer_obj, 'resume_offset') and # Check if it's a resume-capable transfer object
-                            transfer_obj.resume_offset == accepted_position and
-                            transfer_obj.status == DCCTransferStatus.NEGOTIATING and # It should be waiting for connection
-                            transfer_obj.server_socket is not None and # It should have a listening socket
-                            transfer_obj.server_socket.getsockname()[1] == accepted_port): # Port matches
-                            found_resuming_send_transfer = transfer_obj
-                            break
-
-                if found_resuming_send_transfer:
-                    # The actual connection is handled by the listening socket in DCCSendTransfer.run()
-                    # This ACCEPT confirms the peer is proceeding with the resume.
-                    # We might change status here slightly or just log.
-                    self.dcc_event_logger.info(f"DCC RESUME for '{accepted_filename}' to {nick} acknowledged by peer. Transfer {found_resuming_send_transfer.transfer_id} should proceed.")
-                    # The transfer status will change to CONNECTING/TRANSFERRING when the socket accepts.
-                    # We don't need to call start_transfer_thread() again as it's already running and listening.
-                else:
-                    self.dcc_event_logger.warning(f"Received Resume DCC ACCEPT from {nick} for '{accepted_filename}', but no matching active RESUME offer found or details mismatch.")
-                    self.client_logic.add_message(f"Received unexpected/mismatched Resume DCC ACCEPT from {nick} for '{accepted_filename}'.", "warning", context_name="Status")
-                # Ensure filename from parsed_dcc is used if it's not None, otherwise log error or handle.
-                # This was mostly for Pylance, actual logic should be fine due to prior checks.
-                if accepted_filename is None:
-                    self.dcc_event_logger.error(f"Resume DCC ACCEPT from {nick} had None for filename after parsing. This should not happen.")
-
-
-            else: # Should not happen if parsed_dcc is valid and has is_passive_accept or is_resume_accept
-                self.dcc_event_logger.warning(f"Received ambiguous DCC ACCEPT from {nick}: {parsed_dcc}")
-
-        elif dcc_command == "RESUME": # Peer is offering to RESUME sending a file to us
-            # DCC RESUME <filename> <peer_listening_port> <position_peer_will_send_from>
-            # Peer's IP is implicitly known from CTCP source (nick).
-            # dcc_protocol.parse_dcc_ctcp for RESUME should provide: filename, port, position
-
-            if not self.dcc_config.get("resume_enabled", True):
-                self.dcc_event_logger.info(f"DCC RESUME from {nick} ignored, resume disabled in config.")
-                # Optionally send a reject CTCP? For now, just ignore.
-                return
-
-            resume_filename = parsed_dcc.get("filename")
-            resume_peer_port = parsed_dcc.get("port")
-            resume_position_offered_by_peer = parsed_dcc.get("position")
-            # Assuming peer's IP is implicitly the source of the CTCP.
-            # We need the actual IP of the sender to connect to.
-            # For now, let's assume DCCManager can get the peer's IP if needed, or that the protocol implies it.
-            # This part needs careful thought on how peer_ip is obtained for the connection.
-            # Let's assume for now the client_logic can provide the peer's IP based on nick.
-            # This is a placeholder, real IP lookup might be needed.
-            # For now, we'll assume client_logic can provide it. If not, we can't proceed.
-            # A more robust method would be to store peer IP from initial DCC SEND offer.
-            # **REFINEMENT**: We will get peer_ip_address from the existing_transfer_info later.
-            # peer_ip_address = None
-            # if hasattr(self.client_logic, 'get_user_ip') and callable(self.client_logic.get_user_ip):
-            #      peer_ip_address = self.client_logic.get_user_ip(nick)
-            #
-            # if not peer_ip_address: # This check will be done after finding existing_transfer_info
-            #     self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Could not determine peer IP address. Cannot proceed.")
-            #     self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Peer IP unknown.", "error", context_name="DCC")
-            #     return
-
-            if not all([resume_filename, resume_peer_port is not None, resume_position_offered_by_peer is not None]):
-                self.dcc_event_logger.warning(f"DCC RESUME from {nick} missing critical information in CTCP: {parsed_dcc}")
-                return
-
-            assert isinstance(resume_filename, str), "resume_filename must be a string after the all() check"
-
-            self.dcc_event_logger.info(f"Received DCC RESUME offer from {nick} for '{resume_filename}' to port {resume_peer_port} from offset {resume_position_offered_by_peer}.")
-
-            # Look for an existing partial download to determine total filesize and validate resume
-            existing_transfer_info: Optional[Dict[str, Any]] = None
+            new_recv_transfer = DCCReceiveTransfer(**recv_resume_args)
             with self._lock:
-                for tid, transfer in self.transfers.items():
-                    if (isinstance(transfer, DCCReceiveTransfer) and
-                        transfer.peer_nick == nick and
-                        transfer.original_filename == resume_filename and
-                        transfer.status in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]):
-                        existing_transfer_info = {
-                            "local_filepath": transfer.local_filepath,
-                            "total_filesize": transfer.filesize,
-                            "current_bytes": transfer.bytes_transferred,
-                            "peer_ip": transfer.peer_ip # Crucial: Get peer's IP from original transfer
-                        }
-                        break
+                self.transfers[new_transfer_id] = new_recv_transfer
 
-            if not existing_transfer_info:
-                if resume_position_offered_by_peer == 0:
-                    # Peer offers to send from start, and we have no prior record. Treat as a new SEND offer essentially.
-                    # However, a RESUME CTCP doesn't carry total filesize. This is problematic.
-                    # For now, we cannot accept a RESUME offer for a completely new file if it doesn't start at 0
-                    # and even then, we don't know the total size.
-                    # A more compliant client might send DCC SEND first, then we could request RESUME.
-                    self.dcc_event_logger.warning(f"DCC RESUME from {nick} for '{resume_filename}' at offset 0, but no prior transfer record found. Total filesize is unknown. Rejecting.")
-                    self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': No prior transfer record to determine total filesize.", "error", context_name="DCC")
-                    return # Reject if no prior record and offset is 0 (filesize unknown)
-                else: # resume_position_offered_by_peer > 0 but no record
-                    self.dcc_event_logger.warning(f"DCC RESUME from {nick} for '{resume_filename}' at offset {resume_position_offered_by_peer}, but no prior transfer record found. Rejecting.")
-                    self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': No prior transfer record.", "error", context_name="DCC")
-                    return
-
-            # At this point, existing_transfer_info is guaranteed to be populated if we didn't return.
-            local_file_path_to_check = existing_transfer_info["local_filepath"]
-            total_filesize = existing_transfer_info["total_filesize"]
-            peer_ip_address = existing_transfer_info.get("peer_ip")
-
-            if not peer_ip_address:
-                self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Peer IP address not found in prior transfer record. Cannot proceed.")
-                self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Peer IP unknown from prior record.", "error", context_name="DCC")
-                return
-
-            if total_filesize <= 0: # Should not happen if we had a valid prior transfer
-                self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Prior transfer record has invalid total filesize ({total_filesize}). Rejecting.")
-                self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Invalid prior transfer data (filesize).", "error", context_name="DCC")
-                return
-
-            actual_resume_offset = 0
-            can_resume_this_offer = False
-
-            if os.path.exists(local_file_path_to_check):
-                current_local_size = os.path.getsize(local_file_path_to_check)
-                if current_local_size == resume_position_offered_by_peer:
-                    actual_resume_offset = current_local_size
-                    can_resume_this_offer = True
-                    self.dcc_event_logger.info(f"Local file '{local_file_path_to_check}' size {current_local_size} matches peer's offered RESUME offset {resume_position_offered_by_peer}. Will accept.")
-                else:
-                    self.dcc_event_logger.warning(f"DCC RESUME from {nick}: local file '{local_file_path_to_check}' size {current_local_size} mismatches peer's offered offset {resume_position_offered_by_peer}. Cannot accept this RESUME offer as is.")
-                    # Optionally, could send DCC ACCEPT with *our* current_local_size if we want to request resume from *our* end.
-                    # For now, if peer's offset doesn't match our local state exactly for an existing file, we reject their RESUME offer.
-            elif resume_position_offered_by_peer == 0: # Peer offers to send from start, we had a record but local file is gone.
-                 can_resume_this_offer = True # Effectively a new download, but we know the total_filesize
-                 actual_resume_offset = 0
-                 # local_file_path_to_check is already set from existing_transfer_info.original_filename
-                 self.dcc_event_logger.info(f"DCC RESUME from {nick} for '{resume_filename}' is from offset 0. Local file missing/re-downloading to '{local_file_path_to_check}'.")
-
-            if can_resume_this_offer:
-                # Send DCC ACCEPT <filename> <our_ip_or_0_ignored> <our_connecting_port_ignored> <actual_resume_offset>
-                # The port in this ACCEPT is not critical as the peer is already listening.
-                # The IP is also not strictly needed by the peer for resume.
-                ctcp_accept_msg = format_dcc_accept_ctcp(resume_filename, "0", 0, actual_resume_offset, token=None)
-                if not ctcp_accept_msg:
-                    self.dcc_event_logger.error(f"Failed to format DCC ACCEPT for RESUME from {nick}.")
-                    return
-
-                self.client_logic.send_ctcp_privmsg(nick, ctcp_accept_msg)
-
-                new_transfer_id = self._generate_transfer_id()
-                # If existing_transfer, we might reuse its ID or update it. For simplicity, new ID for new attempt.
-
-                # Path validation for local_file_path_to_check should have happened when existing_transfer_info was created.
-                # If actual_resume_offset is 0 and file was missing, local_file_path_to_check was (re)derived.
-                # We trust local_file_path_to_check from existing_transfer_info or its re-derivation.
-
-                recv_resume_args = {
-                    "transfer_id": new_transfer_id,
-                    "peer_nick": nick,
-                    "filename": resume_filename,
-                    "filesize": total_filesize, # Use the known total_filesize from prior record
-                    "local_filepath": local_file_path_to_check, # This is the validated path
-                    "dcc_manager_ref": self,
-                    "connect_to_ip": peer_ip_address,
-                    "connect_to_port": resume_peer_port,
-                    "resume_offset": actual_resume_offset,
-                    "dcc_event_logger": self.dcc_event_logger
-                }
-                # DCC RESUME typically doesn't include total filesize. This needs to be obtained from original offer or stored.
-                # For now, if existing_transfer, use its filesize. Otherwise, this is problematic.
-                # Let's assume filesize is known from a previous offer or needs to be requested again.
-                # For this simplified step, we'll assume filesize is available if existing_transfer.
-                # If not existing_transfer and offset is 0, this is like a new SEND, but RESUME protocol might not provide total size.
-                # This needs clarification from DCC spec for RESUME. For now, proceed if filesize is sensible.
-                # No need for the filesize check here as total_filesize is now sourced reliably.
-
-                new_recv_transfer = DCCReceiveTransfer(**recv_resume_args)
-                with self._lock:
-                    self.transfers[new_transfer_id] = new_recv_transfer
-
-                new_recv_transfer._report_status(DCCTransferStatus.CONNECTING, f"Accepted RESUME from {nick}. Connecting to resume download.")
-                new_recv_transfer.start_transfer_thread()
-                self.client_logic.add_message(f"Accepted DCC RESUME from {nick} for '{resume_filename}'. Resuming download from offset {actual_resume_offset}.", "system", context_name="DCC")
-            else:
-                self.dcc_event_logger.info(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}' under current conditions (offset mismatch or file issue).")
-                # Optionally send reject CTCP
-                self.client_logic.add_message(f"Could not accept DCC RESUME from {nick} for '{resume_filename}' (offset/file mismatch).", "warning", context_name="DCC")
-
-
-        elif dcc_command == "DCCCHECKSUM":
-            self.dcc_event_logger.debug(f"Received DCCCHECKSUM CTCP from {nick}: {parsed_dcc}")
-            # Parsed by dcc_protocol.py: {'dcc_command': 'DCCCHECKSUM', 'filename': ...,
-            # 'algorithm': ..., 'checksum_value': ..., 'transfer_identifier': ...}
-
-            transfer_identifier = parsed_dcc.get("transfer_identifier")
-            filename = parsed_dcc.get("filename")
-            algorithm = parsed_dcc.get("algorithm")
-            checksum_value = parsed_dcc.get("checksum_value")
-
-            if not all([transfer_identifier, filename, algorithm, checksum_value]):
-                self.dcc_event_logger.warning(f"Malformed DCCCHECKSUM from {nick}: {parsed_dcc}")
-                return
-
-            # At this point, algorithm and checksum_value are guaranteed not to be None by the all() check.
-            # We can cast them to str for Pylance if it's still an issue, or rely on the runtime check.
-            # For now, let's assume the all() check is sufficient for runtime, Pylance might need explicit cast.
-            # However, the .get() still returns Optional[str], so Pylance is correct to warn without a cast/check.
-            # The `all()` check ensures they are truthy (not None and not empty string).
-
-            self.dcc_event_logger.info(f"Received DCCCHECKSUM from {nick} for transfer '{transfer_identifier}', file '{filename}', algo '{algorithm}'.")
-
-            transfer_to_update = None
-            with self._lock:
-                # Try to find by transfer_id first
-                if transfer_identifier in self.transfers:
-                    potential_transfer = self.transfers[transfer_identifier]
-                    if isinstance(potential_transfer, DCCReceiveTransfer) and \
-                       potential_transfer.peer_nick == nick and \
-                       potential_transfer.original_filename == filename:
-                        transfer_to_update = potential_transfer
-
-                # Fallback: If not found by ID, maybe by filename and nick (less reliable if multiple transfers of same file)
-                if not transfer_to_update:
-                    for tid, tr_obj in self.transfers.items():
-                        if isinstance(tr_obj, DCCReceiveTransfer) and \
-                           tr_obj.peer_nick == nick and \
-                          tr_obj.original_filename == filename and \
-                          tr_obj.status == DCCTransferStatus.COMPLETED:
-                           # Only apply to completed transfers if ID didn't match, to avoid ambiguity
-                           transfer_to_update = tr_obj
-                           self.dcc_event_logger.info(f"DCCCHECKSUM matched by filename/nick for completed transfer {tid}")
-                           break
-            # This block is now correctly indented (12 spaces), same level as `with self._lock`
-            if transfer_to_update:
-                if hasattr(transfer_to_update, 'set_expected_checksum'):
-                    # The `all()` check above ensures algorithm and checksum_value are not None.
-                    cast_algorithm: str = str(algorithm)
-                    cast_checksum_value: str = str(checksum_value)
-                    transfer_to_update.set_expected_checksum(cast_algorithm, cast_checksum_value)
-                else:
-                    self.dcc_event_logger.error(f"Transfer object {transfer_to_update.transfer_id} does not have set_expected_checksum method.")
-            else:
-                self.dcc_event_logger.warning(f"Received DCCCHECKSUM from {nick} for '{filename}' (ID/Ref: {transfer_identifier}), but no matching active/completed RECV transfer found.")
-       # This 'else' is now correctly aligned with the main if/elif dcc_command checks (8 spaces)
+            new_recv_transfer._report_status(DCCTransferStatus.CONNECTING, f"Accepted RESUME from {nick}. Connecting to resume download.")
+            new_recv_transfer.start_transfer_thread()
+            self.client_logic.add_message(f"Accepted DCC RESUME from {nick} for '{resume_filename}'. Resuming download from offset {actual_resume_offset}.", "system", context_name="DCC")
         else:
-            self.dcc_event_logger.warning(f"Received unhandled DCC command '{dcc_command}' from {nick}: {parsed_dcc}")
-            self.client_logic.add_message(f"Received unhandled DCC '{dcc_command}' from {nick}: {' '.join(parsed_dcc.get('args',[]))}", "system", context_name="Status")
+            self.dcc_event_logger.info(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}' under current conditions (offset mismatch or file issue).")
+            self.client_logic.add_message(f"Could not accept DCC RESUME from {nick} for '{resume_filename}' (offset/file mismatch).", "warning", context_name="DCC")
 
 
     def accept_incoming_send_offer(self, peer_nick: str, original_filename: str, ip_str: str, port: int, filesize: int) -> Dict[str, Any]:
