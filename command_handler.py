@@ -195,7 +195,7 @@ class CommandHandler:
             logger.info(f"Is '{cmd}' in command_map? {is_in_map}")
             if not is_in_map:
                 map_keys_full_list = sorted(list(self.command_map.keys()))
-                logger.info(f"Full command_map keys for missing command '{cmd}': {map_keys_full_list}")
+                logger.debug(f"Full command_map keys for missing command '{cmd}': {map_keys_full_list}")
 
             if cmd in self.command_map:
                 handler_func = self.command_map[cmd]

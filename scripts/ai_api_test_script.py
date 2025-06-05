@@ -102,7 +102,7 @@ class LeanAiApiTestScript:
         logger.info(f"[Lean AI Test] {test_label}: New messages in '{context_to_check}' ({len(new_messages)} lines):")
         # Only log all lines if DEBUG for help_command is not sufficient
         # for i, msg_tuple in enumerate(new_messages):
-        #     logger.info(f"[Lean AI Test] Help Output Line {i}: {msg_tuple[0]}")
+        #     # logger.info(f"[Lean AI Test] Help Output Line {i}: {msg_tuple[0]}")
 
 
         all_found = True
@@ -189,7 +189,7 @@ class LeanAiApiTestScript:
                         break
 
                 full_reconstructed_message = " ".join(reconstructed_message_parts)
-                logger.debug(f"[Lean AI Test] {test_label}: Reconstructed from index {i}: '{full_reconstructed_message}'")
+                # logger.debug(f"[Lean AI Test] {test_label}: Reconstructed from index {i}: '{full_reconstructed_message}'")
 
                 if action_message_content == full_reconstructed_message:
                     found = True
@@ -204,7 +204,7 @@ class LeanAiApiTestScript:
             logger.error(f"[Lean AI Test] {test_label}: FAILED. Output message '{action_message_content}' (echoed as from '{client_nick_for_check}') not found or not matched correctly in {channel_name}.")
             if messages:
                 last_msgs_text = [m[0][:100] + ('...' if len(m[0]) > 100 else '') for m in messages[-15:]]
-                logger.info(f"[Lean AI Test] {test_label}: Last few messages in {channel_name} for debug: {last_msgs_text}")
+                # logger.info(f"[Lean AI Test] {test_label}: Last few messages in {channel_name} for debug: {last_msgs_text}")
         return found
 
     def _test_trigger_functionality(self, channel_name: str):

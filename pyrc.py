@@ -43,7 +43,7 @@ def setup_logging():
     root_logger = logging.getLogger()
     # Set the root logger level to the most verbose level we might want for any handler.
     # Individual handlers will then filter based on their own levels.
-    root_logger.setLevel(logging.DEBUG) # Capture all messages from DEBUG upwards
+    root_logger.setLevel(LOG_LEVEL) # Capture all messages from LOG_LEVEL upwards
 
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -77,14 +77,14 @@ def setup_logging():
         # For instance, always show DEBUG on console regardless of file log level.
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.DEBUG) # Or use LOG_LEVEL if you want console and file to match
+        console_handler.setLevel(LOG_LEVEL) # Match file handler or set as desired (e.g., INFO)
         root_logger.addHandler(console_handler)
 
         # Specific logger level overrides if needed (example)
-        logging.getLogger("pyrc.commands.help").setLevel(logging.DEBUG)
-        logging.getLogger("pyrc.logic").setLevel(logging.DEBUG)
-        logging.getLogger("pyrc.protocol").setLevel(logging.DEBUG)
-        logging.getLogger("pyrc.handlers.message").setLevel(logging.DEBUG)
+        # logging.getLogger("pyrc.commands.help").setLevel(logging.INFO) # Keep if frequently needed, otherwise remove or set to INFO
+        # logging.getLogger("pyrc.logic").setLevel(logging.INFO)
+        # logging.getLogger("pyrc.protocol").setLevel(logging.INFO)
+        # logging.getLogger("pyrc.handlers.message").setLevel(logging.INFO)
 
 
         # Initial log message using a specific logger for the application itself
