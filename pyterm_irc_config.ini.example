@@ -78,6 +78,12 @@ checksum_algorithm = md5        ; Algorithm for checksums (e.g., md5, sha1, sha2
 blocked_extensions = .exe,.bat,.com,.scr,.vbs,.pif,.cmd ; Comma-separated list of file extensions to auto-reject
 passive_token_timeout = 120     ; Seconds a passive DCC offer token remains valid if not accepted
 ; virus_scan_cmd = ""           ; (Future feature) Command to run for virus scanning a downloaded file
+; DCC Specific Logging:
+log_enabled = true              ; Enable dedicated DCC logging
+log_file = logs/dcc.log         ; Path for the DCC log file, relative to PyRC root
+log_level = INFO                ; DEBUG, INFO, WARNING, ERROR, CRITICAL for DCC logs
+log_max_bytes = 5242880         ; 5MB before rotation for DCC log
+log_backup_count = 3            ; Number of old DCC log files to keep
 
 ; [IgnoreList]
 ; This section is automatically managed by /ignore, /unignore, /listignores commands.

@@ -102,6 +102,11 @@ DEFAULT_DCC_BANDWIDTH_LIMIT = 0  # 0 = unlimited, bytes per second (Phase 4)
 DEFAULT_DCC_BLOCKED_EXTENSIONS = ['.exe', '.bat', '.com', '.scr', '.vbs', '.pif']
 DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT = 120 # Seconds for a passive mode token to be valid (Phase 2)
 DEFAULT_DCC_VIRUS_SCAN_CMD = "" # Phase 4
+DEFAULT_DCC_LOG_ENABLED = True
+DEFAULT_DCC_LOG_FILE = "dcc.log"
+DEFAULT_DCC_LOG_LEVEL = "INFO" # Similar to main log level
+DEFAULT_DCC_LOG_MAX_BYTES = 5 * 1024 * 1024 # 5MB
+DEFAULT_DCC_LOG_BACKUP_COUNT = 3
 
 # Global variable to hold current ignore patterns
 IGNORED_PATTERNS: Set[str] = set()
@@ -564,6 +569,17 @@ DCC_BANDWIDTH_LIMIT = get_config_value("DCC", "bandwidth_limit", DEFAULT_DCC_BAN
 DCC_BLOCKED_EXTENSIONS = get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
 DCC_PASSIVE_MODE_TOKEN_TIMEOUT = get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int) # Phase 2
 DCC_VIRUS_SCAN_CMD = get_config_value("DCC", "virus_scan_cmd", DEFAULT_DCC_VIRUS_SCAN_CMD, str) # Phase 4
+DCC_LOG_ENABLED = get_config_value("DCC", "log_enabled", DEFAULT_DCC_LOG_ENABLED, bool)
+DCC_LOG_FILE = get_config_value("DCC", "log_file", DEFAULT_DCC_LOG_FILE, str)
+DCC_LOG_LEVEL_STR = get_config_value("DCC", "log_level", DEFAULT_DCC_LOG_LEVEL, str).upper()
+_dcc_log_level_int = getattr(logging, DCC_LOG_LEVEL_STR, None)
+if not isinstance(_dcc_log_level_int, int):
+    _dcc_log_level_int = getattr(logging, DEFAULT_DCC_LOG_LEVEL.upper(), logging.INFO)
+    if not isinstance(_dcc_log_level_int, int): _dcc_log_level_int = logging.INFO
+DCC_LOG_LEVEL = _dcc_log_level_int
+DCC_LOG_MAX_BYTES = get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
+DCC_LOG_BACKUP_COUNT = get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
+
 
 # Constants that are not typically from config file but used by logic
 CONNECTION_TIMEOUT = DEFAULT_CONNECTION_TIMEOUT

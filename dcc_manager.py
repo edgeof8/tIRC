@@ -6,6 +6,7 @@ import threading
 import uuid # For unique transfer IDs
 from typing import Dict, Optional, Any, List, Tuple, Deque
 from collections import deque # Import Deque
+import logging.handlers # For RotatingFileHandler
 
 # Assuming these will be accessible via client_logic.config or similar
 # from config import (
@@ -19,7 +20,62 @@ from dcc_transfer import DCCTransfer, DCCSendTransfer, DCCReceiveTransfer, DCCTr
 from dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp, format_dcc_accept_ctcp, format_dcc_checksum_ctcp
 from dcc_security import validate_download_path, sanitize_filename
 
-logger = logging.getLogger("pyrc.dcc.manager")
+logger = logging.getLogger("pyrc.dcc.manager") # For general manager operations
+dcc_event_logger = logging.getLogger("pyrc.dcc.events") # For detailed DCC events
+
+def setup_dcc_specific_logger():
+    """Sets up the dedicated DCC event logger."""
+    if not app_config.DCC_LOG_ENABLED:
+        dcc_event_logger.disabled = True
+        logger.info("Dedicated DCC event logging is disabled via config.")
+        return
+
+    # Ensure the logs directory exists (similar to irc_client_logic.py)
+    log_dir = os.path.join(app_config.BASE_DIR, "logs")
+    if not os.path.exists(log_dir):
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except OSError as e:
+            logger.error(f"Could not create logs directory '{log_dir}' for DCC logs: {e}")
+            dcc_event_logger.disabled = True # Disable if dir can't be made
+            return
+
+    log_file_path = os.path.join(log_dir, app_config.DCC_LOG_FILE)
+
+    # Prevent adding handlers multiple times if this function were called again (e.g., rehash)
+    if dcc_event_logger.hasHandlers():
+        # Attempt to remove existing file handlers to reconfigure, or just return if config is unchanged
+        # For simplicity now, we'll assume it's setup once. Rehash might need more robust handler management.
+        logger.debug("DCC event logger already has handlers. Skipping reconfiguration for now.")
+        # To properly reconfigure on rehash, we'd need to close and remove existing handlers.
+        # For now, if it's already set up, we assume it's fine.
+        # If DCC_LOG_ENABLED was turned off then on, it might not re-enable without handler removal.
+        # However, dcc_event_logger.disabled = True would still take effect.
+        if dcc_event_logger.disabled and app_config.DCC_LOG_ENABLED: # Re-enabling
+             dcc_event_logger.disabled = False
+             logger.info("Re-enabled dedicated DCC event logging.")
+        return
+
+
+    dcc_event_logger.setLevel(app_config.DCC_LOG_LEVEL)
+
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+    try:
+        handler = logging.handlers.RotatingFileHandler(
+            log_file_path,
+            maxBytes=app_config.DCC_LOG_MAX_BYTES,
+            backupCount=app_config.DCC_LOG_BACKUP_COUNT,
+            encoding="utf-8"
+        )
+        handler.setFormatter(formatter)
+        dcc_event_logger.addHandler(handler)
+        dcc_event_logger.propagate = False # Don't send to root logger if we have our own file
+        logger.info(f"Dedicated DCC event logger configured: File='{log_file_path}', Level={logging.getLevelName(app_config.DCC_LOG_LEVEL)}")
+    except Exception as e:
+        logger.error(f"Failed to setup dedicated DCC file logger: {e}", exc_info=True)
+        dcc_event_logger.disabled = True
+
 
 class DCCManager:
     def __init__(self, client_logic_ref: Any, event_manager_ref: Any):
@@ -31,10 +87,16 @@ class DCCManager:
         self.dcc_config = self._load_dcc_config()
         self._lock = threading.Lock() # To protect access to self.transfers, pending_passive_offers, and send_queues
 
+        # Setup the dedicated DCC logger instance
+        # This logger will be used by DCCManager and passed to DCCTransfer instances
+        setup_dcc_specific_logger() # Call the setup function
+        self.dcc_event_logger = dcc_event_logger # Store a reference if needed, or just use the global one.
+
         if not self.dcc_config.get("enabled", False):
             logger.info("DCCManager initialized, but DCC is disabled in configuration.")
         else:
             logger.info("DCCManager initialized and DCC is enabled.")
+            self.dcc_event_logger.info("DCCManager initialized and DCC is enabled via app_config.")
             # Ensure download/upload directories exist
             self._ensure_dir_exists(self.dcc_config["download_dir"])
             # Upload dir is less critical to pre-create as source path is absolute for send.
@@ -69,10 +131,11 @@ class DCCManager:
 
             for token in stale_tokens:
                 del self.pending_passive_offers[token]
-                logger.info(f"Removed stale passive DCC offer with token {token} due to timeout.")
+                self.dcc_event_logger.info(f"Removed stale passive DCC offer with token {token} due to timeout.")
 
         if stale_tokens:
             self.client_logic.add_message(f"Cleaned up {len(stale_tokens)} stale passive DCC offer(s).", "debug", context_name="DCC")
+            self.dcc_event_logger.debug(f"Cleaned up {len(stale_tokens)} stale passive DCC offer(s).")
 
 
     def _ensure_dir_exists(self, dir_path: str):
@@ -80,9 +143,9 @@ class DCCManager:
         if not os.path.exists(abs_dir_path):
             try:
                 os.makedirs(abs_dir_path, exist_ok=True)
-                logger.info(f"Created directory: {abs_dir_path}")
+                self.dcc_event_logger.info(f"Created directory: {abs_dir_path}")
             except OSError as e:
-                logger.error(f"Could not create directory '{abs_dir_path}': {e}")
+                self.dcc_event_logger.error(f"Could not create directory '{abs_dir_path}': {e}")
                 # Potentially disable DCC or parts of it if essential dirs can't be made
                 self.client_logic.add_message(f"Error: DCC directory '{abs_dir_path}' cannot be created. DCC may not function.", "error", context_name="Status")
 
@@ -100,10 +163,10 @@ class DCCManager:
             s.bind(("", 0)) # Bind to any interface, OS picks port
             s.listen(1) # Listen for one incoming connection for this transfer
             port = s.getsockname()[1] # Get the assigned port
-            logger.info(f"Created listening socket on port {port}")
+            self.dcc_event_logger.info(f"Created listening socket on port {port} for a DCC transfer.")
             return s, port
         except socket.error as e:
-            logger.error(f"Could not create listening socket: {e}")
+            self.dcc_event_logger.error(f"Could not create listening socket: {e}")
             return None
 
     def _get_local_ip_for_ctcp(self) -> str:
@@ -127,12 +190,14 @@ class DCCManager:
 
     def _execute_send(self, peer_nick: str, local_filepath: str, original_filename: str, filesize: int, passive: bool = False) -> Dict[str, Any]:
         """Internal method to execute a single DCC SEND operation."""
+        self.dcc_event_logger.info(f"Executing DCC SEND: Peer={peer_nick}, File='{original_filename}', Size={filesize}, Passive={passive}, Path='{local_filepath}'")
         # This method assumes local_filepath is valid and filesize is known.
         # Basic enabled check is done by the public calling method.
 
         abs_local_filepath = os.path.abspath(local_filepath) # Should already be absolute from initiate_sends
 
         transfer_id = self._generate_transfer_id()
+        self.dcc_event_logger.debug(f"Generated Transfer ID: {transfer_id} for SEND to {peer_nick} of '{original_filename}'")
         passive_token: Optional[str] = None
         ctcp_message: Optional[str] = None
         send_transfer_args: Dict[str, Any] = {
@@ -155,10 +220,13 @@ class DCCManager:
             send_transfer_args["passive_token"] = passive_token
             status_message_suffix = f" (Passive Offer, token: {passive_token[:8]})"
             if not ctcp_message:
+                self.dcc_event_logger.error(f"Failed to format passive DCC SEND CTCP for '{original_filename}' to {peer_nick}.")
                 return {"success": False, "error": "Failed to format passive DCC SEND CTCP message."}
+            self.dcc_event_logger.debug(f"Passive SEND to {peer_nick} for '{original_filename}'. CTCP: {ctcp_message.strip()}")
         else: # Active DCC
             socket_info = self._get_listening_socket()
             if not socket_info:
+                self.dcc_event_logger.error(f"Could not get listening socket for active SEND of '{original_filename}' to {peer_nick}.")
                 return {"success": False, "error": "Could not create listening socket for active DCC SEND."}
             listening_socket, port = socket_info
             local_ip_for_ctcp = self._get_local_ip_for_ctcp()
@@ -167,8 +235,12 @@ class DCCManager:
             status_message_suffix = f". Waiting for connection on port {port}."
             if not ctcp_message:
                 listening_socket.close()
+                self.dcc_event_logger.error(f"Failed to format active DCC SEND CTCP for '{original_filename}' to {peer_nick}.")
                 return {"success": False, "error": "Failed to format active DCC SEND CTCP message."}
+            self.dcc_event_logger.debug(f"Active SEND to {peer_nick} for '{original_filename}'. CTCP: {ctcp_message.strip()}")
 
+        # Pass the dcc_event_logger to the transfer object
+        send_transfer_args["dcc_event_logger"] = self.dcc_event_logger
         send_transfer = DCCSendTransfer(**send_transfer_args)
 
         with self._lock:
@@ -213,7 +285,7 @@ class DCCManager:
 
             if not os.path.isfile(abs_local_filepath):
                 err_msg = f"File not found: {original_filename} (path: {local_filepath_orig})"
-                logger.warning(f"DCC SEND: {err_msg}")
+                self.dcc_event_logger.warning(f"DCC SEND to {peer_nick}: {err_msg}")
                 results["errors"].append({"filename": original_filename, "error": err_msg})
                 continue
 
@@ -221,13 +293,13 @@ class DCCManager:
                 filesize = os.path.getsize(abs_local_filepath)
             except OSError as e:
                 err_msg = f"Could not get file size for '{original_filename}': {e}"
-                logger.warning(f"DCC SEND: {err_msg}")
+                self.dcc_event_logger.warning(f"DCC SEND to {peer_nick}: {err_msg}")
                 results["errors"].append({"filename": original_filename, "error": err_msg})
                 continue
 
             if filesize > self.dcc_config["max_file_size"]:
                 err_msg = f"File '{original_filename}' exceeds maximum size of {self.dcc_config['max_file_size']} bytes."
-                logger.warning(f"DCC SEND: {err_msg}")
+                self.dcc_event_logger.warning(f"DCC SEND to {peer_nick}: {err_msg}")
                 results["errors"].append({"filename": original_filename, "error": err_msg})
                 continue
 
@@ -262,10 +334,11 @@ class DCCManager:
                 for file_info in validated_files_to_process:
                     self.send_queues[peer_nick].append(file_info)
                     results["files_queued"].append({"filename": file_info["original_filename"], "size": file_info["filesize"]})
-                    logger.info(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick}.")
+                    self.dcc_event_logger.info(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick}. Queue size: {len(self.send_queues[peer_nick])}")
                     self.client_logic.add_message(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick}.", "system", context_name="DCC")
             else:
                 # No active send or queue, start the first file and queue the rest
+                self.dcc_event_logger.info(f"No active send or queue for {peer_nick}. Starting first file and queuing rest.")
                 first_file_info = validated_files_to_process.pop(0)
                 exec_result = self._execute_send(
                     peer_nick,
@@ -294,7 +367,7 @@ class DCCManager:
                     for file_info in validated_files_to_process:
                         self.send_queues[peer_nick].append(file_info)
                         results["files_queued"].append({"filename": file_info["original_filename"], "size": file_info["filesize"]})
-                        logger.info(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick} (after starting first).")
+                        self.dcc_event_logger.info(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick} (after starting first). Queue size: {len(self.send_queues[peer_nick])}")
                         self.client_logic.add_message(f"Queued DCC SEND of '{file_info['original_filename']}' to {peer_nick} (after starting first).", "system", context_name="DCC")
 
         if not results["transfers_started"] and not results["files_queued"] and not results["errors"]:
@@ -311,12 +384,13 @@ class DCCManager:
                 file_to_send_info = self.send_queues[peer_nick].popleft()
                 if not self.send_queues[peer_nick]: # If queue is now empty
                     del self.send_queues[peer_nick]
-                logger.info(f"Dequeued '{file_to_send_info['original_filename'] if file_to_send_info else 'N/A'}' for sending to {peer_nick}.")
+                self.dcc_event_logger.info(f"Dequeued '{file_to_send_info['original_filename'] if file_to_send_info else 'N/A'}' for sending to {peer_nick}. Remaining queue size: {len(self.send_queues.get(peer_nick, []))}")
             else:
-                logger.debug(f"No more files in send queue for {peer_nick}.")
+                self.dcc_event_logger.debug(f"No more files in send queue for {peer_nick}.")
 
         if file_to_send_info:
             self.client_logic.add_message(f"Starting next queued DCC SEND of '{file_to_send_info['original_filename']}' to {peer_nick}.", "system", context_name="DCC")
+            self.dcc_event_logger.info(f"Processing next from queue for {peer_nick}: '{file_to_send_info['original_filename']}'")
             self._execute_send(
                 peer_nick,
                 file_to_send_info["local_filepath"],
@@ -328,17 +402,18 @@ class DCCManager:
     def handle_incoming_dcc_ctcp(self, nick: str, userhost: str, ctcp_payload: str):
         """Handles a parsed DCC CTCP command from a peer."""
         if not self.dcc_config.get("enabled"):
-            logger.info(f"DCC disabled, ignoring incoming DCC CTCP from {nick}: {ctcp_payload}")
+            self.dcc_event_logger.info(f"DCC disabled, ignoring incoming DCC CTCP from {nick}: {ctcp_payload}")
             return
 
+        self.dcc_event_logger.debug(f"Received raw CTCP from {nick} ({userhost}): {ctcp_payload}")
         parsed_dcc = parse_dcc_ctcp(ctcp_payload)
         if not parsed_dcc:
-            logger.warning(f"Could not parse DCC CTCP from {nick}: {ctcp_payload}")
+            self.dcc_event_logger.warning(f"Could not parse DCC CTCP from {nick}: {ctcp_payload}")
             self.client_logic.add_message(f"Received malformed DCC request from {nick}.", "error", context_name="Status")
             return
 
         dcc_command = parsed_dcc.get("dcc_command")
-        logger.info(f"Received DCC Command '{dcc_command}' from {nick} with data: {parsed_dcc}")
+        self.dcc_event_logger.info(f"Received DCC Command '{dcc_command}' from {nick} with data: {parsed_dcc}")
 
         if dcc_command == "SEND":
             filename = parsed_dcc.get("filename")
@@ -348,8 +423,8 @@ class DCCManager:
             is_passive_offer = parsed_dcc.get("is_passive_offer", False)
             token = parsed_dcc.get("token")
 
-            if None in [filename, ip_str, port, filesize]:
-                logger.warning(f"DCC SEND from {nick} missing critical information: {parsed_dcc}")
+            if None in [filename, ip_str, port, filesize]: # filesize can be 0 for empty file
+                self.dcc_event_logger.warning(f"DCC SEND from {nick} missing critical information: {parsed_dcc}")
                 return
 
             event_data = {
@@ -370,17 +445,18 @@ class DCCManager:
                             "userhost": userhost,
                             "timestamp": time.time()
                         }
-                    logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' with token {token}.")
+                    self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' with token {token}.")
                     self._cleanup_stale_passive_offers() # Opportunistic cleanup
                     self.client_logic.add_message(
                         f"Passive DCC SEND offer from {nick} ({userhost}): '{filename}' ({filesize} bytes). "
                         f"Use /dcc get {nick} \"{filename}\" --token {token} to receive.",
                         "system", context_name="DCC"
                     )
-                else:
-                    logger.warning(f"Passive DCC SEND offer from {nick} for '{filename}' missing token. Ignoring.")
+                else: # Passive offer without a token - spec might allow, but our flow expects it.
+                    self.dcc_event_logger.warning(f"Passive DCC SEND offer from {nick} for '{filename}' missing token. Ignoring.")
                     self.client_logic.add_message(f"Malformed passive DCC SEND offer from {nick} (missing token).", "error", context_name="Status")
             else: # Active offer
+                self.dcc_event_logger.info(f"Received active DCC SEND offer from {nick} for '{filename}'. IP={ip_str}, Port={port}, Size={filesize}")
                 self.client_logic.add_message(
                     f"DCC SEND offer from {nick} ({userhost}): '{filename}' ({filesize} bytes) from {ip_str}:{port}. "
                     f"Use /dcc accept {nick} \"{filename}\" {ip_str} {port} {filesize} to receive.",
@@ -390,24 +466,26 @@ class DCCManager:
                 if self.dcc_config.get("auto_accept", False):
                     if is_passive_offer:
                         if filename is not None and token is not None: # Crucial check for passive auto-accept
-                            logger.info(f"Attempting auto-accept for PASSIVE offer from {nick} for '{filename}' with token {token}")
+                            self.dcc_event_logger.info(f"Attempting auto-accept for PASSIVE offer from {nick} for '{filename}' with token {token}")
                             # filename and token are confirmed non-None here
                             result = self.accept_passive_offer_by_token(nick, filename, token)
                             if result.get("success"):
                                 transfer_id_val = result.get('transfer_id')
                                 transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
+                                self.dcc_event_logger.info(f"Auto-accepted PASSIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}")
                                 self.client_logic.add_message(f"Auto-accepted PASSIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
                                 return # Offer handled
                             else:
+                                self.dcc_event_logger.error(f"Auto-accept for PASSIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}")
                                 self.client_logic.add_message(f"Auto-accept for PASSIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}", "error", context_name="DCC")
                                 return
                         else:
-                            logger.warning(f"Skipping auto-accept for passive offer from {nick} due to missing filename or token.")
+                            self.dcc_event_logger.warning(f"Skipping auto-accept for passive offer from {nick} due to missing filename or token.")
                             # Fall through to manual prompt logic below, as auto-accept cannot proceed.
                     else: # Active offer auto-accept
-                        # The `if None in [filename, ip_str, port, filesize]:` check on line 225 already covers this.
+                        # The `if None in [filename, ip_str, port, filesize]:` check earlier covers this.
                         # If we reach here, all these parameters are guaranteed to be non-None.
-                        logger.info(f"Attempting auto-accept for ACTIVE offer from {nick} for '{str(filename)}'")
+                        self.dcc_event_logger.info(f"Attempting auto-accept for ACTIVE offer from {nick} for '{str(filename)}'")
                         # Explicitly assert types for Pylance if direct pass-through is still an issue,
                         # but the prior check should make them valid.
                         assert filename is not None
@@ -418,9 +496,11 @@ class DCCManager:
                         if result.get("success"):
                             transfer_id_val = result.get('transfer_id')
                             transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
+                            self.dcc_event_logger.info(f"Auto-accepted ACTIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}")
                             self.client_logic.add_message(f"Auto-accepted ACTIVE DCC SEND from {nick} for '{str(filename)}'. Transfer ID: {transfer_id_short}", "system", context_name="DCC")
                             return # Offer handled
                         else:
+                            self.dcc_event_logger.error(f"Auto-accept for ACTIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}")
                             self.client_logic.add_message(f"Auto-accept for ACTIVE DCC SEND from {nick} for '{str(filename)}' failed: {result.get('error')}", "error", context_name="DCC")
                             return
                 # If auto_accept is false, or if conditions for auto-accept weren't met (e.g. missing params for passive),
@@ -430,13 +510,17 @@ class DCCManager:
         elif dcc_command == "ACCEPT":
             is_passive_dcc_accept = parsed_dcc.get("is_passive_accept", False)
             is_resume_accept = parsed_dcc.get("is_resume_accept", False)
-            filename = parsed_dcc.get("filename")
+            filename = parsed_dcc.get("filename") # Should always be present for ACCEPT
 
             if is_passive_dcc_accept:
                 accepted_ip = parsed_dcc.get("ip_str")
                 accepted_port = parsed_dcc.get("port")
                 accepted_token = parsed_dcc.get("token")
-                logger.info(f"Received Passive DCC ACCEPT from {nick} for '{filename}' (IP: {accepted_ip}, Port: {accepted_port}, Token: {accepted_token})")
+                self.dcc_event_logger.info(f"Received Passive DCC ACCEPT from {nick} for '{filename}' (IP: {accepted_ip}, Port: {accepted_port}, Token: {accepted_token})")
+
+                if not all([filename, accepted_ip, accepted_port is not None, accepted_token]): # Port can be 0, but must exist
+                    self.dcc_event_logger.warning(f"Passive DCC ACCEPT from {nick} for '{filename}' missing critical info: {parsed_dcc}")
+                    return
 
                 found_transfer = None
                 with self._lock:
@@ -450,25 +534,26 @@ class DCCManager:
                             break
 
                 if found_transfer:
-                    logger.info(f"Matching passive SEND offer found (ID: {found_transfer.transfer_id}). Initiating connection to {nick} at {accepted_ip}:{accepted_port}")
+                    self.dcc_event_logger.info(f"Matching passive SEND offer found (ID: {found_transfer.transfer_id}). Initiating connection to {nick} at {accepted_ip}:{accepted_port}")
                     found_transfer.connect_to_ip = accepted_ip # Store for DCCSendTransfer.run()
                     found_transfer.connect_to_port = accepted_port
                     found_transfer._report_status(DCCTransferStatus.CONNECTING, f"Peer accepted passive offer. Connecting to {accepted_ip}:{accepted_port}.")
                     found_transfer.start_transfer_thread() # Now the sender connects
                 else:
-                    logger.warning(f"Received Passive DCC ACCEPT from {nick} for '{filename}' with token '{accepted_token}', but no matching passive offer found.")
+                    self.dcc_event_logger.warning(f"Received Passive DCC ACCEPT from {nick} for '{filename}' with token '{accepted_token}', but no matching passive offer found.")
                     self.client_logic.add_message(f"Received unexpected Passive DCC ACCEPT from {nick} for '{filename}'.", "warning", context_name="Status")
 
             elif is_resume_accept:
                 # Handle DCC RESUME ACCEPT logic (Phase 4)
                 accepted_port = parsed_dcc.get("port")
                 accepted_position = parsed_dcc.get("position")
-                logger.info(f"Received Resume DCC ACCEPT from {nick} for '{filename}' (Port: {accepted_port}, Position: {accepted_position}). Resume not fully implemented yet.")
+                self.dcc_event_logger.info(f"Received Resume DCC ACCEPT from {nick} for '{filename}' (Port: {accepted_port}, Position: {accepted_position}). Resume not fully implemented yet.")
                 # Find original transfer, set resume position, and restart.
-            else:
-                logger.warning(f"Received ambiguous DCC ACCEPT from {nick}: {parsed_dcc}")
+            else: # Should not happen if parsed_dcc is valid and has is_passive_accept or is_resume_accept
+                self.dcc_event_logger.warning(f"Received ambiguous DCC ACCEPT from {nick}: {parsed_dcc}")
 
         elif dcc_command == "DCCCHECKSUM":
+            self.dcc_event_logger.debug(f"Received DCCCHECKSUM CTCP from {nick}: {parsed_dcc}")
             # Parsed by dcc_protocol.py: {'dcc_command': 'DCCCHECKSUM', 'filename': ...,
             # 'algorithm': ..., 'checksum_value': ..., 'transfer_identifier': ...}
 
@@ -478,7 +563,7 @@ class DCCManager:
             checksum_value = parsed_dcc.get("checksum_value")
 
             if not all([transfer_identifier, filename, algorithm, checksum_value]):
-                logger.warning(f"Malformed DCCCHECKSUM from {nick}: {parsed_dcc}")
+                self.dcc_event_logger.warning(f"Malformed DCCCHECKSUM from {nick}: {parsed_dcc}")
                 return
 
             # At this point, algorithm and checksum_value are guaranteed not to be None by the all() check.
@@ -487,7 +572,7 @@ class DCCManager:
             # However, the .get() still returns Optional[str], so Pylance is correct to warn without a cast/check.
             # The `all()` check ensures they are truthy (not None and not empty string).
 
-            logger.info(f"Received DCCCHECKSUM from {nick} for transfer '{transfer_identifier}', file '{filename}', algo '{algorithm}'.")
+            self.dcc_event_logger.info(f"Received DCCCHECKSUM from {nick} for transfer '{transfer_identifier}', file '{filename}', algo '{algorithm}'.")
 
             transfer_to_update = None
             with self._lock:
@@ -504,26 +589,26 @@ class DCCManager:
                     for tid, tr_obj in self.transfers.items():
                         if isinstance(tr_obj, DCCReceiveTransfer) and \
                            tr_obj.peer_nick == nick and \
-                           tr_obj.original_filename == filename and \
-                           tr_obj.status == DCCTransferStatus.COMPLETED:
-                            # Only apply to completed transfers if ID didn't match, to avoid ambiguity
-                            transfer_to_update = tr_obj
-                            logger.info(f"DCCCHECKSUM matched by filename/nick for completed transfer {tid}")
-                            break
-
+                          tr_obj.original_filename == filename and \
+                          tr_obj.status == DCCTransferStatus.COMPLETED:
+                           # Only apply to completed transfers if ID didn't match, to avoid ambiguity
+                           transfer_to_update = tr_obj
+                           self.dcc_event_logger.info(f"DCCCHECKSUM matched by filename/nick for completed transfer {tid}")
+                           break
+            # This block is now correctly indented (12 spaces), same level as `with self._lock`
             if transfer_to_update:
                 if hasattr(transfer_to_update, 'set_expected_checksum'):
                     # The `all()` check above ensures algorithm and checksum_value are not None.
-                    # Tell Pylance these are strings.
                     cast_algorithm: str = str(algorithm)
                     cast_checksum_value: str = str(checksum_value)
                     transfer_to_update.set_expected_checksum(cast_algorithm, cast_checksum_value)
                 else:
-                    logger.error(f"Transfer object {transfer_to_update.transfer_id} does not have set_expected_checksum method.")
+                    self.dcc_event_logger.error(f"Transfer object {transfer_to_update.transfer_id} does not have set_expected_checksum method.")
             else:
-                logger.warning(f"Received DCCCHECKSUM from {nick} for '{filename}' (ID/Ref: {transfer_identifier}), but no matching active/completed RECV transfer found.")
-
+                self.dcc_event_logger.warning(f"Received DCCCHECKSUM from {nick} for '{filename}' (ID/Ref: {transfer_identifier}), but no matching active/completed RECV transfer found.")
+       # This 'else' is now correctly aligned with the main if/elif dcc_command checks (8 spaces)
         else:
+            self.dcc_event_logger.warning(f"Received unhandled DCC command '{dcc_command}' from {nick}: {parsed_dcc}")
             self.client_logic.add_message(f"Received unhandled DCC '{dcc_command}' from {nick}: {' '.join(parsed_dcc.get('args',[]))}", "system", context_name="Status")
 
 
@@ -532,6 +617,7 @@ class DCCManager:
         Called by command handler when user accepts a DCC SEND offer.
         Initiates a DCCReceiveTransfer (Active DCC RECV for Phase 1).
         """
+        self.dcc_event_logger.info(f"Attempting to accept ACTIVE DCC SEND offer from {peer_nick} for '{original_filename}' ({ip_str}:{port}, {filesize} bytes).")
         if not self.dcc_config.get("enabled"):
             return {"success": False, "error": "DCC is disabled."}
 
@@ -558,11 +644,13 @@ class DCCManager:
             local_filepath=safe_local_path, # Where to save the file
             dcc_manager_ref=self,
             connect_to_ip=ip_str, # For active DCC RECV, we connect
-            connect_to_port=port
+            connect_to_port=port,
+            dcc_event_logger=self.dcc_event_logger # Pass the logger
         )
 
         with self._lock:
             self.transfers[transfer_id] = recv_transfer
+            self.dcc_event_logger.debug(f"Created DCCReceiveTransfer (active) with ID {transfer_id} for '{original_filename}' from {peer_nick}.")
 
         recv_transfer._report_status(DCCTransferStatus.QUEUED) # Or CONNECTING if thread starts immediately
         recv_transfer.start_transfer_thread()
@@ -579,10 +667,11 @@ class DCCManager:
         Called when the local user wants to accept a PASSIVE DCC SEND offer they received.
         This client will listen, and send an ACCEPT CTCP to the peer, who will then connect.
         """
+        self.dcc_event_logger.info(f"Attempting to initiate PASSIVE DCC RECV for '{offered_filename}' from {peer_nick} (token: {offer_token}, size: {offered_filesize}).")
         if not self.dcc_config.get("enabled"):
             return {"success": False, "error": "DCC is disabled."}
 
-        logger.info(f"Attempting to initiate passive receive for '{offered_filename}' from {peer_nick} (token: {offer_token}).")
+        # logger.info(f"Attempting to initiate passive receive for '{offered_filename}' from {peer_nick} (token: {offer_token}).") # Redundant with above
 
         validation_result = validate_download_path(
             offered_filename,
@@ -616,7 +705,9 @@ class DCCManager:
 
         if not ctcp_accept_message:
             listening_socket.close()
+            self.dcc_event_logger.error(f"Failed to format passive DCC ACCEPT CTCP for '{offered_filename}' to {peer_nick}.")
             return {"success": False, "error": "Failed to format passive DCC ACCEPT CTCP message."}
+        self.dcc_event_logger.debug(f"Passive RECV for '{offered_filename}' from {peer_nick}. Sent ACCEPT CTCP: {ctcp_accept_message.strip()}")
 
         transfer_id = self._generate_transfer_id()
         # Ensure DCCReceiveTransfer can handle server_socket_for_passive_recv
@@ -627,12 +718,14 @@ class DCCManager:
             "filesize":offered_filesize,
             "local_filepath":safe_local_path,
             "dcc_manager_ref":self,
-            "server_socket_for_passive_recv":listening_socket
+            "server_socket_for_passive_recv":listening_socket,
+            "dcc_event_logger": self.dcc_event_logger # Pass the logger
         }
         recv_transfer = DCCReceiveTransfer(**recv_transfer_args)
 
         with self._lock:
             self.transfers[transfer_id] = recv_transfer
+            self.dcc_event_logger.debug(f"Created DCCReceiveTransfer (passive setup) with ID {transfer_id} for '{offered_filename}' from {peer_nick}.")
 
         # Send the CTCP ACCEPT to the peer, inviting them to connect to us
         self.client_logic.send_ctcp_privmsg(peer_nick, ctcp_accept_message)
@@ -656,12 +749,13 @@ class DCCManager:
         Accepts a stored passive DCC SEND offer based on a token.
         Called by the /dcc get command.
         """
-        logger.info(f"User {calling_nick_for_logging} attempting to accept passive offer with token: {offer_token} for filename: {offered_filename_by_user}")
+        self.dcc_event_logger.info(f"User {calling_nick_for_logging} attempting to accept passive offer with token: {offer_token} for filename: {offered_filename_by_user}")
         pending_offer_details = None
         with self._lock:
             pending_offer_details = self.pending_passive_offers.get(offer_token)
 
         if not pending_offer_details:
+            self.dcc_event_logger.warning(f"Passive offer with token '{offer_token}' not found or expired for user {calling_nick_for_logging}.")
             return {"success": False, "error": f"Passive offer with token '{offer_token}' not found or expired."}
 
         # Verify details (optional, but good for sanity)
@@ -672,13 +766,13 @@ class DCCManager:
         original_filesize = pending_offer_details["filesize"]
 
         if offered_filename_by_user.lower() != original_offered_filename.lower():
-             logger.warning(f"Filename mismatch for passive offer token {offer_token}. User: '{offered_filename_by_user}', Offer: '{original_offered_filename}'. Proceeding by token match.")
+             self.dcc_event_logger.warning(f"Filename mismatch for passive offer token {offer_token}. User: '{offered_filename_by_user}', Offer: '{original_offered_filename}'. Proceeding by token match.")
 
         # Remove the pending offer once we attempt to process it
         with self._lock:
             if offer_token in self.pending_passive_offers:
                 del self.pending_passive_offers[offer_token]
-                logger.info(f"Removed pending passive offer token {offer_token} after acceptance attempt.")
+                self.dcc_event_logger.info(f"Removed pending passive offer token {offer_token} after acceptance attempt by {calling_nick_for_logging}.")
 
         # Now call initiate_passive_receive with the details from the stored offer
         return self.initiate_passive_receive(
@@ -695,7 +789,7 @@ class DCCManager:
             old_status = transfer.status
             transfer.status = status
             transfer.error_message = error_message
-            logger.info(f"Transfer {transfer_id} status updated: {old_status.name} -> {status.name}. Error: {error_message}")
+            self.dcc_event_logger.info(f"Transfer {transfer_id} ('{transfer.original_filename}') status updated: {old_status.name} -> {status.name}. Error: {error_message}")
 
             event_name = ""
             if status == DCCTransferStatus.COMPLETED: event_name = "DCC_TRANSFER_COMPLETE"
@@ -723,7 +817,7 @@ class DCCManager:
                 logger.info(f"Transfer {transfer_id} ('{transfer.original_filename}') reached final state: {status.name}.")
                 # If it's a send transfer, try to process the next in queue for that peer
                 if isinstance(transfer, DCCSendTransfer):
-                    logger.debug(f"Send transfer {transfer_id} for {transfer.peer_nick} ended. Checking send queue.")
+                    self.dcc_event_logger.debug(f"Send transfer {transfer_id} for {transfer.peer_nick} ended. Checking send queue.")
                     self._process_next_in_send_queue(transfer.peer_nick)
                 # Consider removing from self.transfers after a delay or if list gets too long.
 
@@ -734,9 +828,11 @@ class DCCManager:
                 context_name="DCC"
             )
         else:
-            logger.warning(f"update_transfer_status called for unknown transfer_id: {transfer_id}")
+            self.dcc_event_logger.warning(f"update_transfer_status called for unknown transfer_id: {transfer_id}")
 
     def update_transfer_progress(self, transfer_id: str, bytes_transferred: int, total_size: int, rate_bps: float, eta_seconds: Optional[float]):
+        # This can be very frequent, so logging might be too verbose for INFO/DEBUG unless specifically needed.
+        # For now, no dcc_event_logger call here. Can be added if debugging specific progress issues.
         with self._lock:
             transfer = self.transfers.get(transfer_id)
         if transfer:
@@ -757,7 +853,10 @@ class DCCManager:
             # UI update for progress is typically handled by the UI subscribing to DCC_TRANSFER_PROGRESS
             # No direct add_message here to avoid flooding, unless it's a very infrequent update.
         else:
-            logger.warning(f"update_transfer_progress called for unknown transfer_id: {transfer_id}")
+            # This could also be verbose if it happens often for a short period after a transfer is removed.
+            # logger.warning(f"update_transfer_progress called for unknown transfer_id: {transfer_id}")
+            pass
+
 
     def get_transfer_statuses(self) -> List[str]:
         """Returns a list of formatted strings representing current transfer statuses."""
@@ -820,11 +919,11 @@ class DCCManager:
             transfer = self.transfers.get(transfer_id)
 
         if transfer:
-            logger.info(f"Attempting to cancel transfer {transfer_id}")
+            self.dcc_event_logger.info(f"User requested cancellation of transfer {transfer_id} ('{transfer.original_filename}') to/from {transfer.peer_nick}.")
             transfer.stop_transfer(DCCTransferStatus.CANCELLED, "User cancelled.")
             # The stop_transfer method itself calls _report_status, which dispatches event
             return True
-        logger.warning(f"Cannot cancel: Transfer ID {transfer_id} not found.")
+        self.dcc_event_logger.warning(f"Cannot cancel: Transfer ID {transfer_id} not found in active transfers.")
         return False
 
     def cancel_pending_passive_offer(self, token_prefix: str) -> bool:
@@ -846,7 +945,7 @@ class DCCManager:
         if cancelled_offer_details and actual_token_cancelled:
             peer_nick = cancelled_offer_details.get('nick', 'UnknownNick')
             filename = cancelled_offer_details.get('filename', 'UnknownFile')
-            logger.info(f"Cancelled pending passive DCC SEND offer from {peer_nick} for '{filename}' with token {actual_token_cancelled} (matched by prefix '{token_prefix}').")
+            self.dcc_event_logger.info(f"Cancelled pending passive DCC SEND offer from {peer_nick} for '{filename}' with token {actual_token_cancelled} (matched by prefix '{token_prefix}').")
             self.client_logic.add_message(
                 f"Cancelled pending passive DCC SEND offer from {peer_nick} for '{filename}' (token: {actual_token_cancelled[:8]}...).",
                 "system", context_name="DCC"
@@ -855,7 +954,7 @@ class DCCManager:
         else:
             # No message here, as the command handler will try active transfers first
             # and then report if neither was found.
-            logger.debug(f"No pending passive offer found starting with token prefix '{token_prefix}'.")
+            self.dcc_event_logger.debug(f"No pending passive offer found starting with token prefix '{token_prefix}'.")
             return False
 
     def cleanup_old_transfers(self):
@@ -867,7 +966,7 @@ class DCCManager:
         if not self.dcc_config.get("checksum_verify", False) or self.dcc_config.get("checksum_algorithm", "none") == "none":
             return # Checksums not enabled
 
-        logger.info(f"Sending DCCCHECKSUM for transfer {transfer_id}, file '{filename}', algo {algorithm} to {peer_nick}")
+        self.dcc_event_logger.info(f"Sending DCCCHECKSUM for transfer {transfer_id}, file '{filename}', algo {algorithm}, checksum '{checksum[:10]}...' to {peer_nick}")
 
         # Using transfer_id as the identifier for the peer to match
         ctcp_checksum_msg = format_dcc_checksum_ctcp(filename, algorithm, checksum, transfer_id)
@@ -876,7 +975,7 @@ class DCCManager:
             self.client_logic.send_ctcp_privmsg(peer_nick, ctcp_checksum_msg)
             self.client_logic.add_message(f"Sent checksum ({algorithm}) for '{filename}' to {peer_nick}.", "debug", context_name="DCC")
         else:
-            logger.error(f"Failed to format DCCCHECKSUM message for transfer {transfer_id}.")
+            self.dcc_event_logger.error(f"Failed to format DCCCHECKSUM message for transfer {transfer_id}.")
 
     def update_transfer_checksum_result(self, transfer_id: str, checksum_status: str):
         """Called by DCCTransfer when checksum comparison is done."""
@@ -884,7 +983,7 @@ class DCCManager:
             transfer = self.transfers.get(transfer_id)
 
         if transfer:
-            logger.info(f"Checksum status for transfer {transfer_id} ('{transfer.original_filename}'): {checksum_status}")
+            self.dcc_event_logger.info(f"Checksum status for transfer {transfer_id} ('{transfer.original_filename}'): {checksum_status}. Expected: '{transfer.expected_checksum}', Calculated: '{transfer.calculated_checksum}' (Algo: {transfer.checksum_algorithm})")
             transfer.checksum_status = checksum_status # Ensure it's updated on the object if not already
 
             # Notify UI
@@ -909,4 +1008,4 @@ class DCCManager:
                 "algorithm_used": transfer.checksum_algorithm
             })
         else:
-            logger.warning(f"update_transfer_checksum_result called for unknown transfer_id: {transfer_id}")
+            self.dcc_event_logger.warning(f"update_transfer_checksum_result called for unknown transfer_id: {transfer_id}")

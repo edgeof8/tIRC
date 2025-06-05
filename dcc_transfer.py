@@ -9,7 +9,8 @@ from typing import Optional, Callable, Any
 
 # from dcc_manager import DCCManager # Forward declaration or import later to avoid circularity if needed
 
-logger = logging.getLogger("pyrc.dcc.transfer")
+logger = logging.getLogger("pyrc.dcc.transfer") # General logger for this module
+# dcc_event_logger instance will be passed from DCCManager
 
 class DCCTransferStatus(Enum):
     QUEUED = auto()
@@ -37,6 +38,7 @@ class DCCTransfer:
         filesize: int, # Proposed filesize from offer
         local_filepath: str, # Sanitized, absolute local path for the file
         dcc_manager_ref: Any, # Actual type DCCManager, but Any to avoid circular import for now
+        dcc_event_logger: Optional[logging.Logger] = None
         # progress_callback: Callable[[str, int, int, float, float], None], # id, transferred, total, rate, eta
         # status_update_callback: Callable[[str, DCCTransferStatus, Optional[str]], None] # id, status, error_msg
     ):
@@ -73,12 +75,19 @@ class DCCTransfer:
         self.checksum_status: str = "Pending" # "Pending", "NotChecked", "Match", "Mismatch", "SenderDidNotProvide", "AlgorithmMismatch"
         self.checksum_algorithm: Optional[str] = None # Algorithm used by sender or preferred by us
 
-        logger.info(f"DCCTransfer object created: ID={self.transfer_id}, Type={self.transfer_type.name}, Peer={self.peer_nick}, File='{self.original_filename}', Size={self.filesize}, LocalPath='{self.local_filepath}'")
+        if dcc_event_logger:
+            self.dcc_event_logger = dcc_event_logger
+        else:
+            # Fallback, though DCCManager should always pass its configured logger
+            self.dcc_event_logger = logging.getLogger("pyrc.dcc.events.transfer") # Get a child of the main DCC event logger
+            self.dcc_event_logger.warning(f"[{self.transfer_id}] DCCTransfer initialized without a dedicated event logger. Using fallback pyrc.dcc.events.transfer.")
+
+        self.dcc_event_logger.info(f"DCCTransfer object created: ID={self.transfer_id}, Type={self.transfer_type.name}, Peer={self.peer_nick}, File='{self.original_filename}', Size={self.filesize}, LocalPath='{self.local_filepath}'")
 
     def _calculate_file_checksum(self) -> Optional[str]:
         """Calculates checksum of the local file."""
         if not self.local_filepath or not os.path.exists(self.local_filepath):
-            logger.error(f"[{self.transfer_id}] File not found for checksum: {self.local_filepath}")
+            self.dcc_event_logger.error(f"[{self.transfer_id}] File not found for checksum: {self.local_filepath}")
             return None
 
         algo_name = self.dcc_manager.dcc_config.get("checksum_algorithm", "md5")
@@ -88,7 +97,7 @@ class DCCTransfer:
         try:
             hasher = hashlib.new(algo_name)
         except ValueError:
-            logger.error(f"[{self.transfer_id}] Unsupported checksum algorithm: {algo_name}")
+            self.dcc_event_logger.error(f"[{self.transfer_id}] Unsupported checksum algorithm: {algo_name}")
             self.checksum_status = f"Error: BadAlgo ({algo_name})"
             return None
 
@@ -101,13 +110,13 @@ class DCCTransfer:
                     hasher.update(chunk)
             return hasher.hexdigest()
         except IOError as e:
-            logger.error(f"[{self.transfer_id}] Error reading file for checksum '{self.local_filepath}': {e}")
+            self.dcc_event_logger.error(f"[{self.transfer_id}] Error reading file for checksum '{self.local_filepath}': {e}")
             self.checksum_status = "Error: FileRead"
             return None
 
     def set_expected_checksum(self, algorithm: str, checksum_value: str):
         """Called by DCCManager when sender provides a checksum."""
-        logger.info(f"[{self.transfer_id}] Received expected checksum: Algo={algorithm}, Value={checksum_value[:10]}...")
+        self.dcc_event_logger.info(f"[{self.transfer_id}] Received expected checksum: Algo={algorithm}, Value={checksum_value[:10]}...")
         self.expected_checksum = checksum_value
         # Store the algorithm the sender used, for a more precise status later
         # This is important if our config prefers a different one but sender sent one we support.
@@ -126,12 +135,12 @@ class DCCTransfer:
 
         if not self.expected_checksum:
             self.checksum_status = "SenderDidNotProvide"
-            logger.warning(f"[{self.transfer_id}] Cannot compare checksums: Sender did not provide one.")
+            self.dcc_event_logger.warning(f"[{self.transfer_id}] Cannot compare checksums: Sender did not provide one.")
             return
 
         if not self.calculated_checksum:
             self.checksum_status = "Error: LocalCalcFailed" # Should have been calculated if transfer completed
-            logger.warning(f"[{self.transfer_id}] Cannot compare checksums: Local checksum not calculated.")
+            self.dcc_event_logger.warning(f"[{self.transfer_id}] Cannot compare checksums: Local checksum not calculated.")
             return
 
         # Check if algorithm used by sender matches what we might expect or support
@@ -142,10 +151,10 @@ class DCCTransfer:
 
         if self.calculated_checksum == self.expected_checksum:
             self.checksum_status = "Match"
-            logger.info(f"[{self.transfer_id}] Checksum MATCH for '{self.original_filename}' (Algo: {self.checksum_algorithm or 'unknown'})")
+            self.dcc_event_logger.info(f"[{self.transfer_id}] Checksum MATCH for '{self.original_filename}' (Algo: {self.checksum_algorithm or 'unknown'})")
         else:
             self.checksum_status = "Mismatch"
-            logger.warning(f"[{self.transfer_id}] Checksum MISMATCH for '{self.original_filename}' (Algo: {self.checksum_algorithm or 'unknown'}). Expected: {self.expected_checksum[:10]}..., Got: {self.calculated_checksum[:10]}...")
+            self.dcc_event_logger.warning(f"[{self.transfer_id}] Checksum MISMATCH for '{self.original_filename}' (Algo: {self.checksum_algorithm or 'unknown'}). Expected: {self.expected_checksum[:10]}..., Got: {self.calculated_checksum[:10]}...")
 
         # Notify DCCManager about the checksum status update
         if self.dcc_manager and hasattr(self.dcc_manager, 'update_transfer_checksum_result'):
@@ -200,18 +209,18 @@ class DCCTransfer:
     def start_transfer_thread(self):
         """Starts the file transfer in a new thread."""
         if self.thread and self.thread.is_alive():
-            logger.warning(f"Transfer {self.transfer_id} thread already running.")
+            self.dcc_event_logger.warning(f"Transfer {self.transfer_id} thread already running.")
             return
         self._stop_event.clear()
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.start_time = time.monotonic()
         self.last_progress_update_time = self.start_time
         self.thread.start()
-        logger.info(f"Started thread for transfer {self.transfer_id}")
+        self.dcc_event_logger.info(f"Started thread for transfer {self.transfer_id} ('{self.original_filename}')")
 
     def stop_transfer(self, reason: DCCTransferStatus = DCCTransferStatus.CANCELLED, error_msg: Optional[str] = "User cancelled"):
         """Signals the transfer thread to stop."""
-        logger.info(f"Stopping transfer {self.transfer_id} with reason: {reason.name}")
+        self.dcc_event_logger.info(f"Stopping transfer {self.transfer_id} ('{self.original_filename}') with reason: {reason.name}, message: '{error_msg}'")
         self._stop_event.set()
         if self.socket:
             try:
@@ -235,18 +244,18 @@ class DCCTransfer:
         if self.socket:
             try:
                 self.socket.close()
-                logger.debug(f"[{self.transfer_id}] Socket closed in _cleanup.")
+                self.dcc_event_logger.debug(f"[{self.transfer_id}] Socket closed in _cleanup.")
             except OSError as e:
-                logger.debug(f"[{self.transfer_id}] Error closing socket in _cleanup: {e}")
+                self.dcc_event_logger.debug(f"[{self.transfer_id}] Error closing socket in _cleanup: {e}")
             self.socket = None
         if self.file_object and not self.file_object.closed:
             try:
                 self.file_object.close()
-                logger.debug(f"[{self.transfer_id}] File object closed in _cleanup.")
+                self.dcc_event_logger.debug(f"[{self.transfer_id}] File object closed in _cleanup.")
             except IOError as e:
-                logger.debug(f"[{self.transfer_id}] Error closing file object in _cleanup: {e}")
+                self.dcc_event_logger.debug(f"[{self.transfer_id}] Error closing file object in _cleanup: {e}")
             self.file_object = None
-        logger.debug(f"[{self.transfer_id}] Cleanup finished.")
+        self.dcc_event_logger.debug(f"[{self.transfer_id}] Cleanup finished.")
 
 
 class DCCSendTransfer(DCCTransfer):
@@ -258,9 +267,10 @@ class DCCSendTransfer(DCCTransfer):
         passive_token: Optional[str] = None,
         connect_to_ip: Optional[str] = None, # For passive sender, this is peer's IP
         connect_to_port: Optional[int] = None, # For passive sender, this is peer's port
+        dcc_event_logger: Optional[logging.Logger] = None, # Added
         **kwargs
     ):
-        super().__init__(transfer_type=DCCTransferType.SEND, **kwargs)
+        super().__init__(transfer_type=DCCTransferType.SEND, dcc_event_logger=dcc_event_logger, **kwargs)
         self.server_socket = server_socket_for_active_send # Listening socket for active DCC sender
         self.is_passive_offer = is_passive_offer
         self.passive_token = passive_token
@@ -268,7 +278,7 @@ class DCCSendTransfer(DCCTransfer):
         self.connect_to_port = connect_to_port # Peer's port if we are connecting (passive send)
 
         if self.is_passive_offer and self.server_socket:
-            logger.warning(f"[{self.transfer_id}] DCCSendTransfer initialized as passive offer but also given a server_socket. Socket will be ignored initially.")
+            self.dcc_event_logger.warning(f"[{self.transfer_id}] DCCSendTransfer initialized as passive offer but also given a server_socket. Socket will be ignored initially.")
             self.server_socket = None # Passive offers don't listen initially.
 
     def run(self):
@@ -276,32 +286,32 @@ class DCCSendTransfer(DCCTransfer):
             self._report_status(DCCTransferStatus.CONNECTING)
 
             if self.connect_to_ip and self.connect_to_port: # Passive DCC SEND: We connect to receiver
-                logger.info(f"[{self.transfer_id}] Passive DCC SEND: Connecting to peer {self.peer_nick} at {self.connect_to_ip}:{self.connect_to_port} for '{self.original_filename}'.")
+                self.dcc_event_logger.info(f"[{self.transfer_id}] Passive DCC SEND: Connecting to peer {self.peer_nick} at {self.connect_to_ip}:{self.connect_to_port} for '{self.original_filename}'.")
                 try:
                     self.socket = socket.create_connection((self.connect_to_ip, self.connect_to_port), timeout=15)
-                    logger.info(f"[{self.transfer_id}] Connected to peer for passive DCC SEND.")
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Connected to peer for passive DCC SEND.")
                 except socket.timeout:
-                    logger.warning(f"[{self.transfer_id}] Timeout connecting to peer for passive DCC SEND.")
+                    self.dcc_event_logger.warning(f"[{self.transfer_id}] Timeout connecting to peer for passive DCC SEND.")
                     self._report_status(DCCTransferStatus.TIMED_OUT, "Connection to peer timed out.")
                     return
                 except socket.error as e:
-                    logger.error(f"[{self.transfer_id}] Socket error connecting for passive DCC SEND: {e}")
+                    self.dcc_event_logger.error(f"[{self.transfer_id}] Socket error connecting for passive DCC SEND: {e}")
                     self._report_status(DCCTransferStatus.FAILED, f"Network connect error: {e}")
                     return
 
             elif self.server_socket: # Active DCC SEND: We are listening
-                logger.info(f"[{self.transfer_id}] Active DCC SEND: Waiting for peer {self.peer_nick} to connect...")
+                self.dcc_event_logger.info(f"[{self.transfer_id}] Active DCC SEND: Waiting for peer {self.peer_nick} to connect...")
                 try:
                     self.socket, addr = self.server_socket.accept()
                     self.server_socket.close()
                     self.server_socket = None
-                    logger.info(f"[{self.transfer_id}] Accepted connection from {addr} for sending '{self.original_filename}'.")
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Accepted connection from {addr} for sending '{self.original_filename}'.")
                 except socket.timeout: # Should be set on server_socket by DCCManager if desired
-                    logger.warning(f"[{self.transfer_id}] Timeout waiting for {self.peer_nick} to connect for DCC SEND.")
+                    self.dcc_event_logger.warning(f"[{self.transfer_id}] Timeout waiting for {self.peer_nick} to connect for DCC SEND.")
                     self._report_status(DCCTransferStatus.TIMED_OUT, "Peer connection timed out.")
                     return
                 except OSError as e:
-                    logger.error(f"[{self.transfer_id}] Socket error while waiting for accept: {e}")
+                    self.dcc_event_logger.error(f"[{self.transfer_id}] Socket error while waiting for accept: {e}")
                     self._report_status(DCCTransferStatus.FAILED, f"Socket accept error: {e}")
                     return
 
@@ -310,23 +320,23 @@ class DCCSendTransfer(DCCTransfer):
                  # and start_transfer_thread was called prematurely by manager.
                  # Or if active send socket setup failed.
                  if self.is_passive_offer and not (self.connect_to_ip and self.connect_to_port):
-                     logger.info(f"[{self.transfer_id}] Passive offer for {self.original_filename} waiting for peer ACCEPT. Thread will exit if not connected.")
+                     self.dcc_event_logger.info(f"[{self.transfer_id}] Passive offer for {self.original_filename} waiting for peer ACCEPT. Thread will exit if not connected.")
                      # This thread shouldn't have been started by DCCManager yet for a passive offer.
                      # If it is, it means the manager expects it to do something, which is an error in logic.
                      # For now, consider it a setup issue.
                      self._report_status(DCCTransferStatus.FAILED, "Passive offer not yet accepted by peer.")
                  else:
-                    logger.error(f"[{self.transfer_id}] Socket not set for DCC SEND. Aborting.")
+                    self.dcc_event_logger.error(f"[{self.transfer_id}] Socket not set for DCC SEND. Aborting.")
                     self._report_status(DCCTransferStatus.FAILED, "Internal error: socket not available for sending.")
                  return
 
             self._report_status(DCCTransferStatus.TRANSFERRING)
-            logger.info(f"[{self.transfer_id}] Starting to send file '{self.local_filepath}' ({self.filesize} bytes).")
+            self.dcc_event_logger.info(f"[{self.transfer_id}] Starting to send file '{self.local_filepath}' ({self.filesize} bytes).")
 
             try:
                 self.file_object = open(self.local_filepath, "rb")
             except IOError as e:
-                logger.error(f"[{self.transfer_id}] Could not open file '{self.local_filepath}' for sending: {e}")
+                self.dcc_event_logger.error(f"[{self.transfer_id}] Could not open file '{self.local_filepath}' for sending: {e}")
                 self._report_status(DCCTransferStatus.FAILED, f"File error: {e}")
                 return
 
@@ -335,13 +345,13 @@ class DCCSendTransfer(DCCTransfer):
 
             while self.bytes_transferred < self.filesize:
                 if self._stop_event.is_set():
-                    logger.info(f"[{self.transfer_id}] Send operation cancelled.")
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Send operation cancelled.")
                     # Status already set by stop_transfer
                     break
 
                 chunk = self.file_object.read(4096)
                 if not chunk:
-                    logger.warning(f"[{self.transfer_id}] Read empty chunk from file, but not EOF by size. Expected {self.filesize}, got {self.bytes_transferred}.")
+                    self.dcc_event_logger.warning(f"[{self.transfer_id}] Read empty chunk from file, but not EOF by size. Expected {self.filesize}, got {self.bytes_transferred}.")
                     # This might happen if file size changed after initiating transfer
                     if self.bytes_transferred < self.filesize:
                          self._report_status(DCCTransferStatus.FAILED, "File size mismatch or premature EOF.")
@@ -352,12 +362,12 @@ class DCCSendTransfer(DCCTransfer):
                     self.bytes_transferred += len(chunk)
                     self._report_progress()
                 except socket.error as e:
-                    logger.error(f"[{self.transfer_id}] Socket error during send: {e}")
+                    self.dcc_event_logger.error(f"[{self.transfer_id}] Socket error during send: {e}")
                     self._report_status(DCCTransferStatus.FAILED, f"Network error: {e}")
                     break
 
             if not self._stop_event.is_set() and self.bytes_transferred >= self.filesize:
-                logger.info(f"[{self.transfer_id}] File '{self.original_filename}' sent successfully.")
+                self.dcc_event_logger.info(f"[{self.transfer_id}] File '{self.original_filename}' sent successfully.")
                 self._report_status(DCCTransferStatus.COMPLETED)
 
                 # After successful send, calculate and potentially send checksum
@@ -368,7 +378,7 @@ class DCCSendTransfer(DCCTransfer):
                         algo = self.dcc_manager.dcc_config.get("checksum_algorithm")
                         self.checksum_algorithm = algo # Store algo used for our calculation
                         self.checksum_status = "CalculatedLocal" # Waiting for peer or for peer to request
-                        logger.info(f"[{self.transfer_id}] Calculated SEND checksum ({algo}): {self.calculated_checksum[:10]}...")
+                        self.dcc_event_logger.info(f"[{self.transfer_id}] Calculated SEND checksum ({algo}): {self.calculated_checksum[:10]}...")
                         # DCCManager will be responsible for sending this via CTCP
                         if hasattr(self.dcc_manager, 'send_dcc_checksum_info'):
                             self.dcc_manager.send_dcc_checksum_info(self.transfer_id, self.peer_nick, self.original_filename, algo, self.calculated_checksum)
@@ -384,7 +394,7 @@ class DCCSendTransfer(DCCTransfer):
 
 
         except Exception as e:
-            logger.critical(f"[{self.transfer_id}] Unexpected error in DCCSendTransfer.run: {e}", exc_info=True)
+            self.dcc_event_logger.critical(f"[{self.transfer_id}] Unexpected error in DCCSendTransfer.run: {e}", exc_info=True)
             if self.status not in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]:
                  self._report_status(DCCTransferStatus.FAILED, f"Unexpected error: {e}")
         finally:
@@ -398,9 +408,10 @@ class DCCReceiveTransfer(DCCTransfer):
         connect_to_ip: Optional[str] = None,       # For active receive: peer's IP
         connect_to_port: Optional[int] = None,     # For active receive: peer's port
         server_socket_for_passive_recv: Optional[socket.socket] = None, # For passive receive: our listening socket
+        dcc_event_logger: Optional[logging.Logger] = None, # Added
         **kwargs
     ):
-        super().__init__(transfer_type=DCCTransferType.RECEIVE, **kwargs)
+        super().__init__(transfer_type=DCCTransferType.RECEIVE, dcc_event_logger=dcc_event_logger, **kwargs)
         self.connect_ip = connect_to_ip
         self.connect_port = connect_to_port
         self.server_socket = server_socket_for_passive_recv # Our listening socket if we are passive receiver
@@ -410,42 +421,42 @@ class DCCReceiveTransfer(DCCTransfer):
             self._report_status(DCCTransferStatus.CONNECTING)
 
             if self.server_socket: # Passive DCC RECV: We are listening
-                logger.info(f"[{self.transfer_id}] Passive DCC RECV: Waiting for peer {self.peer_nick} to connect to us for '{self.original_filename}'.")
+                self.dcc_event_logger.info(f"[{self.transfer_id}] Passive DCC RECV: Waiting for peer {self.peer_nick} to connect to us for '{self.original_filename}'.")
                 try:
                     self.socket, addr = self.server_socket.accept()
                     self.server_socket.close() # Close listening socket after one connection
                     self.server_socket = None
-                    logger.info(f"[{self.transfer_id}] Accepted connection from {addr} for passive DCC RECV.")
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Accepted connection from {addr} for passive DCC RECV.")
                 except socket.timeout: # Timeout should be set on server_socket by DCCManager
-                    logger.warning(f"[{self.transfer_id}] Timeout waiting for peer connection for passive DCC RECV.")
+                    self.dcc_event_logger.warning(f"[{self.transfer_id}] Timeout waiting for peer connection for passive DCC RECV.")
                     self._report_status(DCCTransferStatus.TIMED_OUT, "Peer connection timed out.")
                     return
                 except OSError as e:
-                    logger.error(f"[{self.transfer_id}] Socket error during accept for passive DCC RECV: {e}")
+                    self.dcc_event_logger.error(f"[{self.transfer_id}] Socket error during accept for passive DCC RECV: {e}")
                     self._report_status(DCCTransferStatus.FAILED, f"Socket accept error: {e}")
                     return
 
             elif self.connect_ip and self.connect_port: # Active DCC RECV: We connect to sender
-                logger.info(f"[{self.transfer_id}] Active DCC RECV: Connecting to {self.connect_ip}:{self.connect_port} for '{self.original_filename}'.")
+                self.dcc_event_logger.info(f"[{self.transfer_id}] Active DCC RECV: Connecting to {self.connect_ip}:{self.connect_port} for '{self.original_filename}'.")
                 try:
                     self.socket = socket.create_connection((self.connect_ip, self.connect_port), timeout=15)
-                    logger.info(f"[{self.transfer_id}] Connected to sender for active DCC RECV.")
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Connected to sender for active DCC RECV.")
                 except socket.timeout:
-                    logger.warning(f"[{self.transfer_id}] Timeout connecting to sender for active DCC RECV.")
+                    self.dcc_event_logger.warning(f"[{self.transfer_id}] Timeout connecting to sender for active DCC RECV.")
                     self._report_status(DCCTransferStatus.TIMED_OUT, "Connection to sender timed out.")
                     return
                 except socket.error as e:
-                    logger.error(f"[{self.transfer_id}] Socket error connecting for active DCC RECV: {e}")
+                    self.dcc_event_logger.error(f"[{self.transfer_id}] Socket error connecting for active DCC RECV: {e}")
                     self._report_status(DCCTransferStatus.FAILED, f"Network connect error: {e}")
                     return
 
             if not self.socket:
-                 logger.error(f"[{self.transfer_id}] Socket not established for DCC RECV. Aborting.")
+                 self.dcc_event_logger.error(f"[{self.transfer_id}] Socket not established for DCC RECV. Aborting.")
                  self._report_status(DCCTransferStatus.FAILED, "Internal error: socket not available for receiving.")
                  return
 
             self._report_status(DCCTransferStatus.TRANSFERRING)
-            logger.info(f"[{self.transfer_id}] Starting to receive file '{self.original_filename}' to '{self.local_filepath}'.")
+            self.dcc_event_logger.info(f"[{self.transfer_id}] Starting to receive file '{self.original_filename}' to '{self.local_filepath}'.")
 
             try:
                 # Ensure directory exists
@@ -454,7 +465,7 @@ class DCCReceiveTransfer(DCCTransfer):
                     os.makedirs(local_dir, exist_ok=True)
                 self.file_object = open(self.local_filepath, "wb") # Open in binary write mode
             except IOError as e:
-                logger.error(f"[{self.transfer_id}] Could not open file '{self.local_filepath}' for writing: {e}")
+                self.dcc_event_logger.error(f"[{self.transfer_id}] Could not open file '{self.local_filepath}' for writing: {e}")
                 self._report_status(DCCTransferStatus.FAILED, f"File system error: {e}")
                 return
 
@@ -463,7 +474,7 @@ class DCCReceiveTransfer(DCCTransfer):
 
             while self.bytes_transferred < self.filesize:
                 if self._stop_event.is_set():
-                    logger.info(f"[{self.transfer_id}] Receive operation cancelled.")
+                    self.dcc_event_logger.info(f"[{self.transfer_id}] Receive operation cancelled.")
                     # Status should be set by stop_transfer
                     break
 
@@ -474,7 +485,7 @@ class DCCReceiveTransfer(DCCTransfer):
                     self.socket.settimeout(30) # Timeout for individual recv operations
                     chunk = self.socket.recv(4096)
                     if not chunk:
-                        logger.info(f"[{self.transfer_id}] Connection closed by peer (received empty chunk).")
+                        self.dcc_event_logger.info(f"[{self.transfer_id}] Connection closed by peer (received empty chunk).")
                         if self.bytes_transferred < self.filesize:
                             self._report_status(DCCTransferStatus.FAILED, "Connection closed prematurely by peer.")
                         break # Connection closed
@@ -484,16 +495,16 @@ class DCCReceiveTransfer(DCCTransfer):
                     self._report_progress()
 
                 except socket.timeout:
-                    logger.warning(f"[{self.transfer_id}] Socket recv timed out waiting for data.")
+                    self.dcc_event_logger.warning(f"[{self.transfer_id}] Socket recv timed out waiting for data.")
                     self._report_status(DCCTransferStatus.TIMED_OUT, "Network timeout waiting for data.")
                     break
                 except socket.error as e:
-                    logger.error(f"[{self.transfer_id}] Socket error during receive: {e}")
+                    self.dcc_event_logger.error(f"[{self.transfer_id}] Socket error during receive: {e}")
                     self._report_status(DCCTransferStatus.FAILED, f"Network error: {e}")
                     break
 
             if not self._stop_event.is_set() and self.bytes_transferred >= self.filesize:
-                logger.info(f"[{self.transfer_id}] File '{self.original_filename}' received successfully.")
+                self.dcc_event_logger.info(f"[{self.transfer_id}] File '{self.original_filename}' received successfully.")
                 self._report_status(DCCTransferStatus.COMPLETED)
 
                 # After successful receive, calculate checksum if enabled
@@ -501,7 +512,7 @@ class DCCReceiveTransfer(DCCTransfer):
                    self.dcc_manager.dcc_config.get("checksum_algorithm", "none") != "none":
                     self.calculated_checksum = self._calculate_file_checksum()
                     if self.calculated_checksum:
-                        logger.info(f"[{self.transfer_id}] Calculated RECV checksum ({self.dcc_manager.dcc_config.get('checksum_algorithm')}): {self.calculated_checksum[:10]}...")
+                        self.dcc_event_logger.info(f"[{self.transfer_id}] Calculated RECV checksum ({self.dcc_manager.dcc_config.get('checksum_algorithm')}): {self.calculated_checksum[:10]}...")
                         if self.expected_checksum: # If sender already sent their checksum
                             self._compare_checksums()
                         else:
@@ -517,7 +528,7 @@ class DCCReceiveTransfer(DCCTransfer):
                     self._report_status(DCCTransferStatus.FAILED, "Transfer incomplete.")
 
         except Exception as e:
-            logger.critical(f"[{self.transfer_id}] Unexpected error in DCCReceiveTransfer.run: {e}", exc_info=True)
+            self.dcc_event_logger.critical(f"[{self.transfer_id}] Unexpected error in DCCReceiveTransfer.run: {e}", exc_info=True)
             if self.status not in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]:
                 self._report_status(DCCTransferStatus.FAILED, f"Unexpected error: {e}")
         finally:
@@ -528,11 +539,11 @@ class DCCReceiveTransfer(DCCTransfer):
                 if self.bytes_transferred < self.filesize and os.path.exists(self.local_filepath):
                     try:
                         # For Phase 1, let's just log. Deletion/resume is for later.
-                        logger.warning(f"[{self.transfer_id}] Transfer failed, partial file '{self.local_filepath}' may exist ({self.bytes_transferred}/{self.filesize} bytes).")
+                        self.dcc_event_logger.warning(f"[{self.transfer_id}] Transfer failed, partial file '{self.local_filepath}' may exist ({self.bytes_transferred}/{self.filesize} bytes).")
                         # os.remove(self.local_filepath)
-                        # logger.info(f"[{self.transfer_id}] Deleted partial file '{self.local_filepath}'.")
+                        # self.dcc_event_logger.info(f"[{self.transfer_id}] Deleted partial file '{self.local_filepath}'.")
                     except OSError as e_del:
-                        logger.error(f"[{self.transfer_id}] Error trying to delete partial file '{self.local_filepath}': {e_del}")
+                        self.dcc_event_logger.error(f"[{self.transfer_id}] Error trying to delete partial file '{self.local_filepath}': {e_del}")
 
 
 if __name__ == "__main__":
