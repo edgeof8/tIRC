@@ -505,10 +505,11 @@ class DCCManager:
                             "nick": nick,
                             "filename": filename,
                             "filesize": filesize,
+                            "ip_str": ip_str, # Store sender's IP for passive offers
                             "userhost": userhost,
                             "timestamp": time.time()
                         }
-                    self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' with token {token}.")
+                    self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' (IP: {ip_str}) with token {token}.")
                     self._cleanup_stale_passive_offers() # Opportunistic cleanup
                     self.client_logic.add_message(
                         f"Passive DCC SEND offer from {nick} ({userhost}): '{filename}' ({filesize} bytes). "
@@ -641,6 +642,11 @@ class DCCManager:
                 else:
                     self.dcc_event_logger.warning(f"Received Resume DCC ACCEPT from {nick} for '{accepted_filename}', but no matching active RESUME offer found or details mismatch.")
                     self.client_logic.add_message(f"Received unexpected/mismatched Resume DCC ACCEPT from {nick} for '{accepted_filename}'.", "warning", context_name="Status")
+                # Ensure filename from parsed_dcc is used if it's not None, otherwise log error or handle.
+                # This was mostly for Pylance, actual logic should be fine due to prior checks.
+                if accepted_filename is None:
+                    self.dcc_event_logger.error(f"Resume DCC ACCEPT from {nick} had None for filename after parsing. This should not happen.")
+
 
             else: # Should not happen if parsed_dcc is valid and has is_passive_accept or is_resume_accept
                 self.dcc_event_logger.warning(f"Received ambiguous DCC ACCEPT from {nick}: {parsed_dcc}")
@@ -666,17 +672,18 @@ class DCCManager:
             # This is a placeholder, real IP lookup might be needed.
             # For now, we'll assume client_logic can provide it. If not, we can't proceed.
             # A more robust method would be to store peer IP from initial DCC SEND offer.
-            peer_ip_address = None
-            if hasattr(self.client_logic, 'get_user_ip') and callable(self.client_logic.get_user_ip):
-                 peer_ip_address = self.client_logic.get_user_ip(nick)
+            # **REFINEMENT**: We will get peer_ip_address from the existing_transfer_info later.
+            # peer_ip_address = None
+            # if hasattr(self.client_logic, 'get_user_ip') and callable(self.client_logic.get_user_ip):
+            #      peer_ip_address = self.client_logic.get_user_ip(nick)
+            #
+            # if not peer_ip_address: # This check will be done after finding existing_transfer_info
+            #     self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Could not determine peer IP address. Cannot proceed.")
+            #     self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Peer IP unknown.", "error", context_name="DCC")
+            #     return
 
-            if not peer_ip_address:
-                self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Could not determine peer IP address. Cannot proceed.")
-                self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Peer IP unknown.", "error", context_name="DCC")
-                return
-
-            if not all([resume_filename, resume_peer_port is not None, resume_position_offered_by_peer is not None]): # Removed peer_ip_address from here as it's checked above
-                self.dcc_event_logger.warning(f"DCC RESUME from {nick} missing critical information: {parsed_dcc}")
+            if not all([resume_filename, resume_peer_port is not None, resume_position_offered_by_peer is not None]):
+                self.dcc_event_logger.warning(f"DCC RESUME from {nick} missing critical information in CTCP: {parsed_dcc}")
                 return
 
             assert isinstance(resume_filename, str), "resume_filename must be a string after the all() check"
@@ -693,8 +700,9 @@ class DCCManager:
                         transfer.status in [DCCTransferStatus.FAILED, DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]):
                         existing_transfer_info = {
                             "local_filepath": transfer.local_filepath,
-                            "total_filesize": transfer.filesize, # Crucial: get total size from previous attempt
-                            "current_bytes": transfer.bytes_transferred
+                            "total_filesize": transfer.filesize,
+                            "current_bytes": transfer.bytes_transferred,
+                            "peer_ip": transfer.peer_ip # Crucial: Get peer's IP from original transfer
                         }
                         break
 
@@ -716,10 +724,16 @@ class DCCManager:
             # At this point, existing_transfer_info is guaranteed to be populated if we didn't return.
             local_file_path_to_check = existing_transfer_info["local_filepath"]
             total_filesize = existing_transfer_info["total_filesize"]
+            peer_ip_address = existing_transfer_info.get("peer_ip")
+
+            if not peer_ip_address:
+                self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Peer IP address not found in prior transfer record. Cannot proceed.")
+                self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Peer IP unknown from prior record.", "error", context_name="DCC")
+                return
 
             if total_filesize <= 0: # Should not happen if we had a valid prior transfer
                 self.dcc_event_logger.error(f"DCC RESUME from {nick} for '{resume_filename}': Prior transfer record has invalid total filesize ({total_filesize}). Rejecting.")
-                self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Invalid prior transfer data.", "error", context_name="DCC")
+                self.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Invalid prior transfer data (filesize).", "error", context_name="DCC")
                 return
 
             actual_resume_offset = 0
@@ -885,6 +899,7 @@ class DCCManager:
             dcc_manager_ref=self,
             connect_to_ip=ip_str, # For active DCC RECV, we connect
             connect_to_port=port,
+            peer_ip=ip_str, # Store sender's IP
             dcc_event_logger=self.dcc_event_logger # Pass the logger
         )
 
@@ -959,8 +974,12 @@ class DCCManager:
             "local_filepath":safe_local_path,
             "dcc_manager_ref":self,
             "server_socket_for_passive_recv":listening_socket,
+            "peer_ip": self.pending_passive_offers.get(offer_token, {}).get("ip_str"), # Get peer IP from stored passive offer
             "dcc_event_logger": self.dcc_event_logger # Pass the logger
         }
+        # We need to ensure that ip_str from the passive offer is stored in pending_passive_offers
+        # This was added in the change for line 443.
+
         recv_transfer = DCCReceiveTransfer(**recv_transfer_args)
 
         with self._lock:
