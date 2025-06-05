@@ -85,6 +85,22 @@ SASL_MECHANISM: Optional[str] = "PLAIN" # Default to PLAIN or None
 # Setting them to None here means they must be configured per server if SASL is used.
 SASL_USERNAME_GLOBAL_DEFAULT: Optional[str] = None # Renamed to avoid conflict if a ServerConfig has sasl_username
 SASL_PASSWORD_GLOBAL_DEFAULT: Optional[str] = None # Renamed
+# --- DCC Configuration Defaults ---
+DEFAULT_DCC_ENABLED = True
+DEFAULT_DCC_DOWNLOAD_DIR = "downloads"
+DEFAULT_DCC_UPLOAD_DIR = "uploads"
+DEFAULT_DCC_AUTO_ACCEPT = False
+DEFAULT_DCC_AUTO_ACCEPT_FROM_FRIENDS = True
+DEFAULT_DCC_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+DEFAULT_DCC_PORT_RANGE_START = 1024
+DEFAULT_DCC_PORT_RANGE_END = 65535
+DEFAULT_DCC_TIMEOUT = 300  # 5 minutes
+DEFAULT_DCC_RESUME_ENABLED = True # For enabling resume capability
+DEFAULT_DCC_CHECKSUM_VERIFY = True # Phase 2
+DEFAULT_DCC_BANDWIDTH_LIMIT = 0  # 0 = unlimited, bytes per second (Phase 4)
+DEFAULT_DCC_BLOCKED_EXTENSIONS = ['.exe', '.bat', '.com', '.scr', '.vbs', '.pif']
+DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT = 120 # Seconds for a passive mode token to be valid (Phase 2)
+DEFAULT_DCC_VIRUS_SCAN_CMD = "" # Phase 4
 
 # Global variable to hold current ignore patterns
 IGNORED_PATTERNS: Set[str] = set()
@@ -530,6 +546,22 @@ CHANNEL_LOG_ENABLED = get_config_value("Logging", "channel_log_enabled", DEFAULT
 
 ENABLE_TRIGGER_SYSTEM = get_config_value("Features", "enable_trigger_system", DEFAULT_ENABLE_TRIGGER_SYSTEM, bool)
 DISABLED_SCRIPTS = get_config_value("Scripts", "disabled_scripts", DEFAULT_DISABLED_SCRIPTS, list)
+# --- DCC Configuration Loading ---
+DCC_ENABLED = get_config_value("DCC", "enabled", DEFAULT_DCC_ENABLED, bool)
+DCC_DOWNLOAD_DIR = get_config_value("DCC", "download_dir", DEFAULT_DCC_DOWNLOAD_DIR, str)
+DCC_UPLOAD_DIR = get_config_value("DCC", "upload_dir", DEFAULT_DCC_UPLOAD_DIR, str)
+DCC_AUTO_ACCEPT = get_config_value("DCC", "auto_accept", DEFAULT_DCC_AUTO_ACCEPT, bool)
+DCC_AUTO_ACCEPT_FROM_FRIENDS = get_config_value("DCC", "auto_accept_from_friends", DEFAULT_DCC_AUTO_ACCEPT_FROM_FRIENDS, bool)
+DCC_MAX_FILE_SIZE = get_config_value("DCC", "max_file_size", DEFAULT_DCC_MAX_FILE_SIZE, int)
+DCC_PORT_RANGE_START = get_config_value("DCC", "port_range_start", DEFAULT_DCC_PORT_RANGE_START, int)
+DCC_PORT_RANGE_END = get_config_value("DCC", "port_range_end", DEFAULT_DCC_PORT_RANGE_END, int)
+DCC_TIMEOUT = get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
+DCC_RESUME_ENABLED = get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
+DCC_CHECKSUM_VERIFY = get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool) # Phase 2
+DCC_BANDWIDTH_LIMIT = get_config_value("DCC", "bandwidth_limit", DEFAULT_DCC_BANDWIDTH_LIMIT, int) # Phase 4
+DCC_BLOCKED_EXTENSIONS = get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
+DCC_PASSIVE_MODE_TOKEN_TIMEOUT = get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int) # Phase 2
+DCC_VIRUS_SCAN_CMD = get_config_value("DCC", "virus_scan_cmd", DEFAULT_DCC_VIRUS_SCAN_CMD, str) # Phase 4
 
 # Constants that are not typically from config file but used by logic
 CONNECTION_TIMEOUT = DEFAULT_CONNECTION_TIMEOUT

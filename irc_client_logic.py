@@ -50,6 +50,9 @@ from cap_negotiator import CapNegotiator
 from sasl_authenticator import SaslAuthenticator
 from registration_handler import RegistrationHandler
 from python_trigger_api import PythonTriggerAPI
+# DCC Imports
+from dcc_manager import DCCManager
+from commands.dcc import dcc_commands
 
 logger = logging.getLogger("pyrc.logic")
 
@@ -172,6 +175,7 @@ class IRCClient_Logic:
 
         self.context_manager = ContextManager(max_history_per_context=max_hist_to_use)
         self.context_manager.create_context("Status", context_type="status")
+        self.context_manager.create_context("DCC", context_type="dcc_transfers") # New DCC context
         self.context_manager.set_active_context("Status")
 
         for ch_name in self.initial_channels_list:
@@ -195,10 +199,16 @@ class IRCClient_Logic:
         cli_disabled = set(self.args.disable_script) if hasattr(self.args, "disable_script") and self.args.disable_script else set()
         config_disabled = set(DISABLED_SCRIPTS)
         self.script_manager = ScriptManager(self, BASE_DIR, disabled_scripts=cli_disabled.union(config_disabled))
+
         self.command_handler = CommandHandler(self)
         self._initialize_connection_handlers()
         self.event_manager = EventManager(self, self.script_manager)
+        self.dcc_manager = DCCManager(self, self.event_manager) # Instantiate DCCManager
+
+
+
         self.script_manager.load_scripts()
+        # DCC Commands are now loaded dynamically by CommandHandler
 
         if ENABLE_TRIGGER_SYSTEM:
             config_dir_triggers = os.path.join(BASE_DIR, "config")
@@ -436,7 +446,36 @@ class IRCClient_Logic:
 
     def handle_server_message(self, line: str):
         if self.show_raw_log_in_ui: self._add_status_message(f"S << {line.strip()}")
+
+        # CTCP Parsing and DCC Handling
+        parsed_msg = IRCMessage.parse(line)
+        if parsed_msg and parsed_msg.command in ("PRIVMSG", "NOTICE"):
+            message_content = parsed_msg.trailing if parsed_msg.trailing is not None else ""
+
+            if message_content.startswith("\x01") and message_content.endswith("\x01"):
+                ctcp_payload = message_content[1:-1]
+
+                if ctcp_payload.upper().startswith("DCC ") and hasattr(self, 'dcc_manager') and self.dcc_manager:
+                    nick_from_parser = parsed_msg.source_nick if parsed_msg.source_nick else "UnknownNick"
+                    # Use parsed_msg.prefix for the full userhost string, as it contains nick!user@host
+                    # Provide a fallback if prefix is unexpectedly None
+                    full_userhost_from_parser = parsed_msg.prefix if parsed_msg.prefix else f"{nick_from_parser}!UnknownUser@UnknownHost"
+
+                    logger.debug(f"Passing to DCCManager: nick={nick_from_parser}, host={full_userhost_from_parser}, payload={ctcp_payload}")
+                    self.dcc_manager.handle_incoming_dcc_ctcp(nick_from_parser, full_userhost_from_parser, ctcp_payload)
+                    return
+
         irc_protocol.handle_server_message(self, line)
+
+    def send_ctcp_privmsg(self, target: str, ctcp_message: str):
+        """Sends a CTCP PRIVMSG to the target."""
+        if not target or not ctcp_message:
+            logger.warning("send_ctcp_privmsg: Target or message is empty.")
+            return
+        payload = ctcp_message.strip("\x01")
+        full_ctcp_command = f"\x01{payload}\x01"
+        self.network_handler.send_raw(f"PRIVMSG {target} :{full_ctcp_command}")
+        logger.debug(f"Sent CTCP PRIVMSG to {target}: {full_ctcp_command}")
 
     def switch_active_context(self, direction: str):
         context_names = self.context_manager.get_all_context_names()
