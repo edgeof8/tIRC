@@ -40,7 +40,34 @@ PyRC/
 
 ## Project Status
 
-**PyRC is under active development.** The focus is on continuously enhancing its feature set, improving code modularity, and ensuring overall stability. Recent development cycles have included significant work on DCC functionality (including port range selection, advertised IP configuration, and transfer cleanup), a more robust event-driven `/server` command, an enhanced `/help` system, and a more reliable headless testing framework. We welcome contributions and feedback as the project evolves.
+**PyRC is under active development.** The focus is on continuously enhancing its feature set, improving code modularity, and ensuring overall stability. We welcome contributions and feedback as the project evolves.
+
+## Recent Changes
+
+**UI Improvements:**
+
+- Updated sidebar color scheme with darker backgrounds (black) and cyan/green text for better readability
+- Fixed background color application in context list items
+- Improved full-width background coloring in sidebar
+
+**State Management:**
+
+- Migrated nick attribute access to use state manager
+- Added comprehensive null checks for client and connection info
+- Implemented fallback to "UnknownNick" for all error cases
+
+**Error Handling:**
+
+- Improved error handling for UI drawing operations
+- Added defensive programming for curses window operations
+- Resolved all Pylance type checking errors
+
+**Other Recent Work:**
+
+- DCC functionality (port range selection, advertised IP configuration, transfer cleanup)
+- Robust event-driven `/server` command
+- Enhanced `/help` system
+- Reliable headless testing framework
 
 ## Key Features
 
