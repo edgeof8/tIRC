@@ -345,6 +345,10 @@ class IRCClient_Logic:
     exit_screen_shown = False
     reconnect_delay: int
     max_reconnect_delay: int
+    pending_server_switch_config_name: Optional[str] = None # ADDED
+    # Event to signal disconnect completion for /server command
+    _server_switch_disconnect_event: Optional[threading.Event] = None # ADDED
+    _server_switch_target_config_name: Optional[str] = None # ADDED
 
     def __init__(self, stdscr, args):
         self.stdscr = stdscr
@@ -354,6 +358,9 @@ class IRCClient_Logic:
         self.all_server_configs = app_config.ALL_SERVER_CONFIGS
         self.active_server_config_name: Optional[str] = None
         self.active_server_config: Optional[ServerConfig] = None
+        self.pending_server_switch_config_name = None # Initialize
+        self._server_switch_disconnect_event = None
+        self._server_switch_target_config_name = None
 
         # Initialize these attributes earlier
         self.channel_log_enabled = self.app_config.CHANNEL_LOG_ENABLED
@@ -579,6 +586,15 @@ class IRCClient_Logic:
         self._final_quit_message = None
         self._handle_user_input = self._handle_user_input_impl
         self._update_ui = self._update_ui_impl
+
+
+
+
+
+
+
+
+
 
     def _add_status_message(self, text: str, color_key: str = "system"):
         color_attr = self.ui.colors.get(color_key, self.ui.colors.get("system", 0))
@@ -1399,40 +1415,72 @@ class IRCClient_Logic:
     def reset_reconnect_delay(self) -> None:
         self.reconnect_delay = int(app_config.RECONNECT_INITIAL_DELAY)
 
+
     def _reset_state_for_new_connection(self):
         logger.debug("Resetting client state for new server connection.")
+
+        # Preserve Status window messages and scroll offset if possible
         status_context = self.context_manager.get_context("Status")
-        current_status_msgs = list(status_context.messages) if status_context else []
-        status_scroll_offset = (
-            status_context.scrollback_offset
-            if status_context and hasattr(status_context, "scrollback_offset")
-            else 0
-        )
+        current_status_msgs = []
+        status_scroll_offset = 0
+        if status_context:
+            current_status_msgs = list(status_context.messages) # Make a copy
+            if hasattr(status_context, "scrollback_offset"):
+                status_scroll_offset = status_context.scrollback_offset
+
+        # Clear all existing contexts
         self.context_manager.contexts.clear()
+
+        # Recreate Status window and restore its messages/scroll
         self.context_manager.create_context("Status", context_type="status")
         new_status_context = self.context_manager.get_context("Status")
         if new_status_context:
             for msg_tuple in current_status_msgs:
-                new_status_context.add_message(msg_tuple[0], msg_tuple[1])
+                # Ensure msg_tuple is valid before trying to access elements
+                if isinstance(msg_tuple, tuple) and len(msg_tuple) >= 2:
+                    new_status_context.add_message(msg_tuple[0], msg_tuple[1])
+                else:
+                    logger.warning(f"Skipping invalid message tuple during Status restore: {msg_tuple}")
             if hasattr(new_status_context, "scrollback_offset"):
                 new_status_context.scrollback_offset = status_scroll_offset
+
+        # Recreate initial channels (now based on the potentially new server config)
+        # self.initial_channels_list should have been updated by /server command before this point
         for ch_name in self.initial_channels_list:
             self.context_manager.create_context(
                 ch_name,
                 context_type="channel",
                 initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
             )
+
+        # Set active context: to the first initial channel, or Status if no initial channels
         if self.initial_channels_list:
-            self.context_manager.set_active_context(self.initial_channels_list[0])
+            # Ensure the first initial channel actually resulted in a created context
+            first_initial_channel_normalized = self.context_manager._normalize_context_name(self.initial_channels_list[0])
+            if self.context_manager.get_context(first_initial_channel_normalized):
+                self.context_manager.set_active_context(first_initial_channel_normalized)
+            else:
+                self.context_manager.set_active_context("Status") # Fallback
         else:
             self.context_manager.set_active_context("Status")
+
+        # Clear other relevant client state
         self.currently_joined_channels.clear()
         self.last_join_command_target = None
-        self.user_modes.clear()
+        self.user_modes.clear() # Clear user modes specific to the old server
+
+        # If a /server switch is pending and waiting for disconnect, signal it
+        # This is the new part:
+        if self._server_switch_disconnect_event and not self._server_switch_disconnect_event.is_set():
+            logger.info("Signaling /server command that disconnect is complete via _server_switch_disconnect_event.")
+            self._server_switch_disconnect_event.set()
+            # The server_command handler will pick up from here.
+            # Do not clear _server_switch_target_config_name here, the command handler will use it.
+
         logger.info(
             f"Client state reset. Active context set to '{self.context_manager.active_context_name}'."
         )
-        self.ui_needs_update.set()
+        self.ui_needs_update.set() # Signal UI to refresh with new context layout
 
     def _handle_user_input_impl(self):
         if self.input_handler and self.ui:
