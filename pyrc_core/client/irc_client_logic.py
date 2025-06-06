@@ -15,6 +15,7 @@ from pyrc_core import app_config as _app_config
 from typing import cast
 from pyrc_core.app_config import _AppConfigModule, ServerConfig
 from pyrc_core.state_manager import StateManager, ConnectionInfo, ConnectionState
+from pyrc_core.client.state_change_ui_handler import StateChangeUIHandler
 
 app_config: _AppConfigModule = cast(_AppConfigModule, _app_config)
 
@@ -134,7 +135,7 @@ class IRCClient_Logic:
 
         # Initialize StateManager first
         self.state_manager = StateManager()
-
+        
         # Initialize other managers
         self.channel_logger_manager = ChannelLoggerManager()
 
@@ -186,6 +187,9 @@ class IRCClient_Logic:
                 f"nick='{conn_info.nick}' use_ssl={conn_info.ssl}, "
                 f"verify_ssl_cert={conn_info.verify_ssl_cert}, headless={self.is_headless}"
             )
+            # Update connection state based on initial configuration
+            if conn_info.auto_connect:
+                self.state_manager.set_connection_state(ConnectionState.CONNECTING)
         else:
             logger.info("IRCClient_Logic initialized with no connection info")
         self.echo_sent_to_status: bool = True
@@ -225,6 +229,9 @@ class IRCClient_Logic:
         else:
             self.ui = UIManager(stdscr, self)
             self.input_handler = InputHandler(self)
+            
+        # Initialize StateChangeUIHandler after UI is set up
+        self.state_ui_handler = StateChangeUIHandler(self)
 
         cli_disabled = (
             set(self.args.disable_script)

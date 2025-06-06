@@ -213,6 +213,10 @@ class NetworkHandler:
             except (OSError, socket.error):
                 pass
             self.socket = None
+            
+        # Update connection state to DISCONNECTED
+        if self.connected:
+            self.client_logic_ref.state_manager.set_connection_state(ConnectionState.DISCONNECTED)
 
         was_connected = self.connected
         self.connected = False
@@ -268,22 +272,16 @@ class NetworkHandler:
             or not self.client_logic_ref.server
             or self.client_logic_ref.port is None
         ):
-            logger.error(
-                "NetworkHandler._connect_socket: Client server/port not configured."
+            error_msg = "Server or port not configured"
+            logger.error(f"NetworkHandler._connect_socket: {error_msg}")
+            self.client_logic_ref.state_manager.set_connection_state(
+                ConnectionState.ERROR, 
+                error_msg
             )
-            if self.client_logic_ref:  # Add message only if client exists
-                self.client_logic_ref.add_message(
-                    "Cannot connect: Server or port not configured.",
-                    "error",
-                    context_name="Status",
-                )
             return False
 
-        self.client_logic_ref.add_message(
-            f"Attempting to connect to {self.client_logic_ref.server}:{self.client_logic_ref.port}...",
-            "system",
-            context_name="Status",
-        )
+        # Update connection state to CONNECTING
+        self.client_logic_ref.state_manager.set_connection_state(ConnectionState.CONNECTING)
         try:
             logger.info(
                 f"Attempting socket connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} (SSL: {self.client_logic_ref.use_ssl})"
@@ -328,11 +326,8 @@ class NetworkHandler:
             logger.info(
                 f"Successfully connected to {self.client_logic_ref.server}:{self.client_logic_ref.port}. SSL: {self.client_logic_ref.use_ssl}"
             )
-            self.client_logic_ref.add_message(
-                f"Connected. SSL: {'Yes' if self.client_logic_ref.use_ssl else 'No'}",
-                "system",
-                context_name="Status",
-            )
+            # Update connection state to CONNECTED
+            self.client_logic_ref.state_manager.set_connection_state(ConnectionState.CONNECTED)
 
             # Start CAP negotiation if available
             if (
@@ -363,44 +358,40 @@ class NetworkHandler:
                 )
 
             return True
-        except socket.timeout:
-            logger.warning(
-                f"Connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} timed out."
-            )
-            self.client_logic_ref.add_message(
-                f"Connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} timed out.",
-                "error",
-                context_name="Status",
+        except socket.timeout as e:
+            error_msg = f"Connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} timed out"
+            logger.warning(error_msg)
+            self.client_logic_ref.state_manager.set_connection_state(
+                ConnectionState.ERROR,
+                error=error_msg
             )
         except socket.gaierror as e:
-            logger.error(
-                f"Hostname {self.client_logic_ref.server} could not be resolved: {e}"
-            )
-            self.client_logic_ref.add_message(
-                f"Hostname {self.client_logic_ref.server} could not be resolved.",
-                "error",
-                context_name="Status",
+            error_msg = f"Hostname {self.client_logic_ref.server} could not be resolved: {e}"
+            logger.error(error_msg)
+            self.client_logic_ref.state_manager.set_connection_state(
+                ConnectionState.ERROR,
+                error=error_msg
             )
         except ConnectionRefusedError as e:
-            logger.error(
-                f"Connection refused by {self.client_logic_ref.server}:{self.client_logic_ref.port}: {e}"
-            )
-            self.client_logic_ref.add_message(
-                f"Connection refused by {self.client_logic_ref.server}:{self.client_logic_ref.port}.",
-                "error",
-                context_name="Status",
+            error_msg = f"Connection refused by {self.client_logic_ref.server}:{self.client_logic_ref.port}: {e}"
+            logger.error(error_msg)
+            self.client_logic_ref.state_manager.set_connection_state(
+                ConnectionState.ERROR,
+                error=error_msg
             )
         except ssl.SSLError as e:
-            logger.error(f"SSL Error during connection: {e}", exc_info=True)
-            self.client_logic_ref.add_message(
-                f"SSL Error: {e}", "error", context_name="Status"
+            error_msg = f"SSL Error during connection: {e}"
+            logger.error(error_msg, exc_info=True)
+            self.client_logic_ref.state_manager.set_connection_state(
+                ConnectionState.ERROR,
+                error=error_msg
             )
         except Exception as e:
-            logger.error(f"Unexpected error during connection: {e}", exc_info=True)
-            self.client_logic_ref.add_message(
-                f"Connection error: {e}",
-                "error",
-                context_name="Status",
+            error_msg = f"Unexpected error during connection: {e}"
+            logger.error(error_msg, exc_info=True)
+            self.client_logic_ref.state_manager.set_connection_state(
+                ConnectionState.ERROR,
+                error=error_msg
             )
 
         self._reset_connection_state()

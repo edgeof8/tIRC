@@ -107,39 +107,16 @@ class RegistrationHandler:
 
 
     def on_welcome_received(self, confirmed_nick: str):
-        # 1. Trigger: Called by `irc_protocol.handle_rpl_welcome()` when the server sends RPL_WELCOME (001).
-        #    This numeric signifies that the client is now successfully registered with the server.
-        # 2. Expected State Before:
-        #    - PASS (if any), NICK, and USER commands have been sent (or are about to be, if 001 arrived very quickly).
-        #    - CAP negotiation and SASL (if used) should ideally be complete or nearing completion.
-        #    - `confirmed_nick` (method argument) is the nickname the server has acknowledged for the client.
-        # 3. Key Actions:
-        #    - Sets `self.registration_triggered_by_001 = True`.
-        #    - Updates `self.current_nick_to_register` with `confirmed_nick`.
-        #    - If `self.nick_user_sent` is False (i.e., 001 arrived before NICK/USER was flagged as sent):
-        #        - Logs a warning.
-        #        - Calls `self._proceed_with_nick_user_registration()` to ensure NICK/USER are sent if they weren't.
-        #    - If `self.cap_negotiator` exists and `is_cap_negotiation_pending()` is True:
-        #        - Calls `self.cap_negotiator.on_cap_end_confirmed()`. This is crucial because RPL_WELCOME
-        #          implicitly confirms that CAP negotiation (from the server's perspective) is over.
-        #    - Waits for `self.cap_negotiator.wait_for_negotiation_finish()` (if `cap_negotiator` exists) to ensure
-        #      any final CAP/SASL cleanup or event setting in CapNegotiator has occurred.
-        #    - Calls `self._perform_post_registration_actions()` to handle auto-channel joins and NickServ identification.
-        # 4. Expected State After:
-        #    - `self.registration_triggered_by_001` is True.
-        #    - `self.current_nick_to_register` reflects the server-confirmed nickname.
-        #    - `self.nick_user_sent` is True.
-        #    - If CAP was pending, `CapNegotiator` is notified that CAP END is confirmed.
-        #    - Post-registration actions (channel joins, NickServ IDENTIFY) are initiated via `_perform_post_registration_actions()`.
-        #    - The client is now fully registered and ready for general IRC interaction.
-        #    - Subsequent step: Client joins channels, sends/receives messages, etc. The connection handshake is complete.
         """
         Called when RPL_WELCOME (001) is received.
         This confirms server registration and triggers post-registration actions.
         """
         logger.info(f"RegistrationHandler: RPL_WELCOME (001) received. Confirmed nick: {confirmed_nick}.")
         self.registration_triggered_by_001 = True
-        self.current_nick_to_register = confirmed_nick # Server confirms the nick
+        self.current_nick_to_register = confirmed_nick  # Server confirms the nick
+
+        # Update connection state to REGISTERED
+        self.state_manager.set_connection_state(ConnectionState.REGISTERED)
 
         if not self.nick_user_sent:
             # This implies 001 arrived before CAP END was fully processed or if CAP was skipped.
@@ -147,8 +124,8 @@ class RegistrationHandler:
             logger.warning("RPL_WELCOME received, but NICK/USER flag not set. Assuming they were implicitly accepted or will be sent now.")
             # If NICK/USER wasn't sent due to CapNegotiator not calling on_cap_negotiation_complete yet,
             # 001 is a definitive signal to proceed.
-            if not self.nick_user_sent: # Double check, as on_cap_negotiation_complete might have just run
-                self._proceed_with_nick_user_registration() # Send NICK/USER if not already done.
+            if not self.nick_user_sent:  # Double check, as on_cap_negotiation_complete might have just run
+                self._proceed_with_nick_user_registration()  # Send NICK/USER if not already done.
 
         # Ensure CapNegotiator knows that 001 implies CAP END confirmation
         if self.cap_negotiator and self.cap_negotiator.is_cap_negotiation_pending():
@@ -162,21 +139,21 @@ class RegistrationHandler:
         logger.debug("RegistrationHandler: Processing post-001 actions. Checking cap_negotiator state.")
         if self.cap_negotiator:
             logger.debug(f"RegistrationHandler: CapNegotiator exists. cap_negotiation_finished_event is set: {self.cap_negotiator.cap_negotiation_finished_event.is_set()}")
-            logger.debug(f"RegistrationHandler: Calling wait_for_negotiation_finish...")
+            logger.debug("RegistrationHandler: Calling wait_for_negotiation_finish...")
             cap_negotiation_finished = self.cap_negotiator.wait_for_negotiation_finish(timeout=5.0)
             logger.debug(f"RegistrationHandler: wait_for_negotiation_finish result: {cap_negotiation_finished}")
 
             if cap_negotiation_finished:
                 logger.info("RegistrationHandler: Overall CAP negotiation (including SASL) reported as finished by CapNegotiator. Proceeding with post-001 actions.")
                 self._perform_post_registration_actions()
-            else: # Cap negotiator exists but timed out or event not set
+            else:  # Cap negotiator exists but timed out or event not set
                 logger.warning("RegistrationHandler: Timed out waiting for overall CAP negotiation after 001 (or event not set). Post-registration actions might be premature or fail.")
                 self._add_status_message("Warning: CAP/SASL negotiation timed out or event not set after 001. Auto-actions may be affected.", "warning")
                 logger.info("RegistrationHandler: Fallback - performing post-registration actions despite timeout/event state because 001 was received.")
                 self._perform_post_registration_actions()
-        else: # No cap_negotiator
+        else:  # No cap_negotiator
             logger.error("RPL_WELCOME: cap_negotiator is None, cannot wait for negotiation finish. Performing post-reg actions directly.")
-            self._perform_post_registration_actions() # Proceed with caution
+            self._perform_post_registration_actions()  # Proceed with caution
 
 
     def _proceed_with_nick_user_registration(self):
