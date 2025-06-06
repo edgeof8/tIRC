@@ -82,5 +82,47 @@
         "updated_at": 1749109095.2976348,
         "created_by": "user",
         "description": ""
+    },
+    {
+        "id": 7,
+        "event_type": "TEXT",
+        "pattern": ".*\\bPYRC_UNIQUE_ACTIVATION_761322\\b.*",
+        "action_type": "COMMAND",
+        "action_content": "/msg #pyrc-testing-lean ACTION_CONFIRMED_FOR_TRIGGER_61322",
+        "is_enabled": false,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749117587.6766152,
+        "updated_at": 1749117592.3813965,
+        "created_by": "user",
+        "description": ""
+    },
+    {
+        "id": 8,
+        "event_type": "TEXT",
+        "pattern": ".*\\bPYRC_UNIQUE_ACTIVATION_054333\\b.*",
+        "action_type": "COMMAND",
+        "action_content": "/msg #pyrc-testing-lean ACTION_CONFIRMED_FOR_TRIGGER_54333",
+        "is_enabled": true,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749117709.0550818,
+        "updated_at": 1749117717.464384,
+        "created_by": "user",
+        "description": ""
+    },
+    {
+        "id": 9,
+        "event_type": "TEXT",
+        "pattern": ".*\\bPYRC_UNIQUE_ACTIVATION_266243\\b.*",
+        "action_type": "COMMAND",
+        "action_content": "/msg #pyrc-testing-lean ACTION_CONFIRMED_FOR_TRIGGER_66243",
+        "is_enabled": true,
+        "is_regex": true,
+        "ignore_case": true,
+        "created_at": 1749118623.427167,
+        "updated_at": 1749118631.8367093,
+        "created_by": "user",
+        "description": ""
     }
 ]

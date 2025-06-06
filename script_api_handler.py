@@ -9,7 +9,8 @@ from typing import (
     Tuple,
     Set,
     TYPE_CHECKING,
-)  # Added Tuple, Set, TYPE_CHECKING
+    Union,
+)
 import json
 import os
 from datetime import datetime
@@ -17,20 +18,13 @@ from dataclasses import dataclass
 
 from config import ENABLE_TRIGGER_SYSTEM
 
-# Removed IRCClient_Logic and ScriptManager direct imports to avoid circularity if ScriptAPIHandler is defined first
-# They will be type hinted with forward references if needed, or rely on constructor injection.
-# from irc_client_logic import IRCClient_Logic
-# from script_manager import ScriptManager
-
-if TYPE_CHECKING:  # Use this for type hinting to avoid circular imports at runtime
+if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
     from script_manager import ScriptManager
 
 
 @dataclass
 class ScriptMetadata:
-    """Metadata for a script including version and other information."""
-
     name: str
     version: str
     description: str
@@ -41,7 +35,7 @@ class ScriptMetadata:
     updated_at: datetime
     tags: List[str]
     is_enabled: bool = True
-
+    # ... (rest of ScriptMetadata is unchanged) ...
     def to_dict(self) -> Dict[str, Any]:
         """Convert metadata to dictionary for JSON serialization."""
         return {
@@ -104,10 +98,7 @@ class ScriptMetadata:
             )
             return False
 
-
 class ScriptAPIHandler:
-    """Handles API calls from scripts."""
-
     def __init__(
         self,
         client_logic_ref: "IRCClient_Logic",
@@ -118,8 +109,6 @@ class ScriptAPIHandler:
         self.script_manager = script_manager_ref
         self.script_name = script_name
         self.logger = logging.getLogger(f"pyrc.script_api.{script_name}")
-
-        # Initialize metadata and state tracking
         self.metadata: ScriptMetadata = self._load_metadata()
         self._is_loaded: bool = False
         self._last_error: Optional[Exception] = None
@@ -131,11 +120,9 @@ class ScriptAPIHandler:
         }
 
     def _load_metadata(self) -> ScriptMetadata:
-        """Load script metadata from metadata.json or create default."""
         metadata_path = self.script_manager.get_data_file_path_for_script(
             self.script_name, "metadata.json"
         )
-
         if os.path.exists(metadata_path):
             try:
                 metadata = ScriptMetadata.load_from_file(metadata_path)
@@ -146,7 +133,6 @@ class ScriptAPIHandler:
         return self._create_default_metadata()
 
     def _create_default_metadata(self) -> ScriptMetadata:
-        """Create default metadata for a new script."""
         return ScriptMetadata(
             name=self.script_name,
             version="1.0.0",
@@ -161,14 +147,12 @@ class ScriptAPIHandler:
         )
 
     def check_dependencies(self) -> Tuple[bool, List[str]]:
-        """Check if all script dependencies are satisfied."""
         missing = []
         for dep in self.metadata.dependencies:
             if not self.script_manager.is_script_enabled(dep):
                 missing.append(dep)
         return len(missing) == 0, missing
 
-    # --- Logging methods ---
     def log_info(self, message: str):
         self.logger.info(message)
 
@@ -178,14 +162,12 @@ class ScriptAPIHandler:
     def log_error(self, message: str):
         self.logger.error(message)
 
-    # --- Trigger Management Methods ---
     def add_trigger(
         self, event_type: str, pattern: str, action_type: str, action_content: str
     ) -> Optional[int]:
         if not ENABLE_TRIGGER_SYSTEM:
             self.log_warning("Trigger system is disabled. Cannot add trigger.")
             return None
-        # Access trigger_manager via client_logic
         if (
             not hasattr(self.client_logic, "trigger_manager")
             or not self.client_logic.trigger_manager
@@ -196,7 +178,7 @@ class ScriptAPIHandler:
             return self.client_logic.trigger_manager.add_trigger(
                 event_type_str=event_type,
                 pattern=pattern,
-                action_type_str=action_type,  # Pass as string
+                action_type_str=action_type,
                 action_content=action_content,
             )
         except Exception as e:
@@ -221,7 +203,7 @@ class ScriptAPIHandler:
 
     def list_triggers(
         self, event_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:  # Added event_type filter
+    ) -> List[Dict[str, Any]]:
         if not ENABLE_TRIGGER_SYSTEM:
             self.log_warning("Trigger system is disabled. Cannot list triggers.")
             return []
@@ -257,38 +239,53 @@ class ScriptAPIHandler:
             self.log_error(f"Error setting trigger state: {e}")
             return False
 
-    # --- Event Subscription ---
     def subscribe_to_event(self, event_name: str, handler_function: Callable):
         self.script_manager.subscribe_script_to_event(
             event_name, handler_function, self.script_name
         )
 
-    def unsubscribe_from_event(  # Added this method for completeness
+    def unsubscribe_from_event(
         self, event_name: str, handler_function: Callable
     ):
         self.script_manager.unsubscribe_script_from_event(
             event_name, handler_function, self.script_name
         )
 
-    # --- Command Registration ---
+    def create_command_help(
+        self, usage: str, description: str, aliases: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        help_data: Dict[str, Any] = {"usage": usage, "description": description}
+        if aliases:
+            help_data["aliases"] = aliases
+        return help_data
+
     def register_command(
         self,
         command_name: str,
         handler_function: Callable,
-        help_text: str = "",  # Default help_text to empty string
+        help_info: Union[str, Dict[str, Any]] = "",
         aliases: Optional[List[str]] = None,
     ):
-        if aliases is None:
-            aliases = []
+        effective_aliases: List[str] = aliases if aliases is not None else []
+
+        if isinstance(help_info, dict):
+            # Ensure 'aliases' from help_info is a list of strings if it exists
+            help_info_aliases = help_info.get("aliases")
+            if isinstance(help_info_aliases, list):
+                # Use aliases from help_info if provided and valid, otherwise keep effective_aliases
+                # This prioritizes aliases from the help_info dict if present.
+                effective_aliases = [str(a) for a in help_info_aliases if isinstance(a, str)]
+            # If help_info is a dict but 'aliases' key is missing or not a list,
+            # effective_aliases will retain the value from the 'aliases' parameter.
+
         self.script_manager.register_command_from_script(
             command_name,
             handler_function,
-            help_text,
-            aliases,
+            help_info,
+            effective_aliases,
             script_name=self.script_name,
         )
 
-    # --- Help Text Registration ---
     def register_help_text(
         self,
         command_name: str,
@@ -308,15 +305,11 @@ class ScriptAPIHandler:
             script_name=self.script_name,
         )
 
-    # --- Data File Path ---
-    def request_data_file_path(
-        self, data_filename: str
-    ) -> str:  # Renamed from get_data_file_path
+    def request_data_file_path(self, data_filename: str) -> str:
         return self.script_manager.get_data_file_path_for_script(
             self.script_name, data_filename
         )
 
-    # --- Message Sending & UI ---
     def add_message_to_context(
         self,
         context_name: str,
@@ -331,7 +324,6 @@ class ScriptAPIHandler:
             text, color_attr, prefix_time=prefix_time, context_name=context_name
         )
 
-    # --- Direct IRC Commands ---
     def send_raw(self, command_string: str):
         self.client_logic.network_handler.send_raw(command_string)
 
@@ -394,38 +386,24 @@ class ScriptAPIHandler:
             channel_name = "#" + channel_name
         self.send_raw(f"INVITE {nick} {channel_name}")
 
-    def quit_client(self, reason: Optional[str] = None):  # Renamed from quit
-        """Signals the client to quit the IRC server and shut down."""
+    def quit_client(self, reason: Optional[str] = None):
         self.log_info(
             f"Script '{self.script_name}' initiated client quit. Reason: {reason}"
         )
-        self.client_logic.should_quit = True  # Signal main loop to exit
-        # The actual QUIT command to server is handled by client_logic's shutdown sequence
+        self.client_logic.should_quit = True
 
-    def execute_client_command(
-        self, command_line_with_slash: str
-    ) -> bool:  # Added return type hint
-        """
-        Executes a client-side command as if typed by the user.
-        The command_line_with_slash should start with '/'.
-        Returns True if the command was processed (or determined to be unknown by the handler),
-        False if the input was invalid for this method (e.g., not starting with '/').
-        """
+    def execute_client_command(self, command_line_with_slash: str) -> bool:
         if not command_line_with_slash.startswith("/"):
             self.log_error(
                 f"execute_client_command: Command line '{command_line_with_slash}' must start with '/'"
             )
-            return False  # Indicate failure or improper call
-
+            return False
         self.log_info(f"Executing client command via API: {command_line_with_slash}")
-        # Directly call the command handler's processing method
-        # process_user_command is expected to return True if handled (even if unknown command), False for non-commands
         return self.client_logic.command_handler.process_user_command(
             command_line_with_slash
         )
 
-    # --- Information Retrieval ---
-    def get_client_nick(self) -> Optional[str]:  # Changed from get_nick
+    def get_client_nick(self) -> Optional[str]:
         return self.client_logic.nick
 
     def get_current_context_name(self) -> Optional[str]:
@@ -481,13 +459,12 @@ class ScriptAPIHandler:
 
     def get_context_messages(
         self, context_name: str, count: Optional[int] = None
-    ) -> Optional[List[Tuple[str, Any]]]:  # Added type hint for tuple elements
+    ) -> Optional[List[Tuple[str, Any]]]:
         return self.client_logic.context_manager.get_context_messages_raw(
             context_name, count
         )
 
     def DEV_TEST_ONLY_clear_context_messages(self, context_name: str) -> bool:
-        # THIS IS FOR TESTING PURPOSES ONLY - DO NOT USE IN PRODUCTION SCRIPTS
         self.log_warning(
             f"DEV_TEST_ONLY_clear_context_messages called for {context_name}"
         )
@@ -512,7 +489,6 @@ class ScriptAPIHandler:
             return False
 
     def get_script_stats(self) -> Dict[str, Any]:
-        """Get comprehensive statistics about the script's usage and performance."""
         return {
             "metadata": self.metadata.to_dict(),
             "performance": self._performance_metrics,
@@ -527,7 +503,6 @@ class ScriptAPIHandler:
         }
 
     def get_script_health(self) -> Dict[str, Any]:
-        """Get script health status including dependencies and error state."""
         satisfied, missing = self.check_dependencies()
         return {
             "is_healthy": satisfied and not self._last_error,
@@ -540,7 +515,6 @@ class ScriptAPIHandler:
         }
 
     def get_script_config(self) -> Dict[str, Any]:
-        """Get script configuration including metadata and current settings."""
         return {
             "metadata": self.metadata.to_dict(),
             "data_directory": self.get_script_data_dir(),
@@ -550,11 +524,9 @@ class ScriptAPIHandler:
         }
 
     def get_script_data_dir(self) -> str:
-        """Get the script's data directory path."""
         return self.script_manager.get_data_file_path_for_script(self.script_name, "")
 
     def save_script_data(self, data: Dict[str, Any], filename: str) -> bool:
-        """Save script data to a JSON file in the script's data directory."""
         try:
             file_path = self.script_manager.get_data_file_path_for_script(
                 self.script_name, filename
@@ -567,7 +539,6 @@ class ScriptAPIHandler:
             return False
 
     def load_script_data(self, filename: str) -> Optional[Dict[str, Any]]:
-        """Load script data from a JSON file in the script's data directory."""
         try:
             file_path = self.script_manager.get_data_file_path_for_script(
                 self.script_name, filename
@@ -581,7 +552,6 @@ class ScriptAPIHandler:
             return None
 
     def get_script_events(self) -> List[str]:
-        """Get list of events this script is subscribed to."""
         return [
             event_name
             for event_name, handlers in self.script_manager.event_subscriptions.items()
@@ -589,7 +559,6 @@ class ScriptAPIHandler:
         ]
 
     def get_script_commands(self) -> List[Dict[str, Any]]:
-        """Get list of commands registered by this script."""
         return [
             cmd_data
             for cmd_name, cmd_data in self.script_manager.registered_commands.items()
@@ -597,7 +566,6 @@ class ScriptAPIHandler:
         ]
 
     def get_script_triggers(self) -> List[Dict[str, Any]]:
-        """Get list of triggers created by this script."""
         if (
             not hasattr(self.client_logic, "trigger_manager")
             or not self.client_logic.trigger_manager
@@ -608,6 +576,5 @@ class ScriptAPIHandler:
             for trigger in self.client_logic.trigger_manager.triggers.values()
             if trigger.created_by == self.script_name
         ]
-
 
 # END OF MODIFIED FILE: script_api_handler.py

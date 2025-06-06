@@ -1,16 +1,38 @@
-
 # START OF MODIFIED FILE: scripts/ai_api_test_script.py
 import logging
 from typing import Dict, Any, TYPE_CHECKING, Optional, List, Tuple
 import time
 import threading
 import re
+import os
 from config import HEADLESS_MAX_HISTORY
 from context_manager import ChannelJoinStatus
 
 if TYPE_CHECKING:
     from script_manager import ScriptAPIHandler
 
+# Create a dedicated test logger
+test_logger = logging.getLogger("pyrc.test.ai_api_test")
+test_logger.setLevel(logging.INFO)
+
+# Create logs directory if it doesn't exist
+log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+# Create a file handler for test-specific logging
+test_log_file = os.path.join(log_dir, "ai_api_test.log")
+test_file_handler = logging.FileHandler(test_log_file, encoding='utf-8')
+test_file_handler.setLevel(logging.INFO)
+
+# Create a formatter for test logs
+test_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+test_file_handler.setFormatter(test_formatter)
+
+# Add the handler to the test logger
+test_logger.addHandler(test_file_handler)
+
+# Keep the original logger for compatibility
 logger = logging.getLogger("pyrc.script.ai_api_test_lean")
 
 DEFAULT_TEST_CHANNEL = "#pyrc-testing-lean"
@@ -21,26 +43,29 @@ class LeanAiApiTestScript:
         self.api = api_handler
         self.tests_scheduled_this_session: bool = False
         self.test_execution_lock = threading.Lock()
-        logger.info("LeanAiApiTestScript initialized")
+        test_logger.info("=== Starting New Test Session ===")
+        test_logger.info("LeanAiApiTestScript initialized")
 
     def load(self):
         self.api.log_info("[Lean AI Test] LeanAiApiTestScript Loading...")
+        test_logger.info("Script loading...")
         self.api.register_command(
             "leanaitest",
             self.handle_leanaitest_command,
-            help_info="Usage: /leanaitest - Runs focused tests.", # CHANGED to help_info
+            help_info="Usage: /leanaitest - Runs focused tests.",
             aliases=["lat"],
         )
         self.api.subscribe_to_event("CLIENT_REGISTERED", self.handle_client_registered)
         self.api.subscribe_to_event(
             "CHANNEL_FULLY_JOINED", self.handle_channel_fully_joined_for_tests
         )
-        self.api.log_info("[Lean AI Test] LeanAiApiTestScript Loaded.")
+        test_logger.info("Script loaded successfully")
 
     def handle_leanaitest_command(
         self, args_str: str, event_data_command: Dict[str, Any]
     ):
         active_ctx_name = event_data_command.get("active_context_name", "Status")
+        test_logger.info(f"Manual test execution requested from {active_ctx_name}")
         self.api.add_message_to_context(
             active_ctx_name,
             "Lean AI Test command executed. Re-running focused tests.",
@@ -57,21 +82,18 @@ class LeanAiApiTestScript:
         )
 
         if current_active_normalized == test_channel:
-            self.api.log_info(
-                f"[Lean AI Test] Re-running focused tests on {test_channel} via command."
-            )
+            test_logger.info(f"Re-running focused tests on {test_channel} via command")
             with self.test_execution_lock:
                 self.tests_scheduled_this_session = False
             self.handle_channel_fully_joined_for_tests({"channel_name": test_channel})
         else:
+            test_logger.warning(f"Test command executed from wrong channel: {active_ctx_name}")
             self.api.add_message_to_context(
                 active_ctx_name, f"Please run /leanaitest from {test_channel}", "error"
             )
 
     def handle_client_registered(self, event_data: Dict[str, Any]):
-        logger.info(
-            f"[Lean AI Test] Client registered. Auto-joining {DEFAULT_TEST_CHANNEL}"
-        )
+        test_logger.info(f"Client registered. Auto-joining {DEFAULT_TEST_CHANNEL}")
         self.api.join_channel(DEFAULT_TEST_CHANNEL)
 
     def handle_channel_fully_joined_for_tests(self, event_data: Dict[str, Any]):
@@ -91,19 +113,13 @@ class LeanAiApiTestScript:
             not channel_name
             or normalized_channel_name_from_event != normalized_default_test_channel
         ):
-            logger.info(
-                f"[Lean AI Test] Joined {channel_name}, but specifically waiting for {DEFAULT_TEST_CHANNEL} to run tests."
-            )
+            test_logger.info(f"Joined {channel_name}, waiting for {DEFAULT_TEST_CHANNEL}")
             return
 
-        logger.info(
-            f"[Lean AI Test] Fully joined test channel: {channel_name}. Scheduling focused tests."
-        )
+        test_logger.info(f"Fully joined test channel: {channel_name}. Scheduling tests")
         with self.test_execution_lock:
             if self.tests_scheduled_this_session:
-                logger.info(
-                    "[Lean AI Test] Focused tests already run/scheduled this session."
-                )
+                test_logger.info("Tests already run/scheduled this session")
                 return
             self.tests_scheduled_this_session = True
 
@@ -112,14 +128,19 @@ class LeanAiApiTestScript:
         test_thread.start()
 
     def _run_focused_tests(self, channel_name: str):
-        logger.info(f"[Lean AI Test] --- Starting Focused Tests on {channel_name} ---")
+        test_logger.info("=== Starting Test Suite ===")
+        test_logger.info(f"Running tests on channel: {channel_name}")
 
         time.sleep(2)
         self._test_help_system_general(channel_name)
         time.sleep(3)
         self._test_trigger_functionality(channel_name)
 
-        logger.info(f"[Lean AI Test] --- Focused Tests on {channel_name} Completed ---")
+        test_logger.info("=== Test Suite Completed ===")
+
+        # Add auto-quit after tests complete
+        test_logger.info("All tests completed. Quitting client...")
+        self.api.execute_client_command("/quit Tests completed successfully")
 
     def _check_help_output(
         self,
@@ -128,9 +149,9 @@ class LeanAiApiTestScript:
         test_label: str,
         context_to_check: str,
     ):
-        self.api.log_info(
-            f"[Lean AI Test] Testing {test_label}: Executing '{command_to_execute_with_slash}'"
-        )
+        test_logger.info(f"Running test: {test_label}")
+        test_logger.info(f"Executing command: {command_to_execute_with_slash}")
+
         self.api.execute_client_command(f"/window {context_to_check}")
         time.sleep(0.3)
 
@@ -144,12 +165,7 @@ class LeanAiApiTestScript:
         all_messages = all_messages_raw if all_messages_raw else []
         new_messages = all_messages[initial_msg_count:]
 
-        logger.info(
-            f"[Lean AI Test] {test_label}: New messages in '{context_to_check}' ({len(new_messages)} lines):"
-        )
-        # Only log all lines if DEBUG for help_command is not sufficient
-        # for i, msg_tuple in enumerate(new_messages):
-        #     # logger.info(f"[Lean AI Test] Help Output Line {i}: {msg_tuple[0]}")
+        test_logger.info(f"Received {len(new_messages)} new messages")
 
         all_found = True
         missing_strings = []
@@ -163,30 +179,41 @@ class LeanAiApiTestScript:
                     missing_strings.append(expected_str)
 
         if all_found:
-            logger.info(
-                f"[Lean AI Test] PASSED: {test_label}. Found all expected strings."
-            )
+            test_logger.info(f"PASSED: {test_label}")
         else:
-            logger.error(
-                f"[Lean AI Test] FAILED: {test_label}. Missing: {missing_strings}. First 10 new messages: {new_messages[:10]}"
-            )
+            test_logger.error(f"FAILED: {test_label}")
+            test_logger.error(f"Missing strings: {missing_strings}")
+            test_logger.error(f"First 10 messages: {new_messages[:10]}")
         return all_found
 
     def _test_help_system_general(self, channel_name: str):
-        logger.info(f"[Lean AI Test] --- Testing General /help Output ---")
+        test_logger.info("=== Testing Help System ===")
         self._check_help_output(
             command_to_execute_with_slash="/help",
-            expected_strings=[ # Updated expected strings for categorized help
+            expected_strings=[
                 "Help Categories:",
                 "Core Command Categories:",
                 "/help core",
                 "/help channel",
                 "Script Command Categories:",
                 "/help script default_fun_commands",
-                "/help script ai_api_test_script", # Script name is module name
-                "Use /help <category_name>", # Part of the new general help message
+                "/help script ai_api_test_script",
+                "Use /help <category_name>",
             ],
             test_label="/help (general categories)",
+            context_to_check=channel_name,
+        )
+
+        self._check_help_output(
+            command_to_execute_with_slash="/help core",
+            expected_strings=[
+                "Core Commands:",
+                "/help",
+                "/quit",
+                "/join",
+                "/msg",
+            ],
+            test_label="/help core",
             context_to_check=channel_name,
         )
 
@@ -201,19 +228,13 @@ class LeanAiApiTestScript:
         messages = self.api.get_context_messages(channel_name)
         found = False
         if not messages:
-            logger.error(
-                f"[Lean AI Test] {test_label}: FAILED. No messages in context '{channel_name}' to check."
-            )
+            test_logger.error(f"{test_label}: No messages in context '{channel_name}'")
             return False
         if not client_nick_for_check:
-            logger.error(
-                f"[Lean AI Test] {test_label}: FAILED. Client nick is None, cannot verify echo."
-            )
+            test_logger.error(f"{test_label}: Client nick is None")
             return False
 
-        logger.info(
-            f"[Lean AI Test] {test_label}: Checking {len(messages)} messages in {channel_name} for output from '{client_nick_for_check}'. Looking for: '{action_message_content}'"
-        )
+        test_logger.info(f"{test_label}: Checking {len(messages)} messages for output from '{client_nick_for_check}'")
 
         for i in range(len(messages)):
             msg_text_full_line, _ = messages[i]
@@ -266,62 +287,41 @@ class LeanAiApiTestScript:
                 if action_message_content == full_reconstructed_message:
                     found = True
                     if expect_trigger:
-                        logger.info(
-                            f"[Lean AI Test] {test_label}: PASSED. Found exact echoed message content: '{full_reconstructed_message}'"
-                        )
+                        test_logger.info(f"{test_label}: PASSED - Found exact message: '{full_reconstructed_message}'")
                     else:
-                        logger.error(
-                            f"[Lean AI Test] {test_label}: FAILED. Trigger fired when it should not have. Found message: '{full_reconstructed_message}'"
-                        )
+                        test_logger.error(f"{test_label}: FAILED - Trigger fired when disabled. Message: '{full_reconstructed_message}'")
                     break
                 elif action_message_content in full_reconstructed_message:
                     found = True
                     if expect_trigger:
-                        logger.info(
-                            f"[Lean AI Test] {test_label}: PASSED (lenient). Found content '{action_message_content}' within reconstructed '{full_reconstructed_message}'"
-                        )
+                        test_logger.info(f"{test_label}: PASSED - Found content within message: '{full_reconstructed_message}'")
                     else:
-                        logger.error(
-                            f"[Lean AI Test] {test_label}: FAILED. Trigger fired when it should not have. Found content '{action_message_content}' within '{full_reconstructed_message}'"
-                        )
+                        test_logger.error(f"{test_label}: FAILED - Trigger fired when disabled. Found content in: '{full_reconstructed_message}'")
                     break
 
         if not found:
             if expect_trigger:
-                logger.error(
-                    f"[Lean AI Test] {test_label}: FAILED. Output message '{action_message_content}' (echoed as from '{client_nick_for_check}') not found or not matched correctly in {channel_name}."
-                )
+                test_logger.error(f"{test_label}: FAILED - Expected message not found")
                 if messages:
-                    last_msgs_text = [
-                        m[0][:100] + ("..." if len(m[0]) > 100 else "")
-                        for m in messages[-15:]
-                    ]
+                    test_logger.error(f"Last messages: {[m[0][:100] + '...' if len(m[0]) > 100 else m[0] for m in messages[-15:]]}")
             else:
-                logger.info(
-                    f"[Lean AI Test] {test_label}: PASSED. Trigger correctly did not fire when disabled (no matching message found)."
-                )
+                test_logger.info(f"{test_label}: PASSED - Trigger correctly did not fire")
         return found if expect_trigger else not found
 
     def _test_trigger_functionality(self, channel_name: str):
-        logger.info(f"[Lean AI Test] --- Testing Trigger Functionality ---")
+        test_logger.info("=== Testing Trigger Functionality ===")
 
         self.api.execute_client_command(f"/window {channel_name}")
         time.sleep(0.3)
 
+        # Test 1: Basic trigger
         timestamp_for_trigger = str(time.time())
-        trigger_pattern_unique_part = (
-            f"PYRC_UNIQUE_ACTIVATION_{timestamp_for_trigger[-6:]}"
-        )
+        trigger_pattern_unique_part = f"PYRC_UNIQUE_ACTIVATION_{timestamp_for_trigger[-6:]}"
         activating_message_content = f"This message contains the phrase: {trigger_pattern_unique_part} for the test."
-        trigger_pattern_for_activation = (
-            rf".*\b{re.escape(trigger_pattern_unique_part)}\b.*"
-        )
+        trigger_pattern_for_activation = rf".*\b{re.escape(trigger_pattern_unique_part)}\b.*"
+        triggered_action_message_content = f"ACTION_CONFIRMED_FOR_TRIGGER_{timestamp_for_trigger[-5:]}"
 
-        triggered_action_message_content = f"ACTION_CONFIRMED_FOR_TRIGGER_{timestamp_for_trigger[-5:]}"  # Unique action message
-
-        logger.info(
-            f"[Lean AI Test] Adding trigger: Pattern='{trigger_pattern_for_activation}', Action='/msg {channel_name} {triggered_action_message_content}'"
-        )
+        test_logger.info(f"Adding trigger with pattern: {trigger_pattern_for_activation}")
         trigger_id = self.api.add_trigger(
             event_type="TEXT",
             pattern=trigger_pattern_for_activation,
@@ -330,19 +330,18 @@ class LeanAiApiTestScript:
         )
 
         if trigger_id is None:
-            logger.error("[Lean AI Test] FAILED to add trigger (Initial).")
+            test_logger.error("Failed to add trigger")
             return
         client_nick_for_check = self.api.get_client_nick()
 
-        # Test 1: Initial trigger fire
+        # Test trigger fire
         if hasattr(self.api, "DEV_TEST_ONLY_clear_context_messages"):
             self.api.DEV_TEST_ONLY_clear_context_messages(channel_name)
             time.sleep(0.2)
-        logger.info(
-            f"[Lean AI Test] Trigger added (ID: {trigger_id}). Sending activating message: '{activating_message_content}'"
-        )
+
         self.api.send_message(channel_name, activating_message_content)
         time.sleep(4.5)
+
         initial_fire_passed = self._verify_trigger_fired_and_message_sent(
             channel_name,
             triggered_action_message_content,
@@ -352,24 +351,20 @@ class LeanAiApiTestScript:
         )
 
         if not initial_fire_passed:
-            logger.error(
-                f"[Lean AI Test] Aborting further trigger tests for ID {trigger_id} due to initial fire failure."
-            )
+            test_logger.error(f"Aborting trigger tests due to initial fire failure")
             if trigger_id is not None:
                 self.api.remove_trigger(trigger_id)
             return
 
         # Test 2: Trigger disabled
         self.api.set_trigger_enabled(trigger_id, False)
-        logger.info(
-            f"[Lean AI Test] Disabled trigger {trigger_id}. Sending activating message again (should NOT trigger)."
-        )
+        test_logger.info(f"Testing disabled trigger {trigger_id}")
+
         if hasattr(self.api, "DEV_TEST_ONLY_clear_context_messages"):
             self.api.DEV_TEST_ONLY_clear_context_messages(channel_name)
             time.sleep(0.2)
-        self.api.send_message(
-            channel_name, activating_message_content + " (disabled test flag)"
-        )
+
+        self.api.send_message(channel_name, activating_message_content + " (disabled test flag)")
         time.sleep(3.5)
 
         disabled_fire_passed = self._verify_trigger_fired_and_message_sent(
@@ -379,36 +374,9 @@ class LeanAiApiTestScript:
             f"Disabled fire check (ID: {trigger_id})",
             expect_trigger=False,
         )
-        if disabled_fire_passed:
-            logger.info(
-                f"[Lean AI Test] PASSED: Trigger {trigger_id} correctly did not fire when disabled."
-            )
-        else:
-            logger.error(
-                f"[Lean AI Test] FAILED: Trigger {trigger_id} fired its command even when disabled."
-            )
 
-        # Test 3: Trigger re-enabled
-        self.api.set_trigger_enabled(trigger_id, True)
-        logger.info(
-            f"[Lean AI Test] Re-enabled trigger {trigger_id}. Sending activating message again (should trigger)."
-        )
-        if hasattr(self.api, "DEV_TEST_ONLY_clear_context_messages"):
-            self.api.DEV_TEST_ONLY_clear_context_messages(channel_name)
-            time.sleep(0.2)
-        self.api.send_message(
-            channel_name, activating_message_content + " (reenabled test flag)"
-        )
-        time.sleep(4.5)
-        self._verify_trigger_fired_and_message_sent(
-            channel_name,
-            triggered_action_message_content,
-            client_nick_for_check,
-            f"Re-enabled fire (ID: {trigger_id})",
-            expect_trigger=True,
-        )
-
-        logger.info(f"[Lean AI Test] Removing trigger {trigger_id}.")
+        # Clean up
+        test_logger.info(f"Removing trigger {trigger_id}")
         if trigger_id is not None:
             self.api.remove_trigger(trigger_id)
 

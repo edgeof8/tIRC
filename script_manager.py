@@ -5,7 +5,7 @@ import logging
 import configparser
 import time
 import sys
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set, Tuple, Union
 import threading
 from config import DISABLED_SCRIPTS, ENABLE_TRIGGER_SYSTEM
 
@@ -144,24 +144,41 @@ class ScriptManager:
         self,
         command_name: str,
         handler: Callable,
-        help_text: str,
+        help_info: Union[str, Dict[str, Any]],  # Changed from help_text to help_info
         aliases: Optional[List[str]] = None,
         script_name: Optional[str] = None,
     ) -> None:
+        """Register a command from a script.
+
+        Args:
+            command_name: The name of the command (without leading slash)
+            handler: The function that handles the command
+            help_info: Either a string or a dictionary containing help information.
+                      If a dictionary, it should have 'usage' and 'description' keys,
+                      and optionally an 'aliases' key.
+            aliases: Optional list of command aliases. If help_info is a dict and contains
+                    aliases, those will be used instead of this parameter.
+            script_name: The name of the script registering the command
+        """
         if aliases is None:
             aliases = []
         if script_name is None:
             script_name = "UnknownScriptFromRegisterCommand"  # Fallback
 
         cmd_name_lower = command_name.lower()
+
+        # Store the help info as is - it can be either string or dict
         self.registered_commands[cmd_name_lower] = {
             "handler": handler,
-            "help_text": help_text,  # This is the help text provided by the script
+            "help_info": help_info,  # Store the help info directly
             "aliases": [alias.lower() for alias in aliases],
             "script_name": script_name,
         }
+
+        # Register aliases
         for alias in aliases:
             self.command_aliases[alias.lower()] = cmd_name_lower
+
         self.logger.info(
             f"Script '{script_name}' registered command: /{cmd_name_lower}"
         )
@@ -200,20 +217,38 @@ class ScriptManager:
             }
 
     def get_help_text_for_command(self, command_name: str) -> Optional[Dict[str, Any]]:
+        """Get help text for a command, handling both string and dictionary help formats.
+
+        Args:
+            command_name: The name of the command to get help for
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary containing help information, or None if not found
+        """
         cmd_lower = command_name.lower()
+
         # Priority: 1. Explicitly registered help, 2. Help from command registration, 3. INI
         if cmd_lower in self.registered_help_texts:
             return self.registered_help_texts[cmd_lower]
 
         if cmd_lower in self.registered_commands:
             cmd_data = self.registered_commands[cmd_lower]
+            help_info = cmd_data.get("help_info", "")
+
+            # If help_info is a dict, format it into a help_text string
+            if isinstance(help_info, dict):
+                help_text = help_info.get("usage", "")
+                if help_info.get("description"):
+                    help_text += f"\n{help_info['description']}"
+            else:
+                help_text = str(help_info)
+
             return {
-                "help_text": cmd_data.get("help_text", "No description available."),
+                "help_text": help_text,
                 "aliases": cmd_data.get("aliases", []),
-                "script_name": cmd_data.get(
-                    "script_name", "script"
-                ),  # Return the script name
-                "is_alias": False,  # This is for a primary command if found here
+                "script_name": cmd_data.get("script_name", "script"),
+                "is_alias": False,
+                "help_info": help_info,  # Include the original help_info
             }
 
         # Check aliases for commands in self.registered_commands
@@ -221,23 +256,32 @@ class ScriptManager:
             primary_cmd_name = self.command_aliases[cmd_lower]
             if primary_cmd_name in self.registered_commands:
                 cmd_data = self.registered_commands[primary_cmd_name]
+                help_info = cmd_data.get("help_info", "")
+
+                # If help_info is a dict, format it into a help_text string
+                if isinstance(help_info, dict):
+                    help_text = help_info.get("usage", "")
+                    if help_info.get("description"):
+                        help_text += f"\n{help_info['description']}"
+                else:
+                    help_text = str(help_info)
+
                 all_aliases = cmd_data.get("aliases", [])
                 # Construct aliases list for this alias, pointing to primary and other aliases
                 alias_list_for_this = [primary_cmd_name] + [
                     a for a in all_aliases if a != cmd_lower
                 ]
                 return {
-                    "help_text": cmd_data.get("help_text", "No description available."),
+                    "help_text": help_text,
                     "aliases": alias_list_for_this,
                     "script_name": cmd_data.get("script_name", "script"),
                     "is_alias": True,
                     "primary_command": primary_cmd_name,
+                    "help_info": help_info,  # Include the original help_info
                 }
 
-        for (
-            section_name,
-            section_content,
-        ) in self.ini_help_texts.items():  # Iterate through dict items
+        # Check INI help texts
+        for section_name, section_content in self.ini_help_texts.items():
             if cmd_lower in section_content:
                 return {
                     "help_text": section_content[cmd_lower],
@@ -247,9 +291,10 @@ class ScriptManager:
                 }
         return None
 
-    def get_all_help_texts(self) -> Dict[str, Dict[str, Any]]:  # Changed return type
+    def get_all_help_texts(self) -> Dict[str, Dict[str, Any]]:
         """Gets all help texts, prioritizing script-registered ones."""
         all_help = {}
+
         # Start with INI, script-registered will override
         for section_name, section_content in self.ini_help_texts.items():
             for cmd, text in section_content.items():
@@ -261,14 +306,24 @@ class ScriptManager:
                         "aliases": [],
                     }
 
-        # Add from commands registered by scripts (includes help_text directly)
+        # Add from commands registered by scripts
         for cmd_name, cmd_data in self.registered_commands.items():
+            help_info = cmd_data.get("help_info", "")
+
+            # If help_info is a dict, format it into a help_text string
+            if isinstance(help_info, dict):
+                help_text = help_info.get("usage", "")
+                if help_info.get("description"):
+                    help_text += f"\n{help_info['description']}"
+            else:
+                help_text = str(help_info)
+
             all_help[cmd_name] = {
-                "help_text": cmd_data.get("help_text", "No description."),
+                "help_text": help_text,
                 "aliases": cmd_data.get("aliases", []),
                 "script_name": cmd_data.get("script_name", "UnknownScript"),
+                "help_info": help_info,  # Include the original help_info
             }
-            # No need to add aliases here as get_all_script_commands_with_help will use this as source
 
         # Override with explicitly registered help texts (has highest priority)
         for cmd_name, help_data in self.registered_help_texts.items():

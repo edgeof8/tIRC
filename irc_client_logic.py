@@ -1,3 +1,214 @@
+# START OF MODIFIED FILE: commands/core/help_command.py
+import logging
+from typing import TYPE_CHECKING, List, Optional, Dict, Any, Union, Tuple
+
+if TYPE_CHECKING:
+    from irc_client_logic import IRCClient_Logic
+
+logger = logging.getLogger("pyrc.commands.help")
+
+COMMAND_DEFINITIONS = [
+    {
+        "name": "help",
+        "handler": "handle_help_command",
+        "help": {
+            "usage": "/help [command_name|category|script <script_name>]",
+            "description": "Displays general help, help for a specific command, category, or script.",
+            "aliases": ["h"],
+        },
+    }
+]
+
+def format_help_text_for_display(help_data_from_manager: Dict[str, Any]) -> str:
+    """
+    Formats the structured help data obtained from ScriptManager/CommandHandler
+    into a user-friendly display string.
+    'help_data_from_manager' is the dict returned by get_help_text_for_command.
+    It contains 'help_text' (already formatted string from dict or original string)
+    and 'help_info' (the original dict or string).
+    """
+    help_info = help_data_from_manager.get("help_info")
+
+    if isinstance(help_info, dict):
+        usage = help_info.get("usage", "N/A")
+        description = help_info.get("description", "No description provided.")
+        aliases_list = help_info.get("aliases", []) # Aliases from the help_info dict
+
+        formatted_str = f"Usage: {usage}\n  Description: {description}"
+        # Use aliases from help_info if they exist, otherwise from the main help_data_from_manager
+        effective_aliases = aliases_list if aliases_list else help_data_from_manager.get("aliases", [])
+
+        if effective_aliases:
+            aliases_display = [f"/{a}" for a in effective_aliases]
+            formatted_str += f"\n  Aliases: {', '.join(aliases_display)}"
+        return formatted_str
+
+    help_text_str = help_data_from_manager.get("help_text", "No help available.")
+    output_lines = [help_text_str]
+    manager_aliases = help_data_from_manager.get("aliases", [])
+    if manager_aliases:
+        # Check if "Aliases: " is already in the help_text_str to avoid duplication
+        # This is a simple check; more robust parsing might be needed if formats vary widely.
+        if "aliases:" not in help_text_str.lower():
+            aliases_display = [f"/{a}" for a in manager_aliases]
+            output_lines.append(f"  Aliases: {', '.join(aliases_display)}")
+
+    return "\n".join(output_lines)
+
+def get_summary_from_help_data(help_data_from_manager: Dict[str, Any]) -> str:
+    """
+    Extracts a summary from the structured help data obtained from ScriptManager/CommandHandler.
+    """
+    help_info = help_data_from_manager.get("help_info")
+
+    if isinstance(help_info, dict):
+        description = help_info.get("description", "")
+        if description:
+            return description.split('\n')[0].strip()
+        usage = help_info.get("usage", "No summary.")
+        return usage.split('\n')[0].strip()
+
+    help_text_str = help_data_from_manager.get("help_text", "No summary.")
+    lines = help_text_str.split('\n')
+
+    # Try to get a meaningful summary from potentially multi-line help_text
+    if len(lines) > 0 and lines[0].lower().startswith("usage:"):
+        # If usage is short, use it. If description follows, prefer that.
+        if len(lines) > 1 and lines[1].strip(): # Check if there's a second line
+            # Check if the second line looks like a description (e.g., indented or starts with "Description:")
+            # This is heuristic.
+            if lines[1].strip().lower().startswith("description:"):
+                 return lines[1].replace("Description:", "").strip().split('\n')[0]
+            elif lines[1].startswith("  ") and not lines[1].lower().startswith("aliases:"): # Core command style
+                 return lines[1].strip().split('\n')[0]
+        return lines[0].replace("Usage: ", "").strip() # Fallback to usage content
+    return lines[0].strip() # Default to the first line
+
+def handle_help_command(client: "IRCClient_Logic", args_str: str):
+    system_color = client.ui.colors["system"]
+    error_color = client.ui.colors["error"]
+    active_context_name = client.context_manager.active_context_name or "Status"
+
+    args = args_str.strip().lower().split()
+
+    target_arg1: Optional[str] = args[0] if len(args) > 0 else None
+    target_arg2: Optional[str] = args[1] if len(args) > 1 else None
+
+    if not target_arg1:
+        client.add_message("\nHelp Categories:", system_color, context_name=active_context_name)
+        core_categories_map: Dict[str, str] = {
+            "core": "Core Client", "channel": "Channel Ops", "information": "Information",
+            "server": "Server/Connection", "ui": "User Interface", "user": "User Interaction", "utility": "Utilities"
+        }
+        active_core_categories = set()
+        for cmd_name_loop, help_data_val_loop in client.command_handler.registered_command_help.items():
+            if help_data_val_loop.get("is_alias"): continue
+            module_path = help_data_val_loop.get("module_path", "core")
+            if module_path.startswith("commands."):
+                try:
+                    cat_key = module_path.split(".")[1].lower()
+                    if cat_key in core_categories_map: active_core_categories.add(cat_key)
+                except IndexError:
+                    if "core" in core_categories_map: active_core_categories.add("core")
+            elif module_path == "core": # Default for commands not in subdirs
+                 if "core" in core_categories_map: active_core_categories.add("core")
+
+
+        if active_core_categories:
+             client.add_message("\nCore Command Categories:", system_color, context_name=active_context_name)
+             for cat_key in sorted(list(active_core_categories)):
+                 client.add_message(f"  /help {cat_key}  ({core_categories_map.get(cat_key, cat_key.title())})", system_color, context_name=active_context_name)
+
+        script_commands_by_script = client.script_manager.get_all_script_commands_with_help()
+        if script_commands_by_script:
+            client.add_message("\nScript Command Categories:", system_color, context_name=active_context_name)
+            for script_name_raw in sorted(script_commands_by_script.keys()):
+                display_name = script_name_raw.replace("_", " ").title()
+                client.add_message(f"  /help script {script_name_raw}  ({display_name})", system_color, context_name=active_context_name)
+
+        client.add_message("\nUse /help <category_name>, /help script <script_name>, or /help <command> for more details.", system_color, context_name=active_context_name)
+        return
+
+    is_script_category_help = target_arg1 == "script"
+
+    if is_script_category_help:
+        if not target_arg2:
+            client.add_message("Usage: /help script <script_name>", error_color, context_name=active_context_name)
+            return
+        category_to_list = target_arg2
+    elif target_arg1 in ["core", "channel", "information", "server", "ui", "user", "utility"]:
+        category_to_list = target_arg1
+    else: # Argument is likely a command name for specific help
+        cmd_to_get_help_for = target_arg1
+        if cmd_to_get_help_for.startswith("/"):
+            cmd_to_get_help_for = cmd_to_get_help_for[1:]
+
+        # First, check core commands (which includes aliases resolved by CommandHandler)
+        # ScriptManager.get_help_text_for_command handles both core and script, prioritizing script.
+        # We need to ensure core command help is also checked if script manager doesn't find it.
+
+        # Let ScriptManager try first, as it has combined knowledge
+        help_data = client.script_manager.get_help_text_for_command(cmd_to_get_help_for)
+
+        if help_data:
+            source_info = f"(from script: {help_data.get('script_name', 'Unknown')})" if help_data.get('script_name') != 'core' else "(core command)"
+            client.add_message(f"\nHelp for /{cmd_to_get_help_for} {source_info}:", system_color, context_name=active_context_name)
+            formatted_help = format_help_text_for_display(help_data)
+            client.add_message(formatted_help, system_color, context_name=active_context_name)
+        else:
+            client.add_message(f"No help available for command or category: {cmd_to_get_help_for}", error_color, context_name=active_context_name)
+        return
+
+    # This block is for listing commands within a category
+    commands_to_display: List[Tuple[str, str]] = []
+    if is_script_category_help:
+        script_commands = client.script_manager.get_all_script_commands_with_help()
+        normalized_category_key = category_to_list # Already lowercased by initial arg processing
+
+        found_script_name_key = None
+        for sn_key in script_commands.keys():
+            if sn_key.lower() == normalized_category_key:
+                found_script_name_key = sn_key
+                break
+
+        if found_script_name_key and found_script_name_key in script_commands:
+            script_display_name = found_script_name_key.replace("_", " ").title()
+            client.add_message(f"\nCommands from script '{script_display_name}':", system_color, context_name=active_context_name)
+            for cmd_name, cmd_data_dict in sorted(script_commands[found_script_name_key].items()):
+                summary = get_summary_from_help_data(cmd_data_dict)
+                commands_to_display.append((cmd_name, summary))
+        else:
+            client.add_message(f"Script category '{category_to_list}' not found.", error_color, context_name=active_context_name)
+            return
+    else: # Core category
+        client.add_message(f"\n{category_to_list.title()} Commands:", system_color, context_name=active_context_name)
+        for cmd_name, help_data_val in client.command_handler.registered_command_help.items():
+            if help_data_val.get("is_alias"): continue
+            module_path = help_data_val.get("module_path", "core")
+            cmd_category_key = "core"
+            if module_path.startswith("commands."):
+                try: cmd_category_key = module_path.split(".")[1].lower()
+                except IndexError: pass
+
+            if cmd_category_key == category_to_list: # category_to_list is already lower
+                # For core commands, help_data_val['help_text'] is the primary source string
+                # We need to pass a dict-like structure to get_summary_from_help_data
+                # or adapt get_summary_from_help_data to handle the direct string better.
+                # Let's make a compatible dict for it.
+                summary_input_dict = {"help_text": help_data_val["help_text"], "help_info": help_data_val["help_text"]}
+                summary = get_summary_from_help_data(summary_input_dict)
+                commands_to_display.append((cmd_name, summary))
+
+    if not commands_to_display:
+        client.add_message(f"No commands found in category '{category_to_list}'.", system_color, context_name=active_context_name)
+    else:
+        for cmd_name, summary in sorted(commands_to_display):
+             client.add_message(f"  /{cmd_name}: {summary}", system_color, context_name=active_context_name)
+    client.add_message("\nUse /help <command> for detailed help on a specific command.", system_color, context_name=active_context_name)
+
+# END OF MODIFIED FILE: commands/core/help_command.py
+
+# START OF MODIFIED FILE: irc_client_logic.py
 # START OF MODIFIED FILE: irc_client_logic.py
 import curses
 import threading
@@ -13,7 +224,7 @@ import platform
 from config import (
     MAX_HISTORY,
     VERIFY_SSL_CERT,
-    CHANNEL_LOG_ENABLED,
+    # CHANNEL_LOG_ENABLED, # Access via app_config
     LOG_LEVEL,
     LOG_MAX_BYTES,
     LOG_BACKUP_COUNT,
@@ -34,7 +245,7 @@ from config import (
     DEFAULT_NICK,
 )
 
-import config as app_config
+import config as app_config # Import the module itself
 from script_manager import ScriptManager
 from event_manager import EventManager
 from context_manager import ContextManager, ChannelJoinStatus
@@ -139,10 +350,24 @@ class IRCClient_Logic:
         self.stdscr = stdscr
         self.is_headless = stdscr is None
         self.args = args
-        self.app_config = app_config  # Make app_config module accessible
+        self.app_config = app_config
         self.all_server_configs = app_config.ALL_SERVER_CONFIGS
         self.active_server_config_name: Optional[str] = None
         self.active_server_config: Optional[ServerConfig] = None
+
+        # Initialize these attributes earlier
+        self.channel_log_enabled = self.app_config.CHANNEL_LOG_ENABLED
+        self.main_log_dir_path = os.path.join(self.app_config.BASE_DIR, "logs")
+        self.channel_log_base_path = self.main_log_dir_path
+        self.channel_log_level = self.app_config.LOG_LEVEL
+        self.channel_log_max_bytes = self.app_config.LOG_MAX_BYTES
+        self.channel_log_backup_count = self.app_config.LOG_BACKUP_COUNT
+        self.channel_loggers: Dict[str, logging.Logger] = {}
+        self.status_logger_instance: Optional[logging.Logger] = None
+        self.log_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+
 
         if hasattr(args, "server") and args.server:
             cli_port = (
@@ -242,7 +467,7 @@ class IRCClient_Logic:
         self.context_manager.create_context("Status", context_type="status")
         self.context_manager.create_context(
             "DCC", context_type="dcc_transfers"
-        )  # New DCC context
+        )
         self.context_manager.set_active_context("Status")
 
         for ch_name in self.initial_channels_list:
@@ -254,10 +479,9 @@ class IRCClient_Logic:
         self.last_join_command_target: Optional[str] = None
         self.should_quit = False
         self.ui_needs_update = threading.Event()
-        self.network_handler = NetworkHandler(self)
+        self.network_handler = NetworkHandler(self) # NetworkHandler uses client_logic_ref.channel_log_enabled
         self.network_handler.channels_to_join_on_connect = self.initial_channels_list[:]
 
-        # Initialize network thread if we have server/port info
         if self.server and self.port is not None:
             self.network_handler.start()
 
@@ -283,10 +507,9 @@ class IRCClient_Logic:
         self.event_manager = EventManager(self, self.script_manager)
         self.dcc_manager = DCCManager(
             self, self.event_manager
-        )  # Instantiate DCCManager
+        )
 
         self.script_manager.load_scripts()
-        # DCC Commands are now loaded dynamically by CommandHandler
 
         if ENABLE_TRIGGER_SYSTEM:
             config_dir_triggers = os.path.join(BASE_DIR, "config")
@@ -316,17 +539,6 @@ class IRCClient_Logic:
         else:
             config_dir = os.path.join(os.path.expanduser("~"), ".config", "pyrc")
 
-        self.channel_log_enabled = CHANNEL_LOG_ENABLED
-        self.main_log_dir_path = os.path.join(BASE_DIR, "logs")
-        self.channel_log_base_path = self.main_log_dir_path
-        self.channel_log_level = LOG_LEVEL
-        self.channel_log_max_bytes = LOG_MAX_BYTES
-        self.channel_log_backup_count = LOG_BACKUP_COUNT
-        self.channel_loggers: Dict[str, logging.Logger] = {}
-        self.status_logger_instance: Optional[logging.Logger] = None
-        self.log_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
         self.active_list_context_name: Optional[str] = None
         self.user_modes: List[str] = []
 
@@ -679,7 +891,6 @@ class IRCClient_Logic:
         if self.show_raw_log_in_ui:
             self._add_status_message(f"S << {line.strip()}")
 
-        # CTCP Parsing and DCC Handling
         parsed_msg = IRCMessage.parse(line)
         if parsed_msg and parsed_msg.command in ("PRIVMSG", "NOTICE"):
             message_content = (
@@ -699,8 +910,6 @@ class IRCClient_Logic:
                         if parsed_msg.source_nick
                         else "UnknownNick"
                     )
-                    # Use parsed_msg.prefix for the full userhost string, as it contains nick!user@host
-                    # Provide a fallback if prefix is unexpectedly None
                     full_userhost_from_parser = (
                         parsed_msg.prefix
                         if parsed_msg.prefix
@@ -718,7 +927,6 @@ class IRCClient_Logic:
         irc_protocol.handle_server_message(self, line)
 
     def send_ctcp_privmsg(self, target: str, ctcp_message: str):
-        """Sends a CTCP PRIVMSG to the target."""
         if not target or not ctcp_message:
             logger.warning("send_ctcp_privmsg: Target or message is empty.")
             return
@@ -732,17 +940,12 @@ class IRCClient_Logic:
         if not context_names:
             return
 
-        # Sort contexts with special handling for Status and DCC windows
         status_context = "Status"
         dcc_context = "DCC"
-
-        # First, separate contexts by type
         regular_contexts = [
             name for name in context_names if name not in [status_context, dcc_context]
         ]
         regular_contexts.sort(key=lambda x: x.lower())
-
-        # Build final sorted list with Status and DCC in specific positions
         sorted_context_names = []
         if status_context in context_names:
             sorted_context_names.append(status_context)
@@ -862,7 +1065,7 @@ class IRCClient_Logic:
             return
 
         if current_idx == -1:
-            new_active_channel_name_to_set = cyclable_contexts[0]
+            new_active_channel_name_to_set = cyclable_contexts[0] # Corrected from cycl_contexts
         elif direction == "next":
             new_idx = (current_idx + 1) % num_cyclable
             new_active_channel_name_to_set = cyclable_contexts[new_idx]
@@ -1094,25 +1297,19 @@ class IRCClient_Logic:
             self.ui_needs_update.set()
 
     def run_main_loop(self):
-        """Main client loop that handles user input and UI updates."""
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
         try:
-            # Start network connection if needed
             if self.server and self.port is not None:
                 logger.info(f"Initializing connection to {self.server}:{self.port}")
                 if not self.network_handler:
                     logger.error("Network handler not initialized")
                     return
-
-                # Update connection parameters
                 self.network_handler.update_connection_params(
                     server=self.server,
                     port=self.port,
                     use_ssl=self.use_ssl,
                     channels_to_join=self.initial_channels_list,
                 )
-
-                # Start network handler if not already running
                 if not self.network_handler._network_thread:
                     self.network_handler.start()
                     logger.info("Network handler started")
@@ -1122,7 +1319,7 @@ class IRCClient_Logic:
                     if not self.is_headless:
                         self._handle_user_input()
                     self._update_ui()
-                    time.sleep(0.01)  # Small sleep to prevent CPU hogging
+                    time.sleep(0.01)
 
                 except KeyboardInterrupt:
                     logger.info("Keyboard interrupt received, initiating shutdown...")
@@ -1140,7 +1337,6 @@ class IRCClient_Logic:
         except Exception as e:
             logger.critical(f"Critical error in main client loop: {e}", exc_info=True)
         finally:
-            # Ensure we send a quit message and disconnect gracefully
             if hasattr(self, "_final_quit_message"):
                 quit_message = self._final_quit_message
             else:
@@ -1148,7 +1344,6 @@ class IRCClient_Logic:
 
             if self.network_handler:
                 self.network_handler.disconnect_gracefully(quit_message)
-
             logger.info("Main client loop ended.")
 
     def initialize(self) -> bool:
@@ -1229,7 +1424,6 @@ class IRCClient_Logic:
         self.ui_needs_update.set()
 
     def _handle_user_input_impl(self):
-        """Handle user input in the main loop."""
         if self.input_handler and self.ui:
             key_code = self.ui.get_input_char()
             if key_code != curses.ERR:
@@ -1240,7 +1434,6 @@ class IRCClient_Logic:
                     self.ui_needs_update.clear()
 
     def _update_ui_impl(self):
-        """Update UI in the main loop."""
         if self.ui_needs_update.is_set():
             if not self.is_headless and self.ui:
                 self.ui.refresh_all_windows()

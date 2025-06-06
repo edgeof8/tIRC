@@ -67,22 +67,50 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 
 ## Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/edgeof8/PyRC.git
-    cd PyRC
-    ```
-2.  **Create a virtual environment (recommended):**
-    ```bash
-    python -m venv venv
-    ```
-3.  **Activate it:**
-    - Windows: `venv\Scripts\activate`
-    - Linux/macOS: `source venv/bin/activate`
-4.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+### Option 1: Install via pip
+
+```bash
+pip install pyrc
+```
+
+### Option 2: Install from source
+
+1. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/edgeof8/PyRC.git
+   cd PyRC
+   ```
+
+2. **Create a virtual environment (recommended):**
+
+   ```bash
+   python -m venv venv
+   ```
+
+3. **Activate it:**
+
+   - Windows: `venv\Scripts\activate`
+   - Linux/macOS: `source venv/bin/activate`
+
+4. **Install dependencies:**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+5. **Install the package:**
+   ```bash
+   pip install .
+   ```
+
+### Option 3: Use standalone executable
+
+Download the latest release from the [Releases](https://github.com/edgeof8/PyRC/releases) page and run the executable for your platform:
+
+- Windows: `pyrc-0.1.0-win64.exe`
+- Linux: `pyrc-0.1.0-linux`
+- macOS: `pyrc-0.1.0-macos`
 
 ## Configuration
 
@@ -424,3 +452,62 @@ For major changes, please open an issue first to discuss your ideas.
 ## License
 
 This project is licensed under the MIT License.
+
+## Building from Source
+
+### Prerequisites
+
+- Python 3.8 or higher
+- pip
+- build (Python package)
+- PyInstaller
+
+### Build Steps
+
+1. **Clone and setup:**
+
+   ```bash
+   git clone https://github.com/edgeof8/PyRC.git
+   cd PyRC
+   python -m venv venv
+   # Activate virtual environment (see above)
+   pip install -r requirements.txt
+   ```
+
+2. **Run the build script:**
+   ```bash
+   python build.py
+   ```
+
+This will:
+
+- Build the Python package (wheel and source distribution)
+- Create standalone executables for your platform
+- Output artifacts to the `dist/` directory
+
+### Testing the Build
+
+After building, you can validate the package and executable:
+
+```bash
+python test_build.py
+```
+
+This will run tests to verify:
+
+- Package installation
+- Executable functionality
+- Headless mode
+- Configuration file handling
+
+### Build Output
+
+The build process creates the following files in the `dist/` directory:
+
+- Python package:
+  - `pyrc-0.1.0.tar.gz` (source distribution)
+  - `pyrc-0.1.0-py3-none-any.whl` (wheel)
+- Standalone executable:
+  - Windows: `pyrc-0.1.0-win64.exe`
+  - Linux: `pyrc-0.1.0-linux`
+  - macOS: `pyrc-0.1.0-macos`

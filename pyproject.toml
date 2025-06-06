@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrc"
+version = "0.1.0"
+description = "A modular, terminal-based IRC client with scripting capabilities"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "edgeof8", email = "edgeof8@github.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Console :: Curses",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Communications :: Chat :: Internet Relay Chat",
+]
+dependencies = [
+    "windows-curses; platform_system == 'Windows'",
+    "pyfiglet",
+]
+keywords = ["irc", "client", "terminal", "curses", "chat"]
+urls = {Homepage = "https://github.com/edgeof8/PyRC"}
+
+[project.scripts]
+pyrc = "pyrc:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=22.0",
+    "isort>=5.0",
+    "mypy>=1.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+packages = ["pyrc"]
+package-data = {
+    "pyrc" = [
+        "pyterm_irc_config.ini.example",
+        "scripts/*.py",
+        "commands/**/*.py",
+    ]
+}
+
+[tool.setuptools.dynamic]
+version = {attr = "pyrc.__version__"}

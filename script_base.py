@@ -1,5 +1,5 @@
 import os
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Any
 
 if TYPE_CHECKING:
     from script_manager import ScriptAPIHandler
@@ -21,6 +21,24 @@ class ScriptBase:
         self.api = api
         # Get the script name from the API handler
         self.script_name = api.script_name
+
+    def create_command_help(
+        self, usage: str, description: str, aliases: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Helper method to create a structured help dictionary for commands.
+
+        Args:
+            usage: The command usage string (e.g., "/command <args>")
+            description: A detailed description of what the command does
+            aliases: Optional list of command aliases
+
+        Returns:
+            Dict[str, Any]: A dictionary with usage, description, and optional aliases
+        """
+        help_data: Dict[str, Any] = {"usage": usage, "description": description}
+        if aliases:
+            help_data["aliases"] = aliases
+        return help_data
 
     def load(self):
         """Called when the script is loaded. Override this method to perform initialization.

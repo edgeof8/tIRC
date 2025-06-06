@@ -6,14 +6,15 @@ from typing import TYPE_CHECKING, List
 if TYPE_CHECKING:
     from irc_client_logic import (
         IRCClient_Logic,
-        DummyUI # Import DummyUI for type checking
+        DummyUI,  # Import DummyUI for type checking
     )
     from command_handler import CommandHandler
-    from ui_manager import UIManager # UIManager for type checking
+    from ui_manager import UIManager  # UIManager for type checking
 
 logger = logging.getLogger("pyrc.input")
 
 COMMAND_HISTORY_MAX_SIZE = 100
+
 
 class InputHandler:
     def __init__(self, client_logic: "IRCClient_Logic"):
@@ -21,9 +22,7 @@ class InputHandler:
         self.input_buffer: str = ""
         self.tab_completion_candidates: List[str] = []
         self.tab_completion_index: int = -1
-        self.last_tab_completed_prefix: str = (
-            ""
-        )
+        self.last_tab_completed_prefix: str = ""
         self.command_history: deque = deque(maxlen=COMMAND_HISTORY_MAX_SIZE)
         self.history_idx: int = -1
         self.current_input_snapshot: str = ""
@@ -63,7 +62,10 @@ class InputHandler:
                 command_to_process = self.input_buffer
                 command_handler.process_user_command(command_to_process)
                 if command_to_process:
-                    if not self.command_history or command_to_process != self.command_history[0]:
+                    if (
+                        not self.command_history
+                        or command_to_process != self.command_history[0]
+                    ):
                         self.command_history.appendleft(command_to_process)
                 self.input_buffer = ""
                 self.history_idx = -1
@@ -109,15 +111,27 @@ class InputHandler:
                 # sidebar_height = (
                 #     self.client_logic.ui._calculate_available_lines_for_user_list()
                 # )
-                sidebar_height = 0 # Default value
+                sidebar_height = 0  # Default value
                 # Check if ui exists, then if the method exists, then if it's callable
-                if self.client_logic.ui and \
-                   hasattr(self.client_logic.ui, '_calculate_available_lines_for_user_list') and \
-                   callable(getattr(self.client_logic.ui, '_calculate_available_lines_for_user_list')):
-                    sidebar_height = self.client_logic.ui._calculate_available_lines_for_user_list()
+                if (
+                    self.client_logic.ui
+                    and hasattr(
+                        self.client_logic.ui, "_calculate_available_lines_for_user_list"
+                    )
+                    and callable(
+                        getattr(
+                            self.client_logic.ui,
+                            "_calculate_available_lines_for_user_list",
+                        )
+                    )
+                ):
+                    sidebar_height = (
+                        self.client_logic.ui._calculate_available_lines_for_user_list()
+                    )
                 else:
-                    logger.debug("UI or _calculate_available_lines_for_user_list method not available, defaulting sidebar_height to 0 for scroll.")
-
+                    logger.debug(
+                        "UI or _calculate_available_lines_for_user_list method not available, defaulting sidebar_height to 0 for scroll."
+                    )
 
                 if sidebar_height > 0 and total_users > 0:
                     new_offset = (
@@ -134,9 +148,7 @@ class InputHandler:
             self.do_tab_complete()
         elif key_code >= 0:
             try:
-                if (
-                    key_code <= 255
-                ):
+                if key_code <= 255:
                     char_to_add = chr(key_code)
                     was_viewing_history = self.history_idx != -1
                     self.input_buffer += char_to_add
@@ -144,16 +156,16 @@ class InputHandler:
                         self.history_idx = -1
                         self.current_input_snapshot = self.input_buffer
             except (ValueError, Exception) as e:
-                logger.warning(f"Could not convert key_code {key_code} to char or other error: {e}")
+                logger.warning(
+                    f"Could not convert key_code {key_code} to char or other error: {e}"
+                )
                 pass
 
         self.client_logic.ui_needs_update.set()
 
     def do_tab_complete(self):
         if not self.input_buffer:
-            self.tab_completion_candidates = (
-                []
-            )
+            self.tab_completion_candidates = []
             self.tab_completion_index = -1
             self.last_tab_completed_prefix = ""
             return
@@ -198,9 +210,7 @@ class InputHandler:
             return
 
         if not to_complete_current_input and not self.input_buffer.endswith(" "):
-            if (
-                not self.last_tab_completed_prefix
-            ):
+            if not self.last_tab_completed_prefix:
                 self.tab_completion_candidates = []
                 self.tab_completion_index = -1
                 return
@@ -224,9 +234,7 @@ class InputHandler:
             self.tab_completion_candidates = []
             self.tab_completion_index = -1
 
-            if (
-                not self.last_tab_completed_prefix
-            ):
+            if not self.last_tab_completed_prefix:
                 self.client_logic.ui_needs_update.set()
                 return
 
@@ -234,9 +242,7 @@ class InputHandler:
             if active_context_name:
                 active_ctx_obj = context_manager.get_context(active_context_name)
                 if active_ctx_obj and active_ctx_obj.type == "channel":
-                    active_users_nicks = list(
-                        active_ctx_obj.users.keys()
-                    )
+                    active_users_nicks = list(active_ctx_obj.users.keys())
 
             self.tab_completion_candidates = sorted(
                 [
@@ -251,9 +257,7 @@ class InputHandler:
                 logger.debug(
                     f"No nick candidates found for '{self.last_tab_completed_prefix}'"
                 )
-                self.last_tab_completed_prefix = (
-                    ""
-                )
+                self.last_tab_completed_prefix = ""
                 self.client_logic.ui_needs_update.set()
                 return
 

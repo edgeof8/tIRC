@@ -247,21 +247,21 @@ def main():
             app_logger.info("Keyboard interrupt received in headless main(). Signaling client to quit.")
             if client:
                 client.should_quit = True
-                if client.network_handler and client.network_handler.network_thread and \
-                   client.network_handler.network_thread.is_alive():
+                if client.network_handler and client.network_handler._network_thread and \
+                   client.network_handler._network_thread.is_alive():
                     app_logger.info("Waiting for network thread to join (headless Ctrl+C)...")
-                    client.network_handler.network_thread.join(timeout=3.0)
+                    client.network_handler._network_thread.join(timeout=3.0)
         except Exception as e:
             app_logger.critical(f"Critical error in headless mode: {e}", exc_info=True)
             if client: client.should_quit = True
         finally:
             app_logger.info("Shutting down PyRC headless mode.")
             if client and hasattr(client, "event_manager") and client.event_manager:
-                if client.network_handler and client.network_handler.network_thread and \
-                   client.network_handler.network_thread.is_alive():
+                if client.network_handler and client.network_handler._network_thread and \
+                   client.network_handler._network_thread.is_alive():
                     app_logger.debug("Headless main: Ensuring network thread is stopped and joined.")
                     client.network_handler.stop()
-                    client.network_handler.network_thread.join(timeout=2.0)
+                    client.network_handler._network_thread.join(timeout=2.0)
                 app_logger.info("Dispatching CLIENT_SHUTDOWN_FINAL from headless main().")
                 client.event_manager.dispatch_client_shutdown_final(raw_line="CLIENT_SHUTDOWN_FINAL from headless main")
             app_logger.info("PyRC headless mode shutdown sequence complete.")
