@@ -104,4 +104,7 @@ class RegistrationHandler:
         self.registration_triggered_by_001 = False
         self.nick_user_sent = False
 
-    # on_cap_negotiation_complete and update_nick_for_registration are fine as they are.
+    def on_cap_negotiation_complete(self):
+        """Called when CAP negotiation is complete and registration can proceed."""
+        if not self.nick_user_sent:
+            self._proceed_with_nick_user_registration()

@@ -144,6 +144,7 @@ class CapNegotiator:
 
         caps_to_request = list(self.desired_caps.intersection(self.supported_caps))
 
+        # Handle SASL capability separately if present
         if "sasl" in caps_to_request:
             if (
                 not self.sasl_authenticator
@@ -154,10 +155,11 @@ class CapNegotiator:
                 )
                 caps_to_request.remove("sasl")
                 self._add_status_message(
-                    "SASL capability available but no credentials/authenticator; skipping SASL request.",
+                    "SASL capability available but no credentials; skipping SASL request.",
                     "warning",
                 )
 
+        # Always proceed with CAP REQ/END even if we modified caps_to_request
         if caps_to_request:
             self.requested_caps.update(caps_to_request)
             self._add_status_message(f"Requesting CAP: {', '.join(caps_to_request)}")
@@ -167,7 +169,6 @@ class CapNegotiator:
                 "No desired and supported capabilities to request. Ending CAP negotiation."
             )
             self.network_handler.send_cap_end()
-            # If no caps requested, initial flow is done, signal for registration
             self.initial_cap_flow_complete_event.set()
             self.cap_negotiation_finished_event.set()
             self.cap_negotiation_pending = False

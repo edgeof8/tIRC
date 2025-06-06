@@ -204,6 +204,8 @@ class NetworkHandler:
         else:
             logger.warning("send_authenticate called but not connected or no socket.")
 
+# In pyrc_core/network_handler.py
+
     def _reset_connection_state(self, dispatch_event: bool = True):
         logger.debug(
             f"Resetting connection state. Dispatch disconnect event: {dispatch_event}"
@@ -211,9 +213,9 @@ class NetworkHandler:
 
         if self.socket:
             try:
-                self.socket.shutdown(socket.SHUT_RDWR)  # Politely shutdown read/write
+                self.socket.shutdown(socket.SHUT_RDWR)
             except (OSError, socket.error):
-                pass  # Ignore if already closed or not connected
+                pass
             try:
                 self.socket.close()
                 logger.debug("Socket closed by _reset_connection_state.")
@@ -221,7 +223,6 @@ class NetworkHandler:
                 pass
             self.socket = None
 
-        # Update connection state to DISCONNECTED
         if self.connected:
             self.client_logic_ref.state_manager.set_connection_state(ConnectionState.DISCONNECTED)
 
@@ -230,48 +231,31 @@ class NetworkHandler:
         self.is_handling_nick_collision = False
 
         if self.client_logic_ref:
-            if (
-                hasattr(self.client_logic_ref, "cap_negotiator")
-                and self.client_logic_ref.cap_negotiator
-            ):
+            # --- START OF FIX ---
+            # Reset all handshake components to prepare for a new connection
+            if hasattr(self.client_logic_ref, "cap_negotiator") and self.client_logic_ref.cap_negotiator:
                 self.client_logic_ref.cap_negotiator.reset_negotiation_state()
-            if (
-                hasattr(self.client_logic_ref, "sasl_authenticator")
-                and self.client_logic_ref.sasl_authenticator
-            ):
+            if hasattr(self.client_logic_ref, "sasl_authenticator") and self.client_logic_ref.sasl_authenticator:
                 self.client_logic_ref.sasl_authenticator.reset_authentication_state()
-            if (
-                hasattr(self.client_logic_ref, "registration_handler")
-                and self.client_logic_ref.registration_handler
-            ):
+            if hasattr(self.client_logic_ref, "registration_handler") and self.client_logic_ref.registration_handler:
                 self.client_logic_ref.registration_handler.reset_registration_state()
+            # --- END OF FIX ---
 
             if (
                 dispatch_event
                 and was_connected
                 and not self._disconnect_event_sent_for_current_session
             ):
-                if (
-                    hasattr(self.client_logic_ref, "event_manager")
-                    and self.client_logic_ref.event_manager
-                ):  # Check for event_manager
-                    conn_info = self.client_logic_ref.state_manager.get_connection_info()
-                    if conn_info and conn_info.server and conn_info.port is not None:
-                        current_server = conn_info.server
-                        current_port = conn_info.port
-                        logger.info(
-                            f"Dispatching CLIENT_DISCONNECTED event via EventManager for {current_server}:{current_port}"
-                        )
-                        self.client_logic_ref.event_manager.dispatch_client_disconnected(
-                            current_server, current_port, raw_line=""
-                        )
-                        self._disconnect_event_sent_for_current_session = True
-                    else:
-                        logger.warning(
-                            "Could not dispatch CLIENT_DISCONNECTED event: server or port info is missing."
-                        )
+                conn_info = self.client_logic_ref.state_manager.get_connection_info()
+                if conn_info and conn_info.server and conn_info.port is not None:
+                    self.client_logic_ref.event_manager.dispatch_client_disconnected(
+                        conn_info.server, conn_info.port, raw_line=""
+                    )
+                    self._disconnect_event_sent_for_current_session = True
+
         self.buffer = b""
         logger.debug("Connection state reset complete")
+
 
     def _connect_socket(self):
         self.is_handling_nick_collision = False
