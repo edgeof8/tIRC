@@ -167,6 +167,10 @@ class IRCClient_Logic:
         self.context_manager.create_context("Status", context_type="status")
         if self.config.dcc_enabled:
             self.context_manager.create_context("DCC", context_type="dcc_transfers")
+# --- START OF FIX ---
+        # Set "Status" as the initial active context. This is the crucial fix.
+        self.context_manager.set_active_context("Status")
+        # --- END OF FIX ---
 
         # Add initial channel contexts if they exist in the active config
         if active_config and active_config.channels:
