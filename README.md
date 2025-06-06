@@ -2,11 +2,11 @@
 
 PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It aims to provide a feature-rich, yet lightweight and user-friendly experience for IRC users who prefer the command line. It is actively developed with a focus on extreme modularity, enabling programmatic use and integration with AI agents or other automated systems.
 
-![alt text](image.png)
+![PyRC Screenshot](image.png) <!-- Assuming image.png is a relevant screenshot -->
 
 ## Project Status
 
-**PyRC is under active development.** The focus is on continuously enhancing its feature set, improving code modularity, and ensuring overall stability. Recent development cycles have included significant work on DCC functionality and core command system refactoring, leading to noticeable stability improvements. We welcome contributions and feedback as the project evolves.
+**PyRC is under active development.** The focus is on continuously enhancing its feature set, improving code modularity, and ensuring overall stability. Recent development cycles have included significant work on DCC functionality (including port range selection, advertised IP configuration, and transfer cleanup), a more robust event-driven `/server` command, an enhanced `/help` system, and a more reliable headless testing framework. We welcome contributions and feedback as the project evolves.
 
 ## Key Features
 
@@ -14,49 +14,49 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 - **Split-Screen Support:** Horizontal split-screen mode with independent scrolling and context management for each pane.
 - **Multi-Server Configuration & Switching:**
   - Define multiple server connection profiles in `pyterm_irc_config.ini`.
-  - Switch between configured servers using the `/server <config_name>` command.
-- **Channel and Query Windows:** Separate, consistently managed contexts for channels (case-insensitive handling, e.g., `#channel` and `#Channel` are treated as the same) and private messages.
+  - Switch between configured servers using the `/server <config_name>` command (now with event-driven disconnect handling).
+- **Channel and Query Windows:** Separate, consistently managed contexts for channels (case-insensitive handling) and private messages.
 - **mIRC-like UI Flow:** Starts in the "Status" window and automatically switches to a channel upon successful join (when UI is active).
 - **IRCv3 Support:**
   - Robust CAP negotiation (including `sasl`, `multi-prefix`, `server-time`, `message-tags`, `account-tag`, `echo-message`, `away-notify`, `chghost`, `userhost-in-names`, `cap-notify`, `extended-join`, `account-notify`, `invite-notify`). Server-specific desired capabilities can be configured.
   - SASL PLAIN authentication for secure login.
   - IRCv3 Message Tag parsing and inclusion in relevant script events.
-- **Highly Modular Command System:** _All_ core client commands are now implemented in individual, self-contained Python modules within a structured `commands/` directory (e.g., [`commands/utility/set_command.py`](commands/utility/set_command.py:1), [`commands/ui/split_screen_commands.py`](commands/ui/split_screen_commands.py:1)). These commands are dynamically discovered and registered at startup, making the system highly extensible and maintainable. Each command module defines its own handler(s), help text (usage, description), and aliases, ensuring that adding or modifying core commands is straightforward and isolated.
-
-- **Dynamic Help System:** The `/help` system is now fully dynamic, sourcing its information directly from the core command modules' definitions and from script registrations. This ensures help text is always up-to-date with available commands and their functionalities.
-- **Comprehensive Command Set:** Supports a wide array of standard IRC commands and client-specific utility commands. (See "Basic Commands" section).
-- **Dynamic Configuration:** View and modify client settings on-the-fly using the `/set` command. Changes are saved to [`pyterm_irc_config.ini`](pyterm_irc_config.ini:1). Reload configuration with `/rehash`.
+- **Highly Modular Command System:** _All_ core client commands are implemented in individual Python modules within a structured `commands/` directory. These are dynamically discovered and registered at startup. Each command module defines its handler(s), help text (usage, description, supporting dictionary format for richer help), and aliases.
+- **Dynamic & Categorized Help System:** The `/help` system is fully dynamic, sourcing information from core command modules and script registrations. It now displays categories first, allowing users to drill down via `/help <category>` or `/help script <script_name>`. Specific command help (`/help <command>`) provides detailed usage, description, and aliases.
+- **Comprehensive Command Set:** Supports a wide array of standard IRC commands and client-specific utility commands (see "Basic Commands" section).
+- **Dynamic Configuration:** View and modify client settings on-the-fly using `/set`. Changes are saved to `pyterm_irc_config.ini`. Reload with `/rehash`.
 - **Ignore System:** Powerful ignore list for users/hostmasks with wildcard support, managed via `/ignore`, `/unignore`, `/listignores`.
 - **Extensible Scripting System (Python):**
-  - Load custom Python scripts from a `scripts/` directory to add new commands, respond to IRC/client events, and modify client behavior.
-  - Default features like "fun" commands (`/slap`, `/8ball`), randomized quit/part messages, and the client exit screen are implemented as default scripts.
-  - Scripts have access to a rich `ScriptAPIHandler` for safe and powerful interaction with the client (see "Scripting System" section below for API details).
+  - Load custom Python scripts from a `scripts/` directory.
+  - **Dependency Management:** Scripts can declare dependencies in their metadata, and `ScriptManager` now attempts to load scripts in an order that satisfies these dependencies, warning about missing or circular dependencies.
+  - Rich `ScriptAPIHandler` for client interaction (see "Scripting System" section).
+  - Scripts can register commands with structured help (usage, description, aliases).
 - **Advanced Event-Driven Trigger System (`/on` command & API):**
-  - Define custom actions based on IRC events (TEXT, ACTION, JOIN, PART, QUIT, KICK, MODE, TOPIC, NICK, NOTICE, INVITE, CTCP, RAW).
-  - Actions can be standard client commands or arbitrary Python code snippets (executed via a sandboxed [`PythonTriggerAPI`](python_trigger_api.py:1)). The `/on` command and its underlying Python execution API ([`PythonTriggerAPI`](python_trigger_api.py:1)) are stable and robust.
-  - Utilize regex capture groups ($0, $1, etc.) and extensive event-specific variables ($nick, $channel, $$1, $1-, etc.).
-  - Triggers are persistent and saved to `config/triggers.json`.
-  - Fully manageable via the `/on` command or programmatically through the `ScriptAPIHandler`.
-- **Modular Event Management:**
-  - A dedicated `EventManager` class handles the construction and dispatching of all script-facing events, ensuring consistency in event data.
-- **Headless Operation:**
-  - Can be run with a `--headless` flag, disabling the `curses` UI for use as an IRC backend or for AI agents. Core logic and scripting remain fully functional.
-  - All core IRC logic, event processing, and the scripting system remain fully functional.
-  - Scripts can interact with the IRC server using the `ScriptAPIHandler`.
-  - The `headless_message_history_lines` config option allows for different message history sizes in headless mode.
+  - Define custom actions (client commands or Python code via `PythonTriggerAPI`) based on IRC events.
+  - Persistent triggers saved to `config/triggers.json`.
+- **Modular Event Management:** A dedicated `EventManager` handles consistent dispatching of script-facing events. Includes a `CLIENT_MESSAGE_ADDED_TO_CONTEXT` event.
+- **Headless Operation & Testing:**
+  - Full functionality with `--headless` flag.
+  - Refactored headless test script (`scripts/test_headless.py`) using an event-driven verification framework for increased reliability.
 - **Logging:**
-  - Comprehensive main application log (defaults to `logs/pyrc_core.log`).
-  - Dedicated log for Status window messages (defaults to `logs/client_status_messages.log`).
-  - Optional per-channel logging to separate files in the `logs/` directory (e.g., `logs/python.log`). The `logs/` directory will be created automatically if it doesn't exist.
-  - Robust collision avoidance for log filenames.
+  - Comprehensive main application log (`logs/pyrc_core.log`).
+  - Dedicated Status window log (`logs/client_status_messages.log`).
+  - Optional per-channel logging. `logs/` directory created automatically.
   - Raw IRC message logging to UI toggleable with `/rawlog`.
-- **Code Modularity:** Significantly improved structure throughout the core:
-  - **Protocol Handling:** IRC command processing is broken down into multiple focused handler modules (e.g., [`message_handlers.py`](message_handlers.py:1), [`membership_handlers.py`](membership_handlers.py:1), [`state_change_handlers.py`](state_change_handlers.py:1), [`protocol_flow_handlers.py`](protocol_flow_handlers.py:1), [`irc_numeric_handlers.py`](irc_numeric_handlers.py:1)), making [`irc_protocol.py`](irc_protocol.py:1) a lean dispatcher.
-  - **Command Handling:** Core client command logic is highly modularized into individual files within `commands/` subdirectories.
-- **Centralized Color Handling:** Client feedback and messages utilize a semantic color key system, resolved centrally for consistent UI presentation.
-- **Tab Completion:** For commands (core, script-added, dynamically loaded) and nicks in the current context (UI mode only).
-- **SSL/TLS Encryption:** Secure connections, with an option (`verify_ssl_cert` in config) to allow connections to servers with self-signed certificates.
-- **Color Themes:** Basic support, with potential for expansion.
+- **DCC (Direct Client-to-Client) Support:**
+  - SEND and GET (active and passive/reverse offers with tokens).
+  - Configurable port range for listening sockets.
+  - Option to specify an advertised IP (`dcc_advertised_ip`) for NAT traversal.
+  - Automatic cleanup of old/completed DCC transfers to manage resources.
+  - File size limits, blocked extensions, auto-accept options.
+  - Resume support for sends and receives.
+  - Checksum verification (MD5, SHA1, etc.).
+  - Bandwidth throttling for sends and receives (KB/s).
+  - Dedicated DCC logging.
+- **UI Enhancements:**
+  - Tab completion for commands and nicks.
+  - Ctrl+Y/Ctrl+E for page-up/page-down scrolling in message windows.
+- **SSL/TLS Encryption:** Secure connections, with `verify_ssl_cert` option.
 
 ## Prerequisites
 
@@ -114,53 +114,34 @@ Download the latest release from the [Releases](https://github.com/edgeof8/PyRC/
 
 ## Configuration
 
-PyRC uses a configuration file named `pyterm_irc_config.ini` located in the root directory. An example `pyterm_irc_config.ini.example` is provided, which you can copy and customize.
+PyRC uses `pyterm_irc_config.ini` in its root directory. Copy `pyterm_irc_config.ini.example` and customize.
 
-Key settings from `pyterm_irc_config.ini`:
+**Key Config Sections & Settings:**
 
-- **Server Definitions:** (e.g., `[Server.LiberaChat]`)
-  - `address`, `port`, `ssl`, `nick`, `channels` (comma-separated list)
-  - `username`, `realname` (optional, default to nick)
-  - `server_password` (optional)
-  - `nickserv_password` (optional, also used for SASL if `sasl_password` not set)
-  - `sasl_username`, `sasl_password` (optional, default to nick/nickserv_password)
-  - `verify_ssl_cert` (true/false)
-  - `auto_connect` (true for one server to connect on startup)
-  - `desired_caps` (optional, e.g., `sasl,multi-prefix,server-time`): Comma-separated list of IRCv3 capabilities to request from this specific server.
-- **UI Settings:** (`[UI]`)
-  - `message_history_lines`
-  - `headless_message_history_lines` (for `--headless` mode)
-  - `colorscheme` (currently "default")
-- **Logging Settings:** (`[Logging]`)
-  - `log_enabled`, `log_file` (main log, e.g., `pyrc_core.log`), `log_level`, `log_max_bytes`, `log_backup_count`
-  - `channel_log_enabled` (all logs go into `logs/` subdirectory, which is created automatically if needed)
-- **Features:** (`[Features]`)
-  - `enable_trigger_system` (true/false)
-- **Scripts:** (`[Scripts]`)
-  - `disabled_scripts` (comma-separated list of script module names to disable)
-- **IgnoreList:** (`[IgnoreList]`): This section is automatically managed by the `/ignore`, `/unignore`, and `/listignores` commands. Ignored patterns (e.g., `*!*@*.example.com`) are stored here.
-- **DCC Settings:** (`[DCC]`)
-  - `dcc_enabled` (true/false): Enables or disables DCC functionality.
-  - `dcc_download_dir` (string): Default directory for downloaded files (e.g., `downloads/`).
-  - `dcc_upload_dir` (string): Default directory to search for files when sending (less critical as full paths can be used).
-  - `dcc_max_file_size` (integer): Maximum file size in bytes for transfers (e.g., `104857600` for 100MB).
-  - `dcc_auto_accept` (true/false): Whether to automatically accept incoming file offers (both active and passive). Use with caution.
-  - `dcc_blocked_extensions` (comma-separated string): File extensions to block (e.g., `exe,bat,sh,vbs`).
-  - `dcc_port_range_start`, `dcc_port_range_end` (integers): Port range for listening sockets in active DCC sends or passive DCC receives.
-  - `dcc_timeout` (integer): Timeout in seconds for DCC connections/transfers.
-  - `dcc_passive_mode_token_timeout` (integer): How long a passive DCC SEND offer (token) remains valid if not accepted by the peer (seconds).
-  - `dcc_checksum_verify` (true/false): Enable verification of file integrity using checksums after transfer.
-  - `dcc_checksum_algorithm` (string, e.g., "md5", "sha1", "sha256"): Preferred checksum algorithm. Both sender and receiver must support it.
-  - `dcc_bandwidth_limit_send_kbps` (integer): Bandwidth limit in KB/s for outgoing transfers (0 for unlimited).
-  - `dcc_bandwidth_limit_recv_kbps` (integer): Bandwidth limit in KB/s for incoming transfers (0 for unlimited).
-  - `dcc_resume_enabled` (true/false): Enables the DCC RESUME functionality.
-  - `dcc_log_enabled` (true/false): Enables detailed DCC event logging.
-  - `dcc_log_file` (string): Name of the DCC log file (stored in `logs/` directory).
-  - `dcc_log_level` (string): Logging level for DCC events (e.g., "INFO", "DEBUG").
-  - `dcc_log_max_bytes` (integer): Maximum size of DCC log file before rotation.
-  - `dcc_log_backup_count` (integer): Number of backup DCC log files to keep.
+- **`[Server.YourServerName]`**: Define multiple server profiles.
+  - `address`, `port`, `ssl`, `nick`, `channels` (comma-separated).
+  - `username`, `realname` (optional, default to nick).
+  - `server_password`, `nickserv_password` (optional).
+  - `sasl_username`, `sasl_password` (optional, for SASL PLAIN).
+  - `verify_ssl_cert` (true/false).
+  - `auto_connect` (true for one server).
+  - `desired_caps` (optional, comma-separated IRCv3 capabilities).
+- **`[UI]`**: `message_history_lines`, `headless_message_history_lines`, `colorscheme`.
+- **`[Logging]`**: `log_enabled`, `log_file`, `log_level`, rotation settings, `channel_log_enabled`.
+- **`[Features]`**: `enable_trigger_system`.
+- **`[Scripts]`**: `disabled_scripts` (comma-separated module names).
+- **`[IgnoreList]`**: Managed by `/ignore` commands.
+- **`[DCC]`**:
+  - `enabled`, `download_dir`, `max_file_size`, `auto_accept`.
+  - `blocked_extensions`, `port_range_start`, `port_range_end`, `timeout`.
+  - `passive_token_timeout`, `checksum_verify`, `checksum_algorithm`.
+  - `bandwidth_limit_send_kbps`, `bandwidth_limit_recv_kbps` (0 for unlimited).
+  - `resume_enabled`.
+  - `dcc_advertised_ip` (optional manual IP for NAT).
+  - `cleanup_enabled`, `cleanup_interval_seconds`, `transfer_max_age_seconds`.
+  - DCC logging settings (`log_enabled`, `log_file`, etc.).
 
-You can view and modify many settings on-the-fly using the `/set` command. Changes are saved automatically. Use `/rehash` to reload the INI file.
+Use `/set`, `/rehash`, `/save` in-client to manage configuration.
 
 ## Usage
 
@@ -271,18 +252,18 @@ Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), eve
 
 ## Scripting System
 
-PyRC features a powerful Python scripting system located in the `scripts/` directory. Scripts can add commands, subscribe to events, and use the `ScriptAPIHandler` (passed as `self.api`) for extensive client interaction.
+PyRC features a Python scripting system in `scripts/`. Scripts inherit from `ScriptBase`, use `ScriptAPIHandler` (`self.api`), and can define dependencies in their `metadata.json`.
 
 ### Key `ScriptAPIHandler` Capabilities (Summary):
 
-- **Sending:** `send_raw`, `send_message`, `send_action`, `send_notice`, channel operations (`join_channel`, `part_channel`), state changes (`set_nick`, `set_topic`, `set_channel_mode`), user actions (`kick_user`, `invite_user`), client control (`quit_client`).
-- **UI Interaction:** `add_message_to_context` (uses semantic color keys).
-- **Information Retrieval:** Client info (`get_client_nick`, `is_connected`), server info (`get_server_info`, `get_server_capabilities`), channel/context info (`get_joined_channels`, `get_channel_users`, `get_channel_topic`, `get_context_info`, `get_context_messages`).
-- **Trigger Management API:** `add_trigger`, `remove_trigger`, `list_triggers`, `set_trigger_enabled`.
-- **Script Functionality Registration:** `register_command`, `subscribe_to_event`, `register_help_text`.
-- **Logging & Data:** `log_info/warning/error` (script-aware), `request_data_file_path`.
+_(This section can remain largely the same, but ensure it's up-to-date with any API changes.)_
 
-Refer to `script_api_handler.py` and example scripts for full details.
+- **Sending:** `send_raw`, `send_message`, `send_action`, etc.
+- **UI Interaction:** `add_message_to_context`.
+- **Information Retrieval:** `get_client_nick`, `get_context_messages`, etc.
+- **Trigger Management API:** `add_trigger`, `remove_trigger`, etc.
+- **Command/Help Registration:** `register_command` (now accepts rich help dict), `register_help_text`, `create_command_help`.
+- **Logging & Data:** `log_info`, `request_data_file_path`.
 
 ### Key Script Events (Dispatched via `EventManager`)
 
@@ -298,6 +279,8 @@ Events are dispatched with a consistent `event_data` dictionary including `times
   - `event_data` additional keys: `nick` (str - confirmed client nick), `server_message` (str - welcome message).
 - `CLIENT_READY`: Fired after `CLIENT_REGISTERED` and initial auto-join actions (like NickServ IDENTIFY and channel joins) have been initiated. This is a good event for headless scripts to start their primary operations.
   - `event_data` additional keys: `nick` (str - confirmed client nick), `client_logic_ref` (reference to `IRCClient_Logic`).
+- `CLIENT_MESSAGE_ADDED_TO_CONTEXT`: Fired when any message is added to any context's buffer by `IRCClient_Logic.add_message`.
+  - `event_data` keys: `context_name` (str), `text` (str - the full line added, including timestamp/prefix), `color_key_or_attr` (Any), `source_full_ident` (Optional[str]), `is_privmsg_or_notice` (bool).
 - `CLIENT_NICK_CHANGED`: Fired specifically when PyRC's own nickname successfully changes.
   - `event_data` additional keys: `old_nick` (str), `new_nick` (str).
 - `CLIENT_SHUTDOWN_FINAL`: Fired just before application exit, _after_ `curses` UI is down (if UI was active).
@@ -333,6 +316,16 @@ Events are dispatched with a consistent `event_data` dictionary including `times
   - `event_data` keys: `raw_line` (str).
 - `RAW_IRC_NUMERIC`: Fired for all numeric replies from the server.
   - `event_data` keys: `numeric` (int), `source` (str - server name), `params_list` (List[str] - full parameters), `display_params_list` (List[str] - parameters with client nick removed if first), `trailing` (Optional[str]), `tags` (Dict[str, Any]).
+
+**Key UI Navigation:**
+
+- PageUp/PageDown or **Ctrl+Y/Ctrl+E**: Scroll message buffer.
+- Ctrl+N / Ctrl+P: Switch windows.
+- Ctrl+U: Scroll user list.
+
+## Headless Operation
+
+Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional. Ideal for bots, AI integrations, and automated testing. The `scripts/test_headless.py` script provides an example and a framework for such tests.
 
 ## State Management System
 
