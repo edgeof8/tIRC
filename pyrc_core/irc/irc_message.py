@@ -1,7 +1,7 @@
 import re
 from typing import Optional, Dict, Any
 IRC_MSG_RE = re.compile(
-    r'^(?:@(?P<tags>[^ ]+) )?(?::(?P<prefix>[^ ]+) )?(?P<command>[^ ]+)(?: *(?P<params>[^:]*))?(?: *:(?P<trailing>.*))?$'
+    r'^(?::(?P<prefix>[^ ]+) )?(?P<command>[^ ]+)(?: *(?P<params>[^:]*))?(?: *:(?P<trailing>.*))?$'
 )
 
 

@@ -30,7 +30,7 @@ class CapNegotiator:
             set()
         )  # Caps we have sent REQ for and are awaiting ACK/NAK
         self.enabled_caps: Set[str] = set()  # Caps confirmed active by ACK
-        self.desired_caps: Set[str] = desired_caps.copy()
+        self.desired_caps: Set[str] = set(desired_caps)
 
         self.cap_negotiation_pending: bool = False # Initial state
         logger.debug(f"CapNegotiator: __init__ - cap_negotiation_pending set to {self.cap_negotiation_pending}")
