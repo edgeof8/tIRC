@@ -3,6 +3,7 @@ from typing import Optional
 
 from pyrc_core.irc.irc_message import IRCMessage
 from pyrc_core.context_manager import ChannelJoinStatus
+from pyrc_core.state_manager import ConnectionState
 
 logger = logging.getLogger("pyrc.protocol")
 
@@ -22,16 +23,23 @@ def _handle_rpl_welcome(
         logger.info(
             f"RPL_WELCOME: Nick confirmed by server as '{confirmed_nick}', was '{client.nick}'. Updating client.nick."
         )
-        client.nick = confirmed_nick
+        conn_info = client.state_manager.get_connection_info()
+        if conn_info:
+            conn_info.nick = confirmed_nick
+            client.state_manager.set("connection_info", conn_info)
     elif not client.nick and confirmed_nick:
-        client.nick = confirmed_nick
+        conn_info = client.state_manager.get_connection_info()
+        if conn_info:
+            conn_info.nick = confirmed_nick
+            client.state_manager.set("connection_info", conn_info)
 
+    server_name = client.server or "the server"
     client.add_message(
-        f"Welcome to {client.server}: {trailing if trailing else ''}",
+        f"Welcome to {server_name}: {trailing if trailing else ''}",
         client.ui.colors["system"],
         context_name="Status",
     )
-    logger.info(f"Received RPL_WELCOME (001). Nick confirmed as {client.nick}.")
+    logger.info(f"Received RPL_WELCOME (001). Nick confirmed as {confirmed_nick}.")
 
     if hasattr(client, "event_manager") and client.event_manager:
         client.event_manager.dispatch_client_registered(
@@ -184,8 +192,10 @@ def _handle_rpl_endofnames(
             logger.info(
                 f"RPL_ENDOFNAMES for {channel_ended}. Set join_status to FULLY_JOINED. User count: {user_count}."
             )
-            if channel_ended not in client.currently_joined_channels:
-                client.currently_joined_channels.add(channel_ended)
+            conn_info = client.state_manager.get_connection_info()
+            if conn_info:
+                conn_info.currently_joined_channels.add(channel_ended)
+                client.state_manager.set("connection_info", conn_info)
                 logger.info(
                     f"Added {channel_ended} to tracked client.currently_joined_channels."
                 )
@@ -254,7 +264,10 @@ def _handle_err_nosuchchannel(
         logger.debug(
             f"Set join_status to JOIN_FAILED for {channel_name} due to ERR_NOSUCHCHANNEL."
         )
-    client.currently_joined_channels.discard(channel_name)
+    conn_info = client.state_manager.get_connection_info()
+    if conn_info:
+        conn_info.currently_joined_channels.discard(channel_name)
+        client.state_manager.set("connection_info", conn_info)
     logger.warning(
         f"ERR_NOSUCHCHANNEL (403) for {channel_name}. Marked as JOIN_FAILED and removed from tracked channels."
     )
@@ -288,7 +301,10 @@ def _handle_err_channel_join_group(
         logger.debug(
             f"Set join_status to JOIN_FAILED for {channel_name} due to {code}."
         )
-    client.currently_joined_channels.discard(channel_name)
+    conn_info = client.state_manager.get_connection_info()
+    if conn_info:
+        conn_info.currently_joined_channels.discard(channel_name)
+        client.state_manager.set("connection_info", conn_info)
     logger.warning(
         f"Channel join error {code} for {channel_name}. Marked as JOIN_FAILED."
     )
@@ -310,22 +326,28 @@ def _handle_err_nicknameinuse(
         "Status",
     )
 
+    conn_info = client.state_manager.get_connection_info()
+    if not conn_info:
+        logger.error("Cannot handle nick collision: no connection info.")
+        return
+
     if (
-        client.last_attempted_nick_change is not None
-        and client.last_attempted_nick_change.lower() == failed_nick.lower()
+        conn_info.last_attempted_nick_change is not None
+        and conn_info.last_attempted_nick_change.lower() == failed_nick.lower()
     ):
         logger.info(
             f"ERR_NICKNAMEINUSE for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change."
         )
-        client.last_attempted_nick_change = None
+        conn_info.last_attempted_nick_change = None
+        client.state_manager.set("connection_info", conn_info)
         return  # Don't auto-retry for user-initiated nick changes
 
-    is_our_nick_colliding = client.nick and client.nick.lower() == failed_nick.lower()
+    is_our_nick_colliding = conn_info.nick and conn_info.nick.lower() == failed_nick.lower()
 
     if is_our_nick_colliding and not client.network_handler.is_handling_nick_collision:
         if hasattr(client, "registration_handler") and client.registration_handler:
-            current_nick_for_logic = client.nick
-            initial_nick_for_logic = client.initial_nick
+            current_nick_for_logic = conn_info.nick
+            initial_nick_for_logic = client.registration_handler.initial_nick
 
             # Generate a new nickname based on the current state
             if current_nick_for_logic.lower() == initial_nick_for_logic.lower():
@@ -360,7 +382,8 @@ def _handle_err_nicknameinuse(
 
             client.network_handler.is_handling_nick_collision = True
             client.network_handler.send_raw(f"NICK {new_try_nick}")
-            client.nick = new_try_nick
+            conn_info.nick = new_try_nick
+            client.state_manager.set("connection_info", conn_info)
             client.registration_handler.update_nick_for_registration(new_try_nick)
         else:
             logger.warning(
@@ -771,14 +794,16 @@ def _handle_err_erroneusnickname(
         client.ui.colors["error"],
         "Status",
     )
-    if (
-        client.last_attempted_nick_change is not None
-        and client.last_attempted_nick_change.lower() == failed_nick.lower()
+    conn_info = client.state_manager.get_connection_info()
+    if conn_info and (
+        conn_info.last_attempted_nick_change is not None
+        and conn_info.last_attempted_nick_change.lower() == failed_nick.lower()
     ):
         logger.info(
             f"ERR_ERRONEUSNICKNAME for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change."
         )
-        client.last_attempted_nick_change = None
+        conn_info.last_attempted_nick_change = None
+        client.state_manager.set("connection_info", conn_info)
 
 
 def _handle_err_nickcollision(
@@ -798,19 +823,20 @@ def _handle_err_nickcollision(
         client.ui.colors["error"],
         "Status",
     )
-    if (
-        client.last_attempted_nick_change is not None
-        and client.last_attempted_nick_change.lower() == collided_nick.lower()
+    conn_info = client.state_manager.get_connection_info()
+    if conn_info and (
+        conn_info.last_attempted_nick_change is not None
+        and conn_info.last_attempted_nick_change.lower() == collided_nick.lower()
     ):
         logger.info(
             f"ERR_NICKCOLLISION for user-attempted nick {collided_nick}. Resetting last_attempted_nick_change."
         )
-        client.last_attempted_nick_change = None
+        conn_info.last_attempted_nick_change = None
+        client.state_manager.set("connection_info", conn_info)
 
     # Attempt to reclaim initial nick or a variant if collision occurs
-    if (
-        client.nick.lower() == collided_nick.lower()
-    ):  # If our current nick is the one that collided
+    conn_info = client.state_manager.get_connection_info()
+    if conn_info and conn_info.nick.lower() == collided_nick.lower():  # If our current nick is the one that collided
         client.network_handler.send_raw(f"NICK {client.initial_nick}")
         client.add_message(
             f"Attempting to restore nick to {client.initial_nick}.",
@@ -870,9 +896,12 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
     code = int(parsed_msg.command)
     params = parsed_msg.params
     trailing = parsed_msg.trailing
+    
+    conn_info = client.state_manager.get_connection_info()
+    current_nick = conn_info.nick if conn_info else ""
 
     # Remove client's nick from params for display purposes
-    display_params = [p for p in params if p.lower() != client.nick.lower()]
+    display_params = [p for p in params if p.lower() != current_nick.lower()]
 
     # Dispatch RAW_IRC_NUMERIC event
     if hasattr(client, "event_manager") and client.event_manager:
@@ -887,70 +916,9 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
         )
 
     # Handle specific numeric replies
-    if code == 1:  # RPL_WELCOME
-        _handle_rpl_welcome(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 331:  # RPL_NOTOPIC
-        _handle_rpl_notopic(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 332:  # RPL_TOPIC
-        _handle_rpl_topic(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 353:  # RPL_NAMREPLY
-        _handle_rpl_namreply(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 366:  # RPL_ENDOFNAMES
-        _handle_rpl_endofnames(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 401:  # ERR_NOSUCHNICK
-        _handle_err_nosuchnick(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 403:  # ERR_NOSUCHCHANNEL
-        _handle_err_nosuchchannel(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 432:  # ERR_ERRONEUSNICKNAME
-        _handle_err_erroneusnickname(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code in (471, 472, 473, 474, 475):  # Channel join errors
-        _handle_err_channel_join_group(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 433:  # ERR_NICKNAMEINUSE
-        _handle_err_nicknameinuse(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 436:  # ERR_NICKCOLLISION
-        _handle_err_nickcollision(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 903:  # RPL_SASLLOGGEDIN
-        _handle_sasl_loggedin_success(
-            client, parsed_msg, raw_line, display_params, trailing
-        )
-    elif code == 908:  # RPL_SASLMECHS
-        _handle_sasl_mechanisms(client, parsed_msg, raw_line, display_params, trailing)
-    elif code in (904, 905, 906, 907):  # SASL failure errors
-        _handle_sasl_fail_errors(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 907:  # ERR_SASLALREADY
-        _handle_err_saslalready(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 311:  # RPL_WHOISUSER
-        _handle_rpl_whoisuser(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 318:  # RPL_ENDOFWHOIS
-        _handle_rpl_endofwhois(client, parsed_msg, raw_line, display_params, trailing)
-    elif code in (375, 372, 376):  # MOTD and server info
-        _handle_motd_and_server_info(
-            client, parsed_msg, raw_line, display_params, trailing, trailing
-        )
-    elif code == 352:  # RPL_WHOREPLY
-        _handle_rpl_whoreply(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 315:  # RPL_ENDOFWHO
-        _handle_rpl_endofwho(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 314:  # RPL_WHOWASUSER
-        _handle_rpl_whowasuser(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 369:  # RPL_ENDOFWHOWAS
-        _handle_rpl_endofwhowas(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 321:  # RPL_LISTSTART
-        _handle_rpl_liststart(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 322:  # RPL_LIST
-        _handle_rpl_list(client, parsed_msg, raw_line, display_params, trailing)
-    elif code == 323:  # RPL_LISTEND
-        _handle_rpl_listend(client, parsed_msg, raw_line, display_params, trailing)
+    handler = NUMERIC_HANDLERS.get(code)
+    if handler:
+        handler(client, parsed_msg, raw_line, display_params, trailing)
     else:
         # Generic numeric reply
         generic_msg = trailing if trailing else " ".join(display_params)

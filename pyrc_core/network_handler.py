@@ -4,12 +4,13 @@ import ssl
 import threading
 import time
 import logging
-from typing import List, Optional, Set, TYPE_CHECKING  # Added TYPE_CHECKING
+from typing import List, Optional, Set, TYPE_CHECKING
 from pyrc_core.app_config import (
     CONNECTION_TIMEOUT,
     RECONNECT_INITIAL_DELAY,
     RECONNECT_MAX_DELAY,
 )
+from pyrc_core.state_manager import ConnectionState
 
 if TYPE_CHECKING:  # To avoid circular import with client_logic
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -114,9 +115,10 @@ class NetworkHandler:
             logger.debug(
                 "Currently connected, disconnecting gracefully before updating params."
             )
+            conn_info = self.client_logic_ref.state_manager.get_connection_info()
             current_server_lower = (
-                self.client_logic_ref.server.lower()
-                if self.client_logic_ref.server
+                conn_info.server.lower()
+                if conn_info and conn_info.server
                 else ""
             )
             new_server_lower = server.lower()
@@ -132,10 +134,15 @@ class NetworkHandler:
 
         if channels_to_join is not None:
             self.channels_to_join_on_connect = channels_to_join
-        else:  # Fallback to client's initial list if not provided
-            self.channels_to_join_on_connect = (
-                self.client_logic_ref.initial_channels_list[:]
+        else:  # Fallback to connection info's initial channels if not provided
+            conn_info = (
+                self.client_logic_ref.state_manager.get_connection_info()
                 if self.client_logic_ref
+                else None
+            )
+            self.channels_to_join_on_connect = (
+                conn_info.initial_channels[:]
+                if conn_info and conn_info.initial_channels
                 else []
             )
 
@@ -213,7 +220,7 @@ class NetworkHandler:
             except (OSError, socket.error):
                 pass
             self.socket = None
-            
+
         # Update connection state to DISCONNECTED
         if self.connected:
             self.client_logic_ref.state_manager.set_connection_state(ConnectionState.DISCONNECTED)
@@ -248,9 +255,10 @@ class NetworkHandler:
                     hasattr(self.client_logic_ref, "event_manager")
                     and self.client_logic_ref.event_manager
                 ):  # Check for event_manager
-                    current_server = self.client_logic_ref.server
-                    current_port = self.client_logic_ref.port
-                    if current_server is not None and current_port is not None:
+                    conn_info = self.client_logic_ref.state_manager.get_connection_info()
+                    if conn_info and conn_info.server and conn_info.port is not None:
+                        current_server = conn_info.server
+                        current_port = conn_info.port
                         logger.info(
                             f"Dispatching CLIENT_DISCONNECTED event via EventManager for {current_server}:{current_port}"
                         )
@@ -267,15 +275,20 @@ class NetworkHandler:
 
     def _connect_socket(self):
         self.is_handling_nick_collision = False
+        conn_info = (
+            self.client_logic_ref.state_manager.get_connection_info()
+            if self.client_logic_ref
+            else None
+        )
         if (
-            not self.client_logic_ref
-            or not self.client_logic_ref.server
-            or self.client_logic_ref.port is None
+            not conn_info
+            or not conn_info.server
+            or conn_info.port is None
         ):
             error_msg = "Server or port not configured"
             logger.error(f"NetworkHandler._connect_socket: {error_msg}")
             self.client_logic_ref.state_manager.set_connection_state(
-                ConnectionState.ERROR, 
+                ConnectionState.ERROR,
                 error_msg
             )
             return False
@@ -283,15 +296,29 @@ class NetworkHandler:
         # Update connection state to CONNECTING
         self.client_logic_ref.state_manager.set_connection_state(ConnectionState.CONNECTING)
         try:
+            conn_info = self.client_logic_ref.state_manager.get_connection_info()
+            if not conn_info:
+                error_msg = "Cannot connect - no connection info available"
+                logger.error(error_msg)
+                self.client_logic_ref.state_manager.set_connection_state(
+                    ConnectionState.ERROR,
+                    error=error_msg
+                )
+                return False
+
+            server = conn_info.server or ""
+            port = conn_info.port or 6667
+            use_ssl = conn_info.ssl if conn_info.ssl is not None else False
+
             logger.info(
-                f"Attempting socket connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} (SSL: {self.client_logic_ref.use_ssl})"
+                f"Attempting socket connection to {server}:{port} (SSL: {use_ssl})"
             )
             sock = socket.create_connection(
-                (self.client_logic_ref.server, self.client_logic_ref.port),
+                (server, port),
                 timeout=CONNECTION_TIMEOUT,
             )
             logger.debug("Socket created.")
-            if self.client_logic_ref.use_ssl:
+            if use_ssl:
                 logger.debug("SSL is enabled, wrapping socket.")
                 context = ssl.create_default_context()
                 try:
@@ -307,16 +334,17 @@ class NetworkHandler:
                     )
 
                 logger.info(
-                    f"VERIFY_SSL_CERT value in _connect_socket for {self.client_logic_ref.server}: {self.client_logic_ref.verify_ssl_cert}"
+                    f"VERIFY_SSL_CERT value in _connect_socket for {server}: {conn_info.verify_ssl_cert}"
                 )
-                if not self.client_logic_ref.verify_ssl_cert:
+                verify_ssl = conn_info.verify_ssl_cert if conn_info.verify_ssl_cert is not None else True
+                if not verify_ssl:
                     logger.warning(
                         "SSL certificate verification is DISABLED. This is insecure."
                     )
                     context.check_hostname = False
                     context.verify_mode = ssl.CERT_NONE
                 sock = context.wrap_socket(
-                    sock, server_hostname=self.client_logic_ref.server
+                    sock, server_hostname=server
                 )
                 logger.debug("Socket wrapped with SSL.")
 
@@ -324,7 +352,7 @@ class NetworkHandler:
             self.connected = True
             self.reconnect_delay = RECONNECT_INITIAL_DELAY
             logger.info(
-                f"Successfully connected to {self.client_logic_ref.server}:{self.client_logic_ref.port}. SSL: {self.client_logic_ref.use_ssl}"
+                f"Successfully connected to {server}:{port}. SSL: {use_ssl}"
             )
             # Update connection state to CONNECTED
             self.client_logic_ref.state_manager.set_connection_state(ConnectionState.CONNECTED)
@@ -350,16 +378,16 @@ class NetworkHandler:
                 and self.client_logic_ref.event_manager
             ):  # Check for event_manager
                 self.client_logic_ref.event_manager.dispatch_client_connected(
-                    server=self.client_logic_ref.server,
-                    port=self.client_logic_ref.port,
-                    nick=self.client_logic_ref.nick,
-                    ssl=self.client_logic_ref.use_ssl,
+                    server=server,
+                    port=port,
+                    nick=conn_info.nick or "",
+                    ssl=use_ssl,
                     raw_line="",
                 )
 
             return True
         except socket.timeout as e:
-            error_msg = f"Connection to {self.client_logic_ref.server}:{self.client_logic_ref.port} timed out"
+            error_msg = f"Connection to {server}:{port} timed out"
             logger.warning(error_msg)
             self.client_logic_ref.state_manager.set_connection_state(
                 ConnectionState.ERROR,
@@ -373,7 +401,7 @@ class NetworkHandler:
                 error=error_msg
             )
         except ConnectionRefusedError as e:
-            error_msg = f"Connection refused by {self.client_logic_ref.server}:{self.client_logic_ref.port}: {e}"
+            error_msg = f"Connection refused by {server}:{port}: {e}"
             logger.error(error_msg)
             self.client_logic_ref.state_manager.set_connection_state(
                 ConnectionState.ERROR,
@@ -479,13 +507,18 @@ class NetworkHandler:
             while not self._stop_event.is_set():
                 if not self.connected or not self.socket:
                     # Attempt to connect if we have connection parameters
+                    conn_info = (
+                        self.client_logic_ref.state_manager.get_connection_info()
+                        if self.client_logic_ref
+                        else None
+                    )
                     if (
-                        self.client_logic_ref
-                        and self.client_logic_ref.server
-                        and self.client_logic_ref.port is not None
+                        conn_info
+                        and conn_info.server
+                        and conn_info.port is not None
                     ):
                         logger.info(
-                            f"Attempting to connect to {self.client_logic_ref.server}:{self.client_logic_ref.port}"
+                            f"Attempting to connect to {conn_info.server}:{conn_info.port}"
                         )
                         if self._connect_socket():
                             logger.info("Successfully connected to server")

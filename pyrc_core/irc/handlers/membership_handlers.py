@@ -1,3 +1,4 @@
+
 import logging
 from typing import TYPE_CHECKING, Optional
 
@@ -13,7 +14,8 @@ def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
     """Handles JOIN messages."""
     src_nick = parsed_msg.source_nick
     params = parsed_msg.params
-    client_nick_lower = client.nick.lower() if client.nick else ""
+    conn_info = client.state_manager.get_connection_info()
+    client_nick_lower = conn_info.nick.lower() if conn_info else ""
     src_nick_lower = src_nick.lower() if src_nick else ""
 
     joined_channel = params[0] if params else None
@@ -85,7 +87,8 @@ def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
     src_nick = parsed_msg.source_nick
     params = parsed_msg.params
     trailing = parsed_msg.trailing
-    client_nick_lower = client.nick.lower() if client.nick else ""
+    conn_info = client.state_manager.get_connection_info()
+    client_nick_lower = conn_info.nick.lower() if conn_info else ""
     src_nick_lower = src_nick.lower() if src_nick else ""
 
     parted_channel = params[0] if params else None
@@ -110,7 +113,9 @@ def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
                 f"Set join_status to NOT_JOINED for parted channel {parted_channel}"
             )
 
-        client.currently_joined_channels.discard(parted_channel)
+        if conn_info:
+            conn_info.currently_joined_channels.discard(parted_channel)
+            client.state_manager.set("connection_info", conn_info)
         client.add_message(
             f"You left {parted_channel}{reason_message}",
             client.ui.colors["join_part"],
@@ -122,7 +127,7 @@ def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
             == client.context_manager._normalize_context_name(parted_channel)
         ):
             other_joined_channels = sorted(
-                list(client.currently_joined_channels), key=str.lower
+                list(conn_info.currently_joined_channels if conn_info else set()), key=str.lower
             )
             if other_joined_channels:
                 client.switch_active_context(other_joined_channels[0])
@@ -157,7 +162,8 @@ def handle_quit_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
     """Handles QUIT messages."""
     src_nick = parsed_msg.source_nick
     trailing = parsed_msg.trailing
-    client_nick_lower = client.nick.lower() if client.nick else ""
+    conn_info = client.state_manager.get_connection_info()
+    client_nick_lower = conn_info.nick.lower() if conn_info else ""
     src_nick_lower = src_nick.lower() if src_nick else ""
 
     quit_reason = f" ({trailing.lstrip(':')})" if trailing else ""
@@ -165,7 +171,7 @@ def handle_quit_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
 
     if src_nick_lower == client_nick_lower:
         logger.info(
-            f"Received QUIT message for our own nick: {client.nick}{quit_reason}. Client is likely shutting down or changing servers."
+            f"Received QUIT message for our own nick: {conn_info.nick if conn_info else 'unknown'}{quit_reason}. Client is likely shutting down or changing servers."
         )
         return
 
@@ -192,7 +198,8 @@ def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
     src_nick = parsed_msg.source_nick
     params = parsed_msg.params
     trailing = parsed_msg.trailing
-    client_nick_lower = client.nick.lower() if client.nick else ""
+    conn_info = client.state_manager.get_connection_info()
+    client_nick_lower = conn_info.nick.lower() if conn_info else ""
 
     channel_kicked_from = params[0] if len(params) > 0 else None
     user_kicked = params[1] if len(params) > 1 else None
@@ -221,7 +228,9 @@ def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
 
     if user_kicked.lower() == client_nick_lower:
         logger.info(f"We were kicked from {channel_kicked_from} by {src_nick}{reason}")
-        client.currently_joined_channels.discard(channel_kicked_from)
+        if conn_info:
+            conn_info.currently_joined_channels.discard(channel_kicked_from)
+            client.state_manager.set("connection_info", conn_info)
         if kicked_ctx:
             kicked_ctx.join_status = ChannelJoinStatus.NOT_JOINED
             kicked_ctx.users.clear()
@@ -234,7 +243,7 @@ def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
             == client.context_manager._normalize_context_name(channel_kicked_from)
         ):
             other_joined_channels = sorted(
-                list(client.currently_joined_channels), key=str.lower
+                list(conn_info.currently_joined_channels if conn_info else set()), key=str.lower
             )
             if other_joined_channels:
                 client.switch_active_context(other_joined_channels[0])

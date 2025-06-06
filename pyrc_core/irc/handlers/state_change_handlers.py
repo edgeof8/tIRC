@@ -19,12 +19,19 @@ def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw
         return
 
     # Check if this is our own nick change
-    is_our_nick_change = old_nick.lower() == client.nick.lower()
+    conn_info = client.state_manager.get_connection_info()
+    is_our_nick_change = old_nick.lower() == (conn_info.nick.lower() if conn_info else "")
 
     if is_our_nick_change:
         # Update our nick
-        old_nick_val = client.nick # Store old nick before updating
-        client.nick = new_nick
+        conn_info = client.state_manager.get_connection_info()
+        if not conn_info:
+            logger.error("Cannot handle nick change - no connection info")
+            return
+
+        old_nick_val = conn_info.nick
+        conn_info.nick = new_nick
+        client.state_manager.set("connection_info", conn_info)
         logger.info(f"Our nick changed from {old_nick_val} to {new_nick}")
 
         # Update nick in all contexts
@@ -44,10 +51,12 @@ def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw
             context_name="Status",
         )
 
-        if client.last_attempted_nick_change is not None and \
-           client.last_attempted_nick_change.lower() == new_nick.lower():
+        conn_info = client.state_manager.get_connection_info()
+        if conn_info and conn_info.last_attempted_nick_change is not None and \
+           conn_info.last_attempted_nick_change.lower() == new_nick.lower():
             logger.info(f"Successful user-initiated nick change to {new_nick} confirmed.")
-            client.last_attempted_nick_change = None
+            conn_info.last_attempted_nick_change = None
+            client.state_manager.set("connection_info", conn_info)
 
         # Dispatch CLIENT_NICK_CHANGED event
         if hasattr(client, "event_manager") and client.event_manager:
@@ -148,15 +157,18 @@ def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw
                 )
 
     # Handle user modes
-    elif target.lower() == (client.nick.lower() if client.nick else ""):
+    conn_info = client.state_manager.get_connection_info()
+    if conn_info and target.lower() == conn_info.nick.lower():
         # Update user modes
         for mode in parsed_modes:
             if mode["operation"] == "+":
-                if mode["mode"] not in client.user_modes:
-                    client.user_modes.append(mode["mode"])
+                current_modes = client.state_manager.get("user_modes", [])
+                if mode["mode"] not in current_modes:
+                    client.state_manager.set("user_modes", current_modes + [mode["mode"]])
             elif mode["operation"] == "-":
-                if mode["mode"] in client.user_modes:
-                    client.user_modes.remove(mode["mode"])
+                current_modes = client.state_manager.get("user_modes", [])
+                if mode["mode"] in current_modes:
+                    client.state_manager.set("user_modes", [m for m in current_modes if m != mode["mode"]])
 
         # Format mode string for display
         mode_str_display = mode_string
@@ -165,7 +177,7 @@ def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw
 
         # Add message to status
         client.add_message(
-            f"Mode {client.nick} [{mode_str_display}] by {source_nick}", # Use client.nick for self-mode
+            f"Mode {conn_info.nick} [{mode_str_display}] by {source_nick}",
             client.ui.colors["system"],
             context_name="Status",
         )
