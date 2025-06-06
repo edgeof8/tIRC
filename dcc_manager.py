@@ -133,6 +133,8 @@ class DCCManager:
             "cleanup_enabled": getattr(app_config, "DCC_CLEANUP_ENABLED", True),
             "cleanup_interval_seconds": getattr(app_config, "DCC_CLEANUP_INTERVAL_SECONDS", 3600),
             "transfer_max_age_seconds": getattr(app_config, "DCC_TRANSFER_MAX_AGE_SECONDS", 86400 * 3),
+            # New advertised IP setting
+            "advertised_ip": getattr(app_config, "DCC_ADVERTISED_IP", None),
         }
 
     def _start_cleanup_timer(self):
@@ -268,21 +270,33 @@ class DCCManager:
 
     def _get_local_ip_for_ctcp(self) -> str:
         """Attempts to determine a suitable local IP address for CTCP messages."""
+        configured_ip = self.dcc_config.get("advertised_ip")
+        if configured_ip and isinstance(configured_ip, str) and configured_ip.strip():
+            # Validate the configured IP format
+            try:
+                socket.inet_aton(configured_ip) # Basic validation
+                self.dcc_event_logger.info(f"Using configured DCC advertised IP: {configured_ip}")
+                return configured_ip
+            except socket.error:
+                self.dcc_event_logger.warning(f"Configured dcc_advertised_ip '{configured_ip}' is invalid. Falling back to auto-detection.")
+
+        # Existing auto-detection logic:
         try:
-            # This gets the IP used for default route, might not always be correct for NAT.
             temp_s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            temp_s.settimeout(0.5) # Avoid long block if 8.8.8.8 is unreachable
-            temp_s.connect(("8.8.8.8", 80)) # Connect to a known external address
+            temp_s.settimeout(0.5)
+            temp_s.connect(("8.8.8.8", 80))
             local_ip = temp_s.getsockname()[0]
             temp_s.close()
+            self.dcc_event_logger.debug(f"Auto-detected DCC IP via external connect: {local_ip}")
             return local_ip
         except socket.error:
-            logger.warning("Could not determine local IP for DCC CTCP using external connect. Trying hostname.")
+            self.dcc_event_logger.warning("Could not determine local IP for DCC CTCP using external connect. Trying hostname.")
             try:
-                # Fallback to hostname, may resolve to 127.0.0.1 or an internal IP.
-                return socket.gethostbyname(socket.gethostname())
+                local_ip = socket.gethostbyname(socket.gethostname())
+                self.dcc_event_logger.debug(f"Auto-detected DCC IP via gethostname: {local_ip}")
+                return local_ip
             except socket.gaierror:
-                logger.warning("Could not determine local IP via gethostname. Falling back to '127.0.0.1'.")
+                self.dcc_event_logger.warning("Could not determine local IP via gethostname. Falling back to '127.0.0.1'.")
                 return "127.0.0.1"
 
     # _execute_send method is removed as its logic is now in DCCSendManager._execute_send_operation

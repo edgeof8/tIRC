@@ -109,6 +109,7 @@ DEFAULT_DCC_LOG_FILE = "dcc.log"
 DEFAULT_DCC_LOG_LEVEL = "INFO" # Similar to main log level
 DEFAULT_DCC_LOG_MAX_BYTES = 5 * 1024 * 1024 # 5MB
 DEFAULT_DCC_LOG_BACKUP_COUNT = 3
+DEFAULT_DCC_ADVERTISED_IP: Optional[str] = None # New setting for manual IP override
 
 # New DCC Cleanup Configuration Defaults
 DEFAULT_DCC_CLEANUP_ENABLED = True
@@ -474,6 +475,8 @@ def reload_all_config_values():
     global DCC_LOG_MAX_BYTES, DCC_LOG_BACKUP_COUNT # DCC Log specific globals
     # New DCC Cleanup globals
     global DCC_CLEANUP_ENABLED, DCC_CLEANUP_INTERVAL_SECONDS, DCC_TRANSFER_MAX_AGE_SECONDS
+    # New DCC Advertised IP global
+    global DCC_ADVERTISED_IP
 
     logger.info(f"Reloading configuration from {CONFIG_FILE_PATH}")
     new_config = configparser.ConfigParser() # Use a new ConfigParser instance for read
@@ -546,6 +549,10 @@ def reload_all_config_values():
     DCC_CLEANUP_ENABLED = get_config_value("DCC", "cleanup_enabled", DEFAULT_DCC_CLEANUP_ENABLED, bool)
     DCC_CLEANUP_INTERVAL_SECONDS = get_config_value("DCC", "cleanup_interval_seconds", DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS, int)
     DCC_TRANSFER_MAX_AGE_SECONDS = get_config_value("DCC", "transfer_max_age_seconds", DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS, int)
+
+    # New DCC Advertised IP Loading
+    DCC_ADVERTISED_IP = get_config_value("DCC", "dcc_advertised_ip", DEFAULT_DCC_ADVERTISED_IP, str)
+    if DCC_ADVERTISED_IP == "": DCC_ADVERTISED_IP = None
 
     load_ignore_list()
     logger.info("Configuration values reloaded.")
@@ -633,6 +640,9 @@ DCC_LOG_LEVEL = _dcc_log_level_int
 DCC_LOG_MAX_BYTES = get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
 DCC_LOG_BACKUP_COUNT = get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
 
+# New DCC Advertised IP Loading
+DCC_ADVERTISED_IP = get_config_value("DCC", "dcc_advertised_ip", DEFAULT_DCC_ADVERTISED_IP, str)
+if DCC_ADVERTISED_IP == "": DCC_ADVERTISED_IP = None
 
 # Constants that are not typically from config file but used by logic
 CONNECTION_TIMEOUT = DEFAULT_CONNECTION_TIMEOUT
