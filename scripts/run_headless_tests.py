@@ -118,13 +118,13 @@ def main():
             client.should_quit = True
             if (
                 client.network_handler
-                and client.network_handler.network_thread
-                and client.network_handler.network_thread.is_alive()
+                and client.network_handler._network_thread
+                and client.network_handler._network_thread.is_alive()
             ):
                 logger.info(
                     "Waiting for network thread to join due to KeyboardInterrupt..."
                 )
-                client.network_handler.network_thread.join(timeout=3.0)
+                client.network_handler._network_thread.join(timeout=3.0)
     except Exception as e:
         logger.error(f"Test run failed with error: {e}", exc_info=True)
         if client:
@@ -135,15 +135,15 @@ def main():
         if (
             client
             and client.network_handler
-            and client.network_handler.network_thread
-            and client.network_handler.network_thread.is_alive()
+            and client.network_handler._network_thread
+            and client.network_handler._network_thread.is_alive()
         ):
             logger.info(
                 "Ensuring network thread is stopped in run_headless_tests.py finally."
             )
-            if client.network_handler.network_thread.is_alive():
-                client.network_handler.network_thread.join(timeout=2.0)
-                if client.network_handler.network_thread.is_alive():
+            if client.network_handler._network_thread.is_alive():
+                client.network_handler._network_thread.join(timeout=2.0)
+                if client.network_handler._network_thread.is_alive():
                     logger.warning(
                         "Network thread did not join in time from run_headless_tests.py finally."
                     )
