@@ -55,7 +55,7 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
   - Dedicated DCC logging.
 - **UI Enhancements:**
   - Tab completion for commands and nicks.
-  - Ctrl+Y/Ctrl+E for page-up/page-down scrolling in message windows.
+  - Ctrl+Y/Ctrl+E scrolling in message windows.
 - **SSL/TLS Encryption:** Secure connections, with `verify_ssl_cert` option.
 
 ## Prerequisites
@@ -201,10 +201,10 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ### Client Utility & UI:
 
+- Ctrl+Y/Ctrl+E: Scroll message buffer.
 - `/clear` (Alias: `/c`): Clears the message history of the current active window.
 - `/close [context_name]` (Aliases: `/wc`, `/partchannel`): Closes the specified window or the current window if none is specified. For channels, this parts the channel.
 - `/help [command_name]` (Alias: `/h`): Displays general help or help for a specific command.
-- PageUp/PageDown: Scroll message buffer.
 - Ctrl+N (or `/nextwindow`, Alias: `/next`): Switch to the next window.
 - Ctrl+P (or `/prevwindow`, Alias: `/prev`): Switch to the previous window.
 - `/window <name|number>` (Alias: `/win`): Switches to the window specified by name or number.
@@ -319,7 +319,7 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 
 **Key UI Navigation:**
 
-- PageUp/PageDown or **Ctrl+Y/Ctrl+E**: Scroll message buffer.
+- Ctrl+Y/Ctrl+E: Scroll message buffer.
 - Ctrl+N / Ctrl+P: Switch windows.
 - Ctrl+U: Scroll user list.
 
