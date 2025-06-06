@@ -14,6 +14,7 @@ import platform
 from pyrc_core import app_config as _app_config
 from typing import cast
 from pyrc_core.app_config import _AppConfigModule, ServerConfig
+from pyrc_core.state_manager import StateManager, ConnectionInfo, ConnectionState
 
 app_config: _AppConfigModule = cast(_AppConfigModule, _app_config)
 
@@ -130,16 +131,16 @@ class IRCClient_Logic:
         self.args = args
         self.app_config = app_config
         self.all_server_configs = app_config.ALL_SERVER_CONFIGS  # type: ignore
-        self.active_server_config_name: Optional[str] = None
-        self.active_server_config: Optional[ServerConfig] = None
-        self.pending_server_switch_config_name = None # Initialize
-        self._server_switch_disconnect_event = None
-        self._server_switch_target_config_name = None
 
-        # Initialize Managers
+        # Initialize StateManager first
+        self.state_manager = StateManager()
+
+        # Initialize other managers
         self.channel_logger_manager = ChannelLoggerManager()
 
+        # Process server configuration
         if hasattr(args, "server") and args.server:
+            # Command line config
             cli_port = (
                 args.port
                 if hasattr(args, "port") and args.port is not None
@@ -149,78 +150,44 @@ class IRCClient_Logic:
                     else self.app_config.DEFAULT_PORT  # type: ignore
                 )
             )
-            cli_nick = (
-                args.nick
-                if hasattr(args, "nick") and args.nick
-                else self.app_config.DEFAULT_NICK  # type: ignore
-            )
-            cli_channels = (
-                args.channel if hasattr(args, "channel") and args.channel else []
-            )
-            cli_ssl = args.ssl if hasattr(args, "ssl") else False
-            cli_password = args.password if hasattr(args, "password") else None
-            cli_nickserv_password = (
-                args.nickserv_password if hasattr(args, "nickserv_password") else None
-            )
-
             temp_config = app_config.ServerConfig(
                 server_id="CommandLine",
                 address=args.server,
                 port=cli_port,
-                ssl=cli_ssl,
-                nick=cli_nick,
-                channels=cli_channels,
-                server_password=cli_password,
-                nickserv_password=cli_nickserv_password,
+                ssl=args.ssl if hasattr(args, "ssl") else False,
+                nick=args.nick if hasattr(args, "nick") and args.nick else self.app_config.DEFAULT_NICK,  # type: ignore
+                channels=args.channel if hasattr(args, "channel") and args.channel else [],
+                server_password=args.password if hasattr(args, "password") else None,
+                nickserv_password=args.nickserv_password if hasattr(args, "nickserv_password") else None,
                 verify_ssl_cert=self.app_config.VERIFY_SSL_CERT,
                 auto_connect=True,
             )
-            self.active_server_config = temp_config
-            self.active_server_config_name = "CommandLine"
-            logger.info(f"Using command-line server configuration: {args.server}")
+            self._configure_from_server_config(temp_config, "CommandLine")
         elif (
             self.app_config.DEFAULT_SERVER_CONFIG_NAME
             and self.app_config.DEFAULT_SERVER_CONFIG_NAME in self.all_server_configs
         ):
-            self.active_server_config_name = self.app_config.DEFAULT_SERVER_CONFIG_NAME
-            self.active_server_config = self.all_server_configs[
+            # Default config
+            self._configure_from_server_config(
+                self.all_server_configs[self.app_config.DEFAULT_SERVER_CONFIG_NAME],
                 self.app_config.DEFAULT_SERVER_CONFIG_NAME
-            ]
+            )
+        else:
+            # No config
+            self.state_manager.set_connection_state(ConnectionState.DISCONNECTED)
+            logger.warning("No server configuration found")
+
+        # Initialize context manager and create default contexts
+        # Get connection info for logging
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info:
             logger.info(
-                f"Using default server configuration: {self.active_server_config_name}"
+                f"IRCClient_Logic.__init__: server='{conn_info.server}', port={conn_info.port}, "
+                f"nick='{conn_info.nick}' use_ssl={conn_info.ssl}, "
+                f"verify_ssl_cert={conn_info.verify_ssl_cert}, headless={self.is_headless}"
             )
         else:
-            self.active_server_config = None
-            self.active_server_config_name = None
-            logger.warning(
-                "No command-line server specified and no default server configuration found."
-            )
-
-        if self.active_server_config:
-            self.server = self.active_server_config.address
-            self.port = self.active_server_config.port
-            self.initial_nick = self.active_server_config.nick
-            self.nick = self.active_server_config.nick
-            self.initial_channels_list = self.active_server_config.channels[:]
-            self.password = self.active_server_config.server_password
-            self.nickserv_password = self.active_server_config.nickserv_password
-            self.use_ssl = self.active_server_config.ssl
-            self.verify_ssl_cert = self.active_server_config.verify_ssl_cert
-        else:
-            self.server = None
-            self.port = None
-            self.initial_nick = self.app_config.DEFAULT_NICK  # type: ignore
-            self.nick = self.app_config.DEFAULT_NICK  # type: ignore
-            self.initial_channels_list = self.app_config.DEFAULT_CHANNELS[:]  # type: ignore
-            self.password = self.app_config.DEFAULT_PASSWORD  # type: ignore
-            self.nickserv_password = self.app_config.DEFAULT_NICKSERV_PASSWORD  # type: ignore
-            self.use_ssl = self.app_config.DEFAULT_SSL  # type: ignore
-            self.verify_ssl_cert = self.app_config.DEFAULT_VERIFY_SSL_CERT  # type: ignore
-
-        self.currently_joined_channels: Set[str] = set()
-        logger.info(
-            f"IRCClient_Logic.__init__: server='{self.server}', port={self.port}, nick='{self.nick}' use_ssl={self.use_ssl}, verify_ssl_cert={self.verify_ssl_cert}, headless={self.is_headless}"
-        )
+            logger.info("IRCClient_Logic initialized with no connection info")
         self.echo_sent_to_status: bool = True
         self.show_raw_log_in_ui: bool = False
 
@@ -231,20 +198,25 @@ class IRCClient_Logic:
         )
         self.context_manager.set_active_context("Status")
 
-        for ch_name in self.initial_channels_list:
-            self.context_manager.create_context(
-                ch_name,
-                context_type="channel",
-                initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
-            )
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info:
+            for ch_name in conn_info.initial_channels:
+                self.context_manager.create_context(
+                    ch_name,
+                    context_type="channel",
+                    initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
+                )
         self.last_join_command_target: Optional[str] = None
         self.should_quit = False
         self.ui_needs_update = threading.Event()
         # NetworkHandler uses client_logic_ref attributes, ensure they are correct
         self.network_handler = NetworkHandler(self)
-        self.network_handler.channels_to_join_on_connect = self.initial_channels_list[:]
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info:
+            self.network_handler.channels_to_join_on_connect = conn_info.initial_channels[:]
 
-        if self.server and self.port is not None:
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info and conn_info.server and conn_info.port is not None:
             self.network_handler.start()
 
         if self.is_headless:
@@ -305,23 +277,32 @@ class IRCClient_Logic:
         self.active_list_context_name: Optional[str] = None
         self.user_modes: List[str] = []
 
-        if not self.active_server_config:
+        if not self.state_manager.get_connection_info():
             self._add_status_message(
                 "No server specified and no default configuration. Use /server <name> or /connect <host> to connect.",
                 "warning",
             )
         self._add_status_message("Simple IRC Client starting...")
-        initial_channels_display = (
-            ", ".join(self.initial_channels_list)
-            if self.initial_channels_list
-            else "None"
-        )
-        self._add_status_message(
-            f"Target: {self.server or 'Not configured'}:{self.port or 'N/A'}, Nick: {self.nick}, Channels: {initial_channels_display}"
-        )
-        logger.info(
-            f"IRCClient_Logic initialized for {self.server or 'Not configured'}:{self.port or 'N/A'} as {self.nick}. Channels: {initial_channels_display}"
-        )
+        # Get connection info for status message
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info:
+            initial_channels_display = (
+                ", ".join(conn_info.initial_channels)
+                if conn_info.initial_channels
+                else "None"
+            )
+            self._add_status_message(
+                f"Target: {conn_info.server or 'Not configured'}:{conn_info.port or 'N/A'}, "
+                f"Nick: {conn_info.nick}, Channels: {initial_channels_display}"
+            )
+            logger.info(
+                f"IRCClient_Logic initialized for {conn_info.server or 'Not configured'}:"
+                f"{conn_info.port or 'N/A'} as {conn_info.nick}. "
+                f"Channels: {initial_channels_display}"
+            )
+        else:
+            self._add_status_message("No server configured", "warning")
+            logger.info("IRCClient_Logic initialized with no server configuration")
         self.max_history = app_config.MAX_HISTORY  # type: ignore
         self.reconnect_delay = int(app_config.RECONNECT_INITIAL_DELAY)  # type: ignore
         self.max_reconnect_delay = int(app_config.RECONNECT_MAX_DELAY)  # type: ignore
@@ -337,75 +318,75 @@ class IRCClient_Logic:
         logger.info(f"[StatusUpdate via Helper] ColorKey: '{color_key}', Text: {text}")
         self.add_message(text, color_attr, context_name="Status")
 
+    def _configure_from_server_config(self, config: ServerConfig, config_name: str):
+        """Helper to initialize connection info from a ServerConfig."""
+        conn_info = ConnectionInfo(
+            server=config.address,
+            port=config.port,
+            ssl=config.ssl,
+            nick=config.nick,
+            username=config.username or config.nick,
+            realname=config.realname or config.nick,
+            server_password=config.server_password,
+            nickserv_password=config.nickserv_password,
+            sasl_username=config.sasl_username,
+            sasl_password=config.sasl_password,
+            verify_ssl_cert=config.verify_ssl_cert,
+            auto_connect=config.auto_connect,
+            initial_channels=config.channels or [],
+            desired_caps=config.desired_caps or []
+        )
+
+        if not self.state_manager.set_connection_info(conn_info):
+            logger.error("Failed to set connection info in StateManager")
+            return
+
+        logger.info(f"Configured from server config: {config_name}")
+
+        # Create contexts for initial channels
+        self.context_manager.create_context("Status", context_type="status")
+        for ch_name in conn_info.initial_channels:
+            self.context_manager.create_context(
+                ch_name,
+                context_type="channel",
+                initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
+            )
+        self.context_manager.set_active_context("Status")
+
     def _initialize_connection_handlers(self):
         logger.debug("Initializing connection handlers (CAP, SASL, Registration)...")
-        DEFAULT_GLOBAL_DESIRED_CAPS: Set[str] = {
-            "sasl",
-            "multi-prefix",
-            "server-time",
-            "message-tags",
-            "account-tag",
-            "echo-message",
-            "away-notify",
-            "chghost",
-            "userhost-in-names",
-            "cap-notify",
-            "extended-join",
-            "account-notify",
-            "invite-notify",
-        }
-        if (
-            self.active_server_config
-            and self.active_server_config.desired_caps is not None
-            and isinstance(self.active_server_config.desired_caps, list)
-        ):
-            self.desired_caps_config = set(self.active_server_config.desired_caps)
-        else:
-            self.desired_caps_config = DEFAULT_GLOBAL_DESIRED_CAPS
+        conn_info = self.state_manager.get_connection_info()
+        if not conn_info:
+            logger.error("Cannot initialize connection handlers - no connection info")
+            return
 
         self.cap_negotiator = CapNegotiator(
             network_handler=self.network_handler,
-            desired_caps=self.desired_caps_config,
+            desired_caps=set(conn_info.desired_caps),
             registration_handler=None,
             client_logic_ref=self,
         )
-        sasl_pass = (
-            self.active_server_config.sasl_password
-            if self.active_server_config
-            else (self.nickserv_password if self.nickserv_password else None)
-        )
+
         self.sasl_authenticator = SaslAuthenticator(
             network_handler=self.network_handler,
             cap_negotiator=self.cap_negotiator,
-            password=sasl_pass,
+            password=conn_info.sasl_password or conn_info.nickserv_password,
             client_logic_ref=self,
-        )
-        reg_initial_nick = self.nick
-        reg_username = (
-            self.active_server_config.username
-            if self.active_server_config
-            and self.active_server_config.username is not None
-            else reg_initial_nick
-        )
-        reg_realname = (
-            self.active_server_config.realname
-            if self.active_server_config
-            and self.active_server_config.realname is not None
-            else reg_initial_nick
         )
 
-        self.registration_handler = RegistrationHandler(
-            network_handler=self.network_handler,
-            command_handler=self.command_handler,
-            initial_nick=reg_initial_nick,
-            username=reg_username,
-            realname=reg_realname,
-            server_password=self.password,
-            nickserv_password=self.nickserv_password,
-            initial_channels_to_join=self.initial_channels_list[:],
-            cap_negotiator=self.cap_negotiator,
-            client_logic_ref=self,
-        )
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info:
+            conn_info = self.state_manager.get_connection_info()
+            if conn_info:
+                self.registration_handler = RegistrationHandler(
+                    network_handler=self.network_handler,
+                    command_handler=self.command_handler,
+                    state_manager=self.state_manager,
+                    cap_negotiator=self.cap_negotiator,
+                    client_logic_ref=self,
+                )
+        else:
+            logger.error("Cannot initialize registration handler - no connection info")
         self.cap_negotiator.registration_handler = self.registration_handler
         if hasattr(self.cap_negotiator, "set_sasl_authenticator"):
             self.cap_negotiator.set_sasl_authenticator(self.sasl_authenticator)
@@ -783,9 +764,10 @@ class IRCClient_Logic:
         else:
             active_ctx = self.context_manager.get_active_context()
             if not active_ctx or active_ctx.name == "Status":
+                conn_info = self.state_manager.get_connection_info()
                 normalized_initial_channels = {
                     self.context_manager._normalize_context_name(ch)
-                    for ch in self.initial_channels_list
+                    for ch in (conn_info.initial_channels if conn_info else [])
                 }
                 if normalized_channel_name in normalized_initial_channels:
                     logger.info(
@@ -893,14 +875,18 @@ class IRCClient_Logic:
             if active_ctx.join_status == ChannelJoinStatus.FULLY_JOINED:
                 self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
                 if "echo-message" not in self.get_enabled_caps():
+                    conn_info = self.state_manager.get_connection_info()
+                    current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
                     self.add_message(
-                        f"<{self.nick}> {text}",
+                        f"<{current_nick}> {text}",
                         "my_message",
                         context_name=active_ctx_name,
                     )
                 elif self.echo_sent_to_status:
+                    conn_info = self.state_manager.get_connection_info()
+                    current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
                     self.add_message(
-                        f"To {active_ctx_name}: <{self.nick}> {text}",
+                        f"To {active_ctx_name}: <{current_nick}> {text}",
                         "my_message",
                         context_name="Status",
                     )
@@ -913,12 +899,18 @@ class IRCClient_Logic:
         elif active_ctx.type == "query":
             self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
             if "echo-message" not in self.get_enabled_caps():
+                conn_info = self.state_manager.get_connection_info()
+                current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
                 self.add_message(
-                    f"<{self.nick}> {text}", "my_message", context_name=active_ctx_name
+                    f"<{current_nick}> {text}",
+                    "my_message",
+                    context_name=active_ctx_name
                 )
             elif self.echo_sent_to_status:
+                conn_info = self.state_manager.get_connection_info()
+                current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
                 self.add_message(
-                    f"To {active_ctx_name}: <{self.nick}> {text}",
+                    f"To {active_ctx_name}: <{current_nick}> {text}",
                     "my_message",
                     context_name="Status",
                 )
@@ -956,16 +948,17 @@ class IRCClient_Logic:
     def run_main_loop(self):
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
         try:
-            if self.server and self.port is not None:
-                logger.info(f"Initializing connection to {self.server}:{self.port}")
+            conn_info = self.state_manager.get_connection_info()
+            if conn_info and conn_info.server and conn_info.port is not None:
+                logger.info(f"Initializing connection to {conn_info.server}:{conn_info.port}")
                 if not self.network_handler:
                     logger.error("Network handler not initialized")
                     return
                 self.network_handler.update_connection_params(
-                    server=self.server,
-                    port=self.port,
-                    use_ssl=self.use_ssl,
-                    channels_to_join=self.initial_channels_list,
+                    server=conn_info.server,
+                    port=conn_info.port,
+                    use_ssl=conn_info.ssl,
+                    channels_to_join=conn_info.initial_channels,
                 )
                 if not self.network_handler._network_thread:
                     self.network_handler.start()
@@ -1077,17 +1070,20 @@ class IRCClient_Logic:
 
         # Recreate initial channels (now based on the potentially new server config)
         # self.initial_channels_list should have been updated by /server command before this point
-        for ch_name in self.initial_channels_list:
-            self.context_manager.create_context(
-                ch_name,
-                context_type="channel",
-                initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
-            )
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info:
+            for ch_name in conn_info.initial_channels:
+                self.context_manager.create_context(
+                    ch_name,
+                    context_type="channel",
+                    initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
+                )
 
         # Set active context: to the first initial channel, or Status if no initial channels
-        if self.initial_channels_list:
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info and conn_info.initial_channels:
             # Ensure the first initial channel actually resulted in a created context
-            first_initial_channel_normalized = self.context_manager._normalize_context_name(self.initial_channels_list[0])
+            first_initial_channel_normalized = self.context_manager._normalize_context_name(conn_info.initial_channels[0])
             if self.context_manager.get_context(first_initial_channel_normalized):
                 self.context_manager.set_active_context(first_initial_channel_normalized)
             else:
@@ -1096,7 +1092,10 @@ class IRCClient_Logic:
             self.context_manager.set_active_context("Status")
 
         # Clear other relevant client state
-        self.currently_joined_channels.clear()
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info:
+            conn_info.currently_joined_channels.clear()
+            self.state_manager.set_connection_info(conn_info)
         self.last_join_command_target = None
         self.user_modes.clear() # Clear user modes specific to the old server
 

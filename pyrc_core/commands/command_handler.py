@@ -217,7 +217,12 @@ class CommandHandler:
                     script_handler = script_cmd_data["handler"]
                     event_data_for_script = {
                         "client_logic_ref": self.client, "raw_line": line, "command": cmd,
-                        "args_str": args_str, "client_nick": self.client.nick,
+                        "args_str": args_str,
+                        "args_str": args_str,
+                        "client_nick": (lambda:
+                            (conn_info := self.client.state_manager.get_connection_info()) and
+                            hasattr(conn_info, 'nick') and
+                            conn_info.nick or "unknown")(),
                         "active_context_name": self.client.context_manager.active_context_name,
                         "script_name": script_cmd_data.get("script_name", "UnknownScript"),
                     }

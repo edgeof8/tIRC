@@ -91,8 +91,9 @@ class UIManager:
         self._init_color_pair("input", COLOR_ID_INPUT, curses.COLOR_WHITE, -1)
         self._init_color_pair("pm", COLOR_ID_PM, curses.COLOR_MAGENTA, -1)
         self._init_color_pair("user_prefix", 14, curses.COLOR_YELLOW, -1)
-        self._init_color_pair("list_panel_bg", 15, curses.COLOR_WHITE, curses.COLOR_BLUE)
-        self._init_color_pair("user_list_panel_bg", 16, curses.COLOR_WHITE, curses.COLOR_GREEN)
+        # Use dark backgrounds for the panels
+        self._init_color_pair("list_panel_bg", 15, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        self._init_color_pair("user_list_panel_bg", 16, curses.COLOR_GREEN, curses.COLOR_BLACK)
 
     def _init_color_pair(self, name, pair_id, fg, bg):
         curses.init_pair(pair_id, fg, bg)
@@ -621,16 +622,21 @@ class UIManager:
             elif unread_count > 0:
                 attr = self.colors.get("highlight", 0)
                 prefix = "*"
+            # If not highlighted, ensure it uses the correct panel background
+            else:
+                attr = self.colors.get("list_panel_bg", 0)
 
             display_name_final = f"{prefix}{display_name_base}{status_suffix}"
             if unread_count > 0 and ctx_name != active_context_name_for_list_highlight:
                 display_name_final += f" ({unread_count})"
 
+            # Pad the line to ensure the background color fills the entire width
+            padded_display_line = display_name_final.ljust(max_x)
             self._safe_addstr(
                 self.sidebar_win,
                 line_num,
                 0,
-                display_name_final,
+                padded_display_line,
                 attr,
                 "_draw_sidebar_context_list_item",
             )

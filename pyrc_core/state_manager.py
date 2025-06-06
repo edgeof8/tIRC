@@ -36,8 +36,7 @@ class ConnectionState(Enum):
 
 @dataclass
 class ConnectionInfo:
-    """Information about a connection."""
-
+    """Holds all state related to a single server connection."""
     server: str
     port: int
     ssl: bool
@@ -50,13 +49,19 @@ class ConnectionInfo:
     sasl_password: Optional[str] = None
     verify_ssl_cert: bool = True
     auto_connect: bool = False
+    initial_channels: List[str] = field(default_factory=list)
     desired_caps: List[str] = field(default_factory=list)
+    # Runtime state
     last_error: Optional[str] = None
     last_error_time: Optional[datetime] = None
     connection_attempts: int = 0
     last_connection_attempt: Optional[datetime] = None
     last_successful_connection: Optional[datetime] = None
-    config_errors: List[str] = field(default_factory=list)  # Track configuration issues
+    config_errors: List[str] = field(default_factory=list)
+    # Runtime state not from config
+    user_modes: List[str] = field(default_factory=list)
+    currently_joined_channels: Set[str] = field(default_factory=set)
+    last_attempted_nick_change: Optional[str] = None
 
 
 @dataclass

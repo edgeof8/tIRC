@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from pyrc_core.commands.command_handler import CommandHandler
     from pyrc_core.irc.cap_negotiator import CapNegotiator
     from pyrc_core.irc.sasl_authenticator import SaslAuthenticator
+    from pyrc_core.state_manager import StateManager
     # To add status messages, it might need a reference to IRCClient_Logic or a delegate
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
 
@@ -15,30 +16,30 @@ class RegistrationHandler:
     def __init__(self,
                  network_handler: 'NetworkHandler',
                  command_handler: 'CommandHandler',
-                 initial_nick: str,
-                 username: str, # Typically same as initial_nick or a configured username
-                 realname: str, # Typically same as initial_nick or a configured realname
-                 server_password: Optional[str],
-                 nickserv_password: Optional[str],
-                 initial_channels_to_join: List[str],
+                 state_manager: 'StateManager',
                  cap_negotiator: Optional['CapNegotiator'] = None,
                  client_logic_ref: Optional['IRCClient_Logic'] = None):
-       self.network_handler = network_handler
-       self.command_handler = command_handler
-       self.cap_negotiator = cap_negotiator
-       self.client_logic_ref = client_logic_ref
-       self.sasl_authenticator: Optional['SaslAuthenticator'] = None
+        self.network_handler = network_handler
+        self.command_handler = command_handler
+        self.state_manager = state_manager
+        self.cap_negotiator = cap_negotiator
+        self.client_logic_ref = client_logic_ref
+        self.sasl_authenticator: Optional['SaslAuthenticator'] = None
 
-       self.initial_nick = initial_nick
-       self.current_nick_to_register = initial_nick # Can be updated by 433 handler
-       self.username = username
-       self.realname = realname
-       self.server_password = server_password
-       self.nickserv_password = nickserv_password
-       self.initial_channels_to_join = initial_channels_to_join
+        conn_info = state_manager.get_connection_info()
+        if not conn_info:
+            raise ValueError("Cannot initialize RegistrationHandler - no connection info")
 
-       self.registration_triggered_by_001 = False
-       self.nick_user_sent = False
+        self.initial_nick = conn_info.nick
+        self.current_nick_to_register = conn_info.nick
+        self.username = conn_info.username or conn_info.nick
+        self.realname = conn_info.realname or conn_info.nick
+        self.server_password = conn_info.server_password
+        self.nickserv_password = conn_info.nickserv_password
+        self.initial_channels_to_join = conn_info.initial_channels[:]
+
+        self.registration_triggered_by_001 = False
+        self.nick_user_sent = False
 
 
     def set_sasl_authenticator(self, sasl_authenticator: 'SaslAuthenticator'):
