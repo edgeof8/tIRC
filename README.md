@@ -2,7 +2,7 @@
 
 PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It aims to provide a feature-rich, yet lightweight and user-friendly experience for IRC users who prefer the command line. It is actively developed with a focus on extreme modularity, enabling programmatic use and integration with AI agents or other automated systems.
 
-![PyRC Screenshot](image.png)
+![PyRC Screenshot](image.jpg)
 
 ## Key Architectural Features
 
