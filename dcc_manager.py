@@ -151,19 +151,40 @@ class DCCManager:
 
     def _get_listening_socket(self) -> Optional[Tuple[socket.socket, int]]:
         """Finds an available port in the configured range and returns a listening socket."""
-        # For Phase 1, let's try a simpler approach: pick one port or let OS pick.
-        # True port range iteration can be complex.
-        # For now, let OS pick an ephemeral port by binding to port 0.
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.bind(("", 0)) # Bind to any interface, OS picks port
-            s.listen(1) # Listen for one incoming connection for this transfer
-            port = s.getsockname()[1] # Get the assigned port
-            self.dcc_event_logger.info(f"Created listening socket on port {port} for a DCC transfer.")
-            return s, port
-        except socket.error as e:
-            self.dcc_event_logger.error(f"Could not create listening socket: {e}")
-            return None
+        port_start = self.dcc_config.get("port_range_start", 1024)
+        port_end = self.dcc_config.get("port_range_end", 65535)
+
+        if port_start > port_end:
+            self.dcc_event_logger.warning(f"Invalid port range: start ({port_start}) > end ({port_end}). Using default range 1024-65535.")
+            port_start = 1024
+            port_end = 65535
+
+        ports_to_try = list(range(port_start, port_end + 1))
+        self.dcc_event_logger.info(f"Attempting to find available DCC port in range {port_start}-{port_end}")
+
+        for port in ports_to_try:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.bind(("", port))  # Bind to all interfaces on the current port
+                s.listen(1)  # Listen for one incoming connection for this transfer
+                self.dcc_event_logger.info(f"Successfully bound DCC listening socket to port {port}.")
+                return s, port
+            except socket.error as e:
+                if e.errno == 98:  # EADDRINUSE
+                    self.dcc_event_logger.debug(f"Port {port} already in use, trying next.")
+                else:
+                    self.dcc_event_logger.warning(f"Could not bind to port {port}: {e}. Trying next.")
+                if s:  # Ensure socket is closed if bind failed after creation
+                    s.close()
+            except Exception as ex:
+                self.dcc_event_logger.error(f"Unexpected error trying port {port}: {ex}")
+                if s:
+                    s.close()
+
+        # If we get here, all ports in the range failed
+        self.dcc_event_logger.error(f"Could not find an available DCC listening port in range {port_start}-{port_end}.")
+        self.client_logic.add_message(f"Error: No available DCC ports in range {port_start}-{port_end}.", "error", context_name="DCC")
+        return None
 
     def _get_local_ip_for_ctcp(self) -> str:
         """Attempts to determine a suitable local IP address for CTCP messages."""
