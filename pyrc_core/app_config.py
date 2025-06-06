@@ -106,7 +106,7 @@ DEFAULT_VERIFY_SSL_CERT = True
 
 # --- Feature Settings ---
 DEFAULT_ENABLE_TRIGGER_SYSTEM = True
-DEFAULT_DISABLED_SCRIPTS: Set[str] = set()
+DEFAULT_DISABLED_SCRIPTS: Set[str] = {"run_headless_tests", "test_dcc_features"}
 DEFAULT_HEADLESS_MAX_HISTORY = 50
 
 # --- New Ignore List Settings ---

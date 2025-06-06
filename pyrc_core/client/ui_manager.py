@@ -83,16 +83,16 @@ class UIManager:
             "sidebar_header",
             COLOR_ID_SIDEBAR_HEADER,
             curses.COLOR_BLACK,
-            curses.COLOR_CYAN,
+            curses.COLOR_CYAN, # This will be overridden by panel-specific colors for banners
         )
         self._init_color_pair(
-            "sidebar_item", COLOR_ID_SIDEBAR_USER, curses.COLOR_CYAN, -1
+            "sidebar_item", COLOR_ID_SIDEBAR_USER, curses.COLOR_CYAN, curses.COLOR_BLACK
         )
         self._init_color_pair("input", COLOR_ID_INPUT, curses.COLOR_WHITE, -1)
         self._init_color_pair("pm", COLOR_ID_PM, curses.COLOR_MAGENTA, -1)
-        self._init_color_pair("user_prefix", 14, curses.COLOR_YELLOW, -1)
+        self._init_color_pair("user_prefix", 14, curses.COLOR_YELLOW, curses.COLOR_BLACK)
         # Use dark backgrounds for the panels
-        self._init_color_pair("list_panel_bg", 15, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        self._init_color_pair("list_panel_bg", 15, curses.COLOR_BLUE, curses.COLOR_BLACK)
         self._init_color_pair("user_list_panel_bg", 16, curses.COLOR_GREEN, curses.COLOR_BLACK)
 
     def _init_color_pair(self, name, pair_id, fg, bg):
@@ -570,7 +570,7 @@ class UIManager:
             self.sidebar_win,
             line_num,
             "Windows:",
-            self.colors.get("sidebar_header", 0),
+            self.colors.get("list_panel_bg", 0), # Use list_panel_bg for Windows header
             "_draw_sidebar_context_list_header",
         )
         line_num += 1
@@ -674,7 +674,7 @@ class UIManager:
             self.sidebar_win,
             line_num,
             user_header_full,
-            self.colors.get("sidebar_header", 0),
+            self.colors.get("user_list_panel_bg", 0), # Use user_list_panel_bg for Users header
             "_draw_sidebar_user_list_header_text",
         )
         line_num += 1
@@ -750,16 +750,22 @@ class UIManager:
             if line_num >= max_y:
                 break
             display_user_with_prefix = f"{prefix_str}{nick}"
-            user_display_truncated = (" " + display_user_with_prefix)[: max_x - 1]
+            # Pad the line to ensure the background color fills the entire width
+            padded_display_line = (" " + display_user_with_prefix).ljust(max_x)
             user_color = self.colors.get("sidebar_item", 0)
             if prefix_str == "@":
                 user_color = self.colors.get("user_prefix", user_color)
+
+            # Ensure user list items also use the user_list_panel_bg if not highlighted
+            # This prevents "floating text" on the default black background
+            if not (user_color & curses.A_STANDOUT or user_color & curses.A_BOLD): # Check if it's not a highlight or bold
+                 user_color = self.colors.get("user_list_panel_bg", 0) # Use the panel background
 
             self._safe_addstr(
                 self.sidebar_win,
                 line_num,
                 0,
-                " " + display_user_with_prefix,
+                padded_display_line, # Use padded_display_line to ensure full background
                 user_color,
                 "_draw_sidebar_user_list_item",
             )
