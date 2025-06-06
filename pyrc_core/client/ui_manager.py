@@ -91,6 +91,8 @@ class UIManager:
         self._init_color_pair("input", COLOR_ID_INPUT, curses.COLOR_WHITE, -1)
         self._init_color_pair("pm", COLOR_ID_PM, curses.COLOR_MAGENTA, -1)
         self._init_color_pair("user_prefix", 14, curses.COLOR_YELLOW, -1)
+        self._init_color_pair("list_panel_bg", 15, curses.COLOR_BLUE, -1)
+        self._init_color_pair("user_list_panel_bg", 16, curses.COLOR_GREEN, -1)
 
     def _init_color_pair(self, name, pair_id, fg, bg):
         curses.init_pair(pair_id, fg, bg)
@@ -793,30 +795,53 @@ class UIManager:
         if not self.sidebar_win:
             return
 
-        try:
-            self.sidebar_win.erase()
-            max_y, max_x = self.sidebar_win.getmaxyx()
-            if max_y <= 0 or max_x <= 0:
-                return
+        # Draw background for the entire sidebar
+        self._draw_window_border_and_bkgd(self.sidebar_win, self.colors["list_panel_bg"])
 
-            # Draw context list
-            line_num = self._draw_sidebar_context_list(
-                max_y, max_x, current_active_ctx_name_str
-            )
+        max_y, max_x = self.sidebar_win.getmaxyx()
+        if max_y <= 0 or max_x <= 0:
+            return
 
-            # Draw user list header and items if applicable
-            if current_active_ctx_obj and current_active_ctx_obj.type != "dcc":
-                line_num = self._draw_sidebar_user_list_header(
-                    line_num,
-                    max_y,
-                    max_x,
-                    current_active_ctx_obj,
-                    current_active_ctx_name_str,
-                )
-                if line_num < max_y:
-                    self._draw_sidebar_user_list_items_and_indicators(
-                        line_num, max_y, max_x, current_active_ctx_obj
-                    )
+        # Draw context list
+        line_num = self._draw_sidebar_context_list(
+            max_y, max_x, current_active_ctx_name_str
+        )
+
+        # Draw user list header and items if applicable
+        if current_active_ctx_obj and current_active_ctx_obj.type != "dcc":
+            # Draw background for the user list panel
+            remaining_height = max_y - line_num
+            user_list_win = None
+            try:
+                if remaining_height > 0:
+                    user_list_win = curses.newwin(remaining_height, max_x, line_num, 0)
+
+                    if user_list_win:
+                        self._draw_window_border_and_bkgd(user_list_win, self.colors["user_list_panel_bg"])
+
+                        line_num = self._draw_sidebar_user_list_header(
+                            line_num,
+                            max_y,
+                            max_x,
+                            current_active_ctx_obj,
+                            current_active_ctx_name_str,
+                        )
+                        if line_num < max_y:
+                            self._draw_sidebar_user_list_items_and_indicators(
+                                line_num, max_y, max_x, current_active_ctx_obj
+                            )
+            except curses.error as e:
+                logger.error(f"Error drawing user list: {e}", exc_info=True)
+            finally:
+                if user_list_win:
+                    try:
+                        user_list_win.erase()
+                        user_list_win.refresh()
+                        del user_list_win
+                    except curses.error:
+                        pass  # Handle potential errors during deletion
+
+
 
         except curses.error as e:
             logger.error(f"Error drawing sidebar: {e}", exc_info=True)

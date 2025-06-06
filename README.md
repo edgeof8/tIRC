@@ -4,6 +4,40 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 
 ![PyRC Screenshot](image.png) <!-- Assuming image.png is a relevant screenshot -->
 
+## Project Structure
+
+The project has been reorganized into a more modular structure with core functionality in the `pyrc_core` package:
+
+```
+PyRC/
+├── pyrc_core/               # Core package containing all main functionality
+│   ├── __init__.py          # Package initialization
+│   ├── app_config.py        # Configuration handling
+│   ├── client/              # Client-side components
+│   │   ├── __init__.py
+│   │   ├── input_handler.py
+│   │   ├── irc_client_logic.py
+│   │   └── ui_manager.py
+│   ├── commands/           # All command implementations
+│   │   ├── __init__.py
+│   │   ├── channel/        # Channel-related commands
+│   │   ├── core/           # Core commands
+│   │   ├── dcc/            # DCC commands
+│   │   ├── information/    # Information commands
+│   │   ├── server/         # Server commands
+│   │   ├── ui/             # UI commands
+│   │   └── user/           # User commands
+│   ├── dcc/                # DCC functionality
+│   ├── features/           # Optional features
+│   ├── irc/                # IRC protocol handling
+│   ├── scripting/          # Scripting system
+│   └── utils/              # Utilities
+├── scripts/                # User scripts
+├── config/                 # Configuration files
+├── data/                   # Data files
+└── tests/                  # Test files
+```
+
 ## Project Status
 
 **PyRC is under active development.** The focus is on continuously enhancing its feature set, improving code modularity, and ensuring overall stability. Recent development cycles have included significant work on DCC functionality (including port range selection, advertised IP configuration, and transfer cleanup), a more robust event-driven `/server` command, an enhanced `/help` system, and a more reliable headless testing framework. We welcome contributions and feedback as the project evolves.
