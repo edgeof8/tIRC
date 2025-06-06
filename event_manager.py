@@ -136,6 +136,34 @@ class EventManager:
         data = {"nick": nick, "new_ident": new_ident, "new_host": new_host, "userhost": old_userhost}
         self.dispatch_event("CHGHOST", data, raw_line)
 
+    def dispatch_message_added_to_context(
+        self,
+        context_name: str,
+        text: str,
+        color_key: str,
+        source_full_ident: Optional[str] = None,
+        is_privmsg_or_notice: bool = False,
+        raw_line: str = ""
+    ):
+        """Dispatch an event when a message is added to any context.
+
+        Args:
+            context_name: The name of the context (channel, query, status)
+            text: The message text
+            color_key: The color key used for the message
+            source_full_ident: Optional full ident of the message source
+            is_privmsg_or_notice: Whether this is a PRIVMSG or NOTICE
+            raw_line: Optional raw IRC line that triggered this message
+        """
+        data = {
+            "context_name": context_name,
+            "text": text,
+            "color_key": color_key,
+            "source_full_ident": source_full_ident,
+            "is_privmsg_or_notice": is_privmsg_or_notice
+        }
+        self.dispatch_event("CLIENT_MESSAGE_ADDED_TO_CONTEXT", data, raw_line)
+
     # --- Raw IRC Line & Numeric Event Dispatchers ---
     # RAW_IRC_LINE is special: typically dispatched directly by ScriptManager before IRCMessage parsing if needed.
     # If EventManager were to handle it, it would need the raw line before parsing.

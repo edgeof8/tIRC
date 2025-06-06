@@ -778,6 +778,17 @@ class IRCClient_Logic:
             and target_context_obj.scrollback_offset > 0
         ):
             target_context_obj.scrollback_offset += num_lines_added_for_this_message
+
+        # Dispatch the message added event
+        if hasattr(self, 'event_manager') and self.event_manager:
+            self.event_manager.dispatch_message_added_to_context(
+                context_name=target_context_name,
+                text=text,
+                color_key=color_attr_or_key if isinstance(color_attr_or_key, str) else "system",
+                source_full_ident=source_full_ident,
+                is_privmsg_or_notice=is_privmsg_or_notice
+            )
+
         self.ui_needs_update.set()
 
     def get_channel_logger(self, channel_name: str) -> Optional[logging.Logger]:

@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 import threading
 from context_manager import ChannelJoinStatus
@@ -25,6 +25,69 @@ class HeadlessTestRunner:
         self.test_results: List[TestResult] = []
         self.current_test_start = 0.0
         self.api = api_handler
+        # Add dictionaries to store event-related state
+        self.expected_events: Dict[str, threading.Event] = {}
+        self.received_event_data: Dict[str, Optional[Dict[str, Any]]] = {}
+
+    def _setup_event_wait(self, unique_key: str) -> None:
+        """Set up event waiting infrastructure for a specific test step.
+
+        Args:
+            unique_key: A unique identifier for this event wait operation
+        """
+        self.expected_events[unique_key] = threading.Event()
+        self.received_event_data[unique_key] = None
+        self.log_test_event(f"Set up event wait for '{unique_key}'")
+
+    def _event_handler_for_test(self, unique_key: str, condition_func: Callable[[Dict[str, Any]], bool], event_data: Dict[str, Any]) -> None:
+        """Handle an event for a specific test step.
+
+        Args:
+            unique_key: The unique identifier for this event wait operation
+            condition_func: A function that takes event_data and returns True if the condition is met
+            event_data: The event data received from the server
+        """
+        if unique_key in self.expected_events and not self.expected_events[unique_key].is_set():
+            if condition_func(event_data):
+                self.log_test_event(f"Condition met for '{unique_key}' with event: {event_data.get('raw_line', str(event_data)[:100])}")
+                self.received_event_data[unique_key] = event_data
+                self.expected_events[unique_key].set()
+
+    def _await_event(self, unique_key: str, timeout: float) -> Optional[Dict[str, Any]]:
+        """Wait for an event to occur with a timeout.
+
+        Args:
+            unique_key: The unique identifier for this event wait operation
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            Optional[Dict[str, Any]]: The event data if the event occurred, None if timeout
+        """
+        if unique_key not in self.expected_events:
+            self.log_test_event(f"Error: No event setup for key '{unique_key}'")
+            return None
+
+        event_happened = self.expected_events[unique_key].wait(timeout)
+        if event_happened:
+            return self.received_event_data[unique_key]
+        else:
+            self.log_test_event(f"Timeout waiting for event '{unique_key}'")
+            return None
+
+    def _cleanup_event_wait(self, unique_key: str, event_name: str, handler_ref: Callable) -> None:
+        """Clean up event waiting infrastructure after a test step.
+
+        Args:
+            unique_key: The unique identifier for this event wait operation
+            event_name: The name of the event that was being waited for
+            handler_ref: The handler function that was registered
+        """
+        self.api.unsubscribe_from_event(event_name, handler_ref)
+        if unique_key in self.expected_events:
+            del self.expected_events[unique_key]
+        if unique_key in self.received_event_data:
+            del self.received_event_data[unique_key]
+        self.log_test_event(f"Cleaned up event wait for '{unique_key}'")
 
     def log_test_event(self, message: str):
         """Log a test event."""
@@ -73,150 +136,143 @@ class HeadlessTestRunner:
             )
 
     def run_channel_join_test(self, client_logic) -> TestResult:
-        """Test joining a channel."""
+        """Test joining a channel using event-driven verification."""
         self.current_test_start = time.time()
         test_channel = "#pyrc-testing-setup"  # Use the already joined channel
+        normalized_test_channel = client_logic.context_manager._normalize_context_name(test_channel)
+
         self.log_test_event(f"Running channel PART/JOIN test for {test_channel}...")
 
         # PART the channel first
-        self.api.log_info(f"Attempting to PART {test_channel}")
-        self.api.part_channel(test_channel, "Testing re-join")
-        time.sleep(2.0)  # Give server time to process PART
+        part_key = f"part_{normalized_test_channel}"
+        self._setup_event_wait(part_key)
 
-        # Now attempt to JOIN it back
-        self.api.log_info(f"Attempting to JOIN {test_channel} again")
+        def part_condition(data: Dict[str, Any]) -> bool:
+            return (data.get("channel") == normalized_test_channel and
+                   data.get("nick") == client_logic.nick)
+
+        part_event_handler = lambda data: self._event_handler_for_test(part_key, part_condition, data)
+        self.api.subscribe_to_event("PART", part_event_handler)
+
+        self.api.part_channel(test_channel, "Testing re-join")
+        part_event_data = self._await_event(part_key, timeout=10.0)
+        self._cleanup_event_wait(part_key, "PART", part_event_handler)
+
+        if not part_event_data:
+            return TestResult(
+                "Channel Part",
+                False,
+                f"Timeout or failure waiting for self PART from {test_channel}",
+                time.time() - self.current_test_start
+            )
+
+        # Now JOIN
+        join_key = f"join_{normalized_test_channel}"
+        self._setup_event_wait(join_key)
+
+        def join_condition(data: Dict[str, Any]) -> bool:
+            return (data.get("channel_name") == normalized_test_channel and
+                   data.get("join_status") == ChannelJoinStatus.FULLY_JOINED.name)
+
+        join_event_handler = lambda data: self._event_handler_for_test(join_key, join_condition, data)
+        self.api.subscribe_to_event("CHANNEL_FULLY_JOINED", join_event_handler)
+
         self.api.join_channel(test_channel)
         self.log_test_event(f"Sent JOIN command for {test_channel}")
 
-        # Wait for join confirmation with a timeout
-        join_timeout = 15.0  # seconds
-        join_confirmed = False
-        start_wait_time = time.time()
-        while time.time() - start_wait_time < join_timeout:
-            joined_channels = self.api.get_joined_channels()
-            normalized_test_channel = (
-                client_logic.context_manager._normalize_context_name(test_channel)
-            )
-
-            current_joined_normalized = {
-                client_logic.context_manager._normalize_context_name(ch)
-                for ch in joined_channels
-            }
-
-            if normalized_test_channel in current_joined_normalized:
-                # Additional check: ensure the join_status is FULLY_JOINED
-                ctx = client_logic.context_manager.get_context(normalized_test_channel)
-                if ctx and ctx.join_status == ChannelJoinStatus.FULLY_JOINED:
-                    join_confirmed = True
-                    self.api.log_info(
-                        f"Channel {test_channel} confirmed in joined_channels and status is FULLY_JOINED."
-                    )
-                    break
-                elif ctx:
-                    self.api.log_info(
-                        f"Channel {test_channel} in joined_channels, but status is {ctx.join_status.name}. Waiting..."
-                    )
-                else:
-                    self.api.log_info(
-                        f"Channel {test_channel} in joined_channels, but context object not found. Waiting..."
-                    )
-            time.sleep(0.2)  # Check every 200ms
+        join_event_data = self._await_event(join_key, timeout=15.0)
+        self._cleanup_event_wait(join_key, "CHANNEL_FULLY_JOINED", join_event_handler)
 
         duration = time.time() - self.current_test_start
-        if join_confirmed:
+        if join_event_data:
             return TestResult(
                 "Channel Re-Join",
                 True,
-                f"Successfully PARTed and re-JOINed channel {test_channel}",
-                duration,
+                f"Successfully PARTed and re-JOINed (fully) channel {test_channel}",
+                duration
             )
         else:
-            joined_channels_at_timeout = self.api.get_joined_channels()
-            ctx_status_at_timeout = "N/A"
-            ctx_at_timeout = client_logic.context_manager.get_context(
-                client_logic.context_manager._normalize_context_name(test_channel)
-            )
-            if ctx_at_timeout and ctx_at_timeout.join_status:
-                ctx_status_at_timeout = ctx_at_timeout.join_status.name
+            # Get final state for error message
+            joined_channels = self.api.get_joined_channels()
+            ctx = client_logic.context_manager.get_context(normalized_test_channel)
+            ctx_status = ctx.join_status.name if ctx and ctx.join_status else "N/A"
 
             return TestResult(
                 "Channel Re-Join",
                 False,
-                f"Failed to confirm re-join for channel {test_channel} within {join_timeout}s. Currently joined: {joined_channels_at_timeout}. Context status: {ctx_status_at_timeout}",
-                duration,
+                f"Failed to confirm full re-join for {test_channel} within timeout. "
+                f"Currently joined: {joined_channels}. Context status: {ctx_status}",
+                duration
             )
 
     def run_message_send_test(self, client_logic) -> TestResult:
-        """Test sending a message to a channel."""
+        """Test sending a message to a channel using event-driven verification."""
         self.current_test_start = time.time()
         test_channel = "#pyrc-testing-setup"  # Use the channel we know we're in
-        test_message = f"Automated test message {int(time.time())}"
+        test_channel = client_logic.context_manager._normalize_context_name(test_channel)
+        timestamp = time.strftime("%H:%M:%S")
+        test_message = f"[{timestamp}] Test message from headless test"
 
-        self.log_test_event(f"Running message send test to {test_channel}...")
-        self.api.send_message(test_channel, test_message)
-        self.log_test_event(f"Sent message to {test_channel}: {test_message}")
+        # First verify the message was sent via PRIVMSG event
+        key = f"msg_send_{test_channel}_{timestamp}"
+        self._setup_event_wait(key)
 
-        # Wait for message to be processed and potentially echoed
-        time.sleep(2.0)
+        def privmsg_condition(data):
+            return (
+                data.get("nick") == client_logic.nickname
+                and data.get("target") == test_channel
+                and data.get("message") == test_message
+            )
 
-        message_found = False
-        verification_details = "Verification not attempted."
+        msg_event_handler = lambda data: self._event_handler_for_test(key, privmsg_condition, data)
+        client_logic.event_manager.subscribe("PRIVMSG", msg_event_handler)
+        client_logic.send_message(test_channel, test_message)
 
-        try:
-            # Get recent messages from the channel
-            recent_messages = self.api.get_context_messages(test_channel, count=10)
-            capabilities = self.api.get_server_capabilities()
-            client_nick = self.api.get_client_nick()
+        if not self._await_event(key, timeout=5.0):
+            self._cleanup_event_wait(key, "PRIVMSG", msg_event_handler)
+            duration = time.time() - self.current_test_start
+            return TestResult(
+                name="Message Send",
+                passed=False,
+                message=f"Failed to verify message send via PRIVMSG event for {test_channel}",
+                duration=duration
+            )
+        self._cleanup_event_wait(key, "PRIVMSG", msg_event_handler)
 
-            # Determine what message format to look for based on echo-message capability
-            if "echo-message" in capabilities:
-                expected_message = test_message
-                verification_details = (
-                    f"Checking for '{expected_message}' (echo-message active)"
-                )
-            else:
-                expected_message = f"<{client_nick}> {test_message}"
-                verification_details = (
-                    f"Checking for '{expected_message}' (echo-message not active)"
-                )
+        # Now verify the message appears in the buffer
+        key = f"msg_buffer_{test_channel}_{timestamp}"
+        self._setup_event_wait(key)
 
-            if recent_messages:
-                self.log_test_event(
-                    f"Recent messages in {test_channel}: {recent_messages}"
-                )
-                for msg_tuple in recent_messages:
-                    if isinstance(msg_tuple, tuple) and len(msg_tuple) > 0:
-                        msg_text = msg_tuple[0]
-                        if expected_message in msg_text:
-                            message_found = True
-                            verification_details += " Message found in buffer."
-                            break
+        def buffer_condition(data):
+            return (
+                data.get("context_name") == test_channel
+                and data.get("text") == test_message
+            )
 
-                if not message_found:
-                    verification_details += " Message not found in buffer."
-            else:
-                verification_details = f"No messages found in {test_channel} buffer."
-                self.log_test_event(verification_details)
+        buffer_event_handler = lambda data: self._event_handler_for_test(key, buffer_condition, data)
+        client_logic.event_manager.subscribe(
+            "CLIENT_MESSAGE_ADDED_TO_CONTEXT",
+            buffer_event_handler
+        )
 
-        except Exception as e:
-            self.log_test_event(f"Error during message verification: {e}")
-            verification_details = f"Exception during verification: {e}"
+        if not self._await_event(key, timeout=5.0):
+            self._cleanup_event_wait(key, "CLIENT_MESSAGE_ADDED_TO_CONTEXT", buffer_event_handler)
+            duration = time.time() - self.current_test_start
+            return TestResult(
+                name="Message Send",
+                passed=False,
+                message=f"Failed to verify message in buffer for {test_channel}",
+                duration=duration
+            )
 
+        self._cleanup_event_wait(key, "CLIENT_MESSAGE_ADDED_TO_CONTEXT", buffer_event_handler)
         duration = time.time() - self.current_test_start
-        if message_found:
-            return TestResult(
-                "Message Send",
-                True,
-                f"Successfully sent and verified message in {test_channel}. {verification_details}",
-                duration,
-            )
-        else:
-            return TestResult(
-                "Message Send",
-                False,
-                f"Failed to verify sent message in {test_channel}. {verification_details}",
-                duration,
-            )
+        return TestResult(
+            name="Message Send",
+            passed=True,
+            message=f"Successfully verified message send and buffer for {test_channel}",
+            duration=duration
+        )
 
     def run_all_tests(self, client_logic) -> List[TestResult]:
         self.log_test_event("Starting test suite (Connection Test Only)...")

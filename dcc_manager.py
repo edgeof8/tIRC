@@ -154,6 +154,9 @@ class DCCManager:
 
     def _scheduled_cleanup_task(self):
         """Called by the cleanup timer to perform cleanup and reschedule."""
+        if not self.dcc_config.get("cleanup_enabled", True):
+            self.dcc_event_logger.info("DCC cleanup is disabled. Skipping scheduled cleanup task.")
+            return
         self.dcc_event_logger.info("Running scheduled DCC cleanup task...")
         self._cleanup_finished_transfers()
         # Reschedule the timer if still enabled
@@ -164,6 +167,10 @@ class DCCManager:
 
     def _cleanup_finished_transfers(self):
         """Removes old completed/failed/cancelled/timed-out transfers from self.transfers."""
+        if not self.dcc_config.get("cleanup_enabled", True):
+            self.dcc_event_logger.debug("DCC cleanup is disabled. Skipping cleanup.")
+            return
+
         with self._lock:  # Ensure thread safety
             now = time.monotonic()
             max_age_seconds = self.dcc_config.get("transfer_max_age_seconds", 86400 * 3)
