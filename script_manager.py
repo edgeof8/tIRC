@@ -96,40 +96,128 @@ class ScriptManager:
             self.logger.warning(f"Scripts directory does not exist: {self.scripts_dir}")
             return
 
+        # Initialization for dependency resolution
+        scripts_metadata: Dict[str, List[str]] = {}  # script_name -> list_of_dependency_names
+        script_load_candidates: List[str] = []  # script_names that are valid files and not disabled
+
+        # Pass 1: Collect Metadata and Initial Candidates
+        self.logger.info("Pass 1: Collecting script metadata for dependency resolution.")
         for script_file in os.listdir(self.scripts_dir):
             if script_file.endswith(".py") and not script_file.startswith("__"):
                 script_name = script_file[:-3]
+
                 if script_name in self.disabled_scripts:
-                    self.logger.info(f"Skipping disabled script: {script_name}")
+                    self.logger.info(f"Skipping disabled script '{script_name}' during metadata collection.")
                     continue
+
                 try:
-                    script_module = importlib.import_module(f"scripts.{script_name}")
-                    api_handler = ScriptAPIHandler(
-                        self.client_logic_ref, self, script_name
-                    )
-                    if hasattr(script_module, "get_script_instance"):
-                        script_instance = script_module.get_script_instance(api_handler)
-                        if script_instance:
-                            self.scripts[script_name] = script_instance
-                            if hasattr(script_instance, "load") and callable(
-                                script_instance.load
-                            ):
-                                script_instance.load()
-                                self.logger.info(
-                                    f"Successfully loaded and initialized script: {script_name}"
-                                )
-                            else:
-                                self.logger.debug(
-                                    f"Script {script_name} instance created, but no 'load' method found."
-                                )
-                    else:
-                        self.logger.warning(
-                            f"Script {script_name} has no get_script_instance function"
-                        )
+                    # Temporarily create ScriptAPIHandler to load metadata
+                    # This relies on ScriptAPIHandler's __init__ calling _load_metadata
+                    temp_api = ScriptAPIHandler(self.client_logic_ref, self, script_name)
+                    dependencies = temp_api.metadata.dependencies
+                    scripts_metadata[script_name] = dependencies
+                    script_load_candidates.append(script_name)
+                    self.logger.debug(f"Script '{script_name}' metadata collected. Dependencies: {dependencies}")
                 except Exception as e:
-                    self.logger.error(
-                        f"Failed to load script {script_name}: {e}", exc_info=True
-                    )  # Log full traceback
+                    self.logger.error(f"Failed to collect metadata for script '{script_name}': {e}. This script or its dependents may not be loaded.", exc_info=True)
+                    # Do not add to script_load_candidates if metadata collection fails
+
+        # Pass 2: Iterative Dependency Resolution and Loading
+        self.logger.info("Pass 2: Resolving dependencies and loading scripts.")
+        loaded_script_names: Set[str] = set()
+        scripts_to_attempt_load: List[str] = list(script_load_candidates)
+
+        # Safety break for complex cases or circular dependencies
+        max_iterations = len(scripts_to_attempt_load) + 5
+        iterations = 0
+        made_progress_in_iteration = True
+
+        while scripts_to_attempt_load and iterations < max_iterations and made_progress_in_iteration:
+            made_progress_in_iteration = False
+            iterations += 1
+            still_pending_this_round: List[str] = []
+
+            for script_name in scripts_to_attempt_load:
+                dependencies = scripts_metadata.get(script_name, [])
+                deps_met = True
+                missing_deps_for_log = []
+
+                for dep_name in dependencies:
+                    if dep_name not in loaded_script_names:
+                        # Check if the dependency is a known script or explicitly disabled
+                        if dep_name not in scripts_metadata and dep_name not in self.disabled_scripts:
+                            self.logger.error(f"Script '{script_name}' has an unknown dependency '{dep_name}'. Cannot load '{script_name}'.")
+                            deps_met = False
+                            missing_deps_for_log.append(f"{dep_name} (unknown)")
+                            break # Hard failure, cannot proceed with this script
+                        elif dep_name in self.disabled_scripts:
+                            self.logger.warning(f"Script '{script_name}' depends on disabled script '{dep_name}'. Cannot load '{script_name}'.")
+                            deps_met = False
+                            missing_deps_for_log.append(f"{dep_name} (disabled)")
+                            break # Hard failure, cannot proceed with this script
+                        else:
+                            # Dependency exists but is not yet loaded
+                            deps_met = False
+                            missing_deps_for_log.append(f"{dep_name} (pending)")
+                            # No break here, continue to check other deps for this script
+
+                if deps_met:
+                    # Actual script loading logic (moved from original loop)
+                    try:
+                        script_module = importlib.import_module(f"scripts.{script_name}")
+                        api_handler = ScriptAPIHandler(self.client_logic_ref, self, script_name)
+
+                        # Double check dependencies using the actual API handler now that deps should be loaded
+                        satisfied, missing_runtime_deps = api_handler.check_dependencies()
+                        if not satisfied:
+                            self.logger.error(f"Runtime dependency check failed for '{script_name}': Missing {missing_runtime_deps}. Skipping load.")
+                            still_pending_this_round.append(script_name) # Put back for next round, maybe its dep will load
+                            continue
+
+                        if hasattr(script_module, "get_script_instance"):
+                            script_instance = script_module.get_script_instance(api_handler)
+                            if script_instance:
+                                self.scripts[script_name] = script_instance
+                                if hasattr(script_instance, "load") and callable(script_instance.load):
+                                    script_instance.load()
+                                self.logger.info(f"Successfully loaded and initialized script (deps met): {script_name}")
+                                loaded_script_names.add(script_name)
+                                made_progress_in_iteration = True
+                            else:
+                                self.logger.warning(f"Script {script_name} get_script_instance returned None. Skipping load.")
+                        else:
+                            self.logger.warning(f"Script {script_name} has no get_script_instance function. Skipping load.")
+                    except Exception as e:
+                        self.logger.error(f"Failed to load script {script_name} (even with deps met): {e}", exc_info=True)
+                else:
+                    # Script's dependencies are not yet met, keep it for the next round
+                    still_pending_this_round.append(script_name)
+                    if missing_deps_for_log:
+                        self.logger.debug(f"Script '{script_name}' still pending due to missing dependencies: {', '.join(missing_deps_for_log)}")
+
+            scripts_to_attempt_load = still_pending_this_round
+
+        # Post-Loop Check
+        if scripts_to_attempt_load:
+            unloaded_scripts_details = []
+            for script_name in scripts_to_attempt_load:
+                dependencies = scripts_metadata.get(script_name, [])
+                missing_deps = [
+                    dep for dep in dependencies
+                    if dep not in loaded_script_names and dep not in self.disabled_scripts
+                ]
+                status = ""
+                if script_name in self.disabled_scripts:
+                    status = " (disabled)"
+                elif script_name not in scripts_metadata:
+                    status = " (metadata collection failed)"
+                elif missing_deps:
+                    status = f" (missing: {', '.join(missing_deps)})"
+                else:
+                    status = " (likely circular dependency or internal error)"
+                unloaded_scripts_details.append(f"'{script_name}'{status}")
+
+            self.logger.error(f"Could not load some scripts due to missing, disabled, or circular dependencies: {'; '.join(unloaded_scripts_details)}")
 
     def get_script(self, script_name: str) -> Optional[Any]:
         if script_name in self.disabled_scripts:
