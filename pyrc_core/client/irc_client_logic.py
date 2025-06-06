@@ -163,21 +163,6 @@ class IRCClient_Logic:
             self.ui.refresh_all_windows()
             self.ui_needs_update.clear()
 
-    # Remove duplicate method - keeping the original implementation
-        conn_info = self.state_manager.get_connection_info()
-        if not conn_info:
-            logger.error("Cannot initialize connection handlers - no connection info.")
-            return
-
-        self.cap_negotiator = CapNegotiator(self.network_handler, set(conn_info.desired_caps), client_logic_ref=self)
-        self.sasl_authenticator = SaslAuthenticator(self.network_handler, self.cap_negotiator, conn_info.sasl_password, self)
-        self.registration_handler = RegistrationHandler(
-            network_handler=self.network_handler, command_handler=self.command_handler,
-            state_manager=self.state_manager, cap_negotiator=self.cap_negotiator, client_logic_ref=self
-        )
-        self.cap_negotiator.set_registration_handler(self.registration_handler)
-        self.cap_negotiator.set_sasl_authenticator(self.sasl_authenticator)
-        self.registration_handler.set_sasl_authenticator(self.sasl_authenticator)
 
     def _start_connection_if_auto(self):
         conn_info = self.state_manager.get_connection_info()

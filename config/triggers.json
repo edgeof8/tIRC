@@ -33,7 +33,7 @@
         "pattern": "^:(\\S+)!(\\S+)@(\\S+) JOIN :?(\\S+)$",
         "action_type": "PYTHON",
         "action_content": "\nif event_data['command'] == 'JOIN':\n    nick = event_data['prefix'].split('!')[0]\n    channel = event_data['params_list'][0]\n    client.add_message(f\"{nick} joined {channel}\", \"join_part\", context_name=channel)\n",
-        "is_enabled": true,
+        "is_enabled": false,
         "is_regex": true,
         "ignore_case": true,
         "created_at": 1749106977.6922338,

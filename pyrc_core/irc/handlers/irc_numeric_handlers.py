@@ -896,7 +896,7 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
     code = int(parsed_msg.command)
     params = parsed_msg.params
     trailing = parsed_msg.trailing
-    
+
     conn_info = client.state_manager.get_connection_info()
     current_nick = conn_info.nick if conn_info else ""
 
@@ -915,13 +915,19 @@ def _handle_numeric_command(client, parsed_msg: IRCMessage, raw_line: str):
             raw_line=raw_line,
         )
 
+    # Define generic_msg here so it's always available
+    generic_msg = trailing if trailing else " ".join(display_params)
+
     # Handle specific numeric replies
     handler = NUMERIC_HANDLERS.get(code)
     if handler:
-        handler(client, parsed_msg, raw_line, display_params, trailing)
+        # Check if the handler expects the generic_numeric_msg argument
+        if handler in [_handle_motd_and_server_info, _handle_generic_numeric]:
+            handler(client, parsed_msg, raw_line, display_params, trailing, generic_msg)
+        else:
+            handler(client, parsed_msg, raw_line, display_params, trailing)
     else:
         # Generic numeric reply
-        generic_msg = trailing if trailing else " ".join(display_params)
         _handle_generic_numeric(
             client, parsed_msg, raw_line, display_params, trailing, generic_msg
         )

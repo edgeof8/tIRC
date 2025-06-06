@@ -134,17 +134,13 @@ class NetworkHandler:
 
         if channels_to_join is not None:
             self.channels_to_join_on_connect = channels_to_join
-        else:  # Fallback to connection info's initial channels if not provided
-            conn_info = (
-                self.client_logic_ref.state_manager.get_connection_info()
-                if self.client_logic_ref
-                else None
-            )
-            self.channels_to_join_on_connect = (
-                conn_info.initial_channels[:]
-                if conn_info and conn_info.initial_channels
-                else []
-            )
+        else:
+            # Get initial channels from the StateManager, not the client logic object
+            conn_info = self.client_logic_ref.state_manager.get_connection_info()
+            if conn_info and conn_info.initial_channels:
+                self.channels_to_join_on_connect = conn_info.initial_channels[:]
+            else:
+                self.channels_to_join_on_connect = []
 
         self.reconnect_delay = RECONNECT_INITIAL_DELAY
 
