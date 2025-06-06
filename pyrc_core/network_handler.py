@@ -299,7 +299,7 @@ class NetworkHandler:
             )
             sock = socket.create_connection(
                 (server, port),
-                timeout=CONNECTION_TIMEOUT,
+                timeout=float(CONNECTION_TIMEOUT) if CONNECTION_TIMEOUT is not None else None,
             )
             logger.debug("Socket created.")
             if use_ssl:

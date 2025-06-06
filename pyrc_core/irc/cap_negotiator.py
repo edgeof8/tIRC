@@ -159,19 +159,18 @@ class CapNegotiator:
                     "warning",
                 )
 
-        # Always proceed with CAP REQ/END even if we modified caps_to_request
+        # Handle capability requests
         if caps_to_request:
             self.requested_caps.update(caps_to_request)
             self._add_status_message(f"Requesting CAP: {', '.join(caps_to_request)}")
             self.network_handler.send_cap_req(caps_to_request)
+            # Wait for ACK/NAK responses before proceeding further
         else:
-            self._add_status_message(
-                "No desired and supported capabilities to request. Ending CAP negotiation."
-            )
+            # If no capabilities to request, end negotiation immediately
+            self._add_status_message("No desired capabilities supported. Ending CAP negotiation.")
             self.network_handler.send_cap_end()
             self.initial_cap_flow_complete_event.set()
             self.cap_negotiation_finished_event.set()
-            self.cap_negotiation_pending = False
             if self.registration_handler:
                 self.registration_handler.on_cap_negotiation_complete()
 
