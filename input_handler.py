@@ -90,6 +90,10 @@ class InputHandler:
                     self.input_buffer = self.current_input_snapshot
                 else:
                     self.input_buffer = self.command_history[self.history_idx]
+        elif key_code == 25:  # CTRL+Y for Page Up
+            ui.scroll_messages("page_up")
+        elif key_code == 5:  # CTRL+E for Page Down
+            ui.scroll_messages("page_down")
         elif key_code == curses.KEY_PPAGE:
             ui.scroll_messages("up")
         elif key_code == curses.KEY_NPAGE:
