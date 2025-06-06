@@ -14,8 +14,7 @@ import logging.handlers # For RotatingFileHandler
 #     DCC_MAX_FILE_SIZE, DCC_PORT_RANGE_START, DCC_PORT_RANGE_END, DCC_TIMEOUT,
 #     DCC_BLOCKED_EXTENSIONS
 # )
-import pyrc_core.app_config as app_config # Use this to access config values
-
+from pyrc_core.app_config import AppConfig # Import AppConfig class
 from pyrc_core.dcc.dcc_transfer import DCCTransfer, DCCSendTransfer, DCCReceiveTransfer, DCCTransferStatus, DCCTransferType
 from pyrc_core.dcc.dcc_protocol import parse_dcc_ctcp, format_dcc_send_ctcp, format_dcc_accept_ctcp, format_dcc_checksum_ctcp, format_dcc_resume_ctcp
 from pyrc_core.dcc.dcc_security import validate_download_path, sanitize_filename
@@ -26,15 +25,15 @@ from pyrc_core.dcc.dcc_send_manager import DCCSendManager # Added import
 logger = logging.getLogger("pyrc.dcc.manager") # For general manager operations
 dcc_event_logger = logging.getLogger("pyrc.dcc.events") # For detailed DCC events
 
-def setup_dcc_specific_logger():
+def setup_dcc_specific_logger(config: AppConfig):
     """Sets up the dedicated DCC event logger."""
-    if not app_config.DCC_LOG_ENABLED:
+    if not config.dcc_log_enabled:
         dcc_event_logger.disabled = True
         logger.info("Dedicated DCC event logging is disabled via config.")
         return
 
     # Ensure the logs directory exists (similar to irc_client_logic.py)
-    log_dir = os.path.join(app_config.BASE_DIR, "logs")
+    log_dir = os.path.join(config.BASE_DIR, "logs")
     if not os.path.exists(log_dir):
         try:
             os.makedirs(log_dir, exist_ok=True)
@@ -43,7 +42,7 @@ def setup_dcc_specific_logger():
             dcc_event_logger.disabled = True # Disable if dir can't be made
             return
 
-    log_file_path = os.path.join(log_dir, app_config.DCC_LOG_FILE)
+    log_file_path = os.path.join(log_dir, config.dcc_log_file)
 
     # Prevent adding handlers multiple times if this function were called again (e.g., rehash)
     if dcc_event_logger.hasHandlers():
@@ -54,46 +53,45 @@ def setup_dcc_specific_logger():
         # For now, if it's already set up, we assume it's fine.
         # If DCC_LOG_ENABLED was turned off then on, it might not re-enable without handler removal.
         # However, dcc_event_logger.disabled = True would still take effect.
-        if dcc_event_logger.disabled and app_config.DCC_LOG_ENABLED: # Re-enabling
+        if dcc_event_logger.disabled and config.dcc_log_enabled: # Re-enabling
              dcc_event_logger.disabled = False
              logger.info("Re-enabled dedicated DCC event logging.")
         return
 
 
-    dcc_event_logger.setLevel(app_config.DCC_LOG_LEVEL)
+    dcc_event_logger.setLevel(config.dcc_log_level_str)
 
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     try:
         handler = logging.handlers.RotatingFileHandler(
             log_file_path,
-            maxBytes=app_config.DCC_LOG_MAX_BYTES,
-            backupCount=app_config.DCC_LOG_BACKUP_COUNT,
+            maxBytes=config.dcc_log_max_bytes,
+            backupCount=config.dcc_log_backup_count,
             encoding="utf-8"
         )
         handler.setFormatter(formatter)
         dcc_event_logger.addHandler(handler)
         dcc_event_logger.propagate = False # Don't send to root logger if we have our own file
-        logger.info(f"Dedicated DCC event logger configured: File='{log_file_path}', Level={logging.getLevelName(app_config.DCC_LOG_LEVEL)}")
+        logger.info(f"Dedicated DCC event logger configured: File='{log_file_path}', Level={logging.getLevelName(config.dcc_log_level_int)}")
     except Exception as e:
         logger.error(f"Failed to setup dedicated DCC file logger: {e}", exc_info=True)
         dcc_event_logger.disabled = True
 
 
 class DCCManager:
-    def __init__(self, client_logic_ref: Any, event_manager_ref: Any):
+    def __init__(self, client_logic_ref: Any, event_manager_ref: Any, config: AppConfig):
         self.client_logic = client_logic_ref
         self.event_manager = event_manager_ref
+        self.config = config # Store the AppConfig object
         self.transfers: Dict[str, DCCTransfer] = {}
-        # self.pending_passive_offers: Dict[str, Dict[str, Any]] = {} # Replaced by passive_offer_manager
-        # self.send_queues: Dict[str, Deque[Dict[str, Any]]] = {} # Replaced by send_manager
-        self.dcc_config = self._load_dcc_config()
+        self.dcc_config = self._load_dcc_config() # This will now use self.config
         self._lock = threading.Lock() # Protects self.transfers. Used by sub-managers.
         self._cleanup_timer: Optional[threading.Timer] = None
 
         # Setup the dedicated DCC logger instance BEFORE instantiating sub-managers
         # This logger will be used by DCCManager and passed to DCCTransfer instances
-        setup_dcc_specific_logger() # Call the setup function
+        setup_dcc_specific_logger(self.config) # Pass the config object
         self.dcc_event_logger = dcc_event_logger # Store a reference if needed, or just use the global one.
 
         self.ctcp_handler = DCCCTCPHandler(self)
@@ -114,27 +112,25 @@ class DCCManager:
                 self._start_cleanup_timer()
 
     def _load_dcc_config(self) -> Dict[str, Any]:
-        # Load relevant DCC settings from app_config module
+        # Load relevant DCC settings from the self.config object
         return {
-            "enabled": getattr(app_config, "DCC_ENABLED", False),
-            "download_dir": getattr(app_config, "DCC_DOWNLOAD_DIR", "downloads"),
-            "upload_dir": getattr(app_config, "DCC_UPLOAD_DIR", "uploads"), # Less used by manager directly
-            "auto_accept": getattr(app_config, "DCC_AUTO_ACCEPT", False),
-            "max_file_size": getattr(app_config, "DCC_MAX_FILE_SIZE", 100 * 1024 * 1024),
-            "port_range_start": getattr(app_config, "DCC_PORT_RANGE_START", 1024),
-            "port_range_end": getattr(app_config, "DCC_PORT_RANGE_END", 65535),
-            "timeout": getattr(app_config, "DCC_TIMEOUT", 300),
-            "blocked_extensions": getattr(app_config, "DCC_BLOCKED_EXTENSIONS", []),
-            "passive_mode_token_timeout": getattr(app_config, "DCC_PASSIVE_MODE_TOKEN_TIMEOUT", 120),
-            "checksum_verify": getattr(app_config, "DCC_CHECKSUM_VERIFY", True),
-            "checksum_algorithm": getattr(app_config, "DCC_CHECKSUM_ALGORITHM", "md5").lower(),
-            "resume_enabled": getattr(app_config, "DCC_RESUME_ENABLED", True), # Added for resume
-            # New cleanup settings
-            "cleanup_enabled": getattr(app_config, "DCC_CLEANUP_ENABLED", True),
-            "cleanup_interval_seconds": getattr(app_config, "DCC_CLEANUP_INTERVAL_SECONDS", 3600),
-            "transfer_max_age_seconds": getattr(app_config, "DCC_TRANSFER_MAX_AGE_SECONDS", 86400 * 3),
-            # New advertised IP setting
-            "advertised_ip": getattr(app_config, "DCC_ADVERTISED_IP", None),
+            "enabled": self.config.dcc_enabled,
+            "download_dir": self.config.dcc_download_dir,
+            "upload_dir": self.config.dcc_upload_dir,
+            "auto_accept": self.config.dcc_auto_accept,
+            "max_file_size": self.config.dcc_max_file_size,
+            "port_range_start": self.config.dcc_port_range_start,
+            "port_range_end": self.config.dcc_port_range_end,
+            "timeout": self.config.dcc_timeout,
+            "blocked_extensions": self.config.dcc_blocked_extensions,
+            "passive_mode_token_timeout": self.config.dcc_passive_mode_token_timeout,
+            "checksum_verify": self.config.dcc_checksum_verify,
+            "checksum_algorithm": self.config.dcc_checksum_algorithm.lower(),
+            "resume_enabled": self.config.dcc_resume_enabled,
+            "cleanup_enabled": self.config.dcc_cleanup_enabled,
+            "cleanup_interval_seconds": self.config.dcc_cleanup_interval_seconds,
+            "transfer_max_age_seconds": self.config.dcc_transfer_max_age_seconds,
+            "advertised_ip": self.config.dcc_advertised_ip,
         }
 
     def _start_cleanup_timer(self):

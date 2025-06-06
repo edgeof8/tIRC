@@ -13,7 +13,7 @@ import platform
 from typing import Optional
 
 from pyrc_core import app_config
-from pyrc_core.app_config import ServerConfig
+from pyrc_core.app_config import AppConfig, ServerConfig
 from pyrc_core.state_manager import StateManager, ConnectionInfo, ConnectionState
 from pyrc_core.client.state_change_ui_handler import StateChangeUIHandler
 from pyrc_core.logging.channel_logger import ChannelLoggerManager
@@ -53,11 +53,12 @@ class DummyUI:
     def _calculate_available_lines_for_user_list(self) -> int: return 0
 
 class IRCClient_Logic:
-    def __init__(self, stdscr, args):
+    def __init__(self, stdscr: Optional[curses.window], args: Any, config: AppConfig):
         # --- Stage 1: Basic Attribute Initialization ---
         self.stdscr = stdscr
         self.is_headless = stdscr is None
         self.args = args
+        self.config = config
         self.should_quit = False
         self.ui_needs_update = threading.Event()
         self._server_switch_disconnect_event: Optional[threading.Event] = None
@@ -71,20 +72,20 @@ class IRCClient_Logic:
 
         # --- Stage 2: Initialize All Manager Components ---
         self.state_manager = StateManager()
-        self.channel_logger_manager = ChannelLoggerManager()
-        self.context_manager = ContextManager(max_history_per_context=app_config.MAX_HISTORY)
+        self.channel_logger_manager = ChannelLoggerManager(self.config)
+        self.context_manager = ContextManager(max_history_per_context=self.config.max_history)
         self.ui = UIManager(stdscr, self) if not self.is_headless else DummyUI()
         self.input_handler = InputHandler(self) if not self.is_headless else None
         self.network_handler = NetworkHandler(self)
-        self.script_manager = ScriptManager(self, app_config.BASE_DIR, disabled_scripts=app_config.DISABLED_SCRIPTS)
+        self.script_manager = ScriptManager(self, self.config.BASE_DIR, disabled_scripts=self.config.disabled_scripts)
         self.event_manager = EventManager(self, self.script_manager)
-        self.dcc_manager = DCCManager(self, self.event_manager)
+        self.dcc_manager = DCCManager(self, self.event_manager, self.config)
         self.command_handler = CommandHandler(self)
-        self.trigger_manager = TriggerManager("config") if app_config.ENABLE_TRIGGER_SYSTEM else None
+        self.trigger_manager = TriggerManager(os.path.join(self.config.BASE_DIR, "config")) if self.config.enable_trigger_system else None
         self.state_ui_handler = StateChangeUIHandler(self)
 
         # --- Stage 3: Configure State and Handlers ---
-        self._initialize_state_from_config()
+        self._create_initial_state()
         self._initialize_connection_handlers()
 
         # --- Stage 4: Load Scripts and Start Network ---
@@ -104,51 +105,74 @@ class IRCClient_Logic:
         info = self.state_manager.get_connection_info()
         return info.server if info else None
 
-    def _initialize_managers(self):
-        """Initialize all manager components."""
-        self.state_manager = StateManager()
-        self.channel_logger_manager = ChannelLoggerManager()
-        self.context_manager = ContextManager(max_history_per_context=app_config.MAX_HISTORY)
-        self.ui = DummyUI() if self.is_headless else UIManager(self.stdscr, self)
-        self.input_handler = None if self.is_headless else InputHandler(self)
-        self.network_handler = NetworkHandler(self)
-        self.script_manager = ScriptManager(self, app_config.BASE_DIR, disabled_scripts=app_config.DISABLED_SCRIPTS)
-        self.event_manager = EventManager(self, self.script_manager)
-        self.dcc_manager = DCCManager(self, self.event_manager)
-        self.command_handler = CommandHandler(self)
-        self.trigger_manager = TriggerManager("config") if app_config.ENABLE_TRIGGER_SYSTEM else None
-        self.state_ui_handler = StateChangeUIHandler(self)
+    def _create_initial_state(self):
+        """
+        Determines the initial connection state from CLI args and AppConfig,
+        then populates the StateManager.
+        """
+        active_config: Optional[ServerConfig] = None
 
-    def _initialize_state_from_config(self):
-        """Load server configuration and set initial state."""
-        active_config = None
-        if hasattr(self.args, "server") and self.args.server:
-            active_config = app_config.ServerConfig(
-                server_id="CommandLine", address=self.args.server,
-                port=self.args.port or (app_config.DEFAULT_SSL_PORT if self.args.ssl else app_config.DEFAULT_PORT),
-                ssl=self.args.ssl or False, nick=self.args.nick or app_config.DEFAULT_NICK,
-                channels=self.args.channel or [], server_password=self.args.password,
-                nickserv_password=self.args.nickserv_password, auto_connect=True
+        # CLI arguments take highest precedence
+        if self.args.server:
+            port = self.args.port
+            ssl = self.args.ssl
+            if port is None:
+                if ssl is None:
+                    ssl = False
+                port = app_config.DEFAULT_SSL_PORT if ssl else app_config.DEFAULT_PORT
+            elif ssl is None:
+                ssl = (port == app_config.DEFAULT_SSL_PORT)
+
+            default_nick = app_config.DEFAULT_NICK
+            if self.config.default_server_config_name:
+                default_server = self.config.all_server_configs.get(self.config.default_server_config_name)
+                if default_server:
+                    default_nick = default_server.nick
+
+            active_config = ServerConfig(
+                server_id="CommandLine",
+                address=self.args.server,
+                port=port,
+                ssl=ssl,
+                nick=self.args.nick or default_nick,
+                channels=self.args.channel or [],
+                server_password=self.args.password,
+                nickserv_password=self.args.nickserv_password,
+                auto_connect=True
             )
-        elif app_config.DEFAULT_SERVER_CONFIG_NAME and app_config.DEFAULT_SERVER_CONFIG_NAME in app_config.ALL_SERVER_CONFIGS:
-            active_config = app_config.ALL_SERVER_CONFIGS[app_config.DEFAULT_SERVER_CONFIG_NAME]
+        # If no CLI args, use the default from the config file
+        elif self.config.default_server_config_name:
+            active_config = self.config.all_server_configs.get(self.config.default_server_config_name)
 
         if active_config:
             conn_info = ConnectionInfo(
-                server=active_config.address, port=active_config.port, ssl=active_config.ssl,
-                nick=active_config.nick, username=active_config.username or active_config.nick,
-                realname=active_config.realname or active_config.nick,
-                server_password=active_config.server_password, nickserv_password=active_config.nickserv_password,
-                auto_connect=active_config.auto_connect, initial_channels=active_config.channels or []
+                server=active_config.address,
+                port=active_config.port,
+                ssl=active_config.ssl,
+                nick=active_config.nick,
+                username=active_config.username,
+                realname=active_config.realname,
+                server_password=active_config.server_password,
+                nickserv_password=active_config.nickserv_password,
+                sasl_username=active_config.sasl_username,
+                sasl_password=active_config.sasl_password,
+                verify_ssl_cert=active_config.verify_ssl_cert,
+                auto_connect=active_config.auto_connect,
+                initial_channels=active_config.channels,
+                desired_caps=active_config.desired_caps
             )
             self.state_manager.set_connection_info(conn_info)
 
+        # Now setup initial contexts based on this state
         self.context_manager.create_context("Status", context_type="status")
-        self.context_manager.create_context("DCC", context_type="dcc_transfers")
-        self.context_manager.set_active_context("Status")
-        if active_config:
+        if self.config.dcc_enabled:
+            self.context_manager.create_context("DCC", context_type="dcc_transfers")
+
+        # Add initial channel contexts if they exist in the active config
+        if active_config and active_config.channels:
             for ch in active_config.channels:
                 self.context_manager.create_context(ch, context_type="channel", initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN)
+
 
     def _handle_user_input(self):
         """Handle user input from the UI."""
@@ -189,16 +213,16 @@ class IRCClient_Logic:
             if hasattr(self.args, "disable_script") and self.args.disable_script
             else set()
         )
-        config_disabled = app_config.DISABLED_SCRIPTS
+        config_disabled = self.config.disabled_scripts
         return ScriptManager(
             self,
-            app_config.BASE_DIR,
+            self.config.BASE_DIR,
             disabled_scripts=cli_disabled.union(config_disabled)
         )
 
     def _initialize_trigger_manager(self):
         """Initialize the trigger manager if enabled."""
-        config_dir_triggers = os.path.join(app_config.BASE_DIR, "config")
+        config_dir_triggers = os.path.join(self.config.BASE_DIR, "config")
         if not os.path.exists(config_dir_triggers):
             try:
                 os.makedirs(config_dir_triggers, exist_ok=True)
@@ -337,7 +361,7 @@ class IRCClient_Logic:
         if (
             is_privmsg_or_notice
             and source_full_ident
-            and app_config.is_source_ignored(source_full_ident)
+            and self.config.is_source_ignored(source_full_ident)
         ):
             logger.debug(
                 f"Ignoring message from {source_full_ident} due to ignore list match."
@@ -733,7 +757,7 @@ class IRCClient_Logic:
         self, event_type: str, event_data: Dict[str, Any]
     ) -> Optional[str]:
         if (
-            not app_config.ENABLE_TRIGGER_SYSTEM
+            not self.config.enable_trigger_system
             or not hasattr(self, "trigger_manager")
             or not self.trigger_manager
         ):
@@ -833,15 +857,17 @@ class IRCClient_Logic:
     def handle_rehash_config(self):
         logger.info("Attempting to reload configuration via /rehash...")
         try:
-            app_config.reload_all_config_values()
+            self.config._load_all_settings()
+            self.config._load_server_configurations()
+            self.config._load_ignore_list()
             # Update the channel logger manager with new config values
-            self.channel_logger_manager.channel_log_enabled = app_config.CHANNEL_LOG_ENABLED
-            self.channel_logger_manager.channel_log_level = app_config.LOG_LEVEL
-            self.channel_logger_manager.channel_log_max_bytes = app_config.LOG_MAX_BYTES
-            self.channel_logger_manager.channel_log_backup_count = app_config.LOG_BACKUP_COUNT
+            self.channel_logger_manager.channel_log_enabled = self.config.channel_log_enabled
+            self.channel_logger_manager.channel_log_level = self.config.log_level_str
+            self.channel_logger_manager.channel_log_max_bytes = self.config.log_max_bytes
+            self.channel_logger_manager.channel_log_backup_count = self.config.log_backup_count
 
             if hasattr(self.context_manager, "max_history"):
-                self.context_manager.max_history = app_config.MAX_HISTORY
+                self.context_manager.max_history = self.config.max_history
             self._add_status_message(
                 "Configuration reloaded. Some changes (like main log file settings or server connection details if manually edited in INI) may require a /reconnect or client restart to fully apply."
             )
@@ -906,20 +932,24 @@ class IRCClient_Logic:
             logger.info("Main client loop ended.")
 
     def initialize(self) -> bool:
+        """
+        Initializes components that might need re-initialization or
+        are part of a deferred setup.
+        """
         try:
-            self.network_handler = NetworkHandler(self)
-            self.script_manager = ScriptManager(self, app_config.BASE_DIR)
-            # disabled_scripts is now handled by ScriptManager's __init__ using app_config
-            self.script_manager.disabled_scripts = app_config.DISABLED_SCRIPTS # Ensure this is a Set
+            # Re-initialize script manager if needed, passing the config
+            self.script_manager = ScriptManager(self, self.config.BASE_DIR, disabled_scripts=self.config.disabled_scripts)
             self.script_manager.load_scripts()
-            if app_config.ENABLE_TRIGGER_SYSTEM:
-                self.trigger_manager = TriggerManager(os.path.join(app_config.BASE_DIR, "config"))
+
+            # Re-initialize trigger manager if enabled, passing the config
+            if self.config.enable_trigger_system:
+                self.trigger_manager = TriggerManager(os.path.join(self.config.BASE_DIR, "config"))
                 self.trigger_manager.load_triggers()
             else:
                 self.trigger_manager = None
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize client: {str(e)}")
+            logger.error(f"Failed to initialize client components: {str(e)}")
             return False
 
     def connect(self, server: str, port: int, use_ssl: bool = False) -> bool:
@@ -946,7 +976,7 @@ class IRCClient_Logic:
         logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
 
     def reset_reconnect_delay(self) -> None:
-        self.reconnect_delay = int(app_config.RECONNECT_INITIAL_DELAY)
+        self.reconnect_delay = int(self.config.reconnect_initial_delay)
 
 
     def _reset_state_for_new_connection(self):

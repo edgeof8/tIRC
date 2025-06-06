@@ -1,16 +1,82 @@
+# pyrc_core/app_config.py
 import configparser
 import os
 import logging
 import fnmatch
 from dataclasses import dataclass, field
-from typing import Type, Any, List, Union, Set, Dict, Optional, Callable
-import sys
+from typing import Type, Any, List, Set, Dict, Optional
 
 logger = logging.getLogger("pyrc.config")
 
+# --- Default Fallback Constants ---
+# These are used as fallbacks if values are not found in the INI file.
 
-@dataclass # Defines server-specific connection and behavior settings
+# Connection
+DEFAULT_SERVER = "irc.libera.chat"
+DEFAULT_PORT = 6667
+DEFAULT_SSL_PORT = 6697
+DEFAULT_NICK = "PyTermUser"
+DEFAULT_CHANNELS = ["#python"]
+DEFAULT_SSL = False
+DEFAULT_PASSWORD = None
+DEFAULT_NICKSERV_PASSWORD = None
+DEFAULT_AUTO_RECONNECT = True
+DEFAULT_VERIFY_SSL_CERT = True
+DEFAULT_RECONNECT_INITIAL_DELAY = 1
+DEFAULT_RECONNECT_MAX_DELAY = 60
+DEFAULT_CONNECTION_TIMEOUT = 30
+
+# Features
+DEFAULT_ENABLE_TRIGGER_SYSTEM = True
+DEFAULT_DISABLED_SCRIPTS: Set[str] = {"run_headless_tests", "test_dcc_features"}
+DEFAULT_IGNORED_PATTERNS = []
+
+# UI
+DEFAULT_MAX_HISTORY = 500
+DEFAULT_HEADLESS_MAX_HISTORY = 50
+
+# Logging
+DEFAULT_LOG_ENABLED = True
+DEFAULT_LOG_FILE = "pyrc_core.log"
+DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_LOG_ERROR_FILE = "pyrc_error.log"
+DEFAULT_LOG_ERROR_LEVEL = "WARNING"
+DEFAULT_LOG_MAX_BYTES = 1024 * 1024 * 5  # 5 MB
+DEFAULT_LOG_BACKUP_COUNT = 3
+DEFAULT_CHANNEL_LOG_ENABLED = True
+DEFAULT_STATUS_WINDOW_LOG_FILE = "client_status_messages.log"
+
+# DCC
+DEFAULT_DCC_ENABLED = True
+DEFAULT_DCC_DOWNLOAD_DIR = "downloads"
+DEFAULT_DCC_UPLOAD_DIR = "uploads"
+DEFAULT_DCC_AUTO_ACCEPT = False
+DEFAULT_DCC_MAX_FILE_SIZE = 100 * 1024 * 1024
+DEFAULT_DCC_PORT_RANGE_START = 1024
+DEFAULT_DCC_PORT_RANGE_END = 65535
+DEFAULT_DCC_TIMEOUT = 300
+DEFAULT_DCC_RESUME_ENABLED = True
+DEFAULT_DCC_CHECKSUM_VERIFY = True
+DEFAULT_DCC_CHECKSUM_ALGORITHM = "md5"
+DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS = 0
+DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS = 0
+DEFAULT_DCC_BLOCKED_EXTENSIONS = ['.exe', '.bat', '.com', '.scr', '.vbs', '.pif']
+DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT = 120
+DEFAULT_DCC_ADVERTISED_IP: Optional[str] = None
+DEFAULT_DCC_CLEANUP_ENABLED = True
+DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS = 3600
+DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS = 86400 * 3
+DEFAULT_DCC_LOG_ENABLED = True
+DEFAULT_DCC_LOG_FILE = "dcc.log"
+DEFAULT_DCC_LOG_LEVEL = "INFO"
+DEFAULT_DCC_LOG_MAX_BYTES = 5 * 1024 * 1024
+DEFAULT_DCC_LOG_BACKUP_COUNT = 3
+
+# --- Data Classes ---
+
+@dataclass
 class ServerConfig:
+    """A simple data container for a single server's configuration."""
     server_id: str
     address: str
     port: int
@@ -25,716 +91,272 @@ class ServerConfig:
     sasl_password: Optional[str] = None
     verify_ssl_cert: bool = True
     auto_connect: bool = False
-    desired_caps: Optional[List[str]] = None
+    desired_caps: List[str] = field(default_factory=list)
 
     def __post_init__(self):
+        """Set default values based on other fields after initialization."""
         if self.username is None:
             self.username = self.nick
         if self.realname is None:
             self.realname = self.nick
-        if self.sasl_username is None: # Default SASL username to nick
+        if self.sasl_username is None:
             self.sasl_username = self.nick
-        if self.sasl_password is None: # Default SASL password to nickserv_password
+        if self.sasl_password is None:
             self.sasl_password = self.nickserv_password
 
-# Global server configuration storage
-ALL_SERVER_CONFIGS: Dict[str, ServerConfig] = {}
-DEFAULT_SERVER_CONFIG_NAME: Optional[str] = None
+# --- Main Configuration Class ---
 
-# --- Module interface for type checking ---
-class _AppConfigModule:
-    """Interface for type checking - all module attributes should be defined here"""
-    ALL_SERVER_CONFIGS: Dict[str, ServerConfig]
-    DEFAULT_SERVER_CONFIG_NAME: Optional[str]
-    DEFAULT_SERVER: str
-    DEFAULT_PORT: int
-    DEFAULT_SSL_PORT: int
-    DEFAULT_NICK: str
-    DEFAULT_CHANNELS: List[str]
-    DEFAULT_SSL: bool
-    DEFAULT_PASSWORD: Optional[str]
-    DEFAULT_NICKSERV_PASSWORD: Optional[str]
-    DEFAULT_VERIFY_SSL_CERT: bool
-    DEFAULT_ENABLE_TRIGGER_SYSTEM: bool
-    DEFAULT_DISABLED_SCRIPTS: Set[str]
-    DEFAULT_HEADLESS_MAX_HISTORY: int
-    DEFAULT_IGNORED_PATTERNS: List[str]
-    DEFAULT_LOG_ENABLED: bool
-    DEFAULT_LOG_FILE: str
-    DEFAULT_LOG_LEVEL: str
-    DEFAULT_LOG_MAX_BYTES: int
-    DEFAULT_LOG_BACKUP_COUNT: int
-    DEFAULT_CHANNEL_LOG_ENABLED: bool
-    DEFAULT_STATUS_WINDOW_LOG_FILE: str
-    DEFAULT_MAX_HISTORY: int
-    DEFAULT_RECONNECT_INITIAL_DELAY: int
-    DEFAULT_RECONNECT_MAX_DELAY: int
-    DEFAULT_CONNECTION_TIMEOUT: int
-    IRC_MSG_REGEX_PATTERN: str
-    MAX_HISTORY: int
-    VERIFY_SSL_CERT: bool
-    LOG_LEVEL: int
-    LOG_MAX_BYTES: int
-    LOG_BACKUP_COUNT: int
-    BASE_DIR: str
-    ENABLE_TRIGGER_SYSTEM: bool
-    DISABLED_SCRIPTS: Set[str]
-    RECONNECT_INITIAL_DELAY: int
-    RECONNECT_MAX_DELAY: int
-    CONNECTION_TIMEOUT: int
-    CHANNEL_LOG_ENABLED: bool
-    LOG_FILE: str
-    DEFAULT_STATUS_WINDOW_LOG_FILE: str
-    reload_all_config_values: Callable[[], None]
-    is_source_ignored: Callable[[str], bool]
-    ServerConfig: Type[ServerConfig]
-
-# Create module interface instance for type checking
-app_config: _AppConfigModule = sys.modules[__name__]  # type: ignore
-
-# --- Default Fallback Settings (if not in INI or INI is missing) ---
-DEFAULT_SERVER = "irc.libera.chat"
-DEFAULT_PORT = 6667
-DEFAULT_SSL_PORT = 6697
-DEFAULT_NICK = "PyTermUser"
-DEFAULT_CHANNELS = ["#python", "#testchannel"]
-DEFAULT_SSL = False
-DEFAULT_PASSWORD = None
-DEFAULT_NICKSERV_PASSWORD = None
-DEFAULT_AUTO_RECONNECT = True
-DEFAULT_VERIFY_SSL_CERT = True
-
-# --- Feature Settings ---
-DEFAULT_ENABLE_TRIGGER_SYSTEM = True
-DEFAULT_DISABLED_SCRIPTS: Set[str] = {"run_headless_tests", "test_dcc_features"}
-DEFAULT_HEADLESS_MAX_HISTORY = 50
-
-# --- New Ignore List Settings ---
-DEFAULT_IGNORED_PATTERNS = []
-
-# --- Default Logging Settings ---
-DEFAULT_LOG_ENABLED = True
-DEFAULT_LOG_FILE = "pyrc_core.log"
-DEFAULT_LOG_LEVEL = "INFO"  # For the main informational log
-DEFAULT_LOG_ERROR_FILE = "pyrc_error.log" # <-- NEW
-DEFAULT_LOG_ERROR_LEVEL = "WARNING" # <-- NEW
-DEFAULT_LOG_MAX_BYTES = 1024 * 1024 * 5  # 5 MB
-DEFAULT_LOG_BACKUP_COUNT = 3
-DEFAULT_CHANNEL_LOG_ENABLED = True
-DEFAULT_STATUS_WINDOW_LOG_FILE = "client_status_messages.log"
-DEFAULT_MAX_HISTORY = 500 # Renamed from MAX_HISTORY for use as default
-DEFAULT_RECONNECT_INITIAL_DELAY = 1  # seconds
-DEFAULT_RECONNECT_MAX_DELAY = 60  # seconds
-DEFAULT_CONNECTION_TIMEOUT = 30  # seconds
-
-# Defaults for direct import if needed by other modules, though ServerConfig is preferred
-# These are often specific to a server configuration rather than global.
-# Consider fetching from active ServerConfig where possible.
-WEBIRC_USERNAME: Optional[str] = None
-WEBIRC_PASSWORD: Optional[str] = None
-WEBIRC_HOSTNAME: Optional[str] = None
-WEBIRC_IP: Optional[str] = None
-SASL_MECHANISM: Optional[str] = "PLAIN" # Default to PLAIN or None
-# SASL_USERNAME and SASL_PASSWORD typically come from specific server configs or NickServ password.
-# Setting them to None here means they must be configured per server if SASL is used.
-SASL_USERNAME_GLOBAL_DEFAULT: Optional[str] = None # Renamed to avoid conflict if a ServerConfig has sasl_username
-SASL_PASSWORD_GLOBAL_DEFAULT: Optional[str] = None # Renamed
-# --- DCC Configuration Defaults ---
-DEFAULT_DCC_ENABLED = True
-DEFAULT_DCC_DOWNLOAD_DIR = "downloads"
-DEFAULT_DCC_UPLOAD_DIR = "uploads"
-DEFAULT_DCC_AUTO_ACCEPT = False
-DEFAULT_DCC_AUTO_ACCEPT_FROM_FRIENDS = True
-DEFAULT_DCC_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
-DEFAULT_DCC_PORT_RANGE_START = 1024
-DEFAULT_DCC_PORT_RANGE_END = 65535
-DEFAULT_DCC_TIMEOUT = 300  # 5 minutes
-DEFAULT_DCC_RESUME_ENABLED = True # For enabling resume capability
-DEFAULT_DCC_CHECKSUM_VERIFY = True # Phase 2
-DEFAULT_DCC_CHECKSUM_ALGORITHM = "md5" # md5, sha1, sha256, etc. (Phase 2)
-DEFAULT_DCC_BANDWIDTH_LIMIT = 0  # 0 = unlimited, bytes per second (Phase 4) # DEPRECATED by send/recv specific limits
-DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS = 0 # 0 = unlimited, Kilobytes per second (Phase 4)
-DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS = 0 # 0 = unlimited, Kilobytes per second (Phase 4)
-DEFAULT_DCC_BLOCKED_EXTENSIONS = ['.exe', '.bat', '.com', '.scr', '.vbs', '.pif']
-DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT = 120 # Seconds for a passive mode token to be valid (Phase 2)
-DEFAULT_DCC_VIRUS_SCAN_CMD = "" # Phase 4
-DEFAULT_DCC_LOG_ENABLED = True
-DEFAULT_DCC_LOG_FILE = "dcc.log"
-DEFAULT_DCC_LOG_LEVEL = "INFO" # Similar to main log level
-DEFAULT_DCC_LOG_MAX_BYTES = 5 * 1024 * 1024 # 5MB
-DEFAULT_DCC_LOG_BACKUP_COUNT = 3
-DEFAULT_DCC_ADVERTISED_IP: Optional[str] = None # New setting for manual IP override
-
-# New DCC Cleanup Configuration Defaults
-DEFAULT_DCC_CLEANUP_ENABLED = True
-DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS = 3600  # 1 hour
-DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS = 86400 * 3  # 3 days
-
-# Global variable to hold current ignore patterns
-IGNORED_PATTERNS: Set[str] = set()
-
-# --- Load Configuration from INI file ---
-CONFIG_FILE_NAME = "pyterm_irc_config.ini"
-config = configparser.ConfigParser()
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_FILE_PATH = os.path.join(BASE_DIR, CONFIG_FILE_NAME)
-
-# Read the config file if it exists
-if os.path.exists(CONFIG_FILE_PATH):
-    config.read(CONFIG_FILE_PATH)
-else:
-    print(
-        f"Warning: Configuration file '{CONFIG_FILE_PATH}' not found. Using default values."
-    )
-
-
-# Helper function to get config values with fallbacks
-def get_config_value(
-    section: str, key: str, fallback: Any, value_type: Type = str
-) -> Any:
-    if config.has_section(section) and config.has_option(section, key):
-        try:
-            if value_type == bool:
-                return config.getboolean(section, key)
-            elif value_type == int:
-                return config.getint(section, key)
-            elif value_type == list:
-                val = config.get(section, key)
-                return (
-                    [item.strip() for item in val.split(",") if item.strip()]
-                    if val and val.strip()
-                    else []
-                )
-            return config.get(section, key)
-        except ValueError:
-            return fallback
-    return fallback
-
-
-# Helper function to set config values and save to INI
-def set_config_value(section: str, key: str, value: str) -> bool:
+class AppConfig:
     """
-    Sets a configuration value in the specified section and key,
-    then writes the entire configuration back to the INI file.
-
-    Args:
-        section: The section name.
-        key: The key name.
-        value: The value to set (will be stored as a string).
-
-    Returns:
-        True if the value was set and saved successfully, False otherwise.
+    Centralized class for loading, holding, and managing all application configuration.
+    This class is the single source of truth for configuration values.
     """
-    global config, CONFIG_FILE_PATH
-    try:
-        if not config.has_section(section):
-            config.add_section(section)
-        config.set(section, key, value)
-        with open(CONFIG_FILE_PATH, "w") as configfile:
-            config.write(configfile)
-        logging.info(f"Configuration updated: [{section}] {key} = {value}")
-        return True
-    except Exception as e:
-        logging.error(f"Error writing to config file '{CONFIG_FILE_PATH}': {e}")
-        return False
+    def __init__(self, config_file_path: Optional[str] = None):
+        self.BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.CONFIG_FILE_NAME = "pyterm_irc_config.ini"
+        self.CONFIG_FILE_PATH = config_file_path or os.path.join(self.BASE_DIR, self.CONFIG_FILE_NAME)
 
+        self._config_parser = configparser.ConfigParser()
+        self.all_server_configs: Dict[str, ServerConfig] = {}
+        self.default_server_config_name: Optional[str] = None
+        self.ignored_patterns: Set[str] = set()
 
-# Helper function to get all settings
-def get_all_settings() -> dict:
-    """
-    Retrieves all settings from the configuration.
+        self._load_config_file()
+        self._load_all_settings()
+        self._load_server_configurations()
+        self._load_ignore_list()
 
-    Returns:
-        A dictionary where keys are section names and values are
-        dictionaries of key-value pairs within that section.
-    """
-    global config
-    all_settings = {}
-    for section in config.sections():
-        all_settings[section] = {}
-        for key in config.options(section):
-            all_settings[section][key] = config.get(section, key)
-    return all_settings
-
-
-def save_current_config():
-    global config, CONFIG_FILE_PATH
-    try:
-        with open(CONFIG_FILE_PATH, "w") as configfile:
-            config.write(configfile)
-        logging.info("Configuration explicitly saved by /save command.")
-        return True
-    except Exception as e:
-        logging.error(
-            f"Error writing to config file '{CONFIG_FILE_PATH}' during /save: {e}"
-        )
-        return False
-
-
-# --- Functions to manage the ignore list in the config file ---
-def load_ignore_list():
-    """Loads ignore patterns from the config file into the global IGNORED_PATTERNS set."""
-    global IGNORED_PATTERNS, config
-    IGNORED_PATTERNS.clear()
-    if config.has_section("IgnoreList"):
-        for key, pattern in config.items("IgnoreList"):
-            IGNORED_PATTERNS.add(pattern.strip())
-    logging.info(f"Loaded {len(IGNORED_PATTERNS)} ignore patterns: {IGNORED_PATTERNS}")
-
-
-def save_ignore_list():
-    """Saves the global IGNORED_PATTERNS set to the config file."""
-    global IGNORED_PATTERNS, config, CONFIG_FILE_PATH
-    try:
-        if config.has_section("IgnoreList"):
-            config.remove_section("IgnoreList")
-        if IGNORED_PATTERNS:
-            config.add_section("IgnoreList")
-            for i, pattern in enumerate(sorted(list(IGNORED_PATTERNS))):
-                # Simpler: store "pattern = true" (or some dummy value, key is what matters)
-                config.set("IgnoreList", pattern, "ignored")
-
-        with open(CONFIG_FILE_PATH, "w") as configfile:
-            config.write(configfile)
-        logging.info(f"Saved {len(IGNORED_PATTERNS)} ignore patterns to config.")
-    except Exception as e:
-        logging.error(
-            f"Error writing ignore list to config file '{CONFIG_FILE_PATH}': {e}"
-        )
-
-
-def add_ignore_pattern(pattern: str) -> bool:
-    """Adds a pattern to the ignore list and saves it."""
-    global IGNORED_PATTERNS
-    normalized_pattern = pattern.strip().lower()
-    if not normalized_pattern:
-        return False
-    if normalized_pattern not in IGNORED_PATTERNS:
-        IGNORED_PATTERNS.add(normalized_pattern)
-        save_ignore_list()
-        return True
-    return False
-
-
-def remove_ignore_pattern(pattern: str) -> bool:
-    """Removes a pattern from the ignore list and saves it."""
-    global IGNORED_PATTERNS
-    normalized_pattern = pattern.strip().lower()
-    if normalized_pattern in IGNORED_PATTERNS:
-        IGNORED_PATTERNS.remove(normalized_pattern)
-        save_ignore_list()
-        return True
-    return False
-
-
-def is_source_ignored(source_full_ident: str) -> bool:
-    """
-    Checks if a source (nick!user@host) matches any of the stored ignore patterns.
-    Uses fnmatch for wildcard matching. Patterns are matched case-insensitively.
-    """
-    global IGNORED_PATTERNS
-    if not source_full_ident:
-        return False
-
-    source_lower = source_full_ident.lower()
-
-    for pattern in IGNORED_PATTERNS:
-        # Patterns are already stored lowercase
-        if fnmatch.fnmatchcase(
-            source_lower, pattern
-        ):  # fnmatchcase is case-sensitive if pattern has mixed case
-            # but we store patterns lowercase, so this works
-            return True
-    return False
-
-
-# --- Connection Settings (will be populated by load_server_configurations or fallbacks) ---
-# These will be populated by load_server_configurations or fall back to DEFAULT_ values if no config loaded
-IRC_SERVER: str = DEFAULT_SERVER
-IRC_PORT: int = DEFAULT_PORT # Default to non-SSL port initially
-IRC_SSL: bool = DEFAULT_SSL
-IRC_NICK: str = DEFAULT_NICK
-IRC_CHANNELS: List[str] = DEFAULT_CHANNELS[:]
-IRC_PASSWORD: Optional[str] = DEFAULT_PASSWORD
-NICKSERV_PASSWORD: Optional[str] = DEFAULT_NICKSERV_PASSWORD
-VERIFY_SSL_CERT: bool = DEFAULT_VERIFY_SSL_CERT
-
-# Initialize other globals with their DEFAULT values first.
-# They will be updated by get_config_value later if config exists.
-AUTO_RECONNECT: bool = DEFAULT_AUTO_RECONNECT
-MAX_HISTORY: int = DEFAULT_MAX_HISTORY
-UI_COLORSCHEME: str = "default" # Assuming "default" is the string for DEFAULT_UI_COLORSCHEME if it existed
-LOG_ENABLED: bool = DEFAULT_LOG_ENABLED
-LOG_FILE: str = DEFAULT_LOG_FILE
-LOG_ERROR_FILE: str = DEFAULT_LOG_ERROR_FILE # <-- NEW
-LOG_LEVEL_STR: str = DEFAULT_LOG_LEVEL.upper()
-LOG_ERROR_LEVEL_STR: str = DEFAULT_LOG_ERROR_LEVEL.upper() # <-- NEW
-LOG_MAX_BYTES: int = DEFAULT_LOG_MAX_BYTES
-LOG_BACKUP_COUNT: int = DEFAULT_LOG_BACKUP_COUNT
-CHANNEL_LOG_ENABLED: bool = DEFAULT_CHANNEL_LOG_ENABLED
-# LOG_LEVEL will be set after LOG_LEVEL_STR is potentially updated from config
-LOG_LEVEL: int = getattr(logging, LOG_LEVEL_STR, logging.INFO)
-if not isinstance(LOG_LEVEL, int): LOG_LEVEL = logging.INFO # Ensure it's an int
-
-ENABLE_TRIGGER_SYSTEM: bool = DEFAULT_ENABLE_TRIGGER_SYSTEM
-DISABLED_SCRIPTS: Set[str] = set()
-HEADLESS_MAX_HISTORY: int = DEFAULT_HEADLESS_MAX_HISTORY
-
-# Color Pair IDs (curses) - These are constants, not from config
-COLOR_ID_DEFAULT = 1
-COLOR_ID_SYSTEM = 2
-COLOR_ID_JOIN_PART = 3
-COLOR_ID_NICK_CHANGE = 4
-COLOR_ID_MY_MESSAGE = 5
-COLOR_ID_OTHER_MESSAGE = 6
-COLOR_ID_HIGHLIGHT = 7
-COLOR_ID_ERROR = 8
-COLOR_ID_STATUS_BAR = 9
-COLOR_ID_SIDEBAR_HEADER = 10
-COLOR_ID_SIDEBAR_USER = 11
-COLOR_ID_INPUT = 12
-COLOR_ID_PM = 13
-
-# --- IRC Protocol --- (This is a constant, fine as is)
-# Regex for parsing IRC messages
-# :prefix COMMAND params :trailing
-# Example: :nick!user@host PRIVMSG #channel :Hello world!
-# Breakdown:
-# - Optional prefix: starts with : or @, followed by non-space, non-!, non-\r\n chars
-# - Command: sequence of non-space, non-\r\n chars
-# - Optional parameters: sequence of non-colon, non-\r\n chars
-# - Optional trailing part: starts with a space and then a colon, followed by any non-\r\n chars
-IRC_MSG_REGEX_PATTERN = r"^(?:@(?:[^ ]+) )?(?:[:]([^ ]+) )?([A-Z0-9]+|\d{3})(?: ([^:\r\n]*))?(?: ?:([^\r\n]*))?$"
-
-
-def load_server_configurations():
-    global ALL_SERVER_CONFIGS, DEFAULT_SERVER_CONFIG_NAME, config
-    global IRC_SERVER, IRC_PORT, IRC_SSL, IRC_NICK, IRC_CHANNELS
-    global IRC_PASSWORD, NICKSERV_PASSWORD, VERIFY_SSL_CERT # Add other globals to update
-
-    logger.debug("Loading server configurations...")
-    ALL_SERVER_CONFIGS.clear()
-    DEFAULT_SERVER_CONFIG_NAME = None
-    found_explicit_auto_connect = False
-
-    for section_name in config.sections():
-        if section_name.startswith("Server."):
-            server_id = section_name[7:]
-            if not server_id:
-                logger.warning(f"Skipping server section with empty ID: {section_name}")
-                continue
-
-            try:
-                # Use direct config.get for mandatory, config.get(fallback=...) for optional strings
-                # and config.getboolean/getint for others.
-                desired_caps_str = config.get(section_name, "desired_caps", fallback=None)
-                desired_caps_list = [cap.strip() for cap in desired_caps_str.split(',')] if desired_caps_str and desired_caps_str.strip() else None
-
-                s_config = ServerConfig(
-                    server_id=server_id,
-                    address=config.get(section_name, "address"),
-                    port=config.getint(section_name, "port"),
-                    ssl=config.getboolean(section_name, "ssl"),
-                    nick=config.get(section_name, "nick"),
-                    channels=[ch.strip() for ch in config.get(section_name, "channels", fallback="").split(',') if ch.strip()],
-                    username=config.get(section_name, "username", fallback=None),
-                    realname=config.get(section_name, "realname", fallback=None),
-                    server_password=config.get(section_name, "server_password", fallback=None),
-                    nickserv_password=config.get(section_name, "nickserv_password", fallback=None),
-                    sasl_username=config.get(section_name, "sasl_username", fallback=None),
-                    sasl_password=config.get(section_name, "sasl_password", fallback=None),
-                    verify_ssl_cert=config.getboolean(section_name, "verify_ssl_cert", fallback=DEFAULT_VERIFY_SSL_CERT),
-                    auto_connect=config.getboolean(section_name, "auto_connect", fallback=False),
-                    desired_caps=desired_caps_list
-                )
-                ALL_SERVER_CONFIGS[server_id] = s_config
-                logger.info(f"Loaded server configuration: [{s_config.server_id}] {s_config.address}")
-                if s_config.auto_connect and not found_explicit_auto_connect:
-                    DEFAULT_SERVER_CONFIG_NAME = server_id
-                    found_explicit_auto_connect = True
-                    logger.info(f"Default server set to '{server_id}' due to auto_connect=true.")
-            except (configparser.NoOptionError, ValueError) as e:
-                logger.error(f"Error parsing configuration for server '{server_id}' in section '[{section_name}]': {e}. Skipping this server.")
-            except Exception as e:
-                logger.error(f"Unexpected error loading server configuration for '{server_id}': {e}", exc_info=True)
-
-
-    if not found_explicit_auto_connect and ALL_SERVER_CONFIGS:
-        DEFAULT_SERVER_CONFIG_NAME = sorted(ALL_SERVER_CONFIGS.keys())[0]
-        logger.warning(f"No server has auto_connect=true. Defaulting to first server found: '{DEFAULT_SERVER_CONFIG_NAME}'.")
-
-    if not DEFAULT_SERVER_CONFIG_NAME and config.has_section("Connection") and config.has_option("Connection", "default_server"):
-        logger.warning("No [Server.<Name>] sections found or no auto_connect. Attempting to use legacy [Connection] section for default.")
-        try:
-            # Use get_config_value for legacy section for consistency with its design (handles fallbacks well)
-            default_conf = ServerConfig(
-                server_id="Default_Legacy",
-                address=get_config_value("Connection", "default_server", DEFAULT_SERVER, str),
-                port=get_config_value("Connection", "default_port", DEFAULT_PORT, int),
-                ssl=get_config_value("Connection", "default_ssl", DEFAULT_SSL, bool),
-                nick=get_config_value("Connection", "default_nick", DEFAULT_NICK, str),
-                channels=get_config_value("Connection", "default_channels", DEFAULT_CHANNELS, list),
-                username=get_config_value("Connection", "default_nick", DEFAULT_NICK, str),
-                realname=get_config_value("Connection", "default_nick", DEFAULT_NICK, str),
-                server_password=get_config_value("Connection", "password", DEFAULT_PASSWORD, str), # Ensure fallback is None if appropriate
-                nickserv_password=get_config_value("Connection", "nickserv_password", DEFAULT_NICKSERV_PASSWORD, str), # Ensure fallback is None
-                verify_ssl_cert=get_config_value("Connection", "verify_ssl_cert", DEFAULT_VERIFY_SSL_CERT, bool),
-                auto_connect=True
+    def _load_config_file(self):
+        """Reads the INI config file into the internal parser."""
+        if os.path.exists(self.CONFIG_FILE_PATH):
+            self._config_parser.read(self.CONFIG_FILE_PATH)
+            logger.info(f"Configuration file '{self.CONFIG_FILE_PATH}' loaded.")
+        else:
+            logger.warning(
+                f"Configuration file '{self.CONFIG_FILE_PATH}' not found. Using default values."
             )
-            # Ensure optional passwords from legacy are None if empty after get_config_value
-            if default_conf.server_password == "" : default_conf.server_password = None
-            if default_conf.nickserv_password == "" : default_conf.nickserv_password = None
 
-            ALL_SERVER_CONFIGS["Default_Legacy"] = default_conf
-            DEFAULT_SERVER_CONFIG_NAME = "Default_Legacy"
-            logger.warning("Using legacy [Connection] settings for default server. Please migrate to [Server.<Name>] format.")
+    def _get_config_value(
+        self, section: str, key: str, fallback: Any, value_type: Type = str
+    ) -> Any:
+        """Helper to get config values with fallbacks from the internal parser."""
+        if self._config_parser.has_section(section) and self._config_parser.has_option(section, key):
+            try:
+                if value_type == bool:
+                    return self._config_parser.getboolean(section, key)
+                elif value_type == int:
+                    return self._config_parser.getint(section, key)
+                elif value_type == list:
+                    val = self._config_parser.get(section, key)
+                    return (
+                        [item.strip() for item in val.split(",") if item.strip()]
+                        if val and val.strip()
+                        else []
+                    )
+                return self._config_parser.get(section, key)
+            except (ValueError, configparser.Error):
+                return fallback
+        return fallback
+
+    def set_config_value(self, section: str, key: str, value: Any) -> bool:
+        """
+        Sets a configuration value in the specified section and key,
+        then writes the entire configuration back to the INI file.
+        """
+        try:
+            if not self._config_parser.has_section(section):
+                self._config_parser.add_section(section)
+            self._config_parser.set(section, key, str(value))
+            self.save_current_config()
+            logger.info(f"Configuration updated: [{section}] {key} = {value}")
+            return True
         except Exception as e:
-            logger.error(f"Could not create default server from legacy [Connection] settings: {e}", exc_info=True)
+            logger.error(f"Error setting config value for '{section}.{key}': {e}")
+            return False
 
-    if DEFAULT_SERVER_CONFIG_NAME and DEFAULT_SERVER_CONFIG_NAME in ALL_SERVER_CONFIGS:
-        active_conf = ALL_SERVER_CONFIGS[DEFAULT_SERVER_CONFIG_NAME]
-        IRC_SERVER = active_conf.address
-        IRC_PORT = active_conf.port
-        IRC_SSL = active_conf.ssl
-        IRC_NICK = active_conf.nick
-        IRC_CHANNELS = active_conf.channels[:]
-        IRC_PASSWORD = active_conf.server_password
-        NICKSERV_PASSWORD = active_conf.nickserv_password
-        VERIFY_SSL_CERT = active_conf.verify_ssl_cert
-        logger.info(f"Module-level globals updated from default server: {DEFAULT_SERVER_CONFIG_NAME}")
-    elif not ALL_SERVER_CONFIGS:
-         logger.warning("No server configurations loaded. Client will require CLI arguments or /connect to specify a server.")
-         # Fallback to hardcoded defaults if no server config (legacy or new) is found
-         IRC_SERVER = DEFAULT_SERVER
-         IRC_PORT = DEFAULT_PORT
-         IRC_SSL = DEFAULT_SSL
-         IRC_NICK = DEFAULT_NICK
-         IRC_CHANNELS = DEFAULT_CHANNELS[:]
-         IRC_PASSWORD = DEFAULT_PASSWORD
-         NICKSERV_PASSWORD = DEFAULT_NICKSERV_PASSWORD
-         VERIFY_SSL_CERT = DEFAULT_VERIFY_SSL_CERT
+    def get_all_settings(self) -> dict:
+        """Retrieves all settings from the configuration for display."""
+        all_settings = {}
+        for section in self._config_parser.sections():
+            all_settings[section] = {}
+            for key in self._config_parser.options(section):
+                all_settings[section][key] = self._config_parser.get(section, key)
+        return all_settings
 
-def reload_all_config_values():
-    global config, CONFIG_FILE_PATH
-    global AUTO_RECONNECT
-    global MAX_HISTORY, UI_COLORSCHEME
-    global LOG_ENABLED, LOG_FILE, LOG_LEVEL_STR, LOG_LEVEL, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CHANNEL_LOG_ENABLED
-    global LOG_ERROR_FILE, LOG_ERROR_LEVEL_STR, LOG_ERROR_LEVEL # <-- Add new globals here
-    global ENABLE_TRIGGER_SYSTEM, DISABLED_SCRIPTS, HEADLESS_MAX_HISTORY
-    # DCC Globals for reload
-    global DCC_ENABLED, DCC_DOWNLOAD_DIR, DCC_UPLOAD_DIR, DCC_AUTO_ACCEPT, DCC_AUTO_ACCEPT_FROM_FRIENDS
-    global DCC_MAX_FILE_SIZE, DCC_PORT_RANGE_START, DCC_PORT_RANGE_END, DCC_TIMEOUT, DCC_RESUME_ENABLED
-    global DCC_CHECKSUM_VERIFY, DCC_CHECKSUM_ALGORITHM
-    global DCC_BANDWIDTH_LIMIT_SEND_KBPS, DCC_BANDWIDTH_LIMIT_RECV_KBPS # New specific limits
-    global DCC_BLOCKED_EXTENSIONS, DCC_PASSIVE_MODE_TOKEN_TIMEOUT, DCC_VIRUS_SCAN_CMD
-    global DCC_LOG_ENABLED, DCC_LOG_FILE, DCC_LOG_LEVEL_STR, DCC_LOG_LEVEL # DCC Log specific globals
-    global DCC_LOG_MAX_BYTES, DCC_LOG_BACKUP_COUNT # DCC Log specific globals
-    # New DCC Cleanup globals
-    global DCC_CLEANUP_ENABLED, DCC_CLEANUP_INTERVAL_SECONDS, DCC_TRANSFER_MAX_AGE_SECONDS
-    # New DCC Advertised IP global
-    global DCC_ADVERTISED_IP
+    def save_current_config(self) -> bool:
+        """Saves the current configuration state to the INI file."""
+        try:
+            with open(self.CONFIG_FILE_PATH, "w") as configfile:
+                self._config_parser.write(configfile)
+            logger.info(f"Configuration saved to {self.CONFIG_FILE_PATH}")
+            return True
+        except Exception as e:
+            logger.error(f"Error writing to config file '{self.CONFIG_FILE_PATH}': {e}")
+            return False
 
-    logger.info(f"Reloading configuration from {CONFIG_FILE_PATH}")
-    new_config = configparser.ConfigParser() # Use a new ConfigParser instance for read
-    new_config.read(CONFIG_FILE_PATH)
-    config = new_config # Assign to global config after successful read
+    def _load_all_settings(self):
+        """Loads all non-server specific settings into instance attributes."""
+        # General Connection Settings
+        self.auto_reconnect = self._get_config_value("Connection", "auto_reconnect", DEFAULT_AUTO_RECONNECT, bool)
+        self.reconnect_initial_delay = self._get_config_value("Connection", "reconnect_initial_delay", DEFAULT_RECONNECT_INITIAL_DELAY, int)
+        self.reconnect_max_delay = self._get_config_value("Connection", "reconnect_max_delay", DEFAULT_RECONNECT_MAX_DELAY, int)
+        self.connection_timeout = self._get_config_value("Connection", "connection_timeout", DEFAULT_CONNECTION_TIMEOUT, int)
 
-    load_server_configurations()
+        # UI Settings
+        self.max_history = self._get_config_value("UI", "message_history_lines", DEFAULT_MAX_HISTORY, int)
+        self.headless_max_history = self._get_config_value("UI", "headless_message_history_lines", DEFAULT_HEADLESS_MAX_HISTORY, int)
 
-    AUTO_RECONNECT = get_config_value("Connection", "auto_reconnect", DEFAULT_AUTO_RECONNECT, bool)
+        # Logging Settings
+        self.log_enabled = self._get_config_value("Logging", "log_enabled", DEFAULT_LOG_ENABLED, bool)
+        self.log_file = self._get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
+        self.log_error_file = self._get_config_value("Logging", "log_error_file", DEFAULT_LOG_ERROR_FILE, str)
+        self.log_level_str = self._get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
+        self.log_error_level_str = self._get_config_value("Logging", "log_error_level", DEFAULT_LOG_ERROR_LEVEL, str).upper()
+        self.log_max_bytes = self._get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
+        self.log_backup_count = self._get_config_value("Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int)
+        self.channel_log_enabled = self._get_config_value("Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool)
+        self.status_window_log_file = self._get_config_value("Logging", "status_window_log_file", DEFAULT_STATUS_WINDOW_LOG_FILE, str)
 
-    ENABLE_TRIGGER_SYSTEM = get_config_value("Features", "enable_trigger_system", DEFAULT_ENABLE_TRIGGER_SYSTEM, bool)
-    DISABLED_SCRIPTS = set(get_config_value("Scripts", "disabled_scripts", list(DEFAULT_DISABLED_SCRIPTS), list))
+        # Feature Settings
+        self.enable_trigger_system = self._get_config_value("Features", "enable_trigger_system", DEFAULT_ENABLE_TRIGGER_SYSTEM, bool)
+        self.disabled_scripts = set(self._get_config_value("Scripts", "disabled_scripts", list(DEFAULT_DISABLED_SCRIPTS), list))
 
-    # HEADLESS_MAX_HISTORY will be updated from config if present
-    temp_headless_max_hist = get_config_value("UI", "headless_message_history_lines", DEFAULT_HEADLESS_MAX_HISTORY, int)
-    if isinstance(temp_headless_max_hist, int) and temp_headless_max_hist >= 0:
-        HEADLESS_MAX_HISTORY = temp_headless_max_hist
-    else:
-        HEADLESS_MAX_HISTORY = DEFAULT_HEADLESS_MAX_HISTORY # Fallback to default constant
+        # DCC Configuration
+        self.dcc_enabled = self._get_config_value("DCC", "enabled", DEFAULT_DCC_ENABLED, bool)
+        self.dcc_download_dir = self._get_config_value("DCC", "download_dir", DEFAULT_DCC_DOWNLOAD_DIR, str)
+        self.dcc_upload_dir = self._get_config_value("DCC", "upload_dir", DEFAULT_DCC_UPLOAD_DIR, str)
+        self.dcc_auto_accept = self._get_config_value("DCC", "auto_accept", DEFAULT_DCC_AUTO_ACCEPT, bool)
+        self.dcc_max_file_size = self._get_config_value("DCC", "max_file_size", DEFAULT_DCC_MAX_FILE_SIZE, int)
+        self.dcc_port_range_start = self._get_config_value("DCC", "port_range_start", DEFAULT_DCC_PORT_RANGE_START, int)
+        self.dcc_port_range_end = self._get_config_value("DCC", "port_range_end", DEFAULT_DCC_PORT_RANGE_END, int)
+        self.dcc_timeout = self._get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
+        self.dcc_resume_enabled = self._get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
+        self.dcc_checksum_verify = self._get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool)
+        self.dcc_checksum_algorithm = self._get_config_value("DCC", "checksum_algorithm", DEFAULT_DCC_CHECKSUM_ALGORITHM, str).lower()
+        self.dcc_bandwidth_limit_send_kbps = self._get_config_value("DCC", "bandwidth_limit_send_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS, int)
+        self.dcc_bandwidth_limit_recv_kbps = self._get_config_value("DCC", "bandwidth_limit_recv_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS, int)
+        self.dcc_blocked_extensions = self._get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
+        self.dcc_passive_mode_token_timeout = self._get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int)
+        self.dcc_advertised_ip = self._get_config_value("DCC", "dcc_advertised_ip", DEFAULT_DCC_ADVERTISED_IP, str)
+        if self.dcc_advertised_ip == "": self.dcc_advertised_ip = None
+        self.dcc_cleanup_enabled = self._get_config_value("DCC", "cleanup_enabled", DEFAULT_DCC_CLEANUP_ENABLED, bool)
+        self.dcc_cleanup_interval_seconds = self._get_config_value("DCC", "cleanup_interval_seconds", DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS, int)
+        self.dcc_transfer_max_age_seconds = self._get_config_value("DCC", "transfer_max_age_seconds", DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS, int)
+        self.dcc_log_enabled = self._get_config_value("DCC", "log_enabled", DEFAULT_DCC_LOG_ENABLED, bool)
+        self.dcc_log_file = self._get_config_value("DCC", "log_file", DEFAULT_DCC_LOG_FILE, str)
+        self.dcc_log_level_str = self._get_config_value("DCC", "log_level", DEFAULT_DCC_LOG_LEVEL, str).upper()
+        self.dcc_log_max_bytes = self._get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
+        self.dcc_log_backup_count = self._get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
 
-    MAX_HISTORY = get_config_value("UI", "message_history_lines", DEFAULT_MAX_HISTORY, int)
-    UI_COLORSCHEME = get_config_value("UI", "colorscheme", "default", str) # Assuming "default" is the fallback string for UI_COLORSCHEME
+    def _load_server_configurations(self):
+        """Loads all server-specific configurations."""
+        self.all_server_configs.clear()
+        self.default_server_config_name = None
+        found_explicit_auto_connect = False
 
-    LOG_ENABLED = get_config_value("Logging", "log_enabled", DEFAULT_LOG_ENABLED, bool)
-    LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
+        for section_name in self._config_parser.sections():
+            if section_name.startswith("Server."):
+                server_id = section_name[7:]
+                if not server_id:
+                    logger.warning(f"Skipping server section with empty ID: {section_name}")
+                    continue
 
-    LOG_LEVEL_STR = get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
-    LOG_ERROR_LEVEL_STR = get_config_value("Logging", "log_error_level", DEFAULT_LOG_ERROR_LEVEL, str).upper() # <-- NEW
+                try:
+                    desired_caps_str = self._get_config_value(section_name, "desired_caps", None, str)
+                    desired_caps_list = [cap.strip() for cap in desired_caps_str.split(',')] if desired_caps_str else []
 
-    _log_level_int_reload = getattr(logging, LOG_LEVEL_STR, None)
-    if not isinstance(_log_level_int_reload, int):
-        _log_level_int_reload = getattr(logging, DEFAULT_LOG_LEVEL.upper(), logging.INFO)
-        if not isinstance(_log_level_int_reload, int):
-            _log_level_int_reload = logging.INFO
-    LOG_LEVEL = _log_level_int_reload
+                    s_config = ServerConfig(
+                        server_id=server_id,
+                        address=self._get_config_value(section_name, "address", "", str),
+                        port=self._get_config_value(section_name, "port", 0, int),
+                        ssl=self._get_config_value(section_name, "ssl", False, bool),
+                        nick=self._get_config_value(section_name, "nick", "", str),
+                        channels=self._get_config_value(section_name, "channels", [], list),
+                        username=self._get_config_value(section_name, "username", None, str),
+                        realname=self._get_config_value(section_name, "realname", None, str),
+                        server_password=self._get_config_value(section_name, "server_password", None, str),
+                        nickserv_password=self._get_config_value(section_name, "nickserv_password", None, str),
+                        sasl_username=self._get_config_value(section_name, "sasl_username", None, str),
+                        sasl_password=self._get_config_value(section_name, "sasl_password", None, str),
+                        verify_ssl_cert=self._get_config_value(section_name, "verify_ssl_cert", DEFAULT_VERIFY_SSL_CERT, bool),
+                        auto_connect=self._get_config_value(section_name, "auto_connect", False, bool),
+                        desired_caps=desired_caps_list
+                    )
+                    self.all_server_configs[server_id] = s_config
+                    logger.info(f"Loaded server configuration: [{s_config.server_id}] {s_config.address}")
+                    if s_config.auto_connect and not found_explicit_auto_connect:
+                        self.default_server_config_name = server_id
+                        found_explicit_auto_connect = True
+                except (configparser.NoOptionError, ValueError) as e:
+                    logger.error(f"Error parsing configuration for server '{server_id}': {e}. Skipping.")
 
-    # Add logic for the error log level
-    _log_error_level_int = getattr(logging, LOG_ERROR_LEVEL_STR, logging.WARNING)
-    if not isinstance(_log_error_level_int, int):
-        _log_error_level_int = logging.WARNING
-    LOG_ERROR_LEVEL = _log_error_level_int # <-- NEW
+        if not found_explicit_auto_connect and self.all_server_configs:
+            self.default_server_config_name = sorted(self.all_server_configs.keys())[0]
+            logger.warning(f"No server has auto_connect=true. Defaulting to first server: '{self.default_server_config_name}'.")
 
-    LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
-    LOG_ERROR_FILE = get_config_value("Logging", "log_error_file", DEFAULT_LOG_ERROR_FILE, str) # <-- NEW
+    def _load_ignore_list(self):
+        """Loads ignore patterns from the config file into the `ignored_patterns` set."""
+        self.ignored_patterns.clear()
+        if self._config_parser.has_section("IgnoreList"):
+            for key, _ in self._config_parser.items("IgnoreList"):
+                self.ignored_patterns.add(key.strip().lower())
+        logger.info(f"Loaded {len(self.ignored_patterns)} ignore patterns.")
 
-    LOG_MAX_BYTES = get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
-    LOG_BACKUP_COUNT = get_config_value("Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int)
-    CHANNEL_LOG_ENABLED = get_config_value("Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool)
+    def add_ignore_pattern(self, pattern: str) -> bool:
+        """Adds a pattern to the ignore list and saves it."""
+        normalized_pattern = pattern.strip().lower()
+        if not normalized_pattern:
+            return False
+        if normalized_pattern not in self.ignored_patterns:
+            self.ignored_patterns.add(normalized_pattern)
+            return self._save_ignore_list()
+        return False
 
-    # --- DCC Configuration Loading within reload function ---
-    DCC_ENABLED = get_config_value("DCC", "enabled", DEFAULT_DCC_ENABLED, bool)
-    DCC_DOWNLOAD_DIR = get_config_value("DCC", "download_dir", DEFAULT_DCC_DOWNLOAD_DIR, str)
-    DCC_UPLOAD_DIR = get_config_value("DCC", "upload_dir", DEFAULT_DCC_UPLOAD_DIR, str)
-    DCC_AUTO_ACCEPT = get_config_value("DCC", "auto_accept", DEFAULT_DCC_AUTO_ACCEPT, bool)
-    DCC_AUTO_ACCEPT_FROM_FRIENDS = get_config_value("DCC", "auto_accept_from_friends", DEFAULT_DCC_AUTO_ACCEPT_FROM_FRIENDS, bool)
-    DCC_MAX_FILE_SIZE = get_config_value("DCC", "max_file_size", DEFAULT_DCC_MAX_FILE_SIZE, int)
-    DCC_PORT_RANGE_START = get_config_value("DCC", "port_range_start", DEFAULT_DCC_PORT_RANGE_START, int)
-    DCC_PORT_RANGE_END = get_config_value("DCC", "port_range_end", DEFAULT_DCC_PORT_RANGE_END, int)
-    DCC_TIMEOUT = get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
-    DCC_RESUME_ENABLED = get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
-    DCC_CHECKSUM_VERIFY = get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool)
-    DCC_CHECKSUM_ALGORITHM = get_config_value("DCC", "checksum_algorithm", DEFAULT_DCC_CHECKSUM_ALGORITHM, str).lower()
-    DCC_BANDWIDTH_LIMIT_SEND_KBPS = get_config_value("DCC", "bandwidth_limit_send_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS, int)
-    DCC_BANDWIDTH_LIMIT_RECV_KBPS = get_config_value("DCC", "bandwidth_limit_recv_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS, int)
-    DCC_BLOCKED_EXTENSIONS = get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
-    DCC_PASSIVE_MODE_TOKEN_TIMEOUT = get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int)
-    DCC_VIRUS_SCAN_CMD = get_config_value("DCC", "virus_scan_cmd", DEFAULT_DCC_VIRUS_SCAN_CMD, str)
-    DCC_LOG_ENABLED = get_config_value("DCC", "log_enabled", DEFAULT_DCC_LOG_ENABLED, bool)
-    DCC_LOG_FILE = get_config_value("DCC", "log_file", DEFAULT_DCC_LOG_FILE, str)
-    DCC_LOG_LEVEL_STR = get_config_value("DCC", "log_level", DEFAULT_DCC_LOG_LEVEL, str).upper()
-    _dcc_log_level_int = getattr(logging, DCC_LOG_LEVEL_STR, None)
-    if not isinstance(_dcc_log_level_int, int):
-        _dcc_log_level_int = getattr(logging, DEFAULT_DCC_LOG_LEVEL.upper(), logging.INFO)
-        if not isinstance(_dcc_log_level_int, int): _dcc_log_level_int = logging.INFO
-    DCC_LOG_LEVEL = _dcc_log_level_int
-    DCC_LOG_MAX_BYTES = get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
-    DCC_LOG_BACKUP_COUNT = get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
+    def remove_ignore_pattern(self, pattern: str) -> bool:
+        """Removes a pattern from the ignore list and saves it."""
+        normalized_pattern = pattern.strip().lower()
+        if normalized_pattern in self.ignored_patterns:
+            self.ignored_patterns.remove(normalized_pattern)
+            return self._save_ignore_list()
+        return False
 
-    # New DCC Cleanup Configuration Loading
-    DCC_CLEANUP_ENABLED = get_config_value("DCC", "cleanup_enabled", DEFAULT_DCC_CLEANUP_ENABLED, bool)
-    DCC_CLEANUP_INTERVAL_SECONDS = get_config_value("DCC", "cleanup_interval_seconds", DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS, int)
-    DCC_TRANSFER_MAX_AGE_SECONDS = get_config_value("DCC", "transfer_max_age_seconds", DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS, int)
+    def _save_ignore_list(self) -> bool:
+        """Saves the `ignored_patterns` set to the config file."""
+        try:
+            if self._config_parser.has_section("IgnoreList"):
+                self._config_parser.remove_section("IgnoreList")
+            if self.ignored_patterns:
+                self._config_parser.add_section("IgnoreList")
+                for pattern in sorted(list(self.ignored_patterns)):
+                    self._config_parser.set("IgnoreList", pattern, "true")
+            return self.save_current_config()
+        except Exception as e:
+            logger.error(f"Error saving ignore list to config file: {e}")
+            return False
 
-    # New DCC Advertised IP Loading
-    DCC_ADVERTISED_IP = get_config_value("DCC", "dcc_advertised_ip", DEFAULT_DCC_ADVERTISED_IP, str)
-    if DCC_ADVERTISED_IP == "": DCC_ADVERTISED_IP = None
+    def is_source_ignored(self, source_full_ident: str) -> bool:
+        """Checks if a source (nick!user@host) matches any of the stored ignore patterns."""
+        if not source_full_ident:
+            return False
+        source_lower = source_full_ident.lower()
+        for pattern in self.ignored_patterns:
+            if fnmatch.fnmatchcase(source_lower, pattern):
+                return True
+        return False
 
-    load_ignore_list()
-    logger.info("Configuration values reloaded.")
+    def get_log_level_int_from_str(self, level_str: str, default_level: int) -> int:
+        """Converts a log level string to a logging integer constant."""
+        level = getattr(logging, level_str.upper(), None)
+        return level if isinstance(level, int) else default_level
 
-# --- End of function definitions, start of module execution ---
+    @property
+    def log_level_int(self) -> int:
+        return self.get_log_level_int_from_str(self.log_level_str, logging.INFO)
 
-# Initial configuration read (already done at the top of the module)
-# if os.path.exists(CONFIG_FILE_PATH):
-#     config.read(CONFIG_FILE_PATH)
-# else:
-#     logger.warning(f"Configuration file '{CONFIG_FILE_PATH}' not found at module load. Using hardcoded defaults initially.")
+    @property
+    def log_error_level_int(self) -> int:
+        return self.get_log_level_int_from_str(self.log_error_level_str, logging.WARNING)
 
-# Load server configurations (which also sets server-related globals)
-load_server_configurations()
-
-# Load ignore list
-load_ignore_list()
-
-# Initialize non-server specific globals from config or defaults
-# These were previously defined scattered or hardcoded at the end.
-# Now, we ensure they are loaded from 'config' object after it has been read.
-
-AUTO_RECONNECT = get_config_value("Connection", "auto_reconnect", DEFAULT_AUTO_RECONNECT, bool)
-
-# These are already initialized with DEFAULT_ values above.
-# The get_config_value calls will update them if values are found in the config file.
-MAX_HISTORY = get_config_value("UI", "message_history_lines", DEFAULT_MAX_HISTORY, int)
-UI_COLORSCHEME = get_config_value("UI", "colorscheme", "default", str)
-
-temp_headless_max_hist_init = get_config_value("UI", "headless_message_history_lines", DEFAULT_HEADLESS_MAX_HISTORY, int)
-if isinstance(temp_headless_max_hist_init, int) and temp_headless_max_hist_init >= 0:
-    HEADLESS_MAX_HISTORY = temp_headless_max_hist_init
-else:
-    HEADLESS_MAX_HISTORY = DEFAULT_HEADLESS_MAX_HISTORY
-
-
-LOG_ENABLED = get_config_value("Logging", "log_enabled", DEFAULT_LOG_ENABLED, bool)
-# LOG_FILE is set here:
-# 1. Reads from pyterm_irc_config.ini's [Logging] section, key 'log_file'.
-# 2. If not found, uses the Python variable DEFAULT_LOG_FILE (which is "pyrc_core.log") as fallback.
-LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
-
-LOG_LEVEL_STR = get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
-LOG_ERROR_LEVEL_STR = get_config_value("Logging", "log_error_level", DEFAULT_LOG_ERROR_LEVEL, str).upper()
-_log_level_int_module_init = getattr(logging, LOG_LEVEL_STR, None)
-if not isinstance(_log_level_int_module_init, int):
-    _log_level_int_module_init = getattr(logging, DEFAULT_LOG_LEVEL.upper(), logging.INFO)
-    if not isinstance(_log_level_int_module_init, int):
-        _log_level_int_module_init = logging.INFO
-LOG_LEVEL = _log_level_int_module_init
-
-# Initialize error log level
-_log_error_level_int_init = getattr(logging, LOG_ERROR_LEVEL_STR, logging.WARNING)
-if not isinstance(_log_error_level_int_init, int):
-    _log_error_level_int_init = logging.WARNING
-LOG_ERROR_LEVEL = _log_error_level_int_init
-
-LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
-LOG_ERROR_FILE = get_config_value("Logging", "log_error_file", DEFAULT_LOG_ERROR_FILE, str)
-
-LOG_MAX_BYTES = get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
-LOG_BACKUP_COUNT = get_config_value("Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int)
-CHANNEL_LOG_ENABLED = get_config_value("Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool)
-
-ENABLE_TRIGGER_SYSTEM = get_config_value("Features", "enable_trigger_system", DEFAULT_ENABLE_TRIGGER_SYSTEM, bool)
-DISABLED_SCRIPTS = set(get_config_value("Scripts", "disabled_scripts", list(DEFAULT_DISABLED_SCRIPTS), list))
-# --- DCC Configuration Loading ---
-DCC_ENABLED = get_config_value("DCC", "enabled", DEFAULT_DCC_ENABLED, bool)
-DCC_DOWNLOAD_DIR = get_config_value("DCC", "download_dir", DEFAULT_DCC_DOWNLOAD_DIR, str)
-DCC_UPLOAD_DIR = get_config_value("DCC", "upload_dir", DEFAULT_DCC_UPLOAD_DIR, str)
-DCC_AUTO_ACCEPT = get_config_value("DCC", "auto_accept", DEFAULT_DCC_AUTO_ACCEPT, bool)
-DCC_AUTO_ACCEPT_FROM_FRIENDS = get_config_value("DCC", "auto_accept_from_friends", DEFAULT_DCC_AUTO_ACCEPT_FROM_FRIENDS, bool)
-DCC_MAX_FILE_SIZE = get_config_value("DCC", "max_file_size", DEFAULT_DCC_MAX_FILE_SIZE, int)
-DCC_PORT_RANGE_START = get_config_value("DCC", "port_range_start", DEFAULT_DCC_PORT_RANGE_START, int)
-DCC_PORT_RANGE_END = get_config_value("DCC", "port_range_end", DEFAULT_DCC_PORT_RANGE_END, int)
-DCC_TIMEOUT = get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
-DCC_RESUME_ENABLED = get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
-DCC_CHECKSUM_VERIFY = get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool) # Phase 2
-DCC_CHECKSUM_ALGORITHM = get_config_value("DCC", "checksum_algorithm", DEFAULT_DCC_CHECKSUM_ALGORITHM, str).lower() # Phase 2
-# DCC_BANDWIDTH_LIMIT = get_config_value("DCC", "bandwidth_limit", DEFAULT_DCC_BANDWIDTH_LIMIT, int) # DEPRECATED by send/recv specific
-DCC_BANDWIDTH_LIMIT_SEND_KBPS = get_config_value("DCC", "bandwidth_limit_send_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS, int) # Phase 4
-DCC_BANDWIDTH_LIMIT_RECV_KBPS = get_config_value("DCC", "bandwidth_limit_recv_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS, int) # Phase 4
-DCC_BLOCKED_EXTENSIONS = get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
-DCC_PASSIVE_MODE_TOKEN_TIMEOUT = get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int) # Phase 2
-DCC_VIRUS_SCAN_CMD = get_config_value("DCC", "virus_scan_cmd", DEFAULT_DCC_VIRUS_SCAN_CMD, str) # Phase 4
-DCC_LOG_ENABLED = get_config_value("DCC", "log_enabled", DEFAULT_DCC_LOG_ENABLED, bool)
-DCC_LOG_FILE = get_config_value("DCC", "log_file", DEFAULT_DCC_LOG_FILE, str)
-DCC_LOG_LEVEL_STR = get_config_value("DCC", "log_level", DEFAULT_DCC_LOG_LEVEL, str).upper()
-_dcc_log_level_int = getattr(logging, DCC_LOG_LEVEL_STR, None)
-if not isinstance(_dcc_log_level_int, int):
-    _dcc_log_level_int = getattr(logging, DEFAULT_DCC_LOG_LEVEL.upper(), logging.INFO)
-    if not isinstance(_dcc_log_level_int, int): _dcc_log_level_int = logging.INFO
-DCC_LOG_LEVEL = _dcc_log_level_int
-DCC_LOG_MAX_BYTES = get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
-DCC_LOG_BACKUP_COUNT = get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
-
-# New DCC Cleanup Configuration Loading
-DCC_CLEANUP_ENABLED = get_config_value("DCC", "cleanup_enabled", DEFAULT_DCC_CLEANUP_ENABLED, bool)
-DCC_CLEANUP_INTERVAL_SECONDS = get_config_value("DCC", "cleanup_interval_seconds", DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS, int)
-DCC_TRANSFER_MAX_AGE_SECONDS = get_config_value("DCC", "transfer_max_age_seconds", DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS, int)
-
-# New DCC Advertised IP Loading
-DCC_ADVERTISED_IP = get_config_value("DCC", "dcc_advertised_ip", DEFAULT_DCC_ADVERTISED_IP, str)
-if DCC_ADVERTISED_IP == "": DCC_ADVERTISED_IP = None
-
-# Constants that are not typically from config file but used by logic
-CONNECTION_TIMEOUT = DEFAULT_CONNECTION_TIMEOUT
-RECONNECT_INITIAL_DELAY = DEFAULT_RECONNECT_INITIAL_DELAY
-RECONNECT_MAX_DELAY = DEFAULT_RECONNECT_MAX_DELAY
-
-# IRC_MSG_REGEX_PATTERN is already defined earlier and is a constant pattern.
-# Color ID constants are also fine as they are.
-
-# Remove old hardcoded/redundant globals from the very end if they existed.
-# The VERIFY_SSL_CERT global will be set by load_server_configurations if a default server is found,
-# otherwise it will retain its value from the top-level get_config_value("Connection", "verify_ssl_cert", ...)
-# or DEFAULT_VERIFY_SSL_CERT if [Connection] section is missing.
-# This is fine, as IRCClient_Logic will use ServerConfig.verify_ssl_cert.
+    @property
+    def dcc_log_level_int(self) -> int:
+        return self.get_log_level_int_from_str(self.dcc_log_level_str, logging.INFO)

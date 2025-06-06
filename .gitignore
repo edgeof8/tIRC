@@ -40,3 +40,10 @@ htmlcov/
 # OS generated files
 .DS_Store*
 Thumbs.db
+
+# State files
+state.json
+state.json.bak_*
+
+# Backup files
+*.bak

@@ -4,17 +4,18 @@ import logging.handlers
 import os
 from typing import Optional, Dict
 
-import pyrc_core.app_config as app_config
+from pyrc_core.app_config import AppConfig
 
 class ChannelLoggerManager:
     """Manages the creation and retrieval of per-channel loggers."""
 
-    def __init__(self):
-        self.channel_log_enabled = app_config.CHANNEL_LOG_ENABLED
-        self.main_log_dir_path = os.path.join(app_config.BASE_DIR, "logs")
-        self.channel_log_level = app_config.LOG_LEVEL
-        self.channel_log_max_bytes = app_config.LOG_MAX_BYTES
-        self.channel_log_backup_count = app_config.LOG_BACKUP_COUNT
+    def __init__(self, config: AppConfig):
+        self.config = config
+        self.channel_log_enabled = config.channel_log_enabled
+        self.main_log_dir_path = os.path.join(config.BASE_DIR, "logs")
+        self.channel_log_level = config.log_level_str
+        self.channel_log_max_bytes = config.log_max_bytes
+        self.channel_log_backup_count = config.log_backup_count
         self.log_formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
@@ -49,8 +50,8 @@ class ChannelLoggerManager:
             channel_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
 
             # Avoid collision with main/status log files
-            if os.path.normpath(channel_log_file_path) == os.path.normpath(os.path.join(self.main_log_dir_path, app_config.LOG_FILE)) or \
-               os.path.normpath(channel_log_file_path) == os.path.normpath(os.path.join(self.main_log_dir_path, app_config.DEFAULT_STATUS_WINDOW_LOG_FILE)):
+            if os.path.normpath(channel_log_file_path) == os.path.normpath(os.path.join(self.main_log_dir_path, self.config.log_file)) or \
+               os.path.normpath(channel_log_file_path) == os.path.normpath(os.path.join(self.main_log_dir_path, self.config.status_window_log_file)):
                 log_file_name = f"channel_{safe_filename_part}.log"
                 channel_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
 
@@ -79,7 +80,7 @@ class ChannelLoggerManager:
         if self.status_logger_instance:
             return self.status_logger_instance
         try:
-            log_file_name = app_config.DEFAULT_STATUS_WINDOW_LOG_FILE
+            log_file_name = self.config.status_window_log_file
             status_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
 
             status_logger = logging.getLogger("pyrc.client_status")
