@@ -1,8 +1,14 @@
 import logging
 import time
+import sys
+import os
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 import threading
+import argparse
+
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from context_manager import ChannelJoinStatus
 
 logger = logging.getLogger("pyrc.test_headless_script")
@@ -225,22 +231,10 @@ class HeadlessTestRunner:
 
         msg_event_handler = lambda data: self._event_handler_for_test(key, privmsg_condition, data)
         client_logic.event_manager.subscribe("PRIVMSG", msg_event_handler)
-        client_logic.send_message(test_channel, test_message)
-
-        if not self._await_event(key, timeout=5.0):
-            self._cleanup_event_wait(key, "PRIVMSG", msg_event_handler)
-            duration = time.time() - self.current_test_start
-            return TestResult(
-                name="Message Send",
-                passed=False,
-                message=f"Failed to verify message send via PRIVMSG event for {test_channel}",
-                duration=duration
-            )
-        self._cleanup_event_wait(key, "PRIVMSG", msg_event_handler)
 
         # Now verify the message appears in the buffer
-        key = f"msg_buffer_{test_channel}_{timestamp}"
-        self._setup_event_wait(key)
+        buffer_key = f"msg_buffer_{test_channel}_{timestamp}"
+        self._setup_event_wait(buffer_key)
 
         def buffer_condition(data):
             return (
@@ -248,40 +242,157 @@ class HeadlessTestRunner:
                 and data.get("text") == test_message
             )
 
-        buffer_event_handler = lambda data: self._event_handler_for_test(key, buffer_condition, data)
+        buffer_event_handler = lambda data: self._event_handler_for_test(buffer_key, buffer_condition, data)
         client_logic.event_manager.subscribe(
             "CLIENT_MESSAGE_ADDED_TO_CONTEXT",
             buffer_event_handler
         )
 
-        if not self._await_event(key, timeout=5.0):
-            self._cleanup_event_wait(key, "CLIENT_MESSAGE_ADDED_TO_CONTEXT", buffer_event_handler)
-            duration = time.time() - self.current_test_start
+        # Send the message using client_logic's send_message method
+        client_logic.send_message(test_channel, test_message)
+
+        # Wait for both events with increased timeouts
+        privmsg_event_data = self._await_event(key, timeout=10.0)  # Increased from 5.0
+        buffer_event_data = self._await_event(buffer_key, timeout=10.0)  # Increased from 5.0
+
+        # Cleanup event subscriptions
+        self._cleanup_event_wait(key, "PRIVMSG", msg_event_handler)
+        self._cleanup_event_wait(buffer_key, "CLIENT_MESSAGE_ADDED_TO_CONTEXT", buffer_event_handler)
+
+        duration = time.time() - self.current_test_start
+        if privmsg_event_data and buffer_event_data:
+            return TestResult(
+                name="Message Send",
+                passed=True,
+                message=f"Successfully verified message send and buffer for {test_channel}",
+                duration=duration
+            )
+        else:
+            error_details = []
+            if not privmsg_event_data:
+                error_details.append("Failed to verify message send via PRIVMSG event")
+            if not buffer_event_data:
+                error_details.append("Failed to verify message in buffer")
             return TestResult(
                 name="Message Send",
                 passed=False,
-                message=f"Failed to verify message in buffer for {test_channel}",
+                message=f"Failed to verify message send: {', '.join(error_details)} for {test_channel}",
                 duration=duration
             )
 
-        self._cleanup_event_wait(key, "CLIENT_MESSAGE_ADDED_TO_CONTEXT", buffer_event_handler)
+    def run_nick_change_test(self, client_logic) -> TestResult:
+        """Test changing the client's nickname using event-driven verification."""
+        self.current_test_start = time.time()
+
+        # Get original nick and generate new test nick
+        original_nick = self.api.get_client_nick()
+        if not original_nick:
+            return TestResult(
+                "Nick Change",
+                False,
+                "Failed to get original nickname",
+                time.time() - self.current_test_start
+            )
+
+        # Generate a new test nick that's guaranteed to be valid
+        timestamp = int(time.time()) % 1000
+        new_test_nick = f"PyRCNTest{timestamp}"
+
+        self.log_test_event(f"Attempting to change nick from '{original_nick}' to '{new_test_nick}'...")
+
+        # Setup event waits for both server and client state changes
+        server_nick_event_key = f"server_nick_change_{new_test_nick}"
+        client_nick_event_key = f"client_state_nick_change_{new_test_nick}"
+        self._setup_event_wait(server_nick_event_key)
+        self._setup_event_wait(client_nick_event_key)
+
+        # Define conditions and subscribe to events
+        def server_nick_condition(data: Dict[str, Any]) -> bool:
+            return (data.get("old_nick") == original_nick and
+                    data.get("new_nick") == new_test_nick and
+                    data.get("is_self") is True)
+
+        def client_state_nick_condition(data: Dict[str, Any]) -> bool:
+            return (data.get("old_nick") == original_nick and
+                    data.get("new_nick") == new_test_nick)
+
+        server_nick_handler = lambda data: self._event_handler_for_test(server_nick_event_key, server_nick_condition, data)
+        client_state_nick_handler = lambda data: self._event_handler_for_test(client_nick_event_key, client_state_nick_condition, data)
+
+        self.api.subscribe_to_event("NICK", server_nick_handler)
+        self.api.subscribe_to_event("CLIENT_NICK_CHANGED", client_state_nick_handler)
+
+        # Execute the nick change
+        self.api.execute_client_command(f"/nick {new_test_nick}")
+
+        # Await both events
+        server_nick_event_data = self._await_event(server_nick_event_key, timeout=10.0)
+        client_state_nick_event_data = self._await_event(client_nick_event_key, timeout=5.0)
+
+        # Cleanup event subscriptions
+        self._cleanup_event_wait(server_nick_event_key, "NICK", server_nick_handler)
+        self._cleanup_event_wait(client_nick_event_key, "CLIENT_NICK_CHANGED", client_state_nick_handler)
+
+        # Verify results
+        current_nick = self.api.get_client_nick()
+        passed = bool(server_nick_event_data and client_state_nick_event_data and (current_nick == new_test_nick))
+
+        # Attempt to change nick back
+        self.log_test_event(f"Attempting to revert nick to '{original_nick}'...")
+        self.api.execute_client_command(f"/nick {original_nick}")
+        time.sleep(1.0)  # Small pause to allow revert command to be sent
+
         duration = time.time() - self.current_test_start
-        return TestResult(
-            name="Message Send",
-            passed=True,
-            message=f"Successfully verified message send and buffer for {test_channel}",
-            duration=duration
-        )
+
+        if passed:
+            return TestResult(
+                "Nick Change",
+                True,
+                f"Successfully changed nick from '{original_nick}' to '{new_test_nick}' and verified both server and client state changes",
+                duration
+            )
+        else:
+            error_details = []
+            if not server_nick_event_data:
+                error_details.append("No server NICK event received")
+            if not client_state_nick_event_data:
+                error_details.append("No CLIENT_NICK_CHANGED event received")
+            if current_nick != new_test_nick:
+                error_details.append(f"Current nick '{current_nick}' doesn't match expected '{new_test_nick}'")
+
+            return TestResult(
+                "Nick Change",
+                False,
+                f"Failed to verify nick change: {', '.join(error_details)}",
+                duration
+            )
 
     def run_all_tests(self, client_logic) -> List[TestResult]:
-        self.log_test_event("Starting test suite (Connection Test Only)...")
+        self.log_test_event("Starting test suite...")
         self.test_results = [self.run_connection_test(client_logic)]
 
-        # Comment out additional tests for now to isolate connection issues
-        # if self.test_results[0].passed: # Only proceed if connection test passed
-        #     self.test_results.append(self.run_channel_join_test(client_logic))
-        #     if self.test_results[-1].passed: # If join passed
-        #          self.test_results.append(self.run_message_send_test(client_logic))
+        if self.test_results[0].passed:  # Only proceed if connection test passed
+            self.log_test_event("Connection test passed, proceeding to channel join test.")
+            time.sleep(2.0)  # Give time for connection to stabilize
+            self.test_results.append(self.run_channel_join_test(client_logic))
+
+            # Check if the last added test (channel join) passed
+            if self.test_results[-1].passed:
+                self.log_test_event("Channel join test passed, proceeding to message send test.")
+                time.sleep(2.0)  # Give time for channel join to stabilize
+                self.test_results.append(self.run_message_send_test(client_logic))
+
+                # Check if message send test passed
+                if self.test_results[-1].passed:
+                    self.log_test_event("Message send test passed, proceeding to nick change test.")
+                    time.sleep(2.0)  # Give time for message send to stabilize
+                    self.test_results.append(self.run_nick_change_test(client_logic))
+                else:
+                    self.log_test_event("Message send test FAILED, skipping nick change test.")
+            else:
+                self.log_test_event("Channel join test FAILED, skipping message send and nick change tests.")
+        else:
+            self.log_test_event("Connection test FAILED, skipping further tests.")
 
         passed = sum(1 for result in self.test_results if result.passed)
         total = len(self.test_results)
@@ -353,3 +464,78 @@ class HeadlessTestScript:
 
 def get_script_instance(api_handler):
     return HeadlessTestScript(api_handler)
+
+if __name__ == "__main__":
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    # Import the real client components
+    from irc_client_logic import IRCClient_Logic, DummyUI
+    from network_handler import NetworkHandler
+    from event_manager import EventManager
+    from context_manager import ContextManager
+    from script_api_handler import ScriptAPIHandler
+    from script_manager import ScriptManager
+    import os
+    import argparse
+
+    # Create args object
+    args = argparse.Namespace()
+    args.server = "irc.libera.chat"
+    args.port = 6667
+    args.nick = "PyRCTest"
+    args.ssl = False
+    args.password = None
+    args.nickserv_password = None
+    args.channel = []
+    args.disable_script = []
+
+    # Initialize components in correct order
+    ui = DummyUI()
+    client_logic = IRCClient_Logic(stdscr=None, args=args)  # Pass None for stdscr in headless mode
+    client_logic.ui = ui  # Set the UI for the client logic
+    client_logic.initialize()  # Initialize the client logic
+
+    # Create script manager and event manager
+    script_manager = ScriptManager(client_logic, base_dir="scripts")
+    event_manager = EventManager(client_logic, script_manager)
+    context_manager = ContextManager(max_history_per_context=1000)
+    network_handler = NetworkHandler(client_logic)
+
+    # Set the managers in client logic
+    client_logic.script_manager = script_manager
+    client_logic.event_manager = event_manager
+    client_logic.context_manager = context_manager
+    client_logic.network_handler = network_handler
+
+    # Create API handler for the test runner
+    api_handler = ScriptAPIHandler(client_logic, script_manager, "test_headless")
+
+    # Create test runner
+    test_runner = HeadlessTestRunner(api_handler)
+
+    # Connect to IRC server
+    server = "irc.libera.chat"  # Example server
+    port = 6667
+    nick = "PyRCTest"
+    realname = "PyRC Test Bot"
+
+    print(f"\nConnecting to {server}:{port} as {nick}...")
+    client_logic.connect(server, port)
+
+    print("\nRunning headless tests...\n")
+    results = test_runner.run_all_tests(client_logic)
+
+    print("\nTest Results Summary:")
+    print("-" * 50)
+    for result in results:
+        status = "PASSED" if result.passed else "FAILED"
+        print(f"{result.name}: {status} ({result.duration:.2f}s)")
+        print(f"Message: {result.message}")
+        print("-" * 50)
+
+    # Clean up
+    client_logic.disconnect()
