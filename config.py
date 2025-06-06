@@ -110,6 +110,11 @@ DEFAULT_DCC_LOG_LEVEL = "INFO" # Similar to main log level
 DEFAULT_DCC_LOG_MAX_BYTES = 5 * 1024 * 1024 # 5MB
 DEFAULT_DCC_LOG_BACKUP_COUNT = 3
 
+# New DCC Cleanup Configuration Defaults
+DEFAULT_DCC_CLEANUP_ENABLED = True
+DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS = 3600  # 1 hour
+DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS = 86400 * 3  # 3 days
+
 # Global variable to hold current ignore patterns
 IGNORED_PATTERNS: Set[str] = set()
 
@@ -467,6 +472,8 @@ def reload_all_config_values():
     global DCC_BLOCKED_EXTENSIONS, DCC_PASSIVE_MODE_TOKEN_TIMEOUT, DCC_VIRUS_SCAN_CMD
     global DCC_LOG_ENABLED, DCC_LOG_FILE, DCC_LOG_LEVEL_STR, DCC_LOG_LEVEL # DCC Log specific globals
     global DCC_LOG_MAX_BYTES, DCC_LOG_BACKUP_COUNT # DCC Log specific globals
+    # New DCC Cleanup globals
+    global DCC_CLEANUP_ENABLED, DCC_CLEANUP_INTERVAL_SECONDS, DCC_TRANSFER_MAX_AGE_SECONDS
 
     logger.info(f"Reloading configuration from {CONFIG_FILE_PATH}")
     new_config = configparser.ConfigParser() # Use a new ConfigParser instance for read
@@ -534,6 +541,11 @@ def reload_all_config_values():
     DCC_LOG_LEVEL = _dcc_log_level_int_reload
     DCC_LOG_MAX_BYTES = get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
     DCC_LOG_BACKUP_COUNT = get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
+
+    # New DCC Cleanup Configuration Loading
+    DCC_CLEANUP_ENABLED = get_config_value("DCC", "cleanup_enabled", DEFAULT_DCC_CLEANUP_ENABLED, bool)
+    DCC_CLEANUP_INTERVAL_SECONDS = get_config_value("DCC", "cleanup_interval_seconds", DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS, int)
+    DCC_TRANSFER_MAX_AGE_SECONDS = get_config_value("DCC", "transfer_max_age_seconds", DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS, int)
 
     load_ignore_list()
     logger.info("Configuration values reloaded.")

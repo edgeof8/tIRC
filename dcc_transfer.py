@@ -71,6 +71,7 @@ class DCCTransfer:
         self.file_object: Optional[Any] = None # For file I/O
 
         self.start_time: Optional[float] = None
+        self.end_time: Optional[float] = None  # Added for cleanup tracking
         self.last_progress_update_time: Optional[float] = None
         self.last_bytes_at_progress_update: int = 0
 
@@ -184,13 +185,20 @@ class DCCTransfer:
 
 
     def _report_status(self, new_status: DCCTransferStatus, error_msg: Optional[str] = None):
-        """Helper to call the status update callback."""
+        """Updates the transfer status and notifies the DCCManager."""
         self.status = new_status
-        if error_msg:
-            self.error_message = error_msg
-        # self.status_update_callback(self.transfer_id, self.status, self.error_message)
+        self.error_message = error_msg
+
+        # Set end_time when transfer reaches a final state
+        if new_status in [DCCTransferStatus.COMPLETED, DCCTransferStatus.FAILED,
+                         DCCTransferStatus.CANCELLED, DCCTransferStatus.TIMED_OUT]:
+            if self.end_time is None:  # Set only once
+                self.end_time = time.monotonic()
+                self.dcc_event_logger.info(f"[{self.transfer_id}] Transfer reached final state {new_status.name}. End time set to {self.end_time:.2f}")
+
+        # Notify the DCCManager of the status change
         if self.dcc_manager:
-            self.dcc_manager.update_transfer_status(self.transfer_id, self.status, self.error_message)
+            self.dcc_manager.update_transfer_status(self.transfer_id, new_status, error_msg)
 
 
     def _report_progress(self):

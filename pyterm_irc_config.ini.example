@@ -81,6 +81,12 @@ passive_token_timeout = 120     ; Seconds a passive DCC offer token remains vali
 bandwidth_limit_send_kbps = 0   ; Bandwidth limit for sending files in KB/s (0 for unlimited)
 bandwidth_limit_recv_kbps = 0   ; Bandwidth limit for receiving files in KB/s (0 for unlimited)
 ; virus_scan_cmd = ""           ; (Future feature) Command to run for virus scanning a downloaded file
+
+; DCC Cleanup Settings
+cleanup_enabled = true          ; Enable automatic cleanup of old transfers
+cleanup_interval_seconds = 3600 ; How often to run cleanup (1 hour = 3600 seconds)
+transfer_max_age_seconds = 259200 ; How old a completed/failed transfer can be before cleanup (3 days = 259200 seconds)
+
 ; DCC Specific Logging:
 log_enabled = true              ; Enable dedicated DCC logging
 log_file = logs/dcc.log         ; Path for the DCC log file, relative to PyRC root

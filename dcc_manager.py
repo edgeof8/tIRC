@@ -89,6 +89,7 @@ class DCCManager:
         # self.send_queues: Dict[str, Deque[Dict[str, Any]]] = {} # Replaced by send_manager
         self.dcc_config = self._load_dcc_config()
         self._lock = threading.Lock() # Protects self.transfers. Used by sub-managers.
+        self._cleanup_timer: Optional[threading.Timer] = None
 
         # Setup the dedicated DCC logger instance BEFORE instantiating sub-managers
         # This logger will be used by DCCManager and passed to DCCTransfer instances
@@ -108,6 +109,10 @@ class DCCManager:
             self._ensure_dir_exists(self.dcc_config["download_dir"])
             # Upload dir is less critical to pre-create as source path is absolute for send.
 
+            # Start cleanup timer if DCC and cleanup are enabled
+            if self.dcc_config.get("cleanup_enabled", True):
+                self._start_cleanup_timer()
+
     def _load_dcc_config(self) -> Dict[str, Any]:
         # Load relevant DCC settings from app_config module
         return {
@@ -124,7 +129,82 @@ class DCCManager:
             "checksum_verify": getattr(app_config, "DCC_CHECKSUM_VERIFY", True),
             "checksum_algorithm": getattr(app_config, "DCC_CHECKSUM_ALGORITHM", "md5").lower(),
             "resume_enabled": getattr(app_config, "DCC_RESUME_ENABLED", True), # Added for resume
+            # New cleanup settings
+            "cleanup_enabled": getattr(app_config, "DCC_CLEANUP_ENABLED", True),
+            "cleanup_interval_seconds": getattr(app_config, "DCC_CLEANUP_INTERVAL_SECONDS", 3600),
+            "transfer_max_age_seconds": getattr(app_config, "DCC_TRANSFER_MAX_AGE_SECONDS", 86400 * 3),
         }
+
+    def _start_cleanup_timer(self):
+        """Starts or restarts the cleanup timer."""
+        if self._cleanup_timer:
+            self._cleanup_timer.cancel()
+
+        interval = self.dcc_config.get("cleanup_interval_seconds", 3600)
+        if interval <= 0:
+            self.dcc_event_logger.info("DCC cleanup interval is non-positive, automatic cleanup disabled.")
+            return
+
+        self.dcc_event_logger.debug(f"Scheduling next DCC cleanup in {interval} seconds.")
+        self._cleanup_timer = threading.Timer(interval, self._scheduled_cleanup_task)
+        self._cleanup_timer.daemon = True  # Ensure timer doesn't prevent exit
+        self._cleanup_timer.start()
+
+    def _scheduled_cleanup_task(self):
+        """Called by the cleanup timer to perform cleanup and reschedule."""
+        self.dcc_event_logger.info("Running scheduled DCC cleanup task...")
+        self._cleanup_finished_transfers()
+        # Reschedule the timer if still enabled
+        if self.dcc_config.get("enabled") and self.dcc_config.get("cleanup_enabled", True):
+            self._start_cleanup_timer()
+        else:
+            self.dcc_event_logger.info("DCC or DCC cleanup disabled, stopping cleanup timer.")
+
+    def _cleanup_finished_transfers(self):
+        """Removes old completed/failed/cancelled/timed-out transfers from self.transfers."""
+        with self._lock:  # Ensure thread safety
+            now = time.monotonic()
+            max_age_seconds = self.dcc_config.get("transfer_max_age_seconds", 86400 * 3)
+            transfer_ids_to_remove: List[str] = []
+
+            for transfer_id, transfer in self.transfers.items():
+                if transfer.status in [DCCTransferStatus.COMPLETED,
+                                     DCCTransferStatus.FAILED,
+                                     DCCTransferStatus.CANCELLED,
+                                     DCCTransferStatus.TIMED_OUT]:
+                    if transfer.end_time and (now - transfer.end_time > max_age_seconds):
+                        transfer_ids_to_remove.append(transfer_id)
+                        self.dcc_event_logger.info(
+                            f"Marking transfer {transfer_id} ('{transfer.original_filename}') for cleanup "
+                            f"(age: {now - transfer.end_time:.0f}s > max_age: {max_age_seconds}s)."
+                        )
+
+            cleaned_count = 0
+            for transfer_id_to_remove in transfer_ids_to_remove:
+                if transfer_id_to_remove in self.transfers:
+                    del self.transfers[transfer_id_to_remove]
+                    cleaned_count += 1
+
+            if cleaned_count > 0:
+                self.dcc_event_logger.info(f"Cleaned up {cleaned_count} old DCC transfer(s).")
+                self.client_logic.add_message(
+                    f"DCC: Cleaned up {cleaned_count} old transfer(s).",
+                    "debug",
+                    context_name="DCC"
+                )
+            else:
+                self.dcc_event_logger.debug("DCC cleanup: No old transfers found to remove in this cycle.")
+
+            # Potentially trigger a UI update if the /dcc list might change significantly
+            if cleaned_count > 0 and hasattr(self.client_logic, "ui_needs_update"):
+                self.client_logic.ui_needs_update.set()
+
+    def shutdown(self):
+        """Cleanup method to be called when the client is shutting down."""
+        if self._cleanup_timer:
+            self._cleanup_timer.cancel()
+            self._cleanup_timer = None
+        self.dcc_event_logger.info("DCCManager shutdown complete.")
 
     def _cleanup_stale_passive_offers(self):
         """Removes pending passive offers that have timed out by delegating to DCCPassiveOfferManager."""
