@@ -14,10 +14,10 @@ project_root = current_file_path.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from pyrc import IRCClient_Logic
-from config import LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CONFIG_FILE_NAME
-from dcc_transfer import DCCTransfer, DCCTransferType, DCCTransferStatus
-from irc_client_logic import DummyUI
+from pyrc_core.client.irc_client_logic import IRCClient_Logic
+from pyrc_core.app_config import LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CONFIG_FILE_NAME
+from pyrc_core.dcc.dcc_transfer import DCCTransfer, DCCTransferType, DCCTransferStatus
+from pyrc_core.client.irc_client_logic import DummyUI
 
 logger = logging.getLogger("pyrc.test.dcc")
 

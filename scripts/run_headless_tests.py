@@ -13,8 +13,8 @@ project_root = current_file_path.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from pyrc import IRCClient_Logic # Corrected import assuming pyrc.py is the entry point module for IRCClient_Logic
-from config import LOG_FILE as PYRC_LOG_FILE_CONFIG, LOG_MAX_BYTES, LOG_BACKUP_COUNT, BASE_DIR as PYRC_BASE_DIR
+from pyrc_core.client.irc_client_logic import IRCClient_Logic
+from pyrc_core.app_config import LOG_FILE as PYRC_LOG_FILE_CONFIG, LOG_MAX_BYTES, LOG_BACKUP_COUNT, BASE_DIR as PYRC_BASE_DIR
 
 
 def setup_logging():

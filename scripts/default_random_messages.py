@@ -1,10 +1,10 @@
 import random
 import logging
 from typing import TYPE_CHECKING, List, Optional
-from script_base import ScriptBase
+from pyrc_core.scripting.script_base import ScriptBase
 
 if TYPE_CHECKING:
-    from script_manager import ScriptAPIHandler
+    from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
 
 # Use a logger specific to this script for better traceability
 script_logger = logging.getLogger("pyrc.scripts.default_random_messages")

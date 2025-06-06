@@ -10,7 +10,7 @@ import threading
 
 # Add the parent directory to the Python path - this is usually handled by the entry point script (run_headless_tests.py)
 # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from context_manager import ChannelJoinStatus
+from pyrc_core.context_manager import ChannelJoinStatus
 
 logger = logging.getLogger("pyrc.test_headless_script") # This logger is fine
 

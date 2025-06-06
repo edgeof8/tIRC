@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from irc_client_logic import IRCClient_Logic
-    from irc_message import IRCMessage
+    from pyrc_core.irc.irc_message import IRCMessage
 
 logger = logging.getLogger("pyrc.handlers.protocol_flow")
 

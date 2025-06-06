@@ -7,12 +7,12 @@ import time
 import sys
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set, Tuple, Union
 import threading
-from config import DISABLED_SCRIPTS, ENABLE_TRIGGER_SYSTEM
+from pyrc_core.app_config import DISABLED_SCRIPTS, ENABLE_TRIGGER_SYSTEM
 
-from script_api_handler import ScriptAPIHandler
+from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
 
 if TYPE_CHECKING:
-    from irc_client_logic import IRCClient_Logic
+    from pyrc_core.client.irc_client_logic import IRCClient_Logic
 
 
 logger = logging.getLogger("pyrc.script_manager")
@@ -113,7 +113,7 @@ class ScriptManager:
                 try:
                     # Temporarily create ScriptAPIHandler to load metadata
                     # This relies on ScriptAPIHandler's __init__ calling _load_metadata
-                    temp_api = ScriptAPIHandler(self.client_logic_ref, self, script_name)
+                    temp_api = ScriptAPIHandler(self.client_logic_ref, self, script_name)  # type: ignore[arg-type]
                     dependencies = temp_api.metadata.dependencies
                     scripts_metadata[script_name] = dependencies
                     script_load_candidates.append(script_name)
@@ -165,7 +165,7 @@ class ScriptManager:
                     # Actual script loading logic (moved from original loop)
                     try:
                         script_module = importlib.import_module(f"scripts.{script_name}")
-                        api_handler = ScriptAPIHandler(self.client_logic_ref, self, script_name)
+                        api_handler = ScriptAPIHandler(self.client_logic_ref, self, script_name)  # type: ignore[arg-type]
 
                         # Double check dependencies using the actual API handler now that deps should be loaded
                         satisfied, missing_runtime_deps = api_handler.check_dependencies()
@@ -560,7 +560,7 @@ class ScriptManager:
                 module = importlib.import_module(f"scripts.{script_name}")
                 if hasattr(module, "get_script_instance"):
                     api_handler = ScriptAPIHandler(
-                        self.client_logic_ref, self, script_name
+                        self.client_logic_ref, self, script_name  # type: ignore[arg-type]
                     )
                     script_instance = module.get_script_instance(api_handler)
                     if script_instance:
@@ -619,7 +619,7 @@ class ScriptManager:
 
                 if hasattr(reloaded_module, "get_script_instance"):
                     api_handler = ScriptAPIHandler(
-                        self.client_logic_ref, self, script_name
+                        self.client_logic_ref, self, script_name  # type: ignore[arg-type]
                     )
                     script_instance = reloaded_module.get_script_instance(api_handler)
                     if script_instance:

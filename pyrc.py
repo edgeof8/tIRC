@@ -8,7 +8,7 @@ import os  # For log directory creation
 import sys # Added for console handler output
 from typing import List, Optional
 
-from config import (
+from pyrc_core.app_config import (
     IRC_SERVER,
     IRC_PORT,
     IRC_NICK,
@@ -27,9 +27,9 @@ from config import (
     BASE_DIR,
     CHANNEL_LOG_ENABLED, # Though channel log setup is mainly in IRCClient_Logic
 )
-from irc_client_logic import IRCClient_Logic
+from pyrc_core.client.irc_client_logic import IRCClient_Logic
 # UIManager is only directly used if not headless, but good to have for context
-from ui_manager import UIManager
+from pyrc_core.client.ui_manager import UIManager
 
 
 def setup_logging():

@@ -4,10 +4,10 @@ import re
 import os  # For os.path.exists, though api.request_data_file_path handles path construction
 import logging  # Added for script-specific logging
 from typing import TYPE_CHECKING, List, Dict, Any, Optional, Callable
-from script_base import ScriptBase
+from pyrc_core.scripting.script_base import ScriptBase
 
 if TYPE_CHECKING:
-    from script_manager import ScriptAPIHandler
+    from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
 
 # Use a logger specific to this script for better traceability
 script_logger = logging.getLogger("pyrc.scripts.default_fun_commands")

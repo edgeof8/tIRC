@@ -5,11 +5,11 @@ import time
 import threading
 import re
 import os
-from config import HEADLESS_MAX_HISTORY
-from context_manager import ChannelJoinStatus
+from pyrc_core.app_config import HEADLESS_MAX_HISTORY
+from pyrc_core.context_manager import ChannelJoinStatus
 
 if TYPE_CHECKING:
-    from script_manager import ScriptAPIHandler
+    from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
 
 # Create a dedicated test logger
 test_logger = logging.getLogger("pyrc.test.ai_api_test")
