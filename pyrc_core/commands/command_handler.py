@@ -1,4 +1,4 @@
-# START OF MODIFIED FILE: command_handler.py
+# pyrc_core/commands/command_handler.py
 import logging
 import os
 import importlib
@@ -36,7 +36,9 @@ class CommandHandler:
             "on": lambda client, args_str: self.trigger_commands.handle_on_command(args_str),
         }
 
-        commands_dir_path = os.path.join(self.client.script_manager.base_dir, "commands")
+        # --- START OF FIX ---
+        # Corrected path to point to this file's directory, which is inside pyrc_core/commands/
+        commands_dir_path = os.path.dirname(os.path.abspath(__file__))
         logger.info(f"Starting dynamic command loading from: {commands_dir_path}")
 
         all_py_files_found = []
@@ -56,7 +58,10 @@ class CommandHandler:
 
                     relative_path_from_commands_dir = os.path.relpath(module_path_on_disk, commands_dir_path)
                     module_name_parts = relative_path_from_commands_dir[:-3].split(os.sep)
-                    python_module_name = "commands." + ".".join(module_name_parts)
+
+                    # Corrected module prefix for the new package structure
+                    python_module_name = "pyrc_core.commands." + ".".join(module_name_parts)
+                    # --- END OF FIX ---
 
                     try:
                         logger.debug(f"Attempting to import module: {python_module_name}")
@@ -121,7 +126,7 @@ class CommandHandler:
             else:
                 seen_handlers[handler_func] = cmd_name
 
-
+    # ... rest of the CommandHandler class is unchanged ...
     def get_available_commands_for_tab_complete(self) -> List[str]:
         core_cmds = ["/" + cmd for cmd in self.command_map.keys()]
         script_cmds_data = (
@@ -230,4 +235,3 @@ class CommandHandler:
                     return True # Still True because we "handled" it as unknown
         finally:
             self._processing_depth -= 1
-# END OF MODIFIED FILE: command_handler.py

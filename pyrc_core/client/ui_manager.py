@@ -795,48 +795,46 @@ class UIManager:
         if not self.sidebar_win:
             return
 
-        # Draw background for the entire sidebar
+        # Draw background for the entire sidebar with the default panel color
         self._draw_window_border_and_bkgd(self.sidebar_win, self.colors["list_panel_bg"])
 
         max_y, max_x = self.sidebar_win.getmaxyx()
         if max_y <= 0 or max_x <= 0:
             return
 
-        # Draw context list
+        # Draw context list (this part is fine)
         line_num = self._draw_sidebar_context_list(
             max_y, max_x, current_active_ctx_name_str
         )
 
         # Draw user list header and items if applicable
         if current_active_ctx_obj and current_active_ctx_obj.type != "dcc":
-            # Draw background for the user list panel
-            remaining_height = max_y - line_num
-            user_list_win = None
-            try:
-                if remaining_height > 0:
-                    user_list_win = curses.newwin(remaining_height, max_x, line_num, 0)
+            # Overwrite the background for the user list area
+            user_list_bg_color = self.colors["user_list_panel_bg"]
+            for y in range(line_num, max_y):
+                try:
+                    # Fill the rest of the window with the user list background color
+                    # Using addnstr is safer as it prevents writing past the window edge
+                    if max_x > 0:
+                        self.sidebar_win.addnstr(y, 0, ' ' * (max_x), max_x, user_list_bg_color)
+                except curses.error:
+                    # This can happen on some terminals when writing to the bottom-right corner.
+                    # We can safely ignore it as the space is likely filled anyway.
+                    pass
 
-                    if user_list_win:
-                        self._draw_window_border_and_bkgd(user_list_win, self.colors["user_list_panel_bg"])
-
-                        line_num = self._draw_sidebar_user_list_header(
-                            line_num,
-                            max_y,
-                            max_x,
-                            current_active_ctx_obj,
-                            current_active_ctx_name_str,
-                        )
-                        if line_num < max_y:
-                            self._draw_sidebar_user_list_items_and_indicators(
-                                line_num, max_y, max_x, current_active_ctx_obj
-                            )
-            except curses.error as e:
-                logger.error(f"Error drawing user list: {e}", exc_info=True)
-            finally:
-                if user_list_win:
-                    user_list_win.erase()
-                    user_list_win.refresh()
-                    del user_list_win
+            # Now that the background is correct, draw the user list components on top of it.
+            # The existing helper functions already draw to self.sidebar_win, which is what we want.
+            line_num = self._draw_sidebar_user_list_header(
+                line_num,
+                max_y,
+                max_x,
+                current_active_ctx_obj,
+                current_active_ctx_name_str,
+            )
+            if line_num < max_y:
+                self._draw_sidebar_user_list_items_and_indicators(
+                    line_num, max_y, max_x, current_active_ctx_obj
+                )
 
 
 
