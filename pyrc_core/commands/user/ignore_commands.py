@@ -1,7 +1,7 @@
 # commands/user/ignore_commands.py
 import logging
 from typing import TYPE_CHECKING, Optional, List
-from pyrc_core.app_config import add_ignore_pattern, remove_ignore_pattern, IGNORED_PATTERNS
+# Access config functions and properties via client.config
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -65,7 +65,7 @@ def handle_ignore_command(client: "IRCClient_Logic", args_str: str):
             )
             pattern_to_ignore = interpreted_pattern
 
-    if add_ignore_pattern(pattern_to_ignore): # add_ignore_pattern now handles lowercasing
+    if client.config.add_ignore_pattern(pattern_to_ignore): # add_ignore_pattern now handles lowercasing
         client.add_message(
             f"Now ignoring: {pattern_to_ignore}",
             system_color_key,
@@ -97,7 +97,7 @@ def handle_unignore_command(client: "IRCClient_Logic", args_str: str):
     # We attempt to remove the exact arg, and if that fails, a derived hostmask.
 
     removed = False
-    if remove_ignore_pattern(pattern_to_unignore_arg):
+    if client.config.remove_ignore_pattern(pattern_to_unignore_arg):
         client.add_message(
             f"Removed from ignore list: {pattern_to_unignore_arg.lower()}", # Show what was actually removed
             system_color_key,
@@ -109,7 +109,7 @@ def handle_unignore_command(client: "IRCClient_Logic", args_str: str):
         if "!" not in pattern_to_unignore_arg and "@" not in pattern_to_unignore_arg and \
            "*" not in pattern_to_unignore_arg and "?" not in pattern_to_unignore_arg:
             derived_pattern = f"{pattern_to_unignore_arg.lower()}!*@*"
-            if remove_ignore_pattern(derived_pattern):
+            if client.config.remove_ignore_pattern(derived_pattern):
                 client.add_message(
                     f"Removed derived hostmask from ignore list: {derived_pattern}",
                     system_color_key,
@@ -129,7 +129,7 @@ def handle_listignores_command(client: "IRCClient_Logic", args_str: str):
     active_context_name = client.context_manager.active_context_name or "Status"
     system_color_key = "system"
 
-    if not IGNORED_PATTERNS:
+    if not client.config.ignored_patterns:
         client.add_message(
             "Ignore list is empty.",
             system_color_key,
@@ -142,7 +142,7 @@ def handle_listignores_command(client: "IRCClient_Logic", args_str: str):
         system_color_key,
         context_name=active_context_name,
     )
-    for pattern in sorted(list(IGNORED_PATTERNS)):
+    for pattern in sorted(list(client.config.ignored_patterns)):
         client.add_message(
             f"- {pattern}",
             system_color_key,

@@ -10,7 +10,6 @@ from typing import (
     List,
 )
 
-import pyrc_core.app_config as app_config
 
 logger = logging.getLogger("pyrc.context")
 
@@ -31,9 +30,9 @@ class Context:
     def __init__(
         self,
         name: str,
+        max_history: int,
         context_type: str = "channel",
         topic: Optional[str] = None,
-        max_history: int = app_config.MAX_HISTORY if hasattr(app_config, 'MAX_HISTORY') else 500,
         initial_join_status: Optional[ChannelJoinStatus] = None,
     ):
         self.name: str = name
@@ -93,7 +92,7 @@ class Context:
 class ContextManager:
     """Manages multiple communication contexts (server, channels, queries)."""
 
-    def __init__(self, max_history_per_context: int = app_config.MAX_HISTORY):
+    def __init__(self, max_history_per_context: int):
         self.contexts: Dict[str, Context] = {}
         self.active_context_name: Optional[str] = None
         self.max_history = max_history_per_context

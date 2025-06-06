@@ -1,5 +1,5 @@
 {
-    "connection_state": "REGISTERED",
+    "connection_state": "CONNECTED",
     "connection_info": {
         "server": "irc.libera.chat",
         "port": 6697,
@@ -33,5 +33,7 @@
     "connection_attempts": 0,
     "last_connection_attempt": null,
     "last_successful_connection": null,
-    "config_errors": []
+    "config_errors": [
+        "SASL username provided but no password"
+    ]
 }

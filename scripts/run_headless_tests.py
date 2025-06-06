@@ -13,19 +13,17 @@ project_root = current_file_path.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from pyrc_core.app_config import AppConfig
 from pyrc_core.client.irc_client_logic import IRCClient_Logic
-from pyrc_core.app_config import LOG_FILE as PYRC_LOG_FILE_CONFIG, LOG_MAX_BYTES, LOG_BACKUP_COUNT, BASE_DIR as PYRC_BASE_DIR
 
 
-def setup_logging():
-    """Set up logging for the test run."""
-    # Use PYRC_BASE_DIR from config.py for consistency
-    log_dir = Path(PYRC_BASE_DIR) / "logs"
+def setup_logging(config: AppConfig):
+    """Set up logging for the test run using the provided AppConfig."""
+    log_dir = Path(config.BASE_DIR) / "logs"
     try:
         os.makedirs(log_dir, exist_ok=True)
         headless_log_file = log_dir / "headless_test_run.log"
-        # PYRC_LOG_FILE_CONFIG is just the filename, needs to be joined with log_dir
-        pyrc_log_file_path = log_dir / PYRC_LOG_FILE_CONFIG
+        pyrc_log_file_path = log_dir / config.log_file
 
         # Configure root logger (for PyRC core logs)
         # Note: PyRC's own setup_logging in pyrc.py will also configure logging.
@@ -41,7 +39,7 @@ def setup_logging():
         # Check if handlers already exist to avoid duplication if pyrc.py's setup_logging runs first
         if not any(isinstance(h, logging.handlers.RotatingFileHandler) and h.baseFilename == str(pyrc_log_file_path) for h in pyrc_core_logger.handlers):
             fh_pyrc = logging.handlers.RotatingFileHandler(
-                pyrc_log_file_path, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"
+                pyrc_log_file_path, maxBytes=config.log_max_bytes, backupCount=config.log_backup_count, encoding="utf-8"
             )
             fh_pyrc.setFormatter(
                 logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -53,12 +51,12 @@ def setup_logging():
 
         # Configure test runner logger
         test_runner_logger = logging.getLogger("pyrc.test.runner")
-        test_runner_logger.setLevel(logging.INFO) # Test runner specific messages at INFO
+        test_runner_logger.setLevel(config.get_log_level_int_from_str(config.log_level_str, logging.INFO)) # Use config's log level
 
         # File handler for headless_test_run.log
         if not any(isinstance(h, logging.handlers.RotatingFileHandler) and h.baseFilename == str(headless_log_file) for h in test_runner_logger.handlers):
             fh_headless = logging.handlers.RotatingFileHandler(
-                headless_log_file, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"
+                headless_log_file, maxBytes=config.log_max_bytes, backupCount=config.log_backup_count, encoding="utf-8"
             )
             fh_headless.setFormatter(
                 logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -89,10 +87,11 @@ def setup_logging():
 
 def main():
     """Main entry point for running headless tests."""
-    # setup_logging() should be called by pyrc.py when IRCClient_Logic is imported or run.
-    # We call it here to ensure test runner specific logs are set up if this script is the true entry point.
-    # If pyrc.py's setup_logging runs first, our duplicate handler checks should prevent issues.
-    setup_logging() # Call it here to ensure test runner logs are configured
+    # Create AppConfig instance first
+    app_config_instance = AppConfig()
+
+    # Setup logging using the AppConfig instance
+    setup_logging(app_config_instance)
     logger = logging.getLogger("pyrc.test.runner") # Use the test runner specific logger
 
     args = argparse.Namespace(
@@ -117,9 +116,8 @@ def main():
 
     client = None
     try:
-        # IRCClient_Logic will internally call app_config.py's setup_logging if not already done.
-        # Our setup_logging here ensures test_runner's specific handlers are added.
-        client = IRCClient_Logic(stdscr=None, args=args)
+        # Pass the AppConfig instance to IRCClient_Logic
+        client = IRCClient_Logic(stdscr=None, args=args, config=app_config_instance)
         logger.info("IRCClient_Logic initialized successfully for headless test.")
 
         # DO NOT start client.network_handler here.
@@ -162,6 +160,20 @@ def main():
 
     logger.info("Headless test run script finished.")
     # sys.exit(0) # Exit with success code if not already exited by an error
+class Script:
+    """Dummy Script class for headless tests to allow ScriptManager to load."""
+    def __init__(self, api):
+        self.api = api
+        self.name = "run_headless_tests"
+
+    def load(self):
+        self.api.logger.info(f"Script '{self.name}' loaded.")
+
+    def unload(self):
+        self.api.logger.info(f"Script '{self.name}' unloaded.")
+
+def get_script_instance(api):
+    return Script(api)
 
 if __name__ == "__main__":
     # If this script is run directly, sys.exit will be called by main()

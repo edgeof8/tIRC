@@ -56,7 +56,7 @@ class ChannelLoggerManager:
                 channel_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
 
             channel_logger_instance = logging.getLogger(f"pyrc.channel.{safe_filename_part}")
-            channel_logger_instance.setLevel(self.channel_log_level)
+            channel_logger_instance.setLevel(self.config.get_log_level_int_from_str(self.channel_log_level, logging.INFO))
 
             file_handler = logging.handlers.RotatingFileHandler(
                 channel_log_file_path,
@@ -84,7 +84,7 @@ class ChannelLoggerManager:
             status_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
 
             status_logger = logging.getLogger("pyrc.client_status")
-            status_logger.setLevel(self.channel_log_level)
+            status_logger.setLevel(self.config.get_log_level_int_from_str(self.channel_log_level, logging.INFO))
 
             file_handler = logging.handlers.RotatingFileHandler(
                 status_log_file_path,

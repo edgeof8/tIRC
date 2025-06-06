@@ -15,7 +15,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from pyrc_core.client.irc_client_logic import IRCClient_Logic
-from pyrc_core.app_config import LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CONFIG_FILE_NAME
+from pyrc_core.app_config import AppConfig # Import AppConfig
 from pyrc_core.dcc.dcc_transfer import DCCTransfer, DCCTransferType, DCCTransferStatus
 from pyrc_core.client.irc_client_logic import DummyUI
 
@@ -129,10 +129,14 @@ def create_test_client(config_path: str) -> IRCClient_Logic:
             self.headless = True
             self.ssl = False
             self.verify_ssl_cert = False
-            self.config_file = str(config_path)
+            # No need to set config_file here, AppConfig handles it.
+            # self.config_file = str(config_path)
 
-    # Create client with headless=True to ensure UI is initialized correctly
-    client = IRCClient_Logic(stdscr=None, args=Args())
+    # Create an AppConfig instance for the test client
+    test_app_config = AppConfig(config_file_path=config_path)
+
+    # Create client with headless=True and pass the AppConfig instance
+    client = IRCClient_Logic(stdscr=None, args=Args(), config=test_app_config)
     return client
 
 def main() -> int:
@@ -143,8 +147,9 @@ def main() -> int:
     test_log_file = log_dir / "dcc_feature_test.log"
 
     # Set up logging to both file and console
+    # Use AppConfig's logging settings
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.DEBUG, # Keep DEBUG for test script itself
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(test_log_file),
@@ -217,5 +222,19 @@ def main() -> int:
     logger.info("DCC feature tests completed")
     return 0
 
+class Script:
+    """Dummy Script class for DCC feature tests to allow ScriptManager to load."""
+    def __init__(self, api):
+        self.api = api
+        self.name = "test_dcc_features"
+
+    def load(self):
+        self.api.logger.info(f"Script '{self.name}' loaded.")
+
+    def unload(self):
+        self.api.logger.info(f"Script '{self.name}' unloaded.")
+
+def get_script_instance(api):
+    return Script(api)
 if __name__ == "__main__":
     sys.exit(main())

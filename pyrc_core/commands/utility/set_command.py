@@ -3,7 +3,7 @@ import logging
 from typing import TYPE_CHECKING, Optional, List # Added List
 
 # Specific imports needed for the /set command's logic
-from pyrc_core.app_config import get_all_settings, set_config_value, get_config_value
+# Access config functions and properties via client.config
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -47,7 +47,7 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
     stripped_args = args_str.strip()
 
     if not stripped_args:
-        all_settings = get_all_settings()
+        all_settings = client.config.get_all_settings()
         if not all_settings:
             client.add_message(
                 "No settings found.", system_color_key, context_name=active_context_name
@@ -92,7 +92,7 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
                 return
 
         found_settings_messages = []
-        all_current_settings = get_all_settings() # Fetch all settings
+        all_current_settings = client.config.get_all_settings() # Fetch all settings
 
         if section_name_filter: # If 'section.key' was provided
             # Check if the specific section and key exist
@@ -155,7 +155,7 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
             )
             return
 
-        if set_config_value(section_to_set, key_to_set, value_arg):
+        if client.config.set_config_value(section_to_set, key_to_set, value_arg):
             client.add_message(
                 f"Set {section_to_set}.{key_to_set} = {value_arg}",
                 system_color_key,

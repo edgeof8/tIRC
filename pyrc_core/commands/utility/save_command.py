@@ -1,7 +1,7 @@
 # commands/utility/save_command.py
 import logging
 from typing import TYPE_CHECKING
-from pyrc_core.app_config import save_current_config
+# Access config functions via client.config
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -23,7 +23,7 @@ COMMAND_DEFINITIONS = [
 def handle_save_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /save command."""
     # args_str is not used for /save
-    if save_current_config():
+    if client.config.save_current_config():
         client.add_message(
             "Configuration saved to pyterm_irc_config.ini.",
             "system",

@@ -3,21 +3,20 @@ import time
 import logging
 from typing import Optional, TYPE_CHECKING, List, Tuple, Any, Deque, Dict
 from pyrc_core.context_manager import ChannelJoinStatus  # Added import
-from pyrc_core.app_config import (
-    COLOR_ID_DEFAULT,
-    COLOR_ID_SYSTEM,
-    COLOR_ID_JOIN_PART,
-    COLOR_ID_NICK_CHANGE,
-    COLOR_ID_MY_MESSAGE,
-    COLOR_ID_OTHER_MESSAGE,
-    COLOR_ID_HIGHLIGHT,
-    COLOR_ID_ERROR,
-    COLOR_ID_STATUS_BAR,
-    COLOR_ID_SIDEBAR_HEADER,
-    COLOR_ID_SIDEBAR_USER,
-    COLOR_ID_INPUT,
-    COLOR_ID_PM,
-)
+# Define color pair IDs locally, as they are internal UI constants
+COLOR_ID_DEFAULT = 1
+COLOR_ID_SYSTEM = 2
+COLOR_ID_JOIN_PART = 3
+COLOR_ID_NICK_CHANGE = 4
+COLOR_ID_MY_MESSAGE = 5
+COLOR_ID_OTHER_MESSAGE = 6
+COLOR_ID_HIGHLIGHT = 7
+COLOR_ID_ERROR = 8
+COLOR_ID_STATUS_BAR = 9
+COLOR_ID_SIDEBAR_HEADER = 10
+COLOR_ID_SIDEBAR_USER = 11
+COLOR_ID_INPUT = 12
+COLOR_ID_PM = 13
 
 logger = logging.getLogger("pyrc.ui")
 

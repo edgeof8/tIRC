@@ -5,16 +5,7 @@ import importlib
 from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Callable, Any
 from pyrc_core.features.triggers.trigger_commands import TriggerCommands
 from pyrc_core.context_manager import ChannelJoinStatus, Context
-from pyrc_core.app_config import (
-    get_all_settings,
-    set_config_value,
-    get_config_value,
-    config as global_config_parser,
-    add_ignore_pattern,
-    remove_ignore_pattern,
-    IGNORED_PATTERNS,
-    save_current_config,
-)
+# No direct imports from app_config here; access via client.config
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic

@@ -1,10 +1,7 @@
 import re
 from typing import Optional, Dict, Any
-import pyrc_core.app_config as app_config
-
 IRC_MSG_RE = re.compile(
-    app_config.IRC_MSG_REGEX_PATTERN if hasattr(app_config, 'IRC_MSG_REGEX_PATTERN')
-    else r'^(?:@(?P<tags>[^ ]+) )?(?::(?P<prefix>[^ ]+) )?(?P<command>[^ ]+)(?: *(?P<params>[^:]*))?(?: *:(?P<trailing>.*))?$'
+    r'^(?:@(?P<tags>[^ ]+) )?(?::(?P<prefix>[^ ]+) )?(?P<command>[^ ]+)(?: *(?P<params>[^:]*))?(?: *:(?P<trailing>.*))?$'
 )
 
 
@@ -61,7 +58,12 @@ class IRCMessage:
         match = IRC_MSG_RE.match(line)
         if not match:
             return None
-        return cls(*match.groups(), tags=tags)
+        # Extract groups by name to avoid passing 'tags' twice
+        prefix = match.group('prefix')
+        command = match.group('command')
+        params_str = match.group('params')
+        trailing = match.group('trailing')
+        return cls(prefix, command, params_str, trailing, tags=tags)
 
     def get_tag(self, key: str, default: Any = None) -> Any:
         """Get a message tag value, with optional default if not present."""

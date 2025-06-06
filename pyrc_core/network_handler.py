@@ -5,11 +5,7 @@ import threading
 import time
 import logging
 from typing import List, Optional, Set, TYPE_CHECKING
-from pyrc_core.app_config import (
-    CONNECTION_TIMEOUT,
-    RECONNECT_INITIAL_DELAY,
-    RECONNECT_MAX_DELAY,
-)
+from pyrc_core.app_config import AppConfig # Import AppConfig
 from pyrc_core.state_manager import ConnectionState
 
 if TYPE_CHECKING:  # To avoid circular import with client_logic
@@ -21,6 +17,7 @@ logger = logging.getLogger("pyrc.network")
 class NetworkHandler:
     def __init__(self, client_logic_ref: "IRCClient_Logic"):
         self.client_logic_ref = client_logic_ref
+        self.config: AppConfig = client_logic_ref.config # Store reference to AppConfig
         self.socket = None
         self.connected = False
         self.connection_params = None
@@ -30,7 +27,7 @@ class NetworkHandler:
         self._shutdown_timeout = 3.0  # 3 seconds timeout for shutdown
         self._force_shutdown = False
         self.logger = logging.getLogger("pyrc.network")
-        self.reconnect_delay: int = RECONNECT_INITIAL_DELAY
+        self.reconnect_delay: int = self.config.reconnect_initial_delay # Use config
         self.channels_to_join_on_connect: List[str] = []
         self.is_handling_nick_collision: bool = False
         self.buffer: bytes = b""
@@ -142,7 +139,7 @@ class NetworkHandler:
             else:
                 self.channels_to_join_on_connect = []
 
-        self.reconnect_delay = RECONNECT_INITIAL_DELAY
+        self.reconnect_delay = self.config.reconnect_initial_delay
 
         if not self._network_thread or not self._network_thread.is_alive():
             logger.info("Network thread not running, starting it after param update.")
@@ -295,7 +292,7 @@ class NetworkHandler:
             )
             sock = socket.create_connection(
                 (server, port),
-                timeout=float(CONNECTION_TIMEOUT) if CONNECTION_TIMEOUT is not None else None,
+                timeout=float(self.config.connection_timeout) if self.config.connection_timeout is not None else None,
             )
             logger.debug("Socket created.")
             if use_ssl:
@@ -330,7 +327,7 @@ class NetworkHandler:
 
             self.socket = sock
             self.connected = True
-            self.reconnect_delay = RECONNECT_INITIAL_DELAY
+            self.reconnect_delay = self.config.reconnect_initial_delay
             logger.info(
                 f"Successfully connected to {server}:{port}. SSL: {use_ssl}"
             )
