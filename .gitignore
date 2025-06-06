@@ -1,9 +1,42 @@
+# Byte-compiled files
+*.py[cod]
+*.so
+*.egg
+*.egg-info
+__pycache__/
+.pytest_cache/
+
 # Log files
 *.log
 logs/
 
-# Python cache
-__pycache__/
+# Local development configs
+pyterm_irc_config.ini
 
-# VSCode specific
+# Downloaded files
+downloads/
+
+# Test configs
+test_configs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE specific
 .vscode/
+.idea/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Coverage reports
+.coverage
+htmlcov/
+
+# OS generated files
+.DS_Store*
+Thumbs.db
