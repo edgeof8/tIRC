@@ -20,7 +20,13 @@ class EventManager:
         return {
             "timestamp": time.time(),
             "raw_line": raw_line,
-            "client_nick": self.client_logic.nick if self.client_logic else "UnknownNick",
+            "client_nick": (lambda:
+                (conn_info := self.client_logic.state_manager.get_connection_info() if
+                    (self.client_logic and
+                     self.client_logic.state_manager)
+                    else None) and
+                hasattr(conn_info, 'nick') and
+                conn_info.nick or "UnknownNick")(),
         }
 
     def dispatch_event(self, event_name: str, specific_event_data: Dict[str, Any], raw_line: str = ""):
