@@ -1,3 +1,5 @@
+# pyrc_core/client/irc_client_logic.py
+from __future__ import annotations
 import curses
 import threading
 import time
@@ -15,6 +17,7 @@ from pyrc_core.app_config import _AppConfigModule, ServerConfig
 
 app_config: _AppConfigModule = cast(_AppConfigModule, _app_config)
 
+from pyrc_core.logging.channel_logger import ChannelLoggerManager
 from pyrc_core.scripting.script_manager import ScriptManager
 from pyrc_core.event_manager import EventManager
 from pyrc_core.context_manager import ContextManager, ChannelJoinStatus
@@ -133,19 +136,8 @@ class IRCClient_Logic:
         self._server_switch_disconnect_event = None
         self._server_switch_target_config_name = None
 
-        # Initialize these attributes earlier
-        self.channel_log_enabled = self.app_config.CHANNEL_LOG_ENABLED  # type: ignore
-        self.main_log_dir_path = os.path.join(self.app_config.BASE_DIR, "logs")  # type: ignore
-        self.channel_log_base_path = self.main_log_dir_path
-        self.channel_log_level = self.app_config.LOG_LEVEL  # type: ignore
-        self.channel_log_max_bytes = self.app_config.LOG_MAX_BYTES  # type: ignore
-        self.channel_log_backup_count = self.app_config.LOG_BACKUP_COUNT  # type: ignore
-        self.channel_loggers: Dict[str, logging.Logger] = {}
-        self.status_logger_instance: Optional[logging.Logger] = None
-        self.log_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-
+        # Initialize Managers
+        self.channel_logger_manager = ChannelLoggerManager()
 
         if hasattr(args, "server") and args.server:
             cli_port = (
@@ -312,18 +304,6 @@ class IRCClient_Logic:
 
         self.active_list_context_name: Optional[str] = None
         self.user_modes: List[str] = []
-
-        if self.channel_log_enabled and not os.path.exists(self.main_log_dir_path):
-            try:
-                os.makedirs(self.main_log_dir_path)
-                logger.info(
-                    f"Created main log directory in logic: {self.main_log_dir_path}"
-                )
-            except OSError as e:
-                logger.error(
-                    f"Error creating main log directory in logic {self.main_log_dir_path}: {e}"
-                )
-                self.channel_log_enabled = False
 
         if not self.active_server_config:
             self._add_status_message(
@@ -535,14 +515,13 @@ class IRCClient_Logic:
             )
 
         if target_context_obj.type == "channel":
-            channel_logger = self.get_channel_logger(target_context_name)
+            channel_logger = self.channel_logger_manager.get_channel_logger(target_context_name)
             if channel_logger:
                 channel_logger.info(text)
         elif target_context_obj.name == "Status":
-            if self.channel_log_enabled:
-                status_logger = self.get_status_logger()
-                if status_logger:
-                    status_logger.info(text)
+            status_logger = self.channel_logger_manager.get_status_logger()
+            if status_logger:
+                status_logger.info(text)
 
         if (
             target_context_name == self.context_manager.active_context_name
@@ -562,112 +541,6 @@ class IRCClient_Logic:
             )
 
         self.ui_needs_update.set()
-
-    def get_channel_logger(self, channel_name: str) -> Optional[logging.Logger]:
-        if not self.channel_log_enabled:
-            return None
-        sanitized_name_part = channel_name.lstrip("#&+!").lower()
-        safe_filename_part = "".join(
-            c if c.isalnum() else "_" for c in sanitized_name_part
-        )
-        logger_key = safe_filename_part
-        if logger_key in self.channel_loggers:
-            return self.channel_loggers[logger_key]
-        try:
-            main_app_log_filename = app_config.LOG_FILE
-            main_app_log_file_path = os.path.join(
-                self.main_log_dir_path, main_app_log_filename
-            )
-            status_window_log_filename = app_config.DEFAULT_STATUS_WINDOW_LOG_FILE
-            status_window_log_file_path = os.path.join(
-                self.main_log_dir_path, status_window_log_filename
-            )
-            log_file_name = f"{safe_filename_part}.log"
-            channel_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
-            collided = False
-            if os.path.normpath(channel_log_file_path) == os.path.normpath(
-                main_app_log_file_path
-            ):
-                collided = True
-            elif os.path.normpath(channel_log_file_path) == os.path.normpath(
-                status_window_log_file_path
-            ):
-                collided = True
-            if collided:
-                log_file_name = f"channel_{safe_filename_part}.log"
-                channel_log_file_path = os.path.join(
-                    self.main_log_dir_path, log_file_name
-                )
-
-            channel_logger_instance = logging.getLogger(
-                f"pyrc.channel.{safe_filename_part}"
-            )
-            channel_logger_instance.setLevel(self.channel_log_level)
-            if not os.path.exists(self.main_log_dir_path):
-                try:
-                    os.makedirs(self.main_log_dir_path)
-                except OSError as e:
-                    logger.error(
-                        f"Failed to create main log dir for {channel_name}: {e}"
-                    )
-                    return None
-            file_handler = logging.handlers.RotatingFileHandler(
-                channel_log_file_path,
-                maxBytes=self.channel_log_max_bytes,
-                backupCount=self.channel_log_backup_count,
-                encoding="utf-8",
-            )
-            file_handler.setFormatter(self.log_formatter)
-            channel_logger_instance.addHandler(file_handler)
-            channel_logger_instance.propagate = False
-            self.channel_loggers[logger_key] = channel_logger_instance
-            logger.info(
-                f"Initialized logger for channel {channel_name} at {channel_log_file_path}"
-            )
-            return channel_logger_instance
-        except Exception as e:
-            logger.error(
-                f"Failed to create logger for channel {channel_name}: {e}",
-                exc_info=True,
-            )
-            return None
-
-    def get_status_logger(self) -> Optional[logging.Logger]:
-        if not self.channel_log_enabled:
-            return None
-        if self.status_logger_instance:
-            return self.status_logger_instance
-        try:
-            log_file_name = app_config.DEFAULT_STATUS_WINDOW_LOG_FILE
-            status_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
-            if not os.path.exists(self.main_log_dir_path):
-                try:
-                    os.makedirs(self.main_log_dir_path, exist_ok=True)
-                except OSError as e:
-                    logger.error(f"Failed to create main log dir for status log: {e}")
-                    return None
-
-            status_logger = logging.getLogger("pyrc.client_status")
-            status_logger.setLevel(self.channel_log_level)
-            file_handler = logging.handlers.RotatingFileHandler(
-                status_log_file_path,
-                maxBytes=self.channel_log_max_bytes,
-                backupCount=self.channel_log_backup_count,
-                encoding="utf-8",
-            )
-            file_handler.setFormatter(self.log_formatter)
-            status_logger.addHandler(file_handler)
-            status_logger.propagate = False
-            self.status_logger_instance = status_logger
-            logger.info(
-                f"Initialized logger for Status messages at {status_log_file_path}"
-            )
-            return status_logger
-        except Exception as e:
-            logger.error(
-                f"Failed to create logger for Status messages: {e}", exc_info=True
-            )
-            return None
 
     def handle_server_message(self, line: str):
         if self.show_raw_log_in_ui:
@@ -1060,10 +933,12 @@ class IRCClient_Logic:
         try:
             app_config.reload_all_config_values()
             self.verify_ssl_cert = app_config.VERIFY_SSL_CERT
-            self.channel_log_enabled = app_config.CHANNEL_LOG_ENABLED
-            self.channel_log_level = app_config.LOG_LEVEL
-            self.channel_log_max_bytes = app_config.LOG_MAX_BYTES
-            self.channel_log_backup_count = app_config.LOG_BACKUP_COUNT
+            # Update the channel logger manager with new config values
+            self.channel_logger_manager.channel_log_enabled = app_config.CHANNEL_LOG_ENABLED
+            self.channel_logger_manager.channel_log_level = app_config.LOG_LEVEL
+            self.channel_logger_manager.channel_log_max_bytes = app_config.LOG_MAX_BYTES
+            self.channel_logger_manager.channel_log_backup_count = app_config.LOG_BACKUP_COUNT
+
             if hasattr(self.context_manager, "max_history"):
                 self.context_manager.max_history = app_config.MAX_HISTORY
             self._add_status_message(
@@ -1253,6 +1128,3 @@ class IRCClient_Logic:
             if not self.is_headless and self.ui:
                 self.ui.refresh_all_windows()
             self.ui_needs_update.clear()
-
-
-# END OF MODIFIED FILE: irc_client_logic.py

@@ -91,8 +91,8 @@ class UIManager:
         self._init_color_pair("input", COLOR_ID_INPUT, curses.COLOR_WHITE, -1)
         self._init_color_pair("pm", COLOR_ID_PM, curses.COLOR_MAGENTA, -1)
         self._init_color_pair("user_prefix", 14, curses.COLOR_YELLOW, -1)
-        self._init_color_pair("list_panel_bg", 15, curses.COLOR_BLUE, -1)
-        self._init_color_pair("user_list_panel_bg", 16, curses.COLOR_GREEN, -1)
+        self._init_color_pair("list_panel_bg", 15, curses.COLOR_WHITE, curses.COLOR_BLUE)
+        self._init_color_pair("user_list_panel_bg", 16, curses.COLOR_WHITE, curses.COLOR_GREEN)
 
     def _init_color_pair(self, name, pair_id, fg, bg):
         curses.init_pair(pair_id, fg, bg)
@@ -565,15 +565,14 @@ class UIManager:
         if not self.sidebar_win:
             return 0
         line_num = 0
-        self._safe_addstr(
+        self._draw_full_width_banner(
             self.sidebar_win,
             line_num,
-            0,
             "Windows:",
             self.colors.get("sidebar_header", 0),
             "_draw_sidebar_context_list_header",
         )
-        line_num += 1  # Increment even if addstr fails, to maintain logical flow, assuming _safe_addstr prevents crash
+        line_num += 1
 
         all_context_names_unsorted = self.client.context_manager.get_all_context_names()
         status_context_name = "Status"
@@ -656,23 +655,6 @@ class UIManager:
         if not self.sidebar_win or not active_ctx_obj_for_users:
             return line_num
 
-        # Draw hline separator if there's space and it's not the very first line
-        # The line_num passed here is where the hline should be drawn.
-        # The original code had `line_num -1`. If line_num is the start of this section,
-        # hline should be at `line_num` and header text at `line_num + 1`.
-        # Let's adjust to draw hline at current `line_num`, then increment, then draw text.
-        if line_num > 0 and line_num < max_y:  # Ensure hline is within bounds
-            self._safe_hline(
-                self.sidebar_win,
-                line_num,
-                0,
-                curses.ACS_HLINE,
-                max_x,
-                0,
-                "_draw_sidebar_user_list_hline",
-            )
-            line_num += 1  # Increment after drawing hline
-
         if line_num >= max_y:  # No space left for header text
             return line_num
 
@@ -682,10 +664,9 @@ class UIManager:
             f"Users in {current_active_ctx_name_for_user_header} ({user_count})"
         )
 
-        self._safe_addstr(
+        self._draw_full_width_banner(
             self.sidebar_win,
             line_num,
-            0,
             user_header_full,
             self.colors.get("sidebar_header", 0),
             "_draw_sidebar_user_list_header_text",
@@ -791,6 +772,24 @@ class UIManager:
 
         return line_num
 
+    def _draw_full_width_banner(
+        self, window: Any, y: int, text: str, attr: int, context_info: str = ""
+    ):
+        """Helper to draw text on a full-width colored banner."""
+        if not window: return
+        try:
+            max_y, max_x = window.getmaxyx()
+            if not (0 <= y < max_y): return
+
+            # Truncate text and pad with spaces to fill the width
+            padded_text = text.ljust(max_x)
+
+            # Use addstr here because _safe_addstr's truncation logic interferes with a full banner.
+            # The safety is handled by the y-check and ljust(max_x).
+            window.addstr(y, 0, padded_text, attr)
+        except curses.error as e:
+            logger.warning(f"curses.error in _draw_full_width_banner for {context_info}: {e}")
+
     def draw_sidebar(self, current_active_ctx_obj, current_active_ctx_name_str):
         if not self.sidebar_win:
             return
@@ -813,24 +812,33 @@ class UIManager:
             user_list_bg_color = self.colors["user_list_panel_bg"]
             for y in range(line_num, max_y):
                 try:
-                    # Fill the rest of the window with the user list background color
-                    # Using addnstr is safer as it prevents writing past the window edge
                     if max_x > 0:
-                        self.sidebar_win.addnstr(y, 0, ' ' * (max_x), max_x, user_list_bg_color)
+                        self.sidebar_win.addnstr(y, 0, ' ' * max_x, max_x, user_list_bg_color)
                 except curses.error:
-                    # This can happen on some terminals when writing to the bottom-right corner.
-                    # We can safely ignore it as the space is likely filled anyway.
                     pass
 
-            # Now that the background is correct, draw the user list components on top of it.
-            # The existing helper functions already draw to self.sidebar_win, which is what we want.
-            line_num = self._draw_sidebar_user_list_header(
-                line_num,
-                max_y,
-                max_x,
-                current_active_ctx_obj,
-                current_active_ctx_name_str,
-            )
+            # Draw the separator line
+            if line_num > 0 and line_num < max_y:
+                self._safe_hline(
+                    self.sidebar_win,
+                    line_num,
+                    0,
+                    curses.ACS_HLINE,
+                    max_x,
+                    self.colors.get("user_list_panel_bg", 0),
+                    "_draw_sidebar_user_list_hline",
+                )
+                line_num += 1
+
+            # Draw the user list header and items
+            if line_num < max_y:
+                line_num = self._draw_sidebar_user_list_header(
+                    line_num,
+                    max_y,
+                    max_x,
+                    current_active_ctx_obj,
+                    current_active_ctx_name_str,
+                )
             if line_num < max_y:
                 self._draw_sidebar_user_list_items_and_indicators(
                     line_num, max_y, max_x, current_active_ctx_obj
