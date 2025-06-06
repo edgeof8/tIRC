@@ -171,8 +171,7 @@ class HeadlessTestRunner:
         self._setup_event_wait(join_key)
 
         def join_condition(data: Dict[str, Any]) -> bool:
-            return (data.get("channel_name") == normalized_test_channel and
-                   data.get("join_status") == ChannelJoinStatus.FULLY_JOINED.name)
+            return data.get("channel_name") == normalized_test_channel
 
         join_event_handler = lambda data: self._event_handler_for_test(join_key, join_condition, data)
         self.api.subscribe_to_event("CHANNEL_FULLY_JOINED", join_event_handler)
