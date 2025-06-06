@@ -55,17 +55,22 @@ def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_
             context_name="Status",
         )
 
+# protocol_flow_handlers.py
 def handle_ping_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles PING command."""
     ping_payload = parsed_msg.trailing
     if ping_payload is None:
-        if parsed_msg.params:
+        if parsed_msg.params: # If there are params, the first one is the target
             ping_payload = parsed_msg.params[0]
-        else:
-            ping_payload = client.server if client.server else "heartbeat"
-            logger.warning(f"PING received with no parameters. Responding with PONG :{ping_payload}")
+        else: # No trailing, no params (e.g., server sends just "PING")
+            ping_payload = client.server if client.server else "heartbeat" # Fallback
+            logger.warning(f"PING received with no parameters. Responding with PONG targeting '{ping_payload}'")
 
-    client.network_handler.send_raw(f"PONG :{ping_payload}") # Always use colon for PONG reply
+    if ping_payload is None: # Should be extremely rare with the fallback
+        ping_payload = "unexpected_ping_payload_issue"
+        logger.error("PING payload was unexpectedly None even after fallback. Using generic token.")
+
+    client.network_handler.send_raw(f"PONG :{ping_payload}")
     logger.debug(f"Responded to PING with PONG targeting '{ping_payload}'")
 
 def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
