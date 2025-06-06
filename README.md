@@ -4,43 +4,93 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 
 ![PyRC Screenshot](image.png) <!-- Assuming image.png is a relevant screenshot -->
 
-## Project Structure
+## Key Architectural Features
 
-The project has been reorganized into a more modular structure with core functionality in the `pyrc_core` package:
+- **Modular Core (`pyrc_core`):** All core logic is encapsulated within the `pyrc_core` package, separating it from scripts and configuration.
+- **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator.
+- **Centralized State Management:** A dedicated `StateManager` is the single source of truth for all connection and session state. It provides thread-safe operations, validation, persistence to JSON, and a notification system for state changes. This makes the client's behavior predictable and easier to debug.
+- **Dynamic Command System:** All core client commands are implemented in individual Python modules within a structured `commands/` directory. They are dynamically discovered and registered at startup, making the client easily extensible.
+- **Extensible Scripting System:** A powerful Python scripting system allows for deep customization. Scripts can register commands, subscribe to a wide range of events, and interact with the client through a rich `ScriptAPIHandler`.
 
-```
 PyRC/
-├── pyrc_core/               # Core package containing all main functionality
-│   ├── __init__.py          # Package initialization
-│   ├── app_config.py        # Configuration handling
-│   ├── client/              # Client-side components
-│   │   ├── __init__.py
-│   │   ├── input_handler.py
-│   │   ├── irc_client_logic.py
-│   │   └── ui_manager.py
-│   ├── commands/           # All command implementations
-│   │   ├── __init__.py
-│   │   ├── channel/        # Channel-related commands
-│   │   ├── core/           # Core commands
-│   │   ├── dcc/            # DCC commands
-│   │   ├── information/    # Information commands
-│   │   ├── server/         # Server commands
-│   │   ├── ui/             # UI commands
-│   │   └── user/           # User commands
-│   ├── dcc/                # DCC functionality
-│   ├── features/           # Optional features
-│   ├── irc/                # IRC protocol handling
-│   ├── scripting/          # Scripting system
-│   └── utils/              # Utilities
-├── scripts/                # User scripts
-├── config/                 # Configuration files
-├── data/                   # Data files
-└── tests/                  # Test files
-```
+├── pyrc.py # Main application entry point.
+├── pyterm_irc_config.ini # Main configuration file.
+│
+├── pyrc_core/ # Core application package.
+│ ├── **init**.py
+│ ├── app_config.py # Handles loading and saving of all INI configuration values.
+│ ├── context_manager.py # Manages windows/contexts (channels, queries, status).
+│ ├── event_manager.py # Dispatches events to the scripting system.
+│ ├── state_manager.py # Centralized, persistent state management for the client.
+│ │
+│ ├── client/ # Client-side logic and UI components.
+│ │ ├── **init**.py
+│ │ ├── input_handler.py # Processes keyboard input, command history, and tab completion.
+│ │ ├── irc_client_logic.py # Main orchestrator class, initializes and coordinates all managers.
+│ │ ├── state_change_ui_handler.py # Updates the UI in response to state changes.
+│ │ └── ui_manager.py # Manages the curses-based text user interface.
+│ │
+│ ├── commands/ # All built-in command implementations, dynamically loaded.
+│ │ ├── channel/ # Commands for channel operations (/join, /part, /kick, etc.).
+│ │ ├── core/ # Essential client commands (/help).
+│ │ ├── dcc/ # DCC subcommands (/dcc send, /dcc list, etc.).
+│ │ ├── information/ # Commands for getting information (/who, /whois, etc.).
+│ │ ├── server/ # Commands for server connection (/connect, /quit, etc.).
+│ │ ├── ui/ # Commands for controlling the UI (/window, /split, etc.).
+│ │ └── user/ # Commands for user interaction (/msg, /query, /ignore, etc.).
+│ │
+│ ├── dcc/ # DCC (Direct Client-to-Client) feature implementation.
+│ │ ├── dcc_manager.py # Main orchestrator for all DCC functionality.
+│ │ ├── dcc_protocol.py # Parses and formats DCC CTCP messages.
+│ │ ├── dcc_transfer.py # Base classes for DCC send/receive transfer logic.
+│ │ └── ... # Other DCC helper and manager modules.
+│ │
+│ ├── features/ # Self-contained, optional features.
+│ │ └── triggers/ # Implementation of the /on command trigger system.
+│ │ ├── trigger_commands.py
+│ │ └── trigger_manager.py
+│ │
+│ ├── irc/ # IRC protocol logic and message handling.
+│ │ ├── **init**.py
+│ │ ├── cap_negotiator.py # Handles IRCv3 capability negotiation.
+│ │ ├── irc_message.py # Parses raw IRC lines into structured message objects.
+│ │ ├── irc_protocol.py # Main dispatcher for incoming server messages.
+│ │ ├── registration_handler.py # Manages the NICK/USER registration sequence.
+│ │ ├── sasl_authenticator.py # Handles SASL PLAIN authentication.
+│ │ └── handlers/ # Specific handlers for different IRC commands/numerics.
+│ │ ├── membership_handlers.py
+│ │ ├── message_handlers.py
+│ │ └── ...
+│ │
+│ ├── logging/ # Logging-specific components.
+│ │ └── channel_logger.py # Manages per-channel and status window log files.
+│ │
+│ ├── scripting/ # The Python scripting engine.
+│ │ ├── **init**.py
+│ │ ├── script_api_handler.py # Provides the `api` object for scripts to interact with the client.
+│ │ ├── script_base.py # A base class for scripts to inherit from.
+│ │ └── script_manager.py # Discovers, loads, and manages all user scripts.
+│ │
+│ └── network_handler.py # Manages the raw socket connection, sending, and receiving data.
+│
+├── scripts/ # Directory for user-provided Python scripts.
+│ ├── default_fun_commands.py # Example script with fun commands like /slap, /dice.
+│ └── ...
+│
+├── config/ # Directory for runtime-generated configuration files.
+│ └── triggers.json # Stores persistent user-defined triggers.
+│
+├── data/ # Directory for static data files used by scripts or core.
+│ └── default_help/
+│ └── command_help.ini # Fallback help texts for core commands.
+│
+└── logs/ # Default directory for all log files (auto-created).
+├── pyrc_core.log # Main application log.
+└── dcc.log # Dedicated log for DCC events.
 
 ## Project Status
 
-**PyRC is under active development.** The focus is on continuously enhancing its feature set, improving code modularity, and ensuring overall stability. We welcome contributions and feedback as the project evolves.
+**PyRC is under active development.** The focus is on continuously enhancing its feature set, improving code modularity, and ensuring overall stability. Recent development cycles have included a major architectural refactoring to centralize state management, significant work on DCC functionality, a more robust event-driven `/server` command, an enhanced `/help` system, and a reliable headless testing framework. We welcome contributions and feedback as the project evolves.
 
 ## Recent Changes
 
@@ -390,7 +440,12 @@ Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `Ev
 
 ## State Management System
 
-PyRC includes a robust state management system that provides centralized state handling with persistence, validation, and change notifications.
+PyRC's `StateManager` provides a centralized, thread-safe way to manage all client state with validation, persistence, and change notifications. This architectural improvement ensures:
+
+- Single source of truth for all connection and session state
+- Predictable state transitions
+- Easier debugging and testing
+- Better separation of concerns
 
 ### Key Features
 

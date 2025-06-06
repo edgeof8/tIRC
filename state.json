@@ -1,11 +1,35 @@
 {
-    "connection_state": "CONFIG_ERROR",
-    "connection_info": null,
+    "connection_state": "CONNECTED",
+    "connection_info": {
+        "server": "irc.libera.chat",
+        "port": 6697,
+        "ssl": true,
+        "nick": "PyRC",
+        "username": "PyRC",
+        "realname": "PyRC User",
+        "server_password": null,
+        "nickserv_password": null,
+        "sasl_username": null,
+        "sasl_password": null,
+        "verify_ssl_cert": true,
+        "auto_connect": true,
+        "initial_channels": [
+            "#pyrc"
+        ],
+        "desired_caps": [],
+        "last_error": null,
+        "last_error_time": null,
+        "connection_attempts": 0,
+        "last_connection_attempt": null,
+        "last_successful_connection": null,
+        "config_errors": [],
+        "user_modes": [],
+        "currently_joined_channels": [],
+        "last_attempted_nick_change": null
+    },
     "last_error": "SASL username provided but no password",
     "connection_attempts": 0,
     "last_connection_attempt": null,
     "last_successful_connection": null,
-    "config_errors": [
-        "SASL username provided but no password"
-    ]
+    "config_errors": []
 }

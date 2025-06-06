@@ -115,7 +115,9 @@ DEFAULT_IGNORED_PATTERNS = []
 # --- Default Logging Settings ---
 DEFAULT_LOG_ENABLED = True
 DEFAULT_LOG_FILE = "pyrc_core.log"
-DEFAULT_LOG_LEVEL = "INFO"  # e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL
+DEFAULT_LOG_LEVEL = "INFO"  # For the main informational log
+DEFAULT_LOG_ERROR_FILE = "pyrc_error.log" # <-- NEW
+DEFAULT_LOG_ERROR_LEVEL = "WARNING" # <-- NEW
 DEFAULT_LOG_MAX_BYTES = 1024 * 1024 * 5  # 5 MB
 DEFAULT_LOG_BACKUP_COUNT = 3
 DEFAULT_CHANNEL_LOG_ENABLED = True
@@ -365,7 +367,9 @@ MAX_HISTORY: int = DEFAULT_MAX_HISTORY
 UI_COLORSCHEME: str = "default" # Assuming "default" is the string for DEFAULT_UI_COLORSCHEME if it existed
 LOG_ENABLED: bool = DEFAULT_LOG_ENABLED
 LOG_FILE: str = DEFAULT_LOG_FILE
+LOG_ERROR_FILE: str = DEFAULT_LOG_ERROR_FILE # <-- NEW
 LOG_LEVEL_STR: str = DEFAULT_LOG_LEVEL.upper()
+LOG_ERROR_LEVEL_STR: str = DEFAULT_LOG_ERROR_LEVEL.upper() # <-- NEW
 LOG_MAX_BYTES: int = DEFAULT_LOG_MAX_BYTES
 LOG_BACKUP_COUNT: int = DEFAULT_LOG_BACKUP_COUNT
 CHANNEL_LOG_ENABLED: bool = DEFAULT_CHANNEL_LOG_ENABLED
@@ -516,6 +520,7 @@ def reload_all_config_values():
     global AUTO_RECONNECT
     global MAX_HISTORY, UI_COLORSCHEME
     global LOG_ENABLED, LOG_FILE, LOG_LEVEL_STR, LOG_LEVEL, LOG_MAX_BYTES, LOG_BACKUP_COUNT, CHANNEL_LOG_ENABLED
+    global LOG_ERROR_FILE, LOG_ERROR_LEVEL_STR, LOG_ERROR_LEVEL # <-- Add new globals here
     global ENABLE_TRIGGER_SYSTEM, DISABLED_SCRIPTS, HEADLESS_MAX_HISTORY
     # DCC Globals for reload
     global DCC_ENABLED, DCC_DOWNLOAD_DIR, DCC_UPLOAD_DIR, DCC_AUTO_ACCEPT, DCC_AUTO_ACCEPT_FROM_FRIENDS
@@ -556,6 +561,7 @@ def reload_all_config_values():
     LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
 
     LOG_LEVEL_STR = get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
+    LOG_ERROR_LEVEL_STR = get_config_value("Logging", "log_error_level", DEFAULT_LOG_ERROR_LEVEL, str).upper() # <-- NEW
 
     _log_level_int_reload = getattr(logging, LOG_LEVEL_STR, None)
     if not isinstance(_log_level_int_reload, int):
@@ -563,6 +569,15 @@ def reload_all_config_values():
         if not isinstance(_log_level_int_reload, int):
             _log_level_int_reload = logging.INFO
     LOG_LEVEL = _log_level_int_reload
+
+    # Add logic for the error log level
+    _log_error_level_int = getattr(logging, LOG_ERROR_LEVEL_STR, logging.WARNING)
+    if not isinstance(_log_error_level_int, int):
+        _log_error_level_int = logging.WARNING
+    LOG_ERROR_LEVEL = _log_error_level_int # <-- NEW
+
+    LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
+    LOG_ERROR_FILE = get_config_value("Logging", "log_error_file", DEFAULT_LOG_ERROR_FILE, str) # <-- NEW
 
     LOG_MAX_BYTES = get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
     LOG_BACKUP_COUNT = get_config_value("Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int)
@@ -648,6 +663,7 @@ LOG_ENABLED = get_config_value("Logging", "log_enabled", DEFAULT_LOG_ENABLED, bo
 LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
 
 LOG_LEVEL_STR = get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
+LOG_ERROR_LEVEL_STR = get_config_value("Logging", "log_error_level", DEFAULT_LOG_ERROR_LEVEL, str).upper()
 _log_level_int_module_init = getattr(logging, LOG_LEVEL_STR, None)
 if not isinstance(_log_level_int_module_init, int):
     _log_level_int_module_init = getattr(logging, DEFAULT_LOG_LEVEL.upper(), logging.INFO)
@@ -655,6 +671,14 @@ if not isinstance(_log_level_int_module_init, int):
         _log_level_int_module_init = logging.INFO
 LOG_LEVEL = _log_level_int_module_init
 
+# Initialize error log level
+_log_error_level_int_init = getattr(logging, LOG_ERROR_LEVEL_STR, logging.WARNING)
+if not isinstance(_log_error_level_int_init, int):
+    _log_error_level_int_init = logging.WARNING
+LOG_ERROR_LEVEL = _log_error_level_int_init
+
+LOG_FILE = get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
+LOG_ERROR_FILE = get_config_value("Logging", "log_error_file", DEFAULT_LOG_ERROR_FILE, str)
 
 LOG_MAX_BYTES = get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
 LOG_BACKUP_COUNT = get_config_value("Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int)

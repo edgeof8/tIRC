@@ -132,9 +132,13 @@ def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw
             # Update channel modes
             for mode in parsed_modes:
                 if mode["operation"] == "+":
-                    context.modes.add(mode["mode"])
+                    if mode["mode"] not in context.modes:
+                        context.modes.append(mode["mode"])
                 elif mode["operation"] == "-":
-                    context.modes.discard(mode["mode"])
+                    try:
+                        context.modes.remove(mode["mode"])
+                    except ValueError:
+                        pass  # Mode not in list, ignore
 
             # Format mode string for display
             mode_str_display = mode_string

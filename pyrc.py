@@ -43,7 +43,7 @@ def setup_logging():
     root_logger = logging.getLogger()
     # Set the root logger level to the most verbose level we might want for any handler.
     # Individual handlers will then filter based on their own levels.
-    root_logger.setLevel(LOG_LEVEL) # Capture all messages from LOG_LEVEL upwards
+    root_logger.setLevel(logging.DEBUG) # Capture all messages from DEBUG upwards
 
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -59,37 +59,42 @@ def setup_logging():
             print(f"Error creating log directory {log_dir}: {e}. Logging to project root.")
             log_dir = BASE_DIR
 
-    log_file_path = os.path.join(log_dir, LOG_FILE)
-
     try:
-        # File Handler - respects LOG_LEVEL from config
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file_path,
+        # --- Full Log Handler ---
+        # Logs ALL messages (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        full_log_path = os.path.join(log_dir, LOG_FILE)
+        full_handler = logging.handlers.RotatingFileHandler(
+            full_log_path,
             maxBytes=LOG_MAX_BYTES,
             backupCount=LOG_BACKUP_COUNT,
             encoding="utf-8",
         )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(LOG_LEVEL)  # Use the configured level for this handler
-        root_logger.addHandler(file_handler)
+        full_handler.setFormatter(formatter)
+        full_handler.setLevel(logging.DEBUG)  # Log everything
+        root_logger.addHandler(full_handler)
 
-        # Console Handler - can be set to a different level for development/debugging
-        # For instance, always show DEBUG on console regardless of file log level.
+        # --- Error Log Handler ---
+        # Only logs WARNING and above
+        error_log_path = os.path.join(log_dir, "pyrc_error.log")
+        error_handler = logging.handlers.RotatingFileHandler(
+            error_log_path,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        error_handler.setFormatter(formatter)
+        error_handler.setLevel(logging.WARNING)  # Only warnings and above
+        root_logger.addHandler(error_handler)
+
+        # Console Handler - shows INFO and above by default
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
-        console_handler.setLevel(LOG_LEVEL) # Match file handler or set as desired (e.g., INFO)
+        console_handler.setLevel(logging.INFO)
         root_logger.addHandler(console_handler)
 
-        # Specific logger level overrides if needed (example)
-        # logging.getLogger("pyrc.commands.help").setLevel(logging.INFO) # Keep if frequently needed, otherwise remove or set to INFO
-        # logging.getLogger("pyrc.logic").setLevel(logging.INFO)
-        # logging.getLogger("pyrc.protocol").setLevel(logging.INFO)
-        # logging.getLogger("pyrc.handlers.message").setLevel(logging.INFO)
-
-
-        # Initial log message using a specific logger for the application itself
+        # Initial log message
         app_init_logger = logging.getLogger("pyrc")
-        app_init_logger.info(f"Logging initialized. Main log: {log_file_path}. Configured file LOG_LEVEL: {LOG_LEVEL_STR} ({LOG_LEVEL})")
+        app_init_logger.info(f"Logging initialized. Full log: {full_log_path}, Error log: {error_log_path}")
         if CHANNEL_LOG_ENABLED:
             app_init_logger.info(f"Per-channel logging is enabled. Channel logs will be placed in: {log_dir}")
 

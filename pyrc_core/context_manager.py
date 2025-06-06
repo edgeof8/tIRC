@@ -41,7 +41,7 @@ class Context:
         self.messages: Deque[Tuple[str, Any]] = deque(maxlen=max_history)
         self.users: Dict[str, str] = {}
         self.user_prefixes: Dict[str, str] = {}
-        self.modes: set = set()
+        self.modes: List[str] = []
         self.topic: Optional[str] = topic
         self.unread_count: int = 0
         self.scrollback_offset: int = 0

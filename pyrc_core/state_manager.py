@@ -9,7 +9,17 @@ from enum import Enum, auto
 import threading
 from pathlib import Path
 import time
-from json import JSONEncoder
+class StateEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle Enum, datetime, and set objects."""
+    def default(self, obj):
+        if isinstance(obj, Enum):
+            return obj.name
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, set):
+            return list(obj)
+        return super().default(obj)
+
 
 # Type variable for state value
 T = TypeVar("T")
@@ -202,7 +212,7 @@ class StateManager:
                 except (KeyError, TypeError) as e:
                     self.logger.warning(f"Invalid connection_state '{loaded_data.get('connection_state')}' in state file: {e}")
                     loaded_data["connection_state"] = ConnectionState.DISCONNECTED
-            
+
             if "connection_info" in loaded_data and loaded_data["connection_info"] is not None:
                 try:
                     # Convert string timestamps back to datetime objects
@@ -210,7 +220,7 @@ class StateManager:
                     for time_field in ["last_error_time", "last_connection_attempt", "last_successful_connection"]:
                         if time_field in conn_info and conn_info[time_field] is not None:
                             conn_info[time_field] = datetime.fromisoformat(conn_info[time_field])
-                    
+
                     # Re-create the ConnectionInfo dataclass from the dictionary
                     loaded_data["connection_info"] = ConnectionInfo(**conn_info)
                 except (TypeError, KeyError, ValueError) as e:
@@ -255,20 +265,20 @@ class StateManager:
 
             # Ensure the directory exists
             os.makedirs(os.path.dirname(os.path.abspath(self.state_file)), exist_ok=True)
-            
+
             # Write to a temporary file first, then rename to ensure atomic write
             temp_file = f"{self.state_file}.tmp"
             with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(serializable_state, f, indent=4, ensure_ascii=False)
-            
+                json.dump(serializable_state, f, indent=4, ensure_ascii=False, cls=StateEncoder)
+
             # On Windows, we need to remove the destination file first if it exists
             if os.path.exists(self.state_file):
                 os.replace(temp_file, self.state_file)
             else:
                 os.rename(temp_file, self.state_file)
-                
+
             self.logger.debug(f"Successfully saved state to {self.state_file}")
-            
+
         except Exception as e:
             self.logger.error(f"Error saving state to {self.state_file}: {e}", exc_info=True)
             try:
