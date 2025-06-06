@@ -834,17 +834,12 @@ class UIManager:
                 logger.error(f"Error drawing user list: {e}", exc_info=True)
             finally:
                 if user_list_win:
-                    try:
-                        user_list_win.erase()
-                        user_list_win.refresh()
-                        del user_list_win
-                    except curses.error:
-                        pass  # Handle potential errors during deletion
+                    user_list_win.erase()
+                    user_list_win.refresh()
+                    del user_list_win
 
 
 
-        except curses.error as e:
-            logger.error(f"Error drawing sidebar: {e}", exc_info=True)
 
     def draw_status_bar(self, current_active_ctx_obj, current_active_ctx_name_str):
         """Draw the status bar"""
