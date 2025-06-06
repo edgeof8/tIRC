@@ -57,14 +57,16 @@ def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_
 
 def handle_ping_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles PING command."""
-    # raw_line is 'line' from the original handle_server_message context
-    ping_param = (
-        parsed_msg.trailing
-        if parsed_msg.trailing
-        else (parsed_msg.params[0] if parsed_msg.params else "")
-    )
-    client.network_handler.send_raw(f"PONG :{ping_param}")
-    logger.debug(f"Responded to PING with PONG {ping_param}")
+    ping_payload = parsed_msg.trailing
+    if ping_payload is None:
+        if parsed_msg.params:
+            ping_payload = parsed_msg.params[0]
+        else:
+            ping_payload = client.server if client.server else "heartbeat"
+            logger.warning(f"PING received with no parameters. Responding with PONG :{ping_payload}")
+
+    client.network_handler.send_raw(f"PONG :{ping_payload}") # Always use colon for PONG reply
+    logger.debug(f"Responded to PING with PONG targeting '{ping_payload}'")
 
 def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles AUTHENTICATE command."""
