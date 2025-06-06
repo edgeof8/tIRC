@@ -127,56 +127,213 @@ class IRCClient_Logic:
     _server_switch_target_config_name: Optional[str] = None # ADDED
 
     def __init__(self, stdscr, args):
+        # Initialize basic attributes
         self.stdscr = stdscr
         self.is_headless = stdscr is None
         self.args = args
         self.app_config = app_config
         self.all_server_configs = app_config.ALL_SERVER_CONFIGS  # type: ignore
+        self.exit_screen_shown = False
+        self.reconnect_delay: int = 0
+        self.max_reconnect_delay: int = 300  # 5 minutes
+        self.pending_server_switch_config_name: Optional[str] = None
+        self._server_switch_disconnect_event: Optional[threading.Event] = None
+        self._server_switch_target_config_name: Optional[str] = None
+        self.echo_sent_to_status: bool = True
+        self.show_raw_log_in_ui: bool = False
+        self.last_join_command_target: Optional[str] = None
+        self.should_quit = False
+        self.ui_needs_update = threading.Event()
+        self.active_list_context_name: Optional[str] = None
+        self.user_modes: List[str] = []
+        self._final_quit_message = None
+        self.last_attempted_nick_change: Optional[str] = None
+        self._handle_user_input = self._handle_user_input_impl
+        self._update_ui = self._update_ui_impl
 
-        # Initialize StateManager first
+        # Initialize core components
+        self._initialize_core_components()
+        
+        # Load server configuration
+        self._load_server_configuration()
+        
+        # Initialize UI and handlers
+        self._initialize_ui_and_handlers(stdscr)
+        
+        # Initialize connection state
+        self._initialize_connection_state()
+        
+        # Log startup status
+        self._log_startup_status()
+        
+    def _initialize_core_components(self):
+        """Initialize core components that don't depend on server configuration."""
+        # Initialize StateManager first as other components depend on it
         self.state_manager = StateManager()
         
-        # Initialize other managers
+        # Initialize other core managers
         self.channel_logger_manager = ChannelLoggerManager()
-
-        # Process server configuration
-        if hasattr(args, "server") and args.server:
-            # Command line config
-            cli_port = (
-                args.port
-                if hasattr(args, "port") and args.port is not None
-                else (
-                    self.app_config.DEFAULT_SSL_PORT  # type: ignore
-                    if (hasattr(args, "ssl") and args.ssl)
-                    else self.app_config.DEFAULT_PORT  # type: ignore
-                )
-            )
-            temp_config = app_config.ServerConfig(
-                server_id="CommandLine",
-                address=args.server,
-                port=cli_port,
-                ssl=args.ssl if hasattr(args, "ssl") else False,
-                nick=args.nick if hasattr(args, "nick") and args.nick else self.app_config.DEFAULT_NICK,  # type: ignore
-                channels=args.channel if hasattr(args, "channel") and args.channel else [],
-                server_password=args.password if hasattr(args, "password") else None,
-                nickserv_password=args.nickserv_password if hasattr(args, "nickserv_password") else None,
-                verify_ssl_cert=self.app_config.VERIFY_SSL_CERT,
-                auto_connect=True,
-            )
-            self._configure_from_server_config(temp_config, "CommandLine")
-        elif (
-            self.app_config.DEFAULT_SERVER_CONFIG_NAME
-            and self.app_config.DEFAULT_SERVER_CONFIG_NAME in self.all_server_configs
-        ):
-            # Default config
-            self._configure_from_server_config(
-                self.all_server_configs[self.app_config.DEFAULT_SERVER_CONFIG_NAME],
-                self.app_config.DEFAULT_SERVER_CONFIG_NAME
-            )
+        self.context_manager = ContextManager(max_history_per_context=app_config.MAX_HISTORY)
+        self.network_handler = NetworkHandler(self)
+        self.script_manager = self._create_script_manager()
+        self.event_manager = EventManager(self, self.script_manager)
+        self.dcc_manager = DCCManager(self, self.event_manager)
+        self.command_handler = CommandHandler(self)
+        
+        # Initialize trigger manager if enabled
+        if app_config.ENABLE_TRIGGER_SYSTEM:
+            self._initialize_trigger_manager()
         else:
-            # No config
+            self.trigger_manager = None
+            
+    def _load_server_configuration(self):
+        """Load and apply server configuration from command line or defaults."""
+        if hasattr(self.args, "server") and self.args.server:
+            # Command line config takes highest precedence
+            self._load_command_line_config()
+        elif (self.app_config.DEFAULT_SERVER_CONFIG_NAME and 
+              self.app_config.DEFAULT_SERVER_CONFIG_NAME in self.all_server_configs):
+            # Fall back to default config if specified
+            self._load_default_config()
+        else:
+            # No valid configuration found
             self.state_manager.set_connection_state(ConnectionState.DISCONNECTED)
             logger.warning("No server configuration found")
+    
+    def _load_command_line_config(self):
+        """Load configuration from command line arguments."""
+        cli_port = (
+            self.args.port
+            if hasattr(self.args, "port") and self.args.port is not None
+            else (
+                self.app_config.DEFAULT_SSL_PORT  # type: ignore
+                if (hasattr(self.args, "ssl") and self.args.ssl)
+                else self.app_config.DEFAULT_PORT  # type: ignore
+            )
+        )
+        
+        temp_config = app_config.ServerConfig(
+            server_id="CommandLine",
+            address=self.args.server,
+            port=cli_port,
+            ssl=self.args.ssl if hasattr(self.args, "ssl") else False,
+            nick=self.args.nick if hasattr(self.args, "nick") and self.args.nick else self.app_config.DEFAULT_NICK,  # type: ignore
+            channels=self.args.channel if hasattr(self.args, "channel") and self.args.channel else [],
+            server_password=self.args.password if hasattr(self.args, "password") else None,
+            nickserv_password=self.args.nickserv_password if hasattr(self.args, "nickserv_password") else None,
+            verify_ssl_cert=self.app_config.VERIFY_SSL_CERT,
+            auto_connect=True,
+        )
+        
+        if not self._configure_from_server_config(temp_config, "CommandLine"):
+            logger.error("Failed to configure from command line arguments")
+    
+    def _load_default_config(self):
+        """Load the default server configuration."""
+        config_name = self.app_config.DEFAULT_SERVER_CONFIG_NAME
+        if not self._configure_from_server_config(
+            self.all_server_configs[config_name],
+            config_name
+        ):
+            logger.error(f"Failed to configure from default server config: {config_name}")
+    
+    def _initialize_ui_and_handlers(self, stdscr):
+        """Initialize UI components and input handlers."""
+        if self.is_headless:
+            self.ui = DummyUI()
+            self.input_handler = None
+        else:
+            self.ui = UIManager(self.stdscr, self)
+            self.input_handler = InputHandler(self)
+            
+        # Initialize state UI handler after UI is set up
+        self.state_ui_handler = StateChangeUIHandler(self)
+        
+        # Initialize input handler if not done already
+        if not self.is_headless and not self.input_handler:
+            self.input_handler = InputHandler(self)
+    
+    def _initialize_connection_state(self):
+        """Initialize connection state and context manager."""
+        # Create default contexts
+        self.context_manager.create_context("Status", context_type="status")
+        self.context_manager.create_context("DCC", context_type="dcc_transfers")
+        self.context_manager.set_active_context("Status")
+        
+        # Set up channels from connection info
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info and conn_info.initial_channels:
+            for ch_name in conn_info.initial_channels:
+                self.context_manager.create_context(
+                    ch_name,
+                    context_type="channel",
+                    initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN,
+                )
+    
+    def _log_startup_status(self):
+        """Log startup status and display initial messages."""
+        conn_info = self.state_manager.get_connection_info()
+        
+        if not conn_info:
+            self._add_status_message(
+                "No server specified and no default configuration. Use /server <name> or /connect <host> to connect.",
+                "warning",
+            )
+            logger.info("IRCClient_Logic initialized with no server configuration")
+            return
+            
+        # Log connection info
+        logger.info(
+            f"IRCClient_Logic.__init__: server='{conn_info.server}', port={conn_info.port}, "
+            f"nick='{conn_info.nick}' use_ssl={conn_info.ssl}, "
+            f"verify_ssl_cert={conn_info.verify_ssl_cert}, headless={self.is_headless}"
+        )
+        
+        # Update connection state if auto-connect is enabled
+        if conn_info.auto_connect:
+            self.state_manager.set_connection_state(ConnectionState.CONNECTING)
+        
+        # Display initial status message
+        initial_channels_display = ", ".join(conn_info.initial_channels) if conn_info.initial_channels else "None"
+        self._add_status_message("Simple IRC Client starting...")
+        self._add_status_message(
+            f"Target: {conn_info.server or 'Not configured'}:{conn_info.port or 'N/A'}, "
+            f"Nick: {conn_info.nick}, Channels: {initial_channels_display}"
+        )
+        
+        logger.info(
+            f"IRCClient_Logic initialized for {conn_info.server or 'Not configured'}:"
+            f"{conn_info.port or 'N/A'} as {conn_info.nick}. "
+            f"Channels: {initial_channels_display}"
+        )
+    
+    def _create_script_manager(self):
+        """Create and configure the script manager."""
+        cli_disabled = (
+            set(self.args.disable_script)
+            if hasattr(self.args, "disable_script") and self.args.disable_script
+            else set()
+        )
+        config_disabled = app_config.DISABLED_SCRIPTS
+        return ScriptManager(
+            self, 
+            app_config.BASE_DIR, 
+            disabled_scripts=cli_disabled.union(config_disabled)
+        )
+    
+    def _initialize_trigger_manager(self):
+        """Initialize the trigger manager if enabled."""
+        config_dir_triggers = os.path.join(app_config.BASE_DIR, "config")
+        if not os.path.exists(config_dir_triggers):
+            try:
+                os.makedirs(config_dir_triggers, exist_ok=True)
+            except OSError as e_mkdir:
+                logger.error(f"Could not create config directory for triggers: {e_mkdir}")
+                self.trigger_manager = None
+                return
+                
+        self.trigger_manager = TriggerManager(config_dir_triggers)
+        self.trigger_manager.load_triggers()
 
         # Initialize context manager and create default contexts
         # Get connection info for logging
@@ -325,30 +482,55 @@ class IRCClient_Logic:
         logger.info(f"[StatusUpdate via Helper] ColorKey: '{color_key}', Text: {text}")
         self.add_message(text, color_attr, context_name="Status")
 
-    def _configure_from_server_config(self, config: ServerConfig, config_name: str):
-        """Helper to initialize connection info from a ServerConfig."""
-        conn_info = ConnectionInfo(
-            server=config.address,
-            port=config.port,
-            ssl=config.ssl,
-            nick=config.nick,
-            username=config.username or config.nick,
-            realname=config.realname or config.nick,
-            server_password=config.server_password,
-            nickserv_password=config.nickserv_password,
-            sasl_username=config.sasl_username,
-            sasl_password=config.sasl_password,
-            verify_ssl_cert=config.verify_ssl_cert,
-            auto_connect=config.auto_connect,
-            initial_channels=config.channels or [],
-            desired_caps=config.desired_caps or []
-        )
-
-        if not self.state_manager.set_connection_info(conn_info):
-            logger.error("Failed to set connection info in StateManager")
-            return
-
-        logger.info(f"Configured from server config: {config_name}")
+    def _configure_from_server_config(self, config: ServerConfig, config_name: str) -> bool:
+        """
+        Initialize connection info from a ServerConfig and update state.
+        
+        Args:
+            config: The ServerConfig to use for configuration
+            config_name: Name of the configuration for logging purposes
+            
+        Returns:
+            bool: True if configuration was successful, False otherwise
+        """
+        try:
+            # Create connection info from config
+            conn_info = ConnectionInfo(
+                server=config.address,
+                port=config.port,
+                ssl=config.ssl,
+                nick=config.nick,
+                username=config.username or config.nick,
+                realname=config.realname or config.nick,
+                server_password=config.server_password,
+                nickserv_password=config.nickserv_password,
+                sasl_username=config.sasl_username,
+                sasl_password=config.sasl_password,
+                verify_ssl_cert=config.verify_ssl_cert,
+                auto_connect=config.auto_connect,
+                initial_channels=config.channels or [],
+                desired_caps=config.desired_caps or []
+            )
+            
+            # Update connection info in state manager
+            if not self.state_manager.set_connection_info(conn_info):
+                logger.error("Failed to set connection info in StateManager")
+                return False
+                
+            # Update network handler with new channels if it exists
+            if hasattr(self, 'network_handler'):
+                self.network_handler.channels_to_join_on_connect = conn_info.initial_channels[:]
+                
+                # Start network handler if we have a valid server/port
+                if conn_info.server and conn_info.port is not None:
+                    self.network_handler.start()
+            
+            logger.info(f"Successfully configured from server config: {config_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error configuring from server config {config_name}: {str(e)}", exc_info=True)
+            return False
 
         # Create contexts for initial channels
         self.context_manager.create_context("Status", context_type="status")

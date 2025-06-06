@@ -1,12 +1,15 @@
 import json
 import os
 import logging
-from typing import Any, Dict, List, Optional, Set, Callable, TypeVar, Generic
-from dataclasses import dataclass, field
+import dataclasses
+from typing import Any, Dict, List, Optional, Set, Callable, TypeVar, Generic, Union
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum, auto
 import threading
 from pathlib import Path
+import time
+from json import JSONEncoder
 
 # Type variable for state value
 T = TypeVar("T")
@@ -181,37 +184,98 @@ class StateManager:
             self._start_auto_save()
 
     def _load_state(self) -> None:
-        """Load state from file."""
+        """Load state from file with proper type conversion."""
+        if not os.path.exists(self.state_file):
+            self.logger.info(f"No state file found at {self.state_file}, using default state")
+            return
+
         try:
-            if os.path.exists(self.state_file):
-                with open(self.state_file, "r", encoding="utf-8") as f:
-                    loaded_state = json.load(f)
-                    # Preserve connection state and statistics
-                    for key in [
-                        "connection_state",
-                        "connection_info",
-                        "last_error",
-                        "connection_attempts",
-                        "last_connection_attempt",
-                        "last_successful_connection",
-                        "config_errors",
-                    ]:
-                        if key in self._state:
-                            loaded_state[key] = self._state[key]
-                    self._state.update(loaded_state)
-                self.logger.info(f"Loaded state from {self.state_file}")
+            with open(self.state_file, "r", encoding="utf-8") as f:
+                loaded_data = json.load(f)
+
+            # Deserialize special types
+            if "connection_state" in loaded_data and loaded_data["connection_state"] is not None:
+                try:
+                    state_name = loaded_data["connection_state"]
+                    if isinstance(state_name, str):
+                        loaded_data["connection_state"] = ConnectionState[state_name]
+                except (KeyError, TypeError) as e:
+                    self.logger.warning(f"Invalid connection_state '{loaded_data.get('connection_state')}' in state file: {e}")
+                    loaded_data["connection_state"] = ConnectionState.DISCONNECTED
+            
+            if "connection_info" in loaded_data and loaded_data["connection_info"] is not None:
+                try:
+                    # Convert string timestamps back to datetime objects
+                    conn_info = loaded_data["connection_info"]
+                    for time_field in ["last_error_time", "last_connection_attempt", "last_successful_connection"]:
+                        if time_field in conn_info and conn_info[time_field] is not None:
+                            conn_info[time_field] = datetime.fromisoformat(conn_info[time_field])
+                    
+                    # Re-create the ConnectionInfo dataclass from the dictionary
+                    loaded_data["connection_info"] = ConnectionInfo(**conn_info)
+                except (TypeError, KeyError, ValueError) as e:
+                    self.logger.error(f"Failed to load connection_info from state file: {e}")
+                    loaded_data["connection_info"] = None
+
+            # Update the state with the loaded data
+            self._state.update(loaded_data)
+            self.logger.info(f"Successfully loaded state from {self.state_file}")
+
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Error decoding JSON from state file {self.state_file}: {e}")
+            # Backup the corrupted file
+            try:
+                backup_file = f"{self.state_file}.bak_{int(time.time())}"
+                os.rename(self.state_file, backup_file)
+                self.logger.info(f"Backed up corrupted state file to {backup_file}")
+            except OSError as backup_error:
+                self.logger.error(f"Failed to backup corrupted state file: {backup_error}")
         except Exception as e:
-            self.logger.error(f"Error loading state: {e}")
-            # Keep default state
+            self.logger.error(f"Unexpected error loading state: {e}", exc_info=True)
 
     def _save_state(self) -> None:
-        """Save state to file."""
+        """Save state to file with proper serialization of custom types."""
         try:
-            with open(self.state_file, "w", encoding="utf-8") as f:
-                json.dump(self._state, f, indent=4)
-            self.logger.info(f"Saved state to {self.state_file}")
+            # Create a serializable copy of the state
+            serializable_state = {}
+            for key, value in self._state.items():
+                if key == "connection_state" and value is not None:
+                    # Convert Enum to its name
+                    serializable_state[key] = value.name
+                elif key == "connection_info" and value is not None:
+                    # Convert ConnectionInfo to dict and handle datetime fields
+                    conn_dict = asdict(value)
+                    # Convert datetime objects to ISO format strings
+                    for time_field in ["last_error_time", "last_connection_attempt", "last_successful_connection"]:
+                        if time_field in conn_dict and conn_dict[time_field] is not None:
+                            conn_dict[time_field] = conn_dict[time_field].isoformat()
+                    serializable_state[key] = conn_dict
+                else:
+                    serializable_state[key] = value
+
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(os.path.abspath(self.state_file)), exist_ok=True)
+            
+            # Write to a temporary file first, then rename to ensure atomic write
+            temp_file = f"{self.state_file}.tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(serializable_state, f, indent=4, ensure_ascii=False)
+            
+            # On Windows, we need to remove the destination file first if it exists
+            if os.path.exists(self.state_file):
+                os.replace(temp_file, self.state_file)
+            else:
+                os.rename(temp_file, self.state_file)
+                
+            self.logger.debug(f"Successfully saved state to {self.state_file}")
+            
         except Exception as e:
-            self.logger.error(f"Error saving state: {e}")
+            self.logger.error(f"Error saving state to {self.state_file}: {e}", exc_info=True)
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception as cleanup_error:
+                self.logger.error(f"Failed to clean up temporary file {temp_file}: {cleanup_error}")
 
     def _start_auto_save(self) -> None:
         """Start the auto-save timer."""
