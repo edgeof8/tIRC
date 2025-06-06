@@ -1,3 +1,4 @@
+
 # START OF MODIFIED FILE: scripts/ai_api_test_script.py
 import logging
 from typing import Dict, Any, TYPE_CHECKING, Optional, List, Tuple
@@ -25,9 +26,9 @@ class LeanAiApiTestScript:
     def load(self):
         self.api.log_info("[Lean AI Test] LeanAiApiTestScript Loading...")
         self.api.register_command(
-            "leanaitest",  # Command name
+            "leanaitest",
             self.handle_leanaitest_command,
-            help_text="Usage: /leanaitest - Runs focused tests.",
+            help_info="Usage: /leanaitest - Runs focused tests.", # CHANGED to help_info
             aliases=["lat"],
         )
         self.api.subscribe_to_event("CLIENT_REGISTERED", self.handle_client_registered)
@@ -175,21 +176,17 @@ class LeanAiApiTestScript:
         logger.info(f"[Lean AI Test] --- Testing General /help Output ---")
         self._check_help_output(
             command_to_execute_with_slash="/help",
-            expected_strings=[
-                "Available commands:",
-                "Core Commands:",
-                "Channel Commands:",
-                "Information Commands:",
-                "Server Commands:",
-                "Ui Commands:",
-                "User Commands:",
-                "Utility Commands:",
-                "Commands from script Default Fun Commands:",
-                "Commands from script Test Script:",
-                "Commands from script Ai Api Test Script:",  # Corrected based on filename 'ai_api_test_script.py'
-                "Use /help <command> for detailed help",
+            expected_strings=[ # Updated expected strings for categorized help
+                "Help Categories:",
+                "Core Command Categories:",
+                "/help core",
+                "/help channel",
+                "Script Command Categories:",
+                "/help script default_fun_commands",
+                "/help script ai_api_test_script", # Script name is module name
+                "Use /help <category_name>", # Part of the new general help message
             ],
-            test_label="/help (general)",
+            test_label="/help (general categories)",
             context_to_check=channel_name,
         )
 

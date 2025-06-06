@@ -1,3 +1,6 @@
+
+
+# START OF MODIFIED FILE: scripts/test_script.py
 # scripts/test_script.py
 # Ensure it's in a 'scripts' subdirectory next to pyrc.py
 
@@ -14,7 +17,7 @@ class TestScript:
         self.api.register_command(
             command_name="testscript",
             handler_function=self.handle_test_command,
-            help_text="Usage: /testscript [args] - A simple test command from a script.",
+            help_info="Usage: /testscript [args] - A simple test command from a script.", # CHANGED to help_info
             aliases=["ts"],
         )
         self.api.log_info("TestScript loaded and command registered.")
@@ -37,3 +40,4 @@ class TestScript:
 # Entry point for ScriptManager
 def get_script_instance(api_handler):  # Changed 'api' to 'api_handler'
     return TestScript(api_handler)
+# END OF MODIFIED FILE: scripts/test_script.py
