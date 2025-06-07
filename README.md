@@ -1,6 +1,6 @@
 # PyRC - Python Terminal IRC Client
 
-PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It aims to provide a feature-rich, yet lightweight and user-friendly experience for IRC users who prefer the command line. It is actively developed with a focus on extreme modularity, enabling programmatic use and integration with AI agents or other automated systems.
+PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It provides a feature-rich, lightweight, and user-friendly experience for IRC users who prefer the command line. With a focus on extreme modularity and stability, PyRC enables both traditional IRC usage and programmatic integration with AI agents or other automated systems.
 
 ![PyRC Screenshot](Image.png)
 
@@ -8,7 +8,15 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 
 - **Modular Core (`pyrc_core`):** All core logic is encapsulated within the `pyrc_core` package, separating it from scripts and configuration.
 - **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator.
-- **Centralized State Management:** A dedicated `StateManager` is the single source of truth for all connection and session state. It provides thread-safe operations, validation, persistence to JSON, and a notification system for state changes. This makes the client's behavior predictable and easier to debug.
+- **Centralized State Management with `StateManager`**
+
+The `StateManager` provides thread-safe, persistent session state that includes:
+- Current connection details and authentication state
+- List of joined channels and their topics
+- User preferences and client settings
+- Message history and scrollback positions
+
+State is automatically persisted to disk and restored on startup, ensuring a seamless experience across client restarts.
 - **Dynamic Command System:** All core client commands are implemented in individual Python modules within a structured `commands/` directory. They are dynamically discovered and registered at startup, making the client easily extensible.
 - **Extensible Scripting System:** A powerful Python scripting system allows for deep customization. Scripts can register commands, subscribe to a wide range of events, and interact with the client through a rich `ScriptAPIHandler`.
 
@@ -90,9 +98,16 @@ PyRC/
 
 ## Project Status
 
-**PyRC is under active development.** The focus is on continuously enhancing its feature set, improving code modularity, and ensuring overall stability. Recent development cycles have included a major architectural refactoring to centralize state management, significant work on DCC functionality, a more robust event-driven `/server` command, an enhanced `/help` system, and a reliable headless testing framework. We welcome contributions and feedback as the project evolves.
+**PyRC is a stable and mature IRC client** that continues to evolve with regular updates and improvements. The current focus is on enhancing stability, improving the user experience, and maintaining compatibility with modern IRC networks. Recent development has focused on robust state management, reliable session persistence, and improved IRCv3 support. We welcome contributions and feedback to help make PyRC even better.
 
 ## Recent Changes
+
+### Bug Fixes and Stability Improvements
+
+- **Improved UI Startup Flow:** Fixed an issue where the client would not automatically switch to an auto-joined channel on startup. The UI now reliably starts in the "Status" window and switches focus only after successful channel join.
+- **Enhanced Session Persistence:** Resolved a bug where the list of joined channels was not being correctly restored from the session state file, ensuring a consistent experience across restarts.
+- **Robust IRCv3 Support:** Improved message parsing for modern IRC servers, fixing issues with IRCv3 message tags and capability negotiation.
+- **Reliable State Management:** Fixed an `AttributeError` in the capability negotiator and improved overall state handling for more stable connections.
 
 **UI Improvements:**
 
@@ -105,12 +120,14 @@ PyRC/
 - Migrated nick attribute access to use state manager
 - Added comprehensive null checks for client and connection info
 - Implemented fallback to "UnknownNick" for all error cases
+- Enhanced state restoration to reliably maintain joined channels across sessions
 
 **Error Handling:**
 
 - Improved error handling for UI drawing operations
 - Added defensive programming for curses window operations
 - Resolved all Pylance type checking errors
+- Added comprehensive error handling for IRC message parsing and capability negotiation
 
 **Other Recent Work:**
 
@@ -127,11 +144,11 @@ PyRC/
   - Define multiple server connection profiles in `pyterm_irc_config.ini`.
   - Switch between configured servers using the `/server <config_name>` command (now with event-driven disconnect handling).
 - **Channel and Query Windows:** Separate, consistently managed contexts for channels (case-insensitive handling) and private messages.
-- **mIRC-like UI Flow:** Starts in the "Status" window and automatically switches to a channel upon successful join (when UI is active).
+- **Intuitive UI Flow:** The client starts in the "Status" window and reliably switches to the first auto-joined channel upon successful connection and join, providing a smooth and predictable startup experience.
 - **IRCv3 Support:**
-  - Robust CAP negotiation (including `sasl`, `multi-prefix`, `server-time`, `message-tags`, `account-tag`, `echo-message`, `away-notify`, `chghost`, `userhost-in-names`, `cap-notify`, `extended-join`, `account-notify`, `invite-notify`). Server-specific desired capabilities can be configured.
+  - Robust CAP negotiation (including `sasl`, `multi-prefix`, `server-time`, `message-tags`, `account-tag`, `echo-message`, `away-notify`, `chghost`, `userhost-in-names`, `cap-notify`, `extended-join`, `account-notify`, `invite-notify`) with improved error handling and stability.
   - SASL PLAIN authentication for secure login.
-  - IRCv3 Message Tag parsing and inclusion in relevant script events.
+  - Reliable IRCv3 Message Tag parsing that handles modern IRC server messages with enhanced compatibility and robustness.
 - **Highly Modular Command System:** _All_ core client commands are implemented in individual Python modules within a structured `commands/` directory. These are dynamically discovered and registered at startup. Each command module defines its handler(s), help text (usage, description, supporting dictionary format for richer help), and aliases.
 - **Dynamic & Categorized Help System:** The `/help` system is fully dynamic, sourcing information from core command modules and script registrations. It now displays categories first, allowing users to drill down via `/help <category>` or `/help script <script_name>`. Specific command help (`/help <command>`) provides detailed usage, description, and aliases.
 - **Comprehensive Command Set:** Supports a wide array of standard IRC commands and client-specific utility commands (see "Basic Commands" section).
@@ -433,14 +450,11 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 - Ctrl+Y/Ctrl+E: Scroll message buffer.
 - Ctrl+N / Ctrl+P: Switch windows.
 - Ctrl+U: Scroll user list.
-
-## Headless Operation
-
 Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional. Ideal for bots, AI integrations, and automated testing. The `scripts/test_headless.py` script provides an example and a framework for such tests.
 
 ## State Management System
 
-PyRC's `StateManager` provides a centralized, thread-safe way to manage all client state with validation, persistence, and change notifications. This architectural improvement ensures:
+PyRC's `StateManager` provides a robust, thread-safe solution for managing all client state with comprehensive validation, reliable persistence, and efficient change notifications. This core component ensures:
 
 - Single source of truth for all connection and session state
 - Predictable state transitions
@@ -449,33 +463,35 @@ PyRC's `StateManager` provides a centralized, thread-safe way to manage all clie
 
 ### Key Features
 
-1. **Centralized State Management**
+- **Robust State Validation**
+  - Comprehensive type checking and validation for all state updates
+  - Smart default values with automatic recovery from invalid states
+  - Immutable state snapshots for consistent state representation
 
-   - Thread-safe operations using `RLock`
-   - Generic type support for state values
-   - Key-value storage with metadata
-   - Bulk operations (get_all, clear)
+- **Efficient Change Notifications**
+  - Fine-grained subscription to specific state changes
+  - Batched updates to minimize UI redraws and improve performance
+  - Thread-safe event dispatching with guaranteed delivery order
+  - Automatic reconnection to state updates after client restart
 
-2. **State Persistence**
+- **State Persistence**
+  - Automatic state loading from JSON file
+  - Configurable auto-save with interval
+  - Manual save capability
+  - Error handling for file operations
 
-   - Automatic state loading from JSON file
-   - Configurable auto-save with interval
-   - Manual save capability
-   - Error handling for file operations
+- **State Validation**
+  - Extensible validator system with `StateValidator` base class
+  - Per-key validators
+  - Validation on state changes
+  - Bulk validation capability
+  - Error message support
 
-3. **State Validation**
-
-   - Extensible validator system with `StateValidator` base class
-   - Per-key validators
-   - Validation on state changes
-   - Bulk validation capability
-   - Error message support
-
-4. **State Change Notifications**
-   - Event-based notification system
-   - Support for key-specific and global handlers
-   - Detailed change events with metadata
-   - Error handling for handlers
+- **State Change Notifications**
+  - Event-based notification system
+  - Support for key-specific and global handlers
+  - Detailed change events with metadata
+  - Error handling for handlers
 
 ### Usage Example
 
