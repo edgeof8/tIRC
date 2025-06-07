@@ -1,23 +1,18 @@
-# START OF MODIFIED FILE: scripts/test_headless.py
+# scripts/test_headless.py
 import logging
 import time
-# import sys # Not needed if __main__ block is removed
-# import os  # Not needed if __main__ block is removed
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 import threading
-# import argparse # Not needed if __main__ block is removed
 
-# Add the parent directory to the Python path - this is usually handled by the entry point script (run_headless_tests.py)
-# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pyrc_core.context_manager import ChannelJoinStatus
+from pyrc_core.context_manager import ChannelJoinStatus # Already imported
+from pyrc_core.state_manager import ConnectionState # Import ConnectionState
 
-logger = logging.getLogger("pyrc.test_headless_script") # This logger is fine
+logger = logging.getLogger("pyrc.test_headless_script")
 
 
 @dataclass
 class TestResult:
-    """Represents the result of a test."""
     name: str
     passed: bool
     message: str
@@ -25,14 +20,18 @@ class TestResult:
 
 
 class HeadlessTestRunner:
-    """Runs tests in headless mode."""
-
     def __init__(self, api_handler): # api_handler is ScriptAPIHandler
         self.test_results: List[TestResult] = []
         self.current_test_start = 0.0
-        self.api = api_handler # This is ScriptAPIHandler instance
+        self.api = api_handler
         self.expected_events: Dict[str, threading.Event] = {}
         self.received_event_data: Dict[str, Optional[Dict[str, Any]]] = {}
+
+    def _normalize_channel_name_for_test(self, name: str) -> str:
+        # Local helper for tests to avoid direct context_manager access
+        if name.startswith(("#", "&", "!", "+")):
+            return name.lower()
+        return name # For nicks or other non-channel names
 
     def _setup_event_wait(self, unique_key: str) -> None:
         self.expected_events[unique_key] = threading.Event()
@@ -41,10 +40,19 @@ class HeadlessTestRunner:
 
     def _event_handler_for_test(self, unique_key: str, condition_func: Callable[[Dict[str, Any]], bool], event_data: Dict[str, Any]) -> None:
         if unique_key in self.expected_events and not self.expected_events[unique_key].is_set():
-            if condition_func(event_data):
-                self.log_test_event(f"Condition met for '{unique_key}' with event: {event_data.get('raw_line', str(event_data)[:100])}")
-                self.received_event_data[unique_key] = event_data
-                self.expected_events[unique_key].set()
+            # Check if the event_data itself is None, which can happen if an event is dispatched with None data
+            if event_data is None:
+                self.log_test_event(f"Received None event_data for '{unique_key}'. Condition check skipped.")
+                return
+
+            try:
+                if condition_func(event_data):
+                    self.log_test_event(f"Condition met for '{unique_key}' with event: {event_data.get('raw_line', str(event_data)[:100])}")
+                    self.received_event_data[unique_key] = event_data
+                    self.expected_events[unique_key].set()
+            except Exception as e:
+                self.log_test_event(f"Error in condition_func for '{unique_key}': {e}. Event data: {event_data}")
+
 
     def _await_event(self, unique_key: str, timeout: float) -> Optional[Dict[str, Any]]:
         if unique_key not in self.expected_events:
@@ -58,7 +66,7 @@ class HeadlessTestRunner:
             return None
 
     def _cleanup_event_wait(self, unique_key: str, event_name: str, handler_ref: Callable) -> None:
-        self.api.unsubscribe_from_event(event_name, handler_ref) # Use self.api
+        self.api.unsubscribe_from_event(event_name, handler_ref)
         if unique_key in self.expected_events:
             del self.expected_events[unique_key]
         if unique_key in self.received_event_data:
@@ -66,68 +74,75 @@ class HeadlessTestRunner:
         self.log_test_event(f"Cleaned up event wait for '{unique_key}'")
 
     def log_test_event(self, message: str):
-        self.api.log_info(f"[TEST RUNNER] {message}") # Use self.api for logging
-
-    # wait_for_response can be removed as it's a placeholder
-    # def wait_for_response(self, client, timeout: float = 5.0) -> bool: ...
-
-    # handle_message can be removed if not used
-    # def handle_message(self, event_data: Dict[str, Any]): ...
+        self.api.log_info(f"[TEST RUNNER] {message}")
 
     def run_connection_test(self, client_logic) -> TestResult: # client_logic is IRCClient_Logic
         self.current_test_start = time.time()
         self.log_test_event("Running connection test (verifying client is connected via CLIENT_READY event)...")
-        if client_logic.network_handler.connected: # Direct access to client_logic for this check is okay
+
+        # --- MODIFICATION: Use StateManager for connection state ---
+        is_connected_state = client_logic.state_manager.get_connection_state() in [ConnectionState.CONNECTED, ConnectionState.REGISTERED, ConnectionState.READY]
+        # Or more simply, use the API if it reflects the desired state
+        # is_connected_api = self.api.is_connected() # Assuming this reflects being fully ready or at least registered
+
+        if is_connected_state: # Or use is_connected_api
             return TestResult("Connection", True, "Client connected and registered (signaled by CLIENT_READY event).", time.time() - self.current_test_start)
         else:
-            return TestResult("Connection", False, "Client not connected despite CLIENT_READY event (unexpected state).", time.time() - self.current_test_start)
+            current_state_val = client_logic.state_manager.get_connection_state()
+            current_state_name = current_state_val.name if current_state_val else "Unknown"
+            return TestResult("Connection", False, f"Client not in a connected state (Current: {current_state_name}) despite CLIENT_READY event (unexpected state).", time.time() - self.current_test_start)
 
     def run_channel_join_test(self, client_logic) -> TestResult:
         self.current_test_start = time.time()
         test_channel = "#pyrc-testing-setup"
-        normalized_test_channel = client_logic.context_manager._normalize_context_name(test_channel)
-        self.log_test_event(f"Running channel PART/JOIN test for {test_channel}...")
+        # --- MODIFICATION: Use local normalizer ---
+        normalized_test_channel = self._normalize_channel_name_for_test(test_channel)
+        self.log_test_event(f"Running channel PART/JOIN test for {normalized_test_channel}...")
 
         part_key = f"part_{normalized_test_channel}"
         self._setup_event_wait(part_key)
+        # --- MODIFICATION: Use API for client_nick ---
+        current_client_nick = self.api.get_client_nick()
         def part_condition(data: Dict[str, Any]) -> bool:
-            return (data.get("channel") == normalized_test_channel and data.get("nick") == client_logic.nick) # Use client_logic.nick
+            return (data.get("channel") == normalized_test_channel and data.get("nick") == current_client_nick)
         part_event_handler = lambda data: self._event_handler_for_test(part_key, part_condition, data)
-        self.api.subscribe_to_event("PART", part_event_handler) # Use self.api
+        self.api.subscribe_to_event("PART", part_event_handler)
 
-        self.api.part_channel(test_channel, "Testing re-join") # Use self.api
+        self.api.part_channel(test_channel, "Testing re-join")
         part_event_data = self._await_event(part_key, timeout=10.0)
         self._cleanup_event_wait(part_key, "PART", part_event_handler)
 
         if not part_event_data:
-            return TestResult("Channel Part", False, f"Timeout or failure waiting for self PART from {test_channel}", time.time() - self.current_test_start)
+            return TestResult("Channel Part", False, f"Timeout or failure waiting for self PART from {normalized_test_channel}", time.time() - self.current_test_start)
 
         join_key = f"join_{normalized_test_channel}"
         self._setup_event_wait(join_key)
         def join_condition(data: Dict[str, Any]) -> bool:
             return data.get("channel_name") == normalized_test_channel
         join_event_handler = lambda data: self._event_handler_for_test(join_key, join_condition, data)
-        self.api.subscribe_to_event("CHANNEL_FULLY_JOINED", join_event_handler) # Use self.api
+        self.api.subscribe_to_event("CHANNEL_FULLY_JOINED", join_event_handler)
 
-        self.api.join_channel(test_channel) # Use self.api
-        self.log_test_event(f"Sent JOIN command for {test_channel}")
+        self.api.join_channel(test_channel)
+        self.log_test_event(f"Sent JOIN command for {normalized_test_channel}")
         join_event_data = self._await_event(join_key, timeout=15.0)
         self._cleanup_event_wait(join_key, "CHANNEL_FULLY_JOINED", join_event_handler)
 
         duration = time.time() - self.current_test_start
         if join_event_data:
-            return TestResult("Channel Re-Join", True, f"Successfully PARTed and re-JOINed (fully) channel {test_channel}", duration)
+            return TestResult("Channel Re-Join", True, f"Successfully PARTed and re-JOINed (fully) channel {normalized_test_channel}", duration)
         else:
-            joined_channels = self.api.get_joined_channels() # Use self.api
+            joined_channels = self.api.get_joined_channels()
+            # --- MODIFICATION: Access context via client_logic.context_manager ---
             ctx = client_logic.context_manager.get_context(normalized_test_channel)
-            ctx_status = ctx.join_status.name if ctx and ctx.join_status else "N/A"
-            return TestResult("Channel Re-Join", False, f"Failed to confirm full re-join for {test_channel} within timeout. Currently joined: {joined_channels}. Context status: {ctx_status}", duration)
+            ctx_status = ctx.join_status.name if ctx and hasattr(ctx, 'join_status') and ctx.join_status else "N/A"
+            return TestResult("Channel Re-Join", False, f"Failed to confirm full re-join for {normalized_test_channel} within timeout. Currently joined: {joined_channels}. Context status: {ctx_status}", duration)
 
     def run_message_send_test(self, client_logic) -> TestResult:
         self.current_test_start = time.time()
         test_channel = "#pyrc-testing-setup"
-        normalized_test_channel = client_logic.context_manager._normalize_context_name(test_channel)
-        timestamp_str = time.strftime("%H%M%S") # Make timestamp more suitable for key
+        # --- MODIFICATION: Use local normalizer ---
+        normalized_test_channel = self._normalize_channel_name_for_test(test_channel)
+        timestamp_str = time.strftime("%H%M%S")
         test_message_content = f"[{timestamp_str}] Test message from headless test"
 
         self.log_test_event(f"Running message send test to {normalized_test_channel}...")
@@ -136,16 +151,16 @@ class HeadlessTestRunner:
         self._setup_event_wait(msg_buffer_key)
 
         client_nick = self.api.get_client_nick()
-        expected_text_in_buffer_segment = f"<{client_nick}> {test_message_content}" # What we expect to see
+        expected_text_in_buffer_segment = f"<{client_nick}> {test_message_content}"
 
         def buffer_condition(data: Dict[str, Any]) -> bool:
             return (data.get("context_name") == normalized_test_channel and
                     expected_text_in_buffer_segment in data.get("text", ""))
 
         buffer_event_handler = lambda data: self._event_handler_for_test(msg_buffer_key, buffer_condition, data)
-        self.api.subscribe_to_event("CLIENT_MESSAGE_ADDED_TO_CONTEXT", buffer_event_handler) # Use self.api
+        self.api.subscribe_to_event("CLIENT_MESSAGE_ADDED_TO_CONTEXT", buffer_event_handler)
 
-        self.api.send_message(normalized_test_channel, test_message_content) # Use self.api
+        self.api.send_message(normalized_test_channel, test_message_content)
         self.log_test_event(f"Sent message to {normalized_test_channel}: {test_message_content}")
 
         buffer_event_data = self._await_event(msg_buffer_key, timeout=10.0)
@@ -155,7 +170,6 @@ class HeadlessTestRunner:
         if buffer_event_data:
             return TestResult("Message Send & Buffer", True, f"Successfully verified message in buffer for {normalized_test_channel}. Event text: {buffer_event_data.get('text')}", duration)
         else:
-            # Fallback check if event wasn't caught (e.g., timing or event dispatch issue)
             recent_messages = self.api.get_context_messages(normalized_test_channel, count=5)
             manual_check_passed = False
             if recent_messages:
@@ -175,7 +189,7 @@ class HeadlessTestRunner:
             return TestResult("Nick Change", False, "Failed to get original nickname", time.time() - self.current_test_start)
 
         timestamp = int(time.time()) % 1000
-        new_test_nick = f"PyRCNTest{timestamp}"[:9] # Ensure nick is not too long
+        new_test_nick = f"PyRCNTest{timestamp}"[:9]
 
         self.log_test_event(f"Attempting to change nick from '{original_nick}' to '{new_test_nick}'...")
 
@@ -196,23 +210,32 @@ class HeadlessTestRunner:
         server_nick_handler = lambda data: self._event_handler_for_test(server_nick_event_key, server_nick_condition, data)
         client_state_nick_handler = lambda data: self._event_handler_for_test(client_nick_event_key, client_state_nick_condition, data)
 
-        self.api.subscribe_to_event("NICK", server_nick_handler) # Use self.api
-        self.api.subscribe_to_event("CLIENT_NICK_CHANGED", client_state_nick_handler) # Use self.api
+        self.api.subscribe_to_event("NICK", server_nick_handler)
+        self.api.subscribe_to_event("CLIENT_NICK_CHANGED", client_state_nick_handler)
 
-        self.api.execute_client_command(f"/nick {new_test_nick}") # Use self.api
+        self.api.execute_client_command(f"/nick {new_test_nick}")
 
         server_nick_event_data = self._await_event(server_nick_event_key, timeout=10.0)
-        client_state_nick_event_data = self._await_event(client_nick_event_key, timeout=5.0)
+        client_state_nick_event_data = self._await_event(client_nick_event_key, timeout=5.0) # Shorter timeout, should be quick
 
         self._cleanup_event_wait(server_nick_event_key, "NICK", server_nick_handler)
         self._cleanup_event_wait(client_nick_event_key, "CLIENT_NICK_CHANGED", client_state_nick_handler)
 
-        current_nick_after_change = self.api.get_client_nick() # Use self.api
+        current_nick_after_change = self.api.get_client_nick()
         passed = bool(server_nick_event_data and client_state_nick_event_data and (current_nick_after_change == new_test_nick))
 
         self.log_test_event(f"Attempting to revert nick to '{original_nick}'...")
-        self.api.execute_client_command(f"/nick {original_nick}") # Use self.api
-        time.sleep(1.5) # Increased sleep slightly for revert to process
+        self.api.execute_client_command(f"/nick {original_nick}")
+
+        # Wait for revert confirmation (optional, but good for test hygiene)
+        revert_key = f"revert_nick_{original_nick}"
+        self._setup_event_wait(revert_key)
+        revert_condition = lambda data: (data.get("new_nick") == original_nick and data.get("is_self") is True)
+        revert_handler = lambda data: self._event_handler_for_test(revert_key, revert_condition, data)
+        self.api.subscribe_to_event("NICK", revert_handler)
+        self._await_event(revert_key, timeout=10.0)
+        self._cleanup_event_wait(revert_key, "NICK", revert_handler)
+
 
         duration = time.time() - self.current_test_start
         if passed:
@@ -224,13 +247,13 @@ class HeadlessTestRunner:
             if current_nick_after_change != new_test_nick: error_details.append(f"Nick mismatch: expected {new_test_nick}, got {current_nick_after_change}")
             return TestResult("Nick Change", False, f"Failed to verify nick change: {', '.join(error_details)}", duration)
 
-    def run_all_tests(self, client_logic) -> List[TestResult]: # client_logic is IRCClient_Logic
+    def run_all_tests(self, client_logic) -> List[TestResult]:
         self.log_test_event("Starting test suite...")
         self.test_results = [self.run_connection_test(client_logic)]
 
         if self.test_results[0].passed:
             self.log_test_event("Connection test passed, proceeding to channel join test.")
-            time.sleep(2.0)
+            time.sleep(2.0) # Allow time for any post-connection events to settle
             self.test_results.append(self.run_channel_join_test(client_logic))
 
             if self.test_results[-1].passed:
@@ -260,57 +283,58 @@ class HeadlessTestRunner:
 
 
 class HeadlessTestScript:
-    def __init__(self, api_handler): # api_handler is ScriptAPIHandler
-        self.api = api_handler # This is ScriptAPIHandler instance
+    def __init__(self, api_handler):
+        self.api = api_handler
         self.runner: Optional[HeadlessTestRunner] = None
-        self.api.log_info("HeadlessTestScript initialized.") # Use self.api
+        self.api.log_info("HeadlessTestScript initialized.")
 
     def load(self):
-        self.api.log_info("HeadlessTestScript loading, subscribing to CLIENT_READY.") # Use self.api
-        self.api.subscribe_to_event("CLIENT_READY", self.on_client_ready_handler) # Use self.api
+        self.api.log_info("HeadlessTestScript loading, subscribing to CLIENT_READY.")
+        self.api.subscribe_to_event("CLIENT_READY", self.on_client_ready_handler)
 
     def on_client_ready_handler(self, event_data: Dict[str, Any]):
-        self.api.log_info("ENTERED HeadlessTestScript.on_client_ready_handler.") # Use self.api
-        self.api.log_info(f"Event data received: {event_data}") # Use self.api
+        self.api.log_info("ENTERED HeadlessTestScript.on_client_ready_handler.")
 
-        client_logic_ref = event_data.get("client_logic_ref") # This is IRCClient_Logic
+        client_logic_ref = event_data.get("client_logic_ref")
         if not client_logic_ref:
-            self.api.log_error("CLIENT_READY event: No client_logic_ref in event data") # Use self.api
+            self.api.log_error("CLIENT_READY event: No client_logic_ref in event data")
             return
 
-        self.api.log_info("CLIENT_READY event received. Preparing to start test thread with 15s delay...") # Use self.api
+        self.api.log_info("CLIENT_READY event received. Preparing to start test thread with 15s delay...")
 
         test_thread = threading.Thread(target=self._run_tests_after_delay, args=(client_logic_ref,))
         test_thread.daemon = True
-        self.api.log_info(f"Starting test_thread: {test_thread.name}") # Use self.api
+        self.api.log_info(f"Starting test_thread: {test_thread.name}")
         test_thread.start()
-        self.api.log_info("Test thread started successfully.") # Use self.api
+        self.api.log_info("Test thread started successfully.")
 
     def _run_tests_after_delay(self, client_logic_ref): # client_logic_ref is IRCClient_Logic
-        time.sleep(15.0)
-        self.api.log_info("Starting headless tests from HeadlessTestScript...") # Use self.api
+        # Increased delay to allow server connection and initial messages to settle more reliably.
+        delay_seconds = 20.0
+        self.api.log_info(f"Waiting {delay_seconds}s before starting tests...")
+        time.sleep(delay_seconds)
+        self.api.log_info("Starting headless tests from HeadlessTestScript...")
 
-        self.runner = HeadlessTestRunner(self.api) # Pass self.api (ScriptAPIHandler)
-        results = self.runner.run_all_tests(client_logic_ref) # Pass client_logic_ref
+        self.runner = HeadlessTestRunner(self.api)
+        results = self.runner.run_all_tests(client_logic_ref)
 
         all_passed = all(result.passed for result in results)
         if all_passed:
-            self.api.log_info("All headless tests passed successfully!") # Use self.api
-            self.api.log_info("Staying connected for 60 seconds to observe stability...") # Use self.api
-            time.sleep(60.0)
+            self.api.log_info("All headless tests passed successfully!")
+            # self.api.log_info("Staying connected for 60 seconds to observe stability...")
+            # time.sleep(60.0) # Reduced observation time or make configurable
         else:
-            self.api.log_error("Some headless tests failed!") # Use self.api
+            self.api.log_error("Some headless tests failed!")
 
-        self.api.log_info("Headless tests completed. Sending QUIT.") # Use self.api
-        self.api.send_raw("QUIT :Headless tests finished.") # Use self.api
+        self.api.log_info("Headless tests completed. Sending QUIT.")
+        self.api.send_raw("QUIT :Headless tests finished.")
 
-        time.sleep(1.0)
+        # Give a moment for QUIT to be sent before forcing client shutdown
+        time.sleep(2.0)
         if hasattr(client_logic_ref, "should_quit"):
             client_logic_ref.should_quit = True
+            self.api.log_info("Set client_logic_ref.should_quit = True")
 
 
-def get_script_instance(api_handler): # api_handler is ScriptAPIHandler
+def get_script_instance(api_handler):
     return HeadlessTestScript(api_handler)
-
-# Removed the __main__ block
-# END OF MODIFIED FILE: scripts/test_headless.py
