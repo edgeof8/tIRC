@@ -64,6 +64,7 @@ class IRCClient_Logic:
         self._server_switch_disconnect_event: Optional[threading.Event] = None
         self._server_switch_target_config_name: Optional[str] = None
         self.echo_sent_to_status: bool = True
+        self._has_switched_to_initial_channel: bool = False
         self.show_raw_log_in_ui: bool = False
         self.last_join_command_target: Optional[str] = None
         self.active_list_context_name: Optional[str] = None
@@ -163,20 +164,22 @@ class IRCClient_Logic:
             )
             self.state_manager.set_connection_info(conn_info)
 
-        # Now setup initial contexts based on this state
+        # --- START OF FIX ---
+        # Create core contexts first.
         self.context_manager.create_context("Status", context_type="status")
         if self.config.dcc_enabled:
             self.context_manager.create_context("DCC", context_type="dcc_transfers")
-# --- START OF FIX ---
-        # Set "Status" as the initial active context. This is the crucial fix.
-        self.context_manager.set_active_context("Status")
-        # --- END OF FIX ---
 
-        # Add initial channel contexts if they exist in the active config
+        # Create contexts for initial channels but DO NOT set them as active.
         if active_config and active_config.channels:
             for ch in active_config.channels:
                 self.context_manager.create_context(ch, context_type="channel", initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN)
 
+        # ALWAYS set "Status" as the initial active context. The logic in
+        # handle_channel_fully_joined will handle switching to a channel
+        # upon a successful join.
+        self.context_manager.set_active_context("Status")
+        # --- END OF FIX ---
 
     def _handle_user_input(self):
         """Handle user input from the UI."""
@@ -700,19 +703,22 @@ class IRCClient_Logic:
             self.last_join_command_target = None
             self.ui_needs_update.set()
         else:
-            active_ctx = self.context_manager.get_active_context()
-            if not active_ctx or active_ctx.name == "Status":
-                conn_info = self.state_manager.get_connection_info()
-                normalized_initial_channels = {
-                    self.context_manager._normalize_context_name(ch)
-                    for ch in (conn_info.initial_channels if conn_info else [])
-                }
-                if normalized_channel_name in normalized_initial_channels:
-                    logger.info(
-                        f"Auto-joined initial channel {normalized_channel_name} is now fully joined. Setting active."
-                    )
-                    self.context_manager.set_active_context(normalized_channel_name)
-                    self.ui_needs_update.set()
+            # This block handles auto-joined channels
+            if not self._has_switched_to_initial_channel:
+                active_ctx = self.context_manager.get_active_context()
+                if not active_ctx or active_ctx.name == "Status":
+                    conn_info = self.state_manager.get_connection_info()
+                    normalized_initial_channels = {
+                        self.context_manager._normalize_context_name(ch)
+                        for ch in (conn_info.initial_channels if conn_info else [])
+                    }
+                    if normalized_channel_name in normalized_initial_channels:
+                        logger.info(
+                            f"Auto-joined initial channel {normalized_channel_name} is now fully joined. Setting active."
+                        )
+                        self.context_manager.set_active_context(normalized_channel_name)
+                        self.ui_needs_update.set()
+                        self._has_switched_to_initial_channel = True # Set the flag
 
     def _execute_python_trigger(
         self, code: str, event_data: Dict[str, Any], trigger_info_for_error: str
