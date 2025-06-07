@@ -1,74 +1,88 @@
+# pyrc_core/commands/dcc/dcc_accept_command.py
 import argparse
 import logging
-from typing import TYPE_CHECKING, List, Dict
-
-from pyrc_core.commands.dcc.dcc_command_base import DCCCommandHandler, DCCCommandResult
+from typing import TYPE_CHECKING, List, Dict, Any
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.commands.dcc.accept")
 
-class DCCAcceptCommandHandler(DCCCommandHandler):
-    """
-    Handles the /dcc accept command, used to accept incoming DCC SEND offers.
-    Inherits common DCC command functionality from DCCCommandHandler.
-    """
-    command_name: str = "accept"
-    command_aliases: List[str] = []
-    command_help: Dict[str, str] = {
-        "usage": "/dcc accept <nick> \"<filename>\" <ip> <port> <size>",
-        "description": "Accepts an incoming DCC SEND offer from a specified nickname for a given filename, IP, port, and size.",
-        "aliases": "None"
-    }
+COMMAND_NAME = "accept"
+COMMAND_ALIASES: List[str] = []
+COMMAND_HELP: Dict[str, str] = {
+    "usage": "/dcc accept <nick> \"<filename>\" <ip> <port> <size>",
+    "description": "Accepts an incoming DCC SEND offer from a specified nickname for a given filename, IP, port, and size.",
+    "aliases": "None"
+}
 
-    def __init__(self, client_logic: 'IRCClient_Logic'):
-        super().__init__(client_logic)
+def _handle_dcc_error(client_logic: 'IRCClient_Logic', message: str, context_name: str, log_level: int = logging.ERROR, exc_info: bool = False):
+    """Helper to log and display DCC command errors."""
+    logger.log(log_level, message, exc_info=exc_info)
+    client_logic.add_message(message, "error", context_name=context_name)
 
-    def execute(self, cmd_args: List[str]):
-        """
-        Executes the /dcc accept command.
-        Parses arguments and attempts to accept an incoming DCC offer.
-        """
-        if not self.check_dcc_available(self.command_name):
+def _ensure_dcc_context(client_logic: 'IRCClient_Logic', dcc_context_name: str):
+    """Helper to ensure DCC context is active."""
+    if client_logic.context_manager.active_context_name != dcc_context_name:
+        client_logic.switch_active_context(dcc_context_name)
+
+def handle_dcc_accept_command(client_logic: 'IRCClient_Logic', cmd_args: List[str], active_context_name: str, dcc_context_name: str):
+    """
+    Handles the /dcc accept command.
+    Parses arguments and attempts to accept an incoming DCC offer.
+    """
+    dcc_m = client_logic.dcc_manager
+    if not dcc_m:
+        _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
+        return
+    if not dcc_m.dcc_config.get("enabled"):
+        _handle_dcc_error(client_logic, f"DCC is currently disabled. Cannot use /dcc {COMMAND_NAME}.", active_context_name)
+        return
+
+    parser = argparse.ArgumentParser(prog=f"/dcc {COMMAND_NAME}", add_help=False)
+    parser.add_argument("nick", help="Sender's nickname.")
+    parser.add_argument("filename", help="Filename offered (can be quoted).")
+    parser.add_argument("ip", help="Sender's IP address.")
+    parser.add_argument("port", type=int, help="Sender's port number.")
+    parser.add_argument("size", type=int, help="File size in bytes.")
+
+    try:
+        parsed_args = parser.parse_args(cmd_args)
+        nick = parsed_args.nick
+        filename = parsed_args.filename.strip('"')
+        ip_str = parsed_args.ip
+        port = parsed_args.port
+        filesize = parsed_args.size
+
+        if not (0 < port <= 65535):
+            _handle_dcc_error(client_logic, f"Invalid port: {port}. Must be 1-65535.", dcc_context_name)
+            return
+        if filesize < 0:
+            _handle_dcc_error(client_logic, f"Invalid filesize: {filesize}. Must be non-negative.", dcc_context_name)
             return
 
-        parser = argparse.ArgumentParser(prog=f"/dcc {self.command_name}", add_help=False)
-        parser.add_argument("nick", help="Sender's nickname.")
-        parser.add_argument("filename", help="Filename offered (can be quoted).")
-        parser.add_argument("ip", help="Sender's IP address.")
-        parser.add_argument("port", type=int, help="Sender's port number.")
-        parser.add_argument("size", type=int, help="File size in bytes.")
+        result = dcc_m.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
+        if result.get("success"):
+            client_logic.add_message(f"Accepted DCC SEND from {nick} for '{filename}' (ID: {result.get('transfer_id', 'N/A')[:8]}). Receiving...", "system", context_name=dcc_context_name)
+        else:
+            err_msg = result.get('error', 'Unknown error')
+            fn_for_err = result.get('sanitized_filename', filename)
+            _handle_dcc_error(client_logic, f"DCC ACCEPT for '{fn_for_err}' from {nick} failed: {err_msg}", dcc_context_name)
 
-        try:
-            parsed_args = parser.parse_args(cmd_args)
-            nick = parsed_args.nick
-            filename = parsed_args.filename.strip('"') # Remove quotes if present
-            ip_str = parsed_args.ip
-            port = parsed_args.port
-            filesize = parsed_args.size
+        _ensure_dcc_context(client_logic, dcc_context_name)
 
-            # Additional validation for port and filesize
-            if not (0 < port <= 65535):
-                self.handle_error(f"Invalid port: {port}. Must be 1-65535.", context_name=self.active_context_name)
-                return
-            if filesize < 0:
-                self.handle_error(f"Invalid filesize: {filesize}. Must be non-negative.", context_name=self.active_context_name)
-                return
+    except argparse.ArgumentError as e:
+        _handle_dcc_error(client_logic, f"Error: {e.message}\nUsage: {COMMAND_HELP['usage']}", active_context_name, log_level=logging.WARNING)
+    except SystemExit:
+        client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", "error", context_name=active_context_name)
+    except Exception as e:
+        _handle_dcc_error(client_logic, f"Error processing /dcc {COMMAND_NAME}: {e}. Please check format.", dcc_context_name, exc_info=True)
 
-            result = self.dcc_m.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
-            if result.get("success"):
-                self.client_logic.add_message(f"Accepted DCC SEND from {nick} for '{filename}' (ID: {result.get('transfer_id', 'N/A')[:8]}). Receiving...", "system", context_name=self.dcc_context_name)
-            else:
-                err_msg = result.get('error', 'Unknown error')
-                fn_for_err = result.get('sanitized_filename', filename) # Use sanitized name if available
-                self.handle_error(f"DCC ACCEPT for '{fn_for_err}' from {nick} failed: {err_msg}", context_name=self.dcc_context_name)
-
-            self.ensure_dcc_context()
-
-        except argparse.ArgumentError as e:
-            self.handle_error(f"Error: {e.message}\nUsage: {self.command_help['usage']}", log_level=logging.WARNING)
-        except SystemExit: # Argparse calls sys.exit() on error by default if add_help=True or on bad args
-            self.client_logic.add_message(f"Usage: {self.command_help['usage']}", "error", context_name=self.active_context_name)
-        except Exception as e:
-            self.handle_error(f"Error processing /dcc {self.command_name}: {e}. Please check format.", exc_info=True)
+# This function will be called by the main dcc_commands.py dispatcher
+def get_dcc_command_handler() -> Dict[str, Any]:
+    return {
+        "name": COMMAND_NAME,
+        "aliases": COMMAND_ALIASES,
+        "help": COMMAND_HELP,
+        "handler_function": handle_dcc_accept_command
+    }
