@@ -5,7 +5,7 @@ import time
 import threading
 import re
 import os
-from pyrc_core.app_config import HEADLESS_MAX_HISTORY
+# from pyrc_core.app_config import HEADLESS_MAX_HISTORY # Not used directly in this snippet
 from pyrc_core.context_manager import ChannelJoinStatus
 
 if TYPE_CHECKING:
@@ -46,6 +46,12 @@ class LeanAiApiTestScript:
         test_logger.info("=== Starting New Test Session ===")
         test_logger.info("LeanAiApiTestScript initialized")
 
+    # --- ADDITION: Local normalizer ---
+    def _normalize_channel_name_for_test(self, name: str) -> str:
+        if name.startswith(("#", "&", "!", "+")):
+            return name.lower()
+        return name
+
     def load(self):
         self.api.log_info("[Lean AI Test] LeanAiApiTestScript Loading...")
         test_logger.info("Script loading...")
@@ -72,14 +78,9 @@ class LeanAiApiTestScript:
             "system",
         )
 
-        test_channel = self.api.client_logic.context_manager._normalize_context_name(
-            DEFAULT_TEST_CHANNEL
-        )
-        current_active_normalized = (
-            self.api.client_logic.context_manager._normalize_context_name(
-                active_ctx_name
-            )
-        )
+        # --- MODIFICATION: Use local normalizer ---
+        test_channel = self._normalize_channel_name_for_test(DEFAULT_TEST_CHANNEL)
+        current_active_normalized = self._normalize_channel_name_for_test(active_ctx_name)
 
         if current_active_normalized == test_channel:
             test_logger.info(f"Re-running focused tests on {test_channel} via command")
@@ -94,20 +95,13 @@ class LeanAiApiTestScript:
 
     def handle_client_registered(self, event_data: Dict[str, Any]):
         test_logger.info(f"Client registered. Auto-joining {DEFAULT_TEST_CHANNEL}")
-        self.api.join_channel(DEFAULT_TEST_CHANNEL)
+        self.api.join_channel(DEFAULT_TEST_CHANNEL) # API handles normalization if needed
 
     def handle_channel_fully_joined_for_tests(self, event_data: Dict[str, Any]):
         channel_name = event_data.get("channel_name")
-        normalized_channel_name_from_event = (
-            self.api.client_logic.context_manager._normalize_context_name(
-                channel_name or ""
-            )
-        )
-        normalized_default_test_channel = (
-            self.api.client_logic.context_manager._normalize_context_name(
-                DEFAULT_TEST_CHANNEL
-            )
-        )
+        # --- MODIFICATION: Use local normalizer ---
+        normalized_channel_name_from_event = self._normalize_channel_name_for_test(channel_name or "")
+        normalized_default_test_channel = self._normalize_channel_name_for_test(DEFAULT_TEST_CHANNEL)
 
         if (
             not channel_name
@@ -123,7 +117,8 @@ class LeanAiApiTestScript:
                 return
             self.tests_scheduled_this_session = True
 
-        test_thread = threading.Timer(7.0, self._run_focused_tests, args=[channel_name])
+        # --- MODIFICATION: Reduced delay for faster testing if appropriate ---
+        test_thread = threading.Timer(5.0, self._run_focused_tests, args=[channel_name]) # Reduced from 7.0
         test_thread.daemon = True
         test_thread.start()
 
@@ -131,14 +126,12 @@ class LeanAiApiTestScript:
         test_logger.info("=== Starting Test Suite ===")
         test_logger.info(f"Running tests on channel: {channel_name}")
 
-        time.sleep(2)
+        time.sleep(1) # Reduced from 2
         self._test_help_system_general(channel_name)
-        time.sleep(3)
+        time.sleep(2) # Reduced from 3
         self._test_trigger_functionality(channel_name)
 
         test_logger.info("=== Test Suite Completed ===")
-
-        # Add auto-quit after tests complete
         test_logger.info("All tests completed. Quitting client...")
         self.api.execute_client_command("/quit Tests completed successfully")
 
