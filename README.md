@@ -30,8 +30,9 @@ PyRC/
 │   ├── app_config.py            # Centralized management of all application and server configurations.
 │   ├── context_manager.py       # Manages windows/contexts (channels, queries, status).
 │   ├── event_manager.py         # Dispatches events to the scripting system.
-│   ├── state_manager.py         # Centralized, persistent, and validated state management.
-│   │
+│   ├── network_handler.py       # Handles raw socket connections and data transmission.
+│   └── state_manager.py         # Centralized, persistent, and validated state management.
+│
 │   ├── client/                 # Client-side logic and UI components.
 │   │   ├── __init__.py
 │   │   ├── input_handler.py     # Processes keyboard input, command history, and tab completion.
@@ -41,22 +42,80 @@ PyRC/
 │   │
 │   ├── commands/               # All built-in command implementations, dynamically loaded.
 │   │   ├── __init__.py
-│   │   ├── channel/            # Commands for channel operations (/join, /part, /kick, etc.).
-│   │   │   └── __init__.py
-│   │   ├── core/               # Essential client commands (/help).
-│   │   │   └── __init__.py
-│   │   ├── dcc/                # DCC subcommands (/dcc send, /dcc list, etc.).
-│   │   │   └── __init__.py
-│   │   ├── information/        # Commands for getting information (/who, /whois, etc.).
-│   │   │   └── __init__.py
-│   │   ├── server/             # Commands for server connection (/connect, /quit, etc.).
-│   │   │   └── __init__.py
-│   │   ├── ui/                 # Commands for controlling the UI (/window, /split, etc.).
-│   │   │   └── __init__.py
-│   │   ├── user/               # Commands for user interaction (/msg, /query, /ignore, etc.).
-│   │   │   └── __init__.py
-│   │   └── utility/            # Utility commands (/set, /rehash, /save, /clear, etc.).
-│   │       └── __init__.py
+│   │   ├── command_handler.py  # Core command registration and dispatch logic.
+│   │   │
+│   │   ├── channel/           # Commands for channel operations.
+│   │   │   ├── __init__.py
+│   │   │   ├── ban_commands.py       # /ban, /unban, /kickban
+│   │   │   ├── cyclechannel_command.py # /cycle
+│   │   │   ├── invite_command.py     # /invite
+│   │   │   ├── join_command.py       # /join
+│   │   │   ├── kick_command.py       # /kick
+│   │   │   ├── mode_command.py       # /mode (channel modes)
+│   │   │   ├── part_command.py       # /part
+│   │   │   ├── simple_mode_commands.py # /op, /deop, /voice, etc.
+│   │   │   └── topic_command.py      # /topic
+│   │   │
+│   │   ├── core/            # Essential client commands.
+│   │   │   ├── __init__.py
+│   │   │   └── help_command.py       # /help
+│   │   │
+│   │   ├── dcc/             # DCC file transfer and chat commands.
+│   │   │   ├── __init__.py
+│   │   │   ├── dcc_accept_command.py  # /dcc accept
+│   │   │   ├── dcc_auto_command.py    # /dcc auto
+│   │   │   ├── dcc_browse_command.py  # /dcc browse
+│   │   │   ├── dcc_cancel_command.py  # /dcc cancel
+│   │   │   ├── dcc_commands.py        # Main DCC command handler
+│   │   │   ├── dcc_get_command.py     # /dcc get
+│   │   │   ├── dcc_list_command.py    # /dcc list
+│   │   │   ├── dcc_resume_command.py  # /dcc resume
+│   │   │   └── dcc_send_command.py    # /dcc send
+│   │   │
+│   │   ├── information/     # Information retrieval commands.
+│   │   │   ├── __init__.py
+│   │   │   ├── list_command.py        # /list
+│   │   │   ├── names_command.py       # /names
+│   │   │   ├── who_command.py         # /who
+│   │   │   └── whowas_command.py      # /whowas
+│   │   │
+│   │   ├── server/          # Server connection and management.
+│   │   │   ├── __init__.py
+│   │   │   ├── connect_command.py     # /connect
+│   │   │   ├── disconnect_command.py  # /disconnect
+│   │   │   ├── quit_command.py        # /quit
+│   │   │   ├── raw_command.py         # /raw
+│   │   │   ├── reconnect_command.py   # /reconnect
+│   │   │   └── server_command.py      # /server
+│   │   │
+│   │   ├── ui/              # User interface controls.
+│   │   │   ├── __init__.py
+│   │   │   ├── close_command.py       # /close
+│   │   │   ├── split_screen_commands.py # /split, /unsplit
+│   │   │   ├── status_command.py      # /status
+│   │   │   ├── userlist_scroll_command.py # /scrollusers
+│   │   │   └── window_navigation_commands.py # /window, /next, /prev
+│   │   │
+│   │   ├── user/            # User interaction commands.
+│   │   │   ├── __init__.py
+│   │   │   ├── away_command.py        # /away
+│   │   │   ├── ignore_commands.py     # /ignore, /unignore, /listignores
+│   │   │   ├── me_command.py          # /me
+│   │   │   ├── msg_command.py         # /msg
+│   │   │   ├── nick_command.py        # /nick
+│   │   │   ├── notice_command.py      # /notice
+│   │   │   └── query_command.py       # /query
+│   │   │
+│   │   └── utility/         # Utility and configuration commands.
+│   │       ├── __init__.py
+│   │       ├── clear_command.py       # /clear
+│   │       ├── execute_command.py     # /exec
+│   │       ├── rehash_command.py      # /rehash
+│   │       ├── save_command.py        # /save
+│   │       ├── script_command.py      # /script
+│   │       ├── set_command.py         # /set
+│   │       ├── show_command.py        # /show
+│   │       └── trigger_command.py     # /trigger
 │   │
 │   ├── dcc/                   # DCC (Direct Client-to-Client) feature implementation.
 │   │   ├── __init__.py
@@ -91,8 +150,16 @@ PyRC/
 │       ├── script_base.py     # A base class for scripts to inherit from.
 │       └── script_manager.py  # Discovers, loads, and manages all user scripts.
 │
-├── scripts/                  # Directory for user-provided Python scripts.
-│   └── default_fun_commands.py  # Example script with fun commands.
+├── scripts/                  # Directory for user-provided Python scripts and test utilities.
+│   ├── ai_api_test_script.py    # Test script for AI API integration.
+│   ├── default_exit_handler.py  # Default exit handler script.
+│   ├── default_fun_commands.py  # Example script with fun commands.
+│   ├── default_random_messages.py  # Random message generator for testing.
+│   ├── event_test_script.py     # Script for testing event handling.
+│   ├── run_headless_tests.py    # Entry point for running headless tests.
+│   ├── test_dcc_features.py     # Tests for DCC functionality.
+│   ├── test_headless.py         # Headless test runner.
+│   └── test_script.py          # General test script.
 │
 ├── config/                   # Directory for runtime-generated configuration files.
 │   └── triggers.json         # Stores persistent user-defined triggers.
@@ -101,9 +168,11 @@ PyRC/
 │   └── default_help/
 │       └── command_help.ini  # Fallback help texts for core commands.
 │
-└── logs/                     # Default directory for all log files (auto-created).
-    ├── pyrc_core.log        # Main application log.
-    └── dcc.log              # Dedicated log for DCC events.
+└── pyterm_irc_config.ini.example  # Example configuration file. Copy to create config.
+
+# Logs are stored in the following locations (auto-created when needed):
+# - Main application log: logs/pyrc_core.log
+# - DCC transfer log: logs/dcc.log
 ```
 
 ## Project Status
@@ -252,7 +321,13 @@ Download the latest release from the [Releases](https://github.com/edgeof8/PyRC/
 
 ## Configuration
 
-PyRC uses `pyterm_irc_config.ini` in its root directory. Copy `pyterm_irc_config.ini.example` and customize.
+PyRC uses `pyterm_irc_config.ini` in its root directory. To get started:
+
+1. Copy the example configuration file:
+   ```bash
+   cp pyterm_irc_config.ini.example pyterm_irc_config.ini
+   ```
+2. Edit `pyterm_irc_config.ini` to customize your settings.
 
 **Key Config Sections & Settings (Managed by `AppConfig`):**
 
@@ -583,9 +658,9 @@ This project is licensed under the MIT License.
 ### Prerequisites
 
 - Python 3.8 or higher
-- pip
-- build (Python package)
-- PyInstaller
+- pip (Python package manager): `pip install pip`
+- build (Python package): `pip install build`
+- PyInstaller: `pip install pyinstaller`
 
 ### Build Steps
 
