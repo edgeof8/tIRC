@@ -7,7 +7,8 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 ## Key Architectural Features
 
 - **Modular Core (`pyrc_core`):** All core logic is encapsulated within the `pyrc_core` package, separating it from scripts and configuration.
-- **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator.
+- **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator, initializing and coordinating all components while delegating specific responsibilities to specialized managers.
+- **Connection Lifecycle Management:** The `ConnectionOrchestrator` component manages the entire lifecycle of server connections, including capability negotiation, authentication, registration, and reconnection logic. It coordinates between `CapNegotiator`, `SaslAuthenticator`, and `RegistrationHandler` to establish and maintain connections.
 - **Modular UI Architecture:** The UI system has been refactored into focused, single-responsibility components:
   - `CursesManager`: Handles low-level Curses library interactions, initialization, and cleanup.
   - `WindowLayoutManager`: Calculates dimensions and manages creation of all `curses.window` objects.
@@ -43,6 +44,7 @@ PyRC/
 │
 │   ├── client/                 # Client-side logic and UI components.
 │   │   ├── __init__.py
+│   │   ├── connection_orchestrator.py # Manages server connection lifecycle and coordination
 │   │   ├── curses_manager.py         # Low-level Curses interaction and utilities.
 │   │   ├── curses_utils.py           # Safe Curses drawing utilities.
 │   │   ├── input_handler.py          # Processes keyboard input, command history, and tab completion.
@@ -152,6 +154,7 @@ PyRC/
 │   │   ├── registration_handler.py  # Manages NICK/USER registration sequence.
 │   │   ├── sasl_authenticator.py    # Handles SASL PLAIN authentication.
 │   │   └── handlers/          # Specific handlers for different IRC commands/numerics.
+│   │   └── handlers/          # Specific handlers for different IRC commands/numerics.
 │   │       ├── __init__.py
 │   │       ├── membership_handlers.py
 │   │       └── message_handlers.py
@@ -196,6 +199,11 @@ PyRC/
 
 {{ ... }}
 ## Recent Architectural Refactoring & Improvements
+
+- **Connection Management Refactoring:**
+  - Introduced `ConnectionOrchestrator` to centralize and manage all connection-related operations, including capability negotiation, authentication, and registration.
+  - Improved connection state management and error handling for more reliable server connections.
+  - Separated connection lifecycle concerns from `IRCClient_Logic` for better maintainability.
 
 - **UI System Refactoring:**
   - The monolithic `UIManager` has been decomposed into specialized renderer classes, each responsible for a specific UI component.
@@ -399,11 +407,11 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ### Connection & Session Management:
 
-- `/connect <server[:port]> [ssl|nossl]`: Connects to the specified IRC server. Uses SSL if 'ssl' is provided, or attempts to infer from port.
-- `/server <config_name>` (Alias: `/s`): Switches to a pre-defined server configuration and attempts to connect.
-- `/disconnect [reason]` (Alias: `/d`): Disconnects from the current server.
-- `/quit [message]` (Alias: `/q`): Disconnects from the server and exits PyRC.
-- `/reconnect`: Disconnects and then reconnects to the current server.
+- `/connect <server[:port]> [ssl|nossl]`: Initiates a connection to the specified IRC server. The `ConnectionOrchestrator` handles the entire connection lifecycle, including capability negotiation and authentication.
+- `/server <config_name>` (Alias: `/s`): Switches to a pre-defined server configuration and initiates a connection using the `ConnectionOrchestrator`.
+- `/disconnect [reason]` (Alias: `/d`): Gracefully disconnects from the current server, with proper cleanup of connection resources.
+- `/quit [message]` (Alias: `/q`): Disconnects from the server and exits PyRC, ensuring all resources are properly released.
+- `/reconnect`: Coordinates a clean disconnect followed by a new connection attempt, handled by the `ConnectionOrchestrator`.
 - `/nick <newnickname>` (Alias: `/n`): Changes your nickname.
 - `/away [message]`: Sets your away status with an optional message. If no message is provided, marks you as no longer away.
 
@@ -507,14 +515,28 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 
 **Client Lifecycle Events:**
 
-- `CLIENT_CONNECTED`: Fired when TCP/IP connection is up and CAP negotiation begins.
-  - `event_data` additional keys: `server` (str), `port` (int), `nick` (str - current client nick), `ssl` (bool).
-- `CLIENT_DISCONNECTED`: Fired when connection is lost/closed.
-  - `event_data` additional keys: `server` (str), `port` (int).
+- `CLIENT_CONNECTING`: Fired when a new connection attempt is initiated.
+  - `event_data` keys: `server` (str), `port` (int), `nick` (str), `ssl` (bool).
+- `CLIENT_CONNECTED`: Fired when TCP/IP connection is established and CAP negotiation begins.
+  - `event_data` keys: `server` (str), `port` (int), `nick` (str), `ssl` (bool).
+- `CLIENT_CAP_NEGOTIATION_START`: Fired when capability negotiation begins.
+  - `event_data` keys: `capabilities` (List[str] - requested capabilities).
+- `CLIENT_CAP_NEGOTIATION_COMPLETE`: Fired when capability negotiation completes.
+  - `event_data` keys: `negotiated_capabilities` (List[str]).
+- `CLIENT_AUTHENTICATING`: Fired when SASL authentication begins.
+  - `event_data` keys: `mechanism` (str).
+- `CLIENT_AUTHENTICATED`: Fired upon successful SASL authentication.
+  - `event_data` keys: `account` (str - account name if available).
+- `CLIENT_REGISTERING`: Fired when sending NICK/USER registration commands.
+  - `event_data` keys: `nick` (str), `username` (str), `realname` (str).
 - `CLIENT_REGISTERED`: Fired upon receiving RPL_WELCOME (001).
-  - `event_data` additional keys: `nick` (str - confirmed client nick), `server_message` (str - welcome message).
-- `CLIENT_READY`: Fired after `CLIENT_REGISTERED` and initial auto-join actions (like NickServ IDENTIFY and channel joins) have been initiated. This is a good event for headless scripts to start their primary operations.
-  - `event_data` additional keys: `nick` (str - confirmed client nick), `client_logic_ref` (reference to `IRCClient_Logic`).
+  - `event_data` keys: `nick` (str), `server_message` (str), `hostname` (str).
+- `CLIENT_READY`: Fired after successful registration and initial auto-join actions.
+  - `event_data` keys: `nick` (str), `channels` (List[str]).
+- `CLIENT_DISCONNECTED`: Fired when connection is lost or closed.
+  - `event_data` keys: `server` (str), `port` (int), `reason` (str), `reconnecting` (bool).
+- `CLIENT_RECONNECTING`: Fired when a reconnection attempt is initiated.
+  - `event_data` keys: `attempt` (int), `max_attempts` (int).
 - `CLIENT_MESSAGE_ADDED_TO_CONTEXT`: Fired when any message is added to any context's buffer by `IRCClient_Logic.add_message`.
   - `event_data` keys: `context_name` (str), `text` (str - the full line added, including timestamp/prefix), `color_key_or_attr` (Any), `source_full_ident` (Optional[str]), `is_privmsg_or_notice` (bool).
 - `CLIENT_NICK_CHANGED`: Fired specifically when PyRC's own nickname successfully changes.

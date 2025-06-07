@@ -1,13 +1,17 @@
 import curses
 import logging
-from typing import Any, Deque, Tuple, Dict, Optional
+from typing import Any, Deque, Tuple, Dict, Optional, TYPE_CHECKING, List # Added List
 from pyrc_core.client.curses_utils import SafeCursesUtils
+
+if TYPE_CHECKING:
+    from pyrc_core.dcc.dcc_manager import DCCManager
 
 logger = logging.getLogger("pyrc.message_panel_renderer")
 
 class MessagePanelRenderer:
-    def __init__(self, colors: Dict[str, int]):
+    def __init__(self, colors: Dict[str, int], dcc_manager_ref: "DCCManager"):
         self.colors = colors
+        self.dcc_manager = dcc_manager_ref
 
     def _draw_messages_in_window(self, window: Any, context_obj: Any):
         """Draws messages for a single context into the provided window."""
@@ -15,56 +19,57 @@ class MessagePanelRenderer:
             return
 
         try:
-            window.erase()
+            SafeCursesUtils._draw_window_border_and_bkgd(window, self.colors.get("default", 0))
             max_y, max_x = window.getmaxyx()
             if max_y <= 0 or max_x <= 0:
                 return
 
-            # Special handling for DCC windows
-            if context_obj.type == "dcc":
+            if hasattr(context_obj, 'type') and context_obj.type == "dcc_transfers":
                 self._draw_dcc_transfer_list(window, context_obj)
                 return
 
-            # Regular message display for other contexts
-            messages = list(context_obj.messages)  # Convert deque to list for safe slicing
-            if not messages:
+            messages_to_draw: List[Tuple[str, Any]] = [] # Use List for the local copy
+            if hasattr(context_obj, 'messages') and isinstance(context_obj.messages, Deque):
+                messages_to_draw = list(context_obj.messages) # Convert Deque to List for slicing
+
+            if not messages_to_draw:
                 return
 
-            # Calculate visible lines based on scrollback
-            visible_lines = max_y - 1  # Leave room for border
-            total_messages = len(messages)
+            total_messages = len(messages_to_draw)
 
-            # Ensure scrollback_offset is non-negative
-            scrollback_offset = max(0, context_obj.scrollback_offset)
+            scrollback_offset = 0
+            if hasattr(context_obj, 'scrollback_offset') and isinstance(context_obj.scrollback_offset, int):
+                scrollback_offset = max(0, context_obj.scrollback_offset)
 
-            # Calculate start and end indices
+            visible_lines = max_y
+
             start_idx = max(0, total_messages - visible_lines - scrollback_offset)
             end_idx = min(total_messages, start_idx + visible_lines)
 
-            # Ensure indices are valid
-            if start_idx >= total_messages or start_idx >= end_idx:
+            if start_idx >= end_idx:
                 return
 
-            # Draw messages
-            for i, (text, color_attr) in enumerate(
-                messages[start_idx:end_idx], start=1
-            ):
-                if i > max_y - 1:  # Leave room for border
+            line_render_idx = 0
+            for text, color_attr in messages_to_draw[start_idx:end_idx]: # Iterate over the list slice
+                if line_render_idx >= max_y:
                     break
                 SafeCursesUtils._safe_addstr(
-                    window, i, 1, text[: max_x - 2], color_attr, "message"
+                    window, line_render_idx, 0, text[: max_x], color_attr, "message"
                 )
+                line_render_idx += 1
 
         except (TypeError, IndexError) as e:
-            logger.error(f"Error indexing messages in window: {e}", exc_info=True)
+            logger.error(f"Error indexing messages in window for context '{getattr(context_obj, 'name', 'Unknown')}': {e}", exc_info=True)
         except curses.error as e:
-            logger.error(f"Error drawing messages in window: {e}", exc_info=True)
+            logger.error(f"Curses error drawing messages in window for context '{getattr(context_obj, 'name', 'Unknown')}': {e}", exc_info=True)
         except Exception as e:
             logger.error(
-                f"Unexpected error in draw (MessagePanelRenderer): {e}", exc_info=True
+                f"Unexpected error in _draw_messages_in_window for context '{getattr(context_obj, 'name', 'Unknown')}': {e}", exc_info=True
             )
 
+
     def draw(self, window: Any, context_obj: Any):
+        """Draws messages for a single context. Main entry point for non-split view."""
         self._draw_messages_in_window(window, context_obj)
 
     def draw_split(
@@ -76,66 +81,53 @@ class MessagePanelRenderer:
         active_pane: str,
     ):
         """Draws messages for split view panes."""
-        # Draw top pane
-        SafeCursesUtils._draw_window_border_and_bkgd(top_window, self.colors["default"])
-        if top_context:
+        if top_window:
             self._draw_messages_in_window(top_window, top_context)
 
-        # Draw bottom pane
-        SafeCursesUtils._draw_window_border_and_bkgd(bottom_window, self.colors["default"])
-        if bottom_context:
+        if bottom_window:
             self._draw_messages_in_window(bottom_window, bottom_context)
 
+
     def _draw_dcc_transfer_list(self, window: Any, context_obj: Any):
-        if not window or not context_obj:
+        if not window: return
+        if not self.dcc_manager:
+            logger.warning("DCCManager not available to MessagePanelRenderer for drawing DCC list.")
+            SafeCursesUtils._safe_addstr(window, 0, 0, "[DCC System Error]", self.colors.get("error",0), "dcc_error")
             return
 
         try:
-            window.erase()
+            SafeCursesUtils._draw_window_border_and_bkgd(window, self.colors.get("default", 0))
             max_y, max_x = window.getmaxyx()
-            if max_y <= 0 or max_x <= 0:
+            if max_y <= 0 or max_x <= 0: return
+
+            transfers_status_lines = self.dcc_manager.get_transfer_statuses()
+
+            if not transfers_status_lines:
+                SafeCursesUtils._safe_addstr(window, 0, 0, "No active DCC transfers.", self.colors.get("system",0), "dcc_empty")
                 return
 
-            transfers = list(context_obj.dcc_manager.get_transfer_statuses()) # Assuming dcc_manager is accessible via context_obj or passed
-            if not transfers:
+            total_lines = len(transfers_status_lines)
+            scrollback_offset = 0
+            if hasattr(context_obj, 'scrollback_offset') and isinstance(context_obj.scrollback_offset, int):
+                scrollback_offset = max(0, context_obj.scrollback_offset)
+
+            visible_lines = max_y
+
+            start_idx = max(0, total_lines - visible_lines - scrollback_offset)
+            end_idx = min(total_lines, start_idx + visible_lines)
+
+            if start_idx >= end_idx: return
+
+            line_render_idx = 0
+            for status_line in transfers_status_lines[start_idx:end_idx]:
+                if line_render_idx >= max_y: break
                 SafeCursesUtils._safe_addstr(
-                    window,
-                    1,
-                    1,
-                    "No active DCC transfers",
-                    self.colors["system"],
-                    "dcc_empty",
+                    window, line_render_idx, 0, status_line[:max_x], self.colors.get("system",0), "dcc_status_line"
                 )
-                return
+                line_render_idx +=1
 
-            visible_lines = max_y - 1
-            total_transfers = len(transfers)
-
-            scrollback_offset = max(0, context_obj.scrollback_offset)
-
-            start_idx = max(0, total_transfers - visible_lines - scrollback_offset)
-            end_idx = min(total_transfers, start_idx + visible_lines)
-
-            if start_idx >= total_transfers or start_idx >= end_idx:
-                return
-
-            for i, status in enumerate(transfers[start_idx:end_idx], start=1):
-                if i > max_y - 1:
-                    break
-                SafeCursesUtils._safe_addstr(
-                    window,
-                    i,
-                    1,
-                    status[: max_x - 2],
-                    self.colors["system"],
-                    "dcc_status",
-                )
-
-        except (TypeError, IndexError) as e:
-            logger.error(f"Error indexing DCC transfers in window: {e}", exc_info=True)
-        except curses.error as e:
-            logger.error(f"Error drawing DCC transfer list: {e}", exc_info=True)
         except Exception as e:
-            logger.error(
-                f"Unexpected error in _draw_dcc_transfer_list: {e}", exc_info=True
-            )
+            logger.error(f"Unexpected error in _draw_dcc_transfer_list: {e}", exc_info=True)
+            try:
+                SafeCursesUtils._safe_addstr(window, 0, 0, "[Error drawing DCC list]", self.colors.get("error",0), "dcc_draw_error")
+            except: pass
