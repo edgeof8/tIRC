@@ -7,8 +7,8 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 ## Key Architectural Features
 
 - **Modular Core (`pyrc_core`):** All core logic is encapsulated within the `pyrc_core` package, separating it from scripts and configuration.
-- **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator, initializing and coordinating all components while delegating specific responsibilities to specialized managers.
-- **Connection Lifecycle Management:** The `ConnectionOrchestrator` component manages the entire lifecycle of server connections, including capability negotiation, authentication, registration, and reconnection logic. It coordinates between `CapNegotiator`, `SaslAuthenticator`, and `RegistrationHandler` to establish and maintain connections.
+- **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator, initializing core components and coordinating their interactions, while delegating detailed operational logic (like connection management and UI rendering) to specialized sub-components.
+- **Connection Lifecycle Management:** The `ConnectionOrchestrator` component (in `pyrc_core/client/connection_orchestrator.py`) manages the entire lifecycle of server connections, including capability negotiation, authentication, registration, and reconnection logic. It coordinates between `CapNegotiator`, `SaslAuthenticator`, and `RegistrationHandler` to establish and maintain connections.
 - **Modular UI Architecture:** The UI system has been refactored into focused, single-responsibility components:
   - `CursesManager`: Handles low-level Curses library interactions, initialization, and cleanup.
   - `WindowLayoutManager`: Calculates dimensions and manages creation of all `curses.window` objects.
@@ -200,15 +200,21 @@ PyRC/
 {{ ... }}
 ## Recent Architectural Refactoring & Improvements
 
-- **Connection Management Refactoring:**
-  - Introduced `ConnectionOrchestrator` to centralize and manage all connection-related operations, including capability negotiation, authentication, and registration.
-  - Improved connection state management and error handling for more reliable server connections.
-  - Separated connection lifecycle concerns from `IRCClient_Logic` for better maintainability.
+This section highlights the significant architectural changes and robustness improvements implemented in recent development cycles.
 
-- **UI System Refactoring:**
-  - The monolithic `UIManager` has been decomposed into specialized renderer classes, each responsible for a specific UI component.
-  - Improved separation of concerns between layout management, rendering, and user input handling.
-  - Enhanced testability and maintainability through better-defined interfaces and reduced component coupling.
+- **Modular Connection Management (`ConnectionOrchestrator`):**
+  - Introduced the `ConnectionOrchestrator` component to centralize and manage the entire server connection lifecycle.
+  - Coordinates capability negotiation (`CapNegotiator`), authentication (`SaslAuthenticator`), and registration (`RegistrationHandler`).
+  - Simplifies `IRCClient_Logic` by delegating complex connection state management and sequencing, leading to more robust and maintainable connection handling.
+  - Implements comprehensive timeout mechanisms and error recovery for each connection phase.
+
+- **Decomposed UI System (Modular Renderers & Managers):**
+  - The previously monolithic `UIManager` has been refactored into a set of specialized components:
+    - `CursesManager`: Handles low-level Curses setup and terminal interactions.
+    - `WindowLayoutManager`: Manages the creation, sizing, and positioning of all UI windows.
+    - `MessagePanelRenderer`, `SidebarPanelRenderer`, `StatusBarRenderer`, `InputLineRenderer`: Each dedicated to rendering a specific part of the UI.
+    - `SafeCursesUtils`: Provides common, safe drawing utilities.
+  - This decomposition significantly improves separation of concerns, making the UI system more modular, testable, and easier to extend. `UIManager` now acts as an orchestrator for these components.
   - Fixed issues with color handling and window management through the introduction of `SafeCursesUtils`.
 
 - **Centralized Configuration (`AppConfig`):
@@ -226,15 +232,14 @@ This section highlights the significant architectural changes and robustness imp
   - Features robust validation, thread-safe access, and automatic persistence to `state.json`, ensuring reliable session continuity and easier debugging.
 
 - **Dynamic Command System (`pkgutil`):**
-
   - The command loading mechanism has been refactored to use `pkgutil.walk_packages`, enabling more reliable and extensible discovery of commands from nested directories within `pyrc_core/commands/`.
   - This resolves issues with commands not being found and simplifies the addition of new command modules.
+  - Commands are now more modular and easier to maintain, with clear separation between different command categories.
 
-- **Robust IRCv3 Feature Handling (CAP Negotiation & SASL):**
-
-  - **CAP Negotiator (`CapNegotiator`):** Implemented comprehensive timeout mechanisms to prevent hangs during capability negotiation. Enhanced state tracking and clearer coordination with SASL authentication.
-  - **SASL Authenticator (`SaslAuthenticator`):** Introduced step-based timeouts for SASL authentication flow, ensuring timely progression or failure. Improved error handling and defensive checks for credentials and CAP status.
-  - **Registration Handler (`RegistrationHandler`):** Refined the registration flow to wait for the full completion (or timeout) of CAP and SASL before proceeding with post-registration actions like channel joins and NickServ identification, leading to more stable connections.
+- **Enhanced IRCv3 Feature Handling:**
+  - **CAP Negotiator (`CapNegotiator`):** Now coordinated by `ConnectionOrchestrator`, it implements comprehensive timeout mechanisms to prevent hangs during capability negotiation. Enhanced state tracking and clearer coordination with SASL authentication.
+  - **SASL Authenticator (`SaslAuthenticator`):** Integrated with `ConnectionOrchestrator`, it features step-based timeouts for SASL authentication flow, ensuring timely progression or failure. Improved error handling and defensive checks for credentials and CAP status.
+  - **Registration Handler (`RegistrationHandler`):** Managed by `ConnectionOrchestrator`, it implements a refined registration flow that coordinates with CAP and SASL operations, ensuring proper sequencing of post-registration actions like channel joins and NickServ identification.
 
 - **Streamlined DCC Command Handling:**
 
