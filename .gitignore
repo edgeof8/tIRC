@@ -47,3 +47,7 @@ state.json.bak_*
 
 # Backup files
 *.bak
+
+# Builder
+build.py
+test_build.py
