@@ -1,78 +1,97 @@
-import re
-from typing import Optional, Dict, Any
-IRC_MSG_RE = re.compile(
-    r'^(?::(?P<prefix>[^ ]+) )?(?P<command>[^ ]+)(?: *(?P<params>[^:]*))?(?: *:(?P<trailing>.*))?$'
-)
+# pyrc_core/commands/dcc/dcc_send_command.py
+import argparse
+import logging
+from typing import TYPE_CHECKING, List, Dict, Any
+
+if TYPE_CHECKING:
+    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+
+logger = logging.getLogger("pyrc.commands.dcc.send")
+
+COMMAND_NAME = "send"
+COMMAND_ALIASES: List[str] = []
+COMMAND_HELP: Dict[str, str] = {
+    "usage": "/dcc send [-p] <nick> <filepath ...>",
+    "description": "Initiates a DCC file transfer to a specified nickname. Use -p for passive (reverse) DCC.",
+    "aliases": "None"
+}
+
+def _handle_dcc_error(client_logic: 'IRCClient_Logic', message: str, context_name: str, log_level: int = logging.ERROR, exc_info: bool = False):
+    """Helper to log and display DCC command errors."""
+    logger.log(log_level, message, exc_info=exc_info)
+    client_logic.add_message(message, "error", context_name=context_name)
+
+def _ensure_dcc_context(client_logic: 'IRCClient_Logic', dcc_context_name: str):
+    """Helper to ensure DCC context is active."""
+    if client_logic.context_manager.active_context_name != dcc_context_name:
+        client_logic.switch_active_context(dcc_context_name)
+
+def _handle_send_results(client_logic: 'IRCClient_Logic', results: Dict[str, Any], nick: str, dcc_context_name: str):
+    """Processes and displays the results of the initiate_sends operation."""
+    if results.get("transfers_started"):
+        for transfer_info in results["transfers_started"]:
+            fn = transfer_info.get("filename", "Unknown file")
+            tid = transfer_info.get("transfer_id", "N/A")[:8]
+            token_info = ""
+            if transfer_info.get("passive") and transfer_info.get("token"): # Check for passive key
+                token_info = f" (Passive Offer, token: {transfer_info.get('token')[:8]})"
+            client_logic.add_message(f"DCC SEND of '{fn}' to {nick} initiated (ID: {tid}){token_info}.", "system", context_name=dcc_context_name)
+
+    if results.get("files_queued"):
+        for queue_info in results["files_queued"]:
+            fn = queue_info.get("filename", "Unknown file")
+            client_logic.add_message(f"DCC SEND of '{fn}' to {nick} queued.", "system", context_name=dcc_context_name)
+
+    if results.get("errors"):
+        for error_info in results["errors"]:
+            fn = error_info.get("filename", "Unknown file")
+            err = error_info.get("error", "Unknown error")
+            _handle_dcc_error(client_logic, f"DCC SEND for '{fn}' to {nick} failed: {err}", dcc_context_name)
+
+    if not results.get("overall_success", True) and not results.get("transfers_started") and not results.get("files_queued") and not results.get("errors"):
+         _handle_dcc_error(client_logic, f"DCC SEND to {nick} failed: {results.get('error', 'No files processed or unknown error.')}", dcc_context_name)
 
 
-def unescape_tag_value(value: str) -> str:
-    """Unescape an IRCv3 tag value according to the spec."""
-    # Replace escaped characters
-    value = value.replace("\\:", ";")
-    value = value.replace("\\s", " ")
-    value = value.replace("\\\\", "\\")
-    value = value.replace("\\r", "\r")
-    value = value.replace("\\n", "\n")
-    return value
+def handle_dcc_send_command(client_logic: 'IRCClient_Logic', cmd_args: List[str], active_context_name: str, dcc_context_name: str):
+    """
+    Handles the /dcc send command.
+    Parses arguments, initiates DCC sends, and provides feedback.
+    """
+    dcc_m = client_logic.dcc_manager
+    if not dcc_m:
+        _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
+        return
+    if not dcc_m.dcc_config.get("enabled"):
+        _handle_dcc_error(client_logic, f"DCC is currently disabled. Cannot use /dcc {COMMAND_NAME}.", active_context_name)
+        return
 
+    parser = argparse.ArgumentParser(prog=f"/dcc {COMMAND_NAME}", add_help=False)
+    parser.add_argument("-p", "--passive", action="store_true", help="Initiate a passive (reverse) DCC send.")
+    parser.add_argument("nick", help="The recipient's nickname.")
+    parser.add_argument("filepath", nargs='+', help="The path(s) to the file(s) to send.")
 
-class IRCMessage:
-    def __init__(
-        self,
-        prefix,
-        command,
-        params_str,
-        trailing,
-        tags: Optional[Dict[str, str]] = None,
-    ):
-        self.prefix = prefix
-        self.command = command
-        self.params_str = params_str.strip() if params_str else None
-        self.trailing = trailing
-        self.params = (
-            [p for p in self.params_str.split(" ") if p] if self.params_str else []
-        )
-        self.source_nick = prefix.split("!")[0] if prefix and "!" in prefix else prefix
-        self.tags = tags or {}
+    try:
+        parsed_args = parser.parse_args(cmd_args)
+        nick = parsed_args.nick
+        filepaths_to_send = parsed_args.filepath
+        passive_mode = parsed_args.passive
 
-    @classmethod
-    def parse(cls, line: str) -> Optional["IRCMessage"]:
-        # First try to parse message tags if present
-        tags = {}
-        if line.startswith("@"):
-            tag_end = line.find(" ")
-            if tag_end == -1:
-                return None
-            tag_str = line[1:tag_end]
-            line = line[tag_end + 1 :]
+        results = dcc_m.initiate_sends(nick, filepaths_to_send, passive=passive_mode)
+        _handle_send_results(client_logic, results, nick, dcc_context_name)
+        _ensure_dcc_context(client_logic, dcc_context_name)
 
-            # Parse tags
-            for tag in tag_str.split(";"):
-                if "=" in tag:
-                    key, value = tag.split("=", 1)
-                    tags[key] = unescape_tag_value(value)
-                else:
-                    tags[tag] = ""
+    except argparse.ArgumentError as e:
+        _handle_dcc_error(client_logic, f"Error: {e.message}\nUsage: {COMMAND_HELP['usage']}", active_context_name, log_level=logging.WARNING)
+    except SystemExit:
+        client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", "error", context_name=active_context_name)
+    except Exception as e:
+        _handle_dcc_error(client_logic, f"Error processing /dcc {COMMAND_NAME}: {e}. Check usage.", dcc_context_name, exc_info=True)
 
-        # Parse the rest of the message
-        match = IRC_MSG_RE.match(line)
-        if not match:
-            return None
-        # Extract groups by name to avoid passing 'tags' twice
-        prefix = match.group('prefix')
-        command = match.group('command')
-        params_str = match.group('params')
-        trailing = match.group('trailing')
-        return cls(prefix, command, params_str, trailing, tags=tags)
-
-    def get_tag(self, key: str, default: Any = None) -> Any:
-        """Get a message tag value, with optional default if not present."""
-        return self.tags.get(key, default)
-
-    def has_tag(self, key: str) -> bool:
-        """Check if a message tag is present."""
-        return key in self.tags
-
-    def get_all_tags(self) -> Dict[str, str]:
-        """Get all message tags."""
-        return self.tags.copy()
+# This function will be called by the main dcc_commands.py dispatcher
+def get_dcc_command_handler() -> Dict[str, Any]:
+    return {
+        "name": COMMAND_NAME,
+        "aliases": COMMAND_ALIASES,
+        "help": COMMAND_HELP,
+        "handler_function": handle_dcc_send_command
+    }
