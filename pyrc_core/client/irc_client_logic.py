@@ -167,7 +167,17 @@ class IRCClient_Logic:
                 initial_channels=active_config.channels,
                 desired_caps=active_config.desired_caps
             )
-            self.state_manager.set_connection_info(conn_info)
+            if not self.state_manager.set_connection_info(conn_info):
+                logger.error("Initial state creation failed: ConnectionInfo validation error.")
+                config_errors = self.state_manager.get_config_errors()
+                error_summary = "; ".join(config_errors) if config_errors else "Unknown validation error."
+                self._add_status_message(f"Initial Configuration Error: {error_summary}", "error")
+                conn_info.auto_connect = False
+                if self.state_manager.get_connection_info():
+                    updated_conn_info = self.state_manager.get_connection_info()
+                    if updated_conn_info:
+                        updated_conn_info.auto_connect = False
+                        self.state_manager.set("connection_info", updated_conn_info)
 
         # --- START OF FIX ---
         # Create core contexts first.
@@ -251,54 +261,38 @@ class IRCClient_Logic:
         logger.info(f"[StatusUpdate via Helper] ColorKey: '{color_key}', Text: {text}")
         self.add_message(text, color_attr, context_name="Status")
 
-    def _configure_from_server_config(self, config: ServerConfig, config_name: str) -> bool:
+    def _configure_from_server_config(self, config_data: ServerConfig, config_name: str) -> bool:
         """
         Initialize connection info from a ServerConfig and update state.
-
-        Args:
-            config: The ServerConfig to use for configuration
-            config_name: Name of the configuration for logging purposes
-
-        Returns:
-            bool: True if configuration was successful, False otherwise
         """
         try:
-            # Create connection info from config
-            conn_info = ConnectionInfo(
-                server=config.address,
-                port=config.port,
-                ssl=config.ssl,
-                nick=config.nick,
-                username=config.username or config.nick,
-                realname=config.realname or config.nick,
-                server_password=config.server_password,
-                nickserv_password=config.nickserv_password,
-                sasl_username=config.sasl_username,
-                sasl_password=config.sasl_password,
-                verify_ssl_cert=config.verify_ssl_cert,
-                auto_connect=config.auto_connect,
-                initial_channels=config.channels or [],
-                desired_caps=config.desired_caps or []
+            conn_info_obj = ConnectionInfo(
+                server=config_data.address,
+                port=config_data.port,
+                ssl=config_data.ssl,
+                nick=config_data.nick,
+                username=config_data.username or config_data.nick,
+                realname=config_data.realname or config_data.nick,
+                server_password=config_data.server_password,
+                nickserv_password=config_data.nickserv_password,
+                sasl_username=config_data.sasl_username,
+                sasl_password=config_data.sasl_password,
+                verify_ssl_cert=config_data.verify_ssl_cert,
+                auto_connect=config_data.auto_connect,
+                initial_channels=config_data.channels or [],
+                desired_caps=config_data.desired_caps or []
             )
 
-            # Update connection info in state manager
-            if not self.state_manager.set_connection_info(conn_info):
-                logger.error("Failed to set connection info in StateManager")
+            if not self.state_manager.set_connection_info(conn_info_obj):
+                logger.error(f"Configuration for server '{config_name}' failed validation.")
                 return False
 
-            # Update network handler with new channels if it exists
-            if hasattr(self, 'network_handler'):
-                self.network_handler.channels_to_join_on_connect = conn_info.initial_channels[:]
-
-                # Start network handler if we have a valid server/port
-                if conn_info.server and conn_info.port is not None:
-                    self.network_handler.start()
-
-            logger.info(f"Successfully configured from server config: {config_name}")
+            logger.info(f"Successfully validated and set server config: {config_name} in StateManager.")
             return True
 
         except Exception as e:
             logger.error(f"Error configuring from server config {config_name}: {str(e)}", exc_info=True)
+            self.state_manager.set_connection_state(ConnectionState.CONFIG_ERROR, f"Internal error processing config {config_name}")
             return False
 
     def _initialize_connection_handlers(self):

@@ -55,7 +55,11 @@ class StateChangeUIHandler:
             logger.warning("Invalid connection_state change event received.")
             return
 
-        new_state: ConnectionState = change.new_value
+        new_state: Optional[ConnectionState] = change.new_value
+        if new_state is None:
+            logger.warning("Connection state change event received with None new_value.")
+            return
+
         metadata = change.metadata or {}
 
         try:
@@ -72,16 +76,16 @@ class StateChangeUIHandler:
                 # Get the server details from the old_value if possible, or current state if not
                 server_details = "server"
                 old_conn_info: Optional[ConnectionInfo] = None
-                if hasattr(change, 'old_value_snapshot') and isinstance(change.old_value_snapshot, dict):
-                     # If StateManager provides a snapshot of ConnectionInfo before it's cleared
-                    old_conn_info_dict = change.old_value_snapshot.get("connection_info")
-                    if old_conn_info_dict and isinstance(old_conn_info_dict, dict):
+                # Check if connection_info_snapshot is available in metadata
+                old_conn_info_dict = metadata.get("connection_info_snapshot")
+                if old_conn_info_dict and isinstance(old_conn_info_dict, dict):
+                    try:
                         old_conn_info = ConnectionInfo(**old_conn_info_dict)
+                    except TypeError as e:
+                        logger.warning(f"Failed to reconstruct ConnectionInfo from snapshot: {e}")
 
-                if not old_conn_info: # Fallback to current (which might be cleared or new)
-                    current_conn_info = self.state_manager.get_connection_info()
-                    if current_conn_info and current_conn_info.server: # Check if current_conn_info is not None
-                        old_conn_info = current_conn_info
+                if not old_conn_info: # Fallback to current state_manager connection info
+                    old_conn_info = self.state_manager.get_connection_info()
 
                 if old_conn_info and old_conn_info.server:
                     server_details = f"{old_conn_info.server}:{old_conn_info.port}"

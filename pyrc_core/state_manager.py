@@ -489,16 +489,19 @@ class StateManager:
                 if state != ConnectionState.CONFIG_ERROR:
                     self.logger.warning(f"Setting config errors but state is {state}")
 
+            metadata_dict = {"error": error, "config_errors": config_errors} if error or config_errors else {}
+
+            # If disconnecting, capture a snapshot of the current connection_info
+            if state == ConnectionState.DISCONNECTED and self.get("connection_info") is not None:
+                # Convert ConnectionInfo dataclass to a dictionary for serialization in metadata
+                metadata_dict["connection_info_snapshot"] = asdict(self.get("connection_info"))
+
             change = StateChange(
                 key="connection_state",
                 old_value=old_state,
                 new_value=state,
                 change_type=StateChangeType.UPDATED,
-                metadata=(
-                    {"error": error, "config_errors": config_errors}
-                    if error or config_errors
-                    else {}
-                ),
+                metadata=metadata_dict,
             )
             self._notify_handlers(change)
 

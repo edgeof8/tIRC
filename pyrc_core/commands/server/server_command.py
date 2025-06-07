@@ -25,34 +25,47 @@ def _proceed_with_new_server_connection(client: "IRCClient_Logic", config_name: 
     """
     Helper function to encapsulate the logic for setting up and connecting to a new server.
     """
-    if config_name not in client.all_server_configs:
+    # client.all_server_configs is now client.config.all_server_configs
+    if config_name not in client.config.all_server_configs:
         logger.error(f"/server: Target config '{config_name}' not found during connection attempt.")
         client.add_message(f"Error: Server configuration '{config_name}' disappeared.", "error", context_name="Status")
         return
 
-    new_conf = client.all_server_configs[config_name]
-    client.active_server_config_name = config_name
-    client.active_server_config = new_conf
+    new_conf = client.config.all_server_configs[config_name]
 
-    client.server = new_conf.address
-    client.port = new_conf.port
-    client.nick = new_conf.nick
-    client.initial_channels_list = new_conf.channels[:]
-    client.password = new_conf.server_password
-    client.nickserv_password = new_conf.nickserv_password
-    client.use_ssl = new_conf.ssl
-    client.verify_ssl_cert = new_conf.verify_ssl_cert
+    # --- MODIFICATION START ---
+    # Call _configure_from_server_config which now handles setting ConnectionInfo in StateManager
+    # and returns True/False based on validation.
+    if not client._configure_from_server_config(new_conf, config_name):
+        # Errors would have been logged and displayed by _configure_from_server_config or StateManager/StateChangeUIHandler
+        client.add_message(f"Failed to apply server configuration '{config_name}'. Check logs/status for details.", "error", context_name="Status")
+        return
+    # --- MODIFICATION END ---
 
-    client._initialize_connection_handlers()
-    client._reset_state_for_new_connection() # Call this before update_connection_params
+    # State is now set in StateManager by _configure_from_server_config.
+    # We can retrieve it if needed, or trust that NetworkHandler will use it.
+    conn_info = client.state_manager.get_connection_info()
+    if not conn_info: # Should not happen if _configure_from_server_config succeeded
+        client.add_message(f"Critical error: Connection info lost after configuring for '{config_name}'.", "error", context_name="Status")
+        return
 
-    if client.server and client.port:
+    # These direct assignments to client attributes are being phased out by StateManager.
+    # client.active_server_config_name = config_name
+    # client.active_server_config = new_conf # This might still be useful for client logic to know current named config
+
+    client._initialize_connection_handlers() # Re-initialize based on new state_manager.connection_info
+    client._reset_state_for_new_connection()
+
+    if conn_info.server and conn_info.port is not None:
         client.network_handler.update_connection_params(
-            server=client.server,
-            port=client.port,
-            use_ssl=client.use_ssl,
-            # channels_to_join will be handled by RegistrationHandler based on client.initial_channels_list
+            server=conn_info.server,
+            port=conn_info.port,
+            use_ssl=conn_info.ssl,
+            channels_to_join=conn_info.initial_channels # Ensure this is passed
         )
+        # network_handler.start() is usually called by update_connection_params if not running,
+        # or connection is re-attempted in its loop.
+        # For /server, explicitly ensure it starts if not alive.
         if not client.network_handler._network_thread or not client.network_handler._network_thread.is_alive():
             client.network_handler.start()
 
@@ -62,6 +75,7 @@ def _proceed_with_new_server_connection(client: "IRCClient_Logic", config_name: 
             context_name="Status",
         )
     else:
+        # This case should be caught by _configure_from_server_config returning False
         client.add_message(
             f"Error: Invalid server configuration for '{config_name}'. Missing server address or port.",
             "error",
@@ -83,17 +97,26 @@ def handle_server_command(client: "IRCClient_Logic", args_str: str):
         return
 
     config_name = args_str.strip()
-    if config_name not in client.all_server_configs:
+    if config_name not in client.config.all_server_configs:
         client.add_message(
-            f"Server configuration '{config_name}' not found. Available configurations: {', '.join(sorted(client.all_server_configs.keys()))}",
+            f"Server configuration '{config_name}' not found. Available configurations: {', '.join(sorted(client.config.all_server_configs.keys()))}",
             "error",
             context_name=client.context_manager.active_context_name or "Status",
         )
         return
 
     disconnect_needed = False
-    if client.network_handler.connected:
-        if config_name != client.active_server_config_name:
+    conn_info = client.state_manager.get_connection_info()
+    if client.network_handler.connected and conn_info:
+        # Check if the target config is different from the currently active one
+        # This needs to be based on the actual connection_info in StateManager, not client.active_server_config_name
+        # as that's being phased out.
+        current_server_address = conn_info.server
+        current_server_port = conn_info.port
+
+        target_config = client.config.all_server_configs[config_name]
+
+        if target_config.address != current_server_address or target_config.port != current_server_port:
             disconnect_needed = True
         else: # Reconnecting to the same server
             disconnect_needed = True

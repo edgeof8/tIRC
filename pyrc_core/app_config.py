@@ -99,10 +99,27 @@ class ServerConfig:
             self.username = self.nick
         if self.realname is None:
             self.realname = self.nick
-        if self.sasl_username is None:
-            self.sasl_username = self.nick
-        if self.sasl_password is None:
+        # Refined SASL default logic:
+        # Only default sasl_username to nick if sasl_password is also being defaulted from nickserv_password
+        # OR if sasl_username is explicitly set but sasl_password is not (which is an error caught by validator).
+        # The main goal is to avoid defaulting sasl_username if there's no corresponding password.
+
+        # If sasl_password is not set, try to use nickserv_password for it.
+        if self.sasl_password is None and self.nickserv_password is not None:
             self.sasl_password = self.nickserv_password
+            # If we just defaulted sasl_password, and sasl_username is still None,
+            # then it's reasonable to default sasl_username to nick.
+            if self.sasl_username is None:
+                self.sasl_username = self.nick
+        elif self.sasl_username is not None and self.sasl_password is None and self.nickserv_password is None:
+            # This is the problematic case: sasl_username is set (either directly or defaulted from nick if old logic was used)
+            # but no password source. The validator will catch this.
+            # If sasl_username was explicitly set in INI but password wasn't, this is a user config error.
+            # If sasl_username was None, and nickserv_password was also None, then sasl_username should remain None.
+            pass # Let validator handle if sasl_username is set but sasl_password is not.
+        elif self.sasl_username is None and self.sasl_password is not None:
+            # If password is set but username is not, default username to nick.
+            self.sasl_username = self.nick
 
 # --- Main Configuration Class ---
 
