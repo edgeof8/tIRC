@@ -1,88 +1,103 @@
+# pyrc_core/commands/dcc/dcc_commands.py
 import logging
+import importlib
 import os
-from typing import TYPE_CHECKING, Dict, Any
-
-from pyrc_core.commands.dcc.dcc_send_command import DCCSendCommandHandler
-from pyrc_core.commands.dcc.dcc_get_command import DCCGetCommandHandler
-from pyrc_core.commands.dcc.dcc_accept_command import DCCAcceptCommandHandler
-from pyrc_core.commands.dcc.dcc_list_command import DCCListCommandHandler
-from pyrc_core.commands.dcc.dcc_browse_command import DCCBrowseCommandHandler
-from pyrc_core.commands.dcc.dcc_cancel_command import DCCCancelCommandHandler
-from pyrc_core.commands.dcc.dcc_auto_command import DCCAutoCommandHandler
-from pyrc_core.commands.dcc.dcc_resume_command import DCCResumeCommandHandler
+from typing import TYPE_CHECKING, Dict, Any, Callable, List, cast
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.dcc")
+logger = logging.getLogger("pyrc.commands.dcc.router")
 
-def dcc_command_handler(client_logic: 'IRCClient_Logic', args_str: str):
-    """Handles the main /dcc command and its subcommands."""
+# Dictionary to store DCC subcommand handlers
+# Key: subcommand name (str), Value: Dict with 'handler_function', 'help', 'aliases'
+_dcc_subcommand_handlers: Dict[str, Dict[str, Any]] = {}
+_dcc_subcommand_aliases: Dict[str, str] = {}
 
-    # Use a simple list of args for now, consider argparse for more complex needs later
-    args = args_str.split()
-
-    if not hasattr(client_logic, 'dcc_manager') or not client_logic.dcc_manager:
-        client_logic.add_message("DCC system is not initialized or available.", "error", context_name="Status")
+def _load_dcc_subcommands():
+    """Dynamically loads DCC subcommand handlers from this directory."""
+    global _dcc_subcommand_handlers, _dcc_subcommand_aliases
+    if _dcc_subcommand_handlers: # Avoid re-loading if already populated
         return
 
-    dcc_m = client_logic.dcc_manager
-    active_context_name = client_logic.context_manager.active_context_name or "Status"
-    dcc_context_name = "DCC"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    for filename in os.listdir(current_dir):
+        if filename.endswith("_command.py") and filename != "dcc_commands.py" and filename != "dcc_command_base.py":
+            module_name = f"pyrc_core.commands.dcc.{filename[:-3]}"
+            try:
+                module = importlib.import_module(module_name)
+                if hasattr(module, "get_dcc_command_handler") and callable(module.get_dcc_command_handler):
+                    handler_info = cast(Dict[str, Any], module.get_dcc_command_handler())
+                    sub_cmd_name = handler_info["name"].lower()
+                    _dcc_subcommand_handlers[sub_cmd_name] = handler_info
+                    logger.debug(f"Registered DCC subcommand '{sub_cmd_name}' from {module_name}")
+                    for alias in handler_info.get("aliases", []):
+                        _dcc_subcommand_aliases[alias.lower()] = sub_cmd_name
+                        logger.debug(f"Registered DCC subcommand alias '{alias.lower()}' -> '{sub_cmd_name}'")
+            except Exception as e:
+                logger.error(f"Failed to load DCC subcommand module {module_name}: {e}", exc_info=True)
 
-    if not dcc_m.dcc_config.get("enabled"):
-        client_logic.add_message("DCC is currently disabled in the configuration.", "error", context_name=active_context_name)
+_load_dcc_subcommands() # Load them when this module is imported
+
+def dcc_command_router(client_logic: 'IRCClient_Logic', args_str: str):
+    """
+    Main dispatcher for /dcc subcommands.
+    Routes to the appropriate handler function.
+    """
+    args = args_str.split()
+    active_context_name = client_logic.context_manager.active_context_name or "Status"
+    dcc_context_name = "DCC" # Standard context for DCC operations
+
+    # Ensure DCC context exists (important for feedback messages)
+    if not client_logic.context_manager.get_context(dcc_context_name):
+        client_logic.context_manager.create_context(dcc_context_name, context_type="dcc")
+
+
+    if not hasattr(client_logic, 'dcc_manager') or not client_logic.dcc_manager:
+        client_logic.add_message("DCC system is not initialized or available.", "error", context_name=active_context_name)
         return
 
     if not args:
-        client_logic.add_message(
-            "Usage: /dcc <send|get|accept|list|close|browse|cancel|resume> [options...]. Try /help dcc for more.",
-            "error",
-            context_name=active_context_name
-        )
+        # Display general DCC help or list of subcommands
+        help_lines = [
+            "Usage: /dcc <subcommand> [options...]",
+            "Available subcommands:"
+        ]
+        for name, info in sorted(_dcc_subcommand_handlers.items()):
+            usage_summary = info.get("help", {}).get("usage", f"/dcc {name}")
+            help_lines.append(f"  {usage_summary}")
+        help_lines.append("Try /dcc <subcommand> --help (or similar if supported by subcommand) or check main /help dcc.")
+        for line in help_lines:
+            client_logic.add_message(line, "system", context_name=active_context_name)
         return
 
-    subcommand = args[0].lower()
+    subcommand_name_input = args[0].lower()
     cmd_args = args[1:]
 
-    # Dispatch to the appropriate command handler
-    if subcommand == "send":
-        handler = DCCSendCommandHandler(client_logic)
-        handler.execute(cmd_args)
-    elif subcommand == "get":
-        handler = DCCGetCommandHandler(client_logic)
-        handler.execute(cmd_args)
-    elif subcommand == "accept":
-        handler = DCCAcceptCommandHandler(client_logic)
-        handler.execute(cmd_args)
-    elif subcommand == "list":
-        handler = DCCListCommandHandler(client_logic)
-        handler.execute(cmd_args)
-    elif subcommand == "browse":
-        handler = DCCBrowseCommandHandler(client_logic)
-        handler.execute(cmd_args)
-    elif subcommand in ["close", "cancel"]:
-        handler = DCCCancelCommandHandler(client_logic)
-        handler.execute(cmd_args)
-    elif subcommand == "auto":
-        handler = DCCAutoCommandHandler(client_logic)
-        handler.execute(cmd_args)
-    elif subcommand == "resume":
-        handler = DCCResumeCommandHandler(client_logic)
-        handler.execute(cmd_args)
-    else:
-        client_logic.add_message(f"Unknown DCC subcommand: {subcommand}. Try /help dcc.", "error", context_name=active_context_name)
+    # Resolve alias if any
+    actual_subcommand_name = _dcc_subcommand_aliases.get(subcommand_name_input, subcommand_name_input)
 
+    if actual_subcommand_name in _dcc_subcommand_handlers:
+        handler_info = _dcc_subcommand_handlers[actual_subcommand_name]
+        handler_function: Callable = handler_info["handler_function"]
+        try:
+            # Pass client_logic, command arguments, active_context_name, and dcc_context_name
+            handler_function(client_logic, cmd_args, active_context_name, dcc_context_name)
+        except Exception as e:
+            logger.error(f"Error executing DCC subcommand '{actual_subcommand_name}': {e}", exc_info=True)
+            client_logic.add_message(f"Error in /dcc {actual_subcommand_name}: {e}", "error", context_name=dcc_context_name)
+    else:
+        client_logic.add_message(f"Unknown DCC subcommand: {subcommand_name_input}. Try '/dcc' for a list.", "error", context_name=active_context_name)
+
+# This is the main command definition for /dcc itself, registered with the global CommandHandler
 COMMAND_DEFINITIONS = [
     {
         "name": "dcc",
-        "handler": "dcc_command_handler", # Name of the function in this module
+        "handler": "dcc_command_router", # Name of the router function in this module
         "help": {
             "usage": "/dcc <subcommand> [args]",
-            "description": "Manages DCC file transfers. Subcommands: send, get, accept, list, close, browse, cancel, auto, resume.",
-            "aliases": []
+            "description": "Manages DCC file transfers. Use '/dcc' for subcommands.",
+            "aliases": [] # Aliases for /dcc itself, if any
         }
     },
-    # Help for subcommands can be implicitly handled by the main /dcc help string
-    # or CommandHandler could be extended for sub-command help topics.
 ]
