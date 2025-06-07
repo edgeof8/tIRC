@@ -64,7 +64,6 @@ class IRCClient_Logic:
         self._server_switch_disconnect_event: Optional[threading.Event] = None
         self._server_switch_target_config_name: Optional[str] = None
         self.echo_sent_to_status: bool = True
-        self._has_switched_to_initial_channel: bool = False
         self.show_raw_log_in_ui: bool = False
         self.last_join_command_target: Optional[str] = None
         self.active_list_context_name: Optional[str] = None
@@ -84,6 +83,12 @@ class IRCClient_Logic:
         self.command_handler = CommandHandler(self)
         self.trigger_manager = TriggerManager(os.path.join(self.config.BASE_DIR, "config")) if self.config.enable_trigger_system else None
         self.state_ui_handler = StateChangeUIHandler(self)
+
+        # Register event handler for CLIENT_READY to ensure UI switches to joined channel
+        # This is registered with the script_manager as it handles all event subscriptions.
+        self.script_manager.subscribe_script_to_event(
+            "CLIENT_READY", self._handle_client_ready_for_ui_switch, "IRCClient_Logic_Internal_UI_Switch"
+        )
 
         # --- Stage 3: Configure State and Handlers ---
         self._create_initial_state()
@@ -704,21 +709,19 @@ class IRCClient_Logic:
             self.ui_needs_update.set()
         else:
             # This block handles auto-joined channels
-            if not self._has_switched_to_initial_channel:
-                active_ctx = self.context_manager.get_active_context()
-                if not active_ctx or active_ctx.name == "Status":
-                    conn_info = self.state_manager.get_connection_info()
-                    normalized_initial_channels = {
-                        self.context_manager._normalize_context_name(ch)
-                        for ch in (conn_info.initial_channels if conn_info else [])
-                    }
-                    if normalized_channel_name in normalized_initial_channels:
-                        logger.info(
-                            f"Auto-joined initial channel {normalized_channel_name} is now fully joined. Setting active."
-                        )
-                        self.context_manager.set_active_context(normalized_channel_name)
-                        self.ui_needs_update.set()
-                        self._has_switched_to_initial_channel = True # Set the flag
+            active_ctx = self.context_manager.get_active_context()
+            if not active_ctx or active_ctx.name == "Status":
+                conn_info = self.state_manager.get_connection_info()
+                normalized_initial_channels = {
+                    self.context_manager._normalize_context_name(ch)
+                    for ch in (conn_info.initial_channels if conn_info else [])
+                }
+                if normalized_channel_name in normalized_initial_channels:
+                    logger.info(
+                        f"Auto-joined initial channel {normalized_channel_name} is now fully joined. Setting active."
+                    )
+                    self.context_manager.set_active_context(normalized_channel_name)
+                    self.ui_needs_update.set()
 
     def _execute_python_trigger(
         self, code: str, event_data: Dict[str, Any], trigger_info_for_error: str
@@ -1079,3 +1082,34 @@ class IRCClient_Logic:
             if not self.is_headless and self.ui:
                 self.ui.refresh_all_windows()
             self.ui_needs_update.clear()
+
+    def _handle_client_ready_for_ui_switch(self, event_data: Dict[str, Any]):
+        """
+        Handler for CLIENT_READY event to ensure UI switches to the first
+        auto-joined channel if applicable.
+        """
+        logger.debug("CLIENT_READY event received. Checking for auto-joined channel switch.")
+
+        # Ensure client_logic_ref is available in event_data, though it should be self here.
+        # This handler is part of IRCClient_Logic, so 'self' is the client_logic_ref.
+
+        conn_info = self.state_manager.get_connection_info()
+        if conn_info and conn_info.initial_channels:
+            for ch_name in conn_info.initial_channels:
+                normalized_ch_name = self.context_manager._normalize_context_name(ch_name)
+                channel_context = self.context_manager.get_context(normalized_ch_name)
+
+                # Only switch if the channel is fully joined and we are currently in Status
+                if channel_context and channel_context.join_status == ChannelJoinStatus.FULLY_JOINED:
+                    current_active_ctx_name = self.context_manager.active_context_name
+                    if not current_active_ctx_name or current_active_ctx_name == "Status":
+                        logger.info(f"CLIENT_READY: Auto-joined channel {normalized_ch_name} is fully joined. Setting active context.")
+                        self.context_manager.set_active_context(normalized_ch_name)
+                        self.ui_needs_update.set()
+                        break # Only switch to the first one
+                    else:
+                        logger.debug(f"CLIENT_READY: Auto-joined channel {normalized_ch_name} is fully joined, but active context is already {current_active_ctx_name}. No switch needed.")
+                else:
+                    logger.debug(f"CLIENT_READY: Channel {normalized_ch_name} not fully joined yet or context not found.")
+        else:
+            logger.debug("CLIENT_READY: No initial channels configured for auto-switch.")

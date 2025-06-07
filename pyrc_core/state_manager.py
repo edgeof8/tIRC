@@ -221,6 +221,9 @@ class StateManager:
                         if time_field in conn_info and conn_info[time_field] is not None:
                             conn_info[time_field] = datetime.fromisoformat(conn_info[time_field])
 
+                    # Explicitly convert lists back to sets for fields that are defined as sets
+                    if "currently_joined_channels" in conn_info and isinstance(conn_info["currently_joined_channels"], list):
+                        conn_info["currently_joined_channels"] = set(conn_info["currently_joined_channels"])
                     # Re-create the ConnectionInfo dataclass from the dictionary
                     loaded_data["connection_info"] = ConnectionInfo(**conn_info)
                 except (TypeError, KeyError, ValueError) as e:
