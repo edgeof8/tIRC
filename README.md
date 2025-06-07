@@ -8,6 +8,14 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 
 - **Modular Core (`pyrc_core`):** All core logic is encapsulated within the `pyrc_core` package, separating it from scripts and configuration.
 - **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator.
+- **Modular UI Architecture:** The UI system has been refactored into focused, single-responsibility components:
+  - `CursesManager`: Handles low-level Curses library interactions, initialization, and cleanup.
+  - `WindowLayoutManager`: Calculates dimensions and manages creation of all `curses.window` objects.
+  - `MessagePanelRenderer`: Renders message panels in both single and split view modes.
+  - `SidebarPanelRenderer`: Manages and renders the context list and user list.
+  - `StatusBarRenderer`: Handles the display of status information and notifications.
+  - `InputLineRenderer`: Manages the input prompt and user input display.
+  - `SafeCursesUtils`: Provides safe, reusable utilities for common Curses operations.
 - **Centralized State Management with `StateManager`:**
   - The `StateManager` is the _exclusive_ source of truth for all connection, session, and client-specific runtime state.
   - It provides thread-safe, persistent session state that includes:
@@ -35,10 +43,17 @@ PyRC/
 │
 │   ├── client/                 # Client-side logic and UI components.
 │   │   ├── __init__.py
-│   │   ├── input_handler.py     # Processes keyboard input, command history, and tab completion.
-│   │   ├── irc_client_logic.py  # Main orchestrator class, initializes and coordinates all managers.
-│   │   ├── state_change_ui_handler.py  # Updates UI in response to state changes.
-│   │   └── ui_manager.py        # Manages the curses-based text user interface.
+│   │   ├── curses_manager.py         # Low-level Curses interaction and utilities.
+│   │   ├── curses_utils.py           # Safe Curses drawing utilities.
+│   │   ├── input_handler.py          # Processes keyboard input, command history, and tab completion.
+│   │   ├── input_line_renderer.py    # Renders the input line and handles input display.
+│   │   ├── irc_client_logic.py       # Main orchestrator class, initializes and coordinates all managers.
+│   │   ├── message_panel_renderer.py # Renders message panels and DCC transfer lists.
+│   │   ├── sidebar_panel_renderer.py # Renders the context list and user list in the sidebar.
+│   │   ├── state_change_ui_handler.py # Updates UI in response to state changes.
+│   │   ├── status_bar_renderer.py    # Renders the status bar content.
+│   │   ├── ui_manager.py             # Orchestrates UI components and coordinates drawing.
+│   │   └── window_layout_manager.py  # Manages Curses window layout and creation.
 │   │
 │   ├── commands/               # All built-in command implementations, dynamically loaded.
 │   │   ├── __init__.py
@@ -181,6 +196,14 @@ PyRC/
 
 {{ ... }}
 ## Recent Architectural Refactoring & Improvements
+
+- **UI System Refactoring:**
+  - The monolithic `UIManager` has been decomposed into specialized renderer classes, each responsible for a specific UI component.
+  - Improved separation of concerns between layout management, rendering, and user input handling.
+  - Enhanced testability and maintainability through better-defined interfaces and reduced component coupling.
+  - Fixed issues with color handling and window management through the introduction of `SafeCursesUtils`.
+
+- **Centralized Configuration (`AppConfig`):
 
 This section highlights the significant architectural changes and robustness improvements implemented in recent development cycles.
 
