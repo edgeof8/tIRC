@@ -8,16 +8,16 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 
 - **Modular Core (`pyrc_core`):** All core logic is encapsulated within the `pyrc_core` package, separating it from scripts and configuration.
 - **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator.
-- **Centralized State Management with `StateManager`**
-
-The `StateManager` provides thread-safe, persistent session state that includes:
-- Current connection details and authentication state
-- List of joined channels and their topics
-- User preferences and client settings
-- Message history and scrollback positions
-
-State is automatically persisted to disk and restored on startup, ensuring a seamless experience across client restarts.
-- **Dynamic Command System:** All core client commands are implemented in individual Python modules within a structured `commands/` directory. They are dynamically discovered and registered at startup, making the client easily extensible.
+- **Centralized State Management with `StateManager`:**
+  - The `StateManager` is the _exclusive_ source of truth for all connection, session, and client-specific runtime state.
+  - It provides thread-safe, persistent session state that includes:
+    - Current connection details and authentication state (e.g., current nick, server, port, SSL status, SASL/NickServ info).
+    - Connection statistics (attempts, last error, etc.).
+    - List of joined channels and their join status.
+    - User preferences and client settings (e.g., logging levels, DCC settings).
+    - Message history and scrollback positions for each context.
+  - State is automatically persisted to disk and restored on startup, ensuring a seamless experience across client restarts.
+- **Dynamic Command System:** All core client commands are implemented in individual Python modules within a structured `commands/` directory. They are dynamically discovered using `pkgutil.walk_packages` and registered at startup, making the client easily extensible.
 - **Extensible Scripting System:** A powerful Python scripting system allows for deep customization. Scripts can register commands, subscribe to a wide range of events, and interact with the client through a rich `ScriptAPIHandler`.
 
 PyRC/
@@ -26,10 +26,10 @@ PyRC/
 │
 ├── pyrc_core/ # Core application package.
 │ ├── **init**.py
-│ ├── app_config.py # Handles loading and saving of all INI configuration values.
+│ ├── app_config.py # Centralized management of all application and server configurations.
 │ ├── context_manager.py # Manages windows/contexts (channels, queries, status).
 │ ├── event_manager.py # Dispatches events to the scripting system.
-│ ├── state_manager.py # Centralized, persistent state management for the client.
+│ ├── state_manager.py # Centralized, persistent, and validated state management for the client.
 │ │
 │ ├── client/ # Client-side logic and UI components.
 │ │ ├── **init**.py
@@ -39,22 +39,35 @@ PyRC/
 │ │ └── ui_manager.py # Manages the curses-based text user interface.
 │ │
 │ ├── commands/ # All built-in command implementations, dynamically loaded.
+│ │ ├── **init**.py
 │ │ ├── channel/ # Commands for channel operations (/join, /part, /kick, etc.).
+│ │ │ └── **init**.py
 │ │ ├── core/ # Essential client commands (/help).
+│ │ │ └── **init**.py
 │ │ ├── dcc/ # DCC subcommands (/dcc send, /dcc list, etc.).
+│ │ │ └── **init**.py
 │ │ ├── information/ # Commands for getting information (/who, /whois, etc.).
+│ │ │ └── **init**.py
 │ │ ├── server/ # Commands for server connection (/connect, /quit, etc.).
+│ │ │ └── **init**.py
 │ │ ├── ui/ # Commands for controlling the UI (/window, /split, etc.).
-│ │ └── user/ # Commands for user interaction (/msg, /query, /ignore, etc.).
+│ │ │ └── **init**.py
+│ │ ├── user/ # Commands for user interaction (/msg, /query, /ignore, etc.).
+│ │ │ └── **init**.py
+│ │ └── utility/ # Utility commands (/set, /rehash, /save, /clear, etc.).
+│ │ └── **init**.py
 │ │
 │ ├── dcc/ # DCC (Direct Client-to-Client) feature implementation.
+│ │ ├── **init**.py
 │ │ ├── dcc_manager.py # Main orchestrator for all DCC functionality.
 │ │ ├── dcc_protocol.py # Parses and formats DCC CTCP messages.
 │ │ ├── dcc_transfer.py # Base classes for DCC send/receive transfer logic.
 │ │ └── ... # Other DCC helper and manager modules.
 │ │
 │ ├── features/ # Self-contained, optional features.
+│ │ ├── **init**.py
 │ │ └── triggers/ # Implementation of the /on command trigger system.
+│ │ ├── **init**.py
 │ │ ├── trigger_commands.py
 │ │ └── trigger_manager.py
 │ │
@@ -66,6 +79,7 @@ PyRC/
 │ │ ├── registration_handler.py # Manages the NICK/USER registration sequence.
 │ │ ├── sasl_authenticator.py # Handles SASL PLAIN authentication.
 │ │ └── handlers/ # Specific handlers for different IRC commands/numerics.
+│ │ ├── **init**.py
 │ │ ├── membership_handlers.py
 │ │ ├── message_handlers.py
 │ │ └── ...
@@ -98,43 +112,42 @@ PyRC/
 
 ## Project Status
 
-**PyRC is a stable and mature IRC client** that continues to evolve with regular updates and improvements. The current focus is on enhancing stability, improving the user experience, and maintaining compatibility with modern IRC networks. Recent development has focused on robust state management, reliable session persistence, and improved IRCv3 support. We welcome contributions and feedback to help make PyRC even better.
+**PyRC is a stable and mature IRC client** that continues to evolve with regular updates and improvements. The current focus is on enhancing stability, improving the user experience, and maintaining compatibility with modern IRC networks. Recent development has focused on robust state management, reliable session persistence, and comprehensive IRCv3 support. We welcome contributions and feedback to help make PyRC even better.
 
-## Recent Changes
+## Recent Architectural Refactoring & Improvements
 
-### Bug Fixes and Stability Improvements
+This section highlights the significant architectural changes and robustness improvements implemented in recent development cycles.
 
-- **Improved UI Startup Flow:** Fixed an issue where the client would not automatically switch to an auto-joined channel on startup. The UI now reliably starts in the "Status" window and switches focus only after successful channel join.
-- **Enhanced Session Persistence:** Resolved a bug where the list of joined channels was not being correctly restored from the session state file, ensuring a consistent experience across restarts.
-- **Robust IRCv3 Support:** Improved message parsing for modern IRC servers, fixing issues with IRCv3 message tags and capability negotiation.
-- **Reliable State Management:** Fixed an `AttributeError` in the capability negotiator and improved overall state handling for more stable connections.
+- **Centralized Configuration (`AppConfig`):**
 
-**UI Improvements:**
+  - All application and server settings are now loaded and managed centrally by the `AppConfig` class. This ensures a single, consistent source of truth for configuration values across the client.
+  - Configuration is automatically loaded from `pyterm_irc_config.ini` and can be dynamically updated and saved in-client.
 
-- Updated sidebar color scheme with darker backgrounds (black) and cyan/green text for better readability
-- Fixed background color application in context list items
-- Improved full-width background coloring in sidebar
+- **Exclusive State Management (`StateManager`):**
 
-**State Management:**
+  - The `StateManager` is now the sole authority for all runtime state, including connection status, joined channels, user information, and message history.
+  - Features robust validation, thread-safe access, and automatic persistence to `state.json`, ensuring reliable session continuity and easier debugging.
 
-- Migrated nick attribute access to use state manager
-- Added comprehensive null checks for client and connection info
-- Implemented fallback to "UnknownNick" for all error cases
-- Enhanced state restoration to reliably maintain joined channels across sessions
+- **Dynamic Command System (`pkgutil`):**
 
-**Error Handling:**
+  - The command loading mechanism has been refactored to use `pkgutil.walk_packages`, enabling more reliable and extensible discovery of commands from nested directories within `pyrc_core/commands/`.
+  - This resolves issues with commands not being found and simplifies the addition of new command modules.
 
-- Improved error handling for UI drawing operations
-- Added defensive programming for curses window operations
-- Resolved all Pylance type checking errors
-- Added comprehensive error handling for IRC message parsing and capability negotiation
+- **Robust IRCv3 Feature Handling (CAP Negotiation & SASL):**
 
-**Other Recent Work:**
+  - **CAP Negotiator (`CapNegotiator`):** Implemented comprehensive timeout mechanisms to prevent hangs during capability negotiation. Enhanced state tracking and clearer coordination with SASL authentication.
+  - **SASL Authenticator (`SaslAuthenticator`):** Introduced step-based timeouts for SASL authentication flow, ensuring timely progression or failure. Improved error handling and defensive checks for credentials and CAP status.
+  - **Registration Handler (`RegistrationHandler`):** Refined the registration flow to wait for the full completion (or timeout) of CAP and SASL before proceeding with post-registration actions like channel joins and NickServ identification, leading to more stable connections.
 
-- DCC functionality (port range selection, advertised IP configuration, transfer cleanup)
-- Robust event-driven `/server` command
-- Enhanced `/help` system
-- Reliable headless testing framework
+- **Streamlined DCC Command Handling:**
+
+  - DCC commands have been refactored to be function-based within `pyrc_core/commands/dcc/`, simplifying their structure and integration into the command system.
+
+- **Enhanced Headless Testing Framework:**
+  - The headless test scripts (`scripts/test_headless.py`, `scripts/ai_api_test_script.py`) have been updated to align with the `StateManager` and `ScriptAPIHandler` paradigms.
+  - Tests now use event-driven waits and more robust state checks, making them more reliable and less prone to timing-related failures.
+
+These architectural improvements significantly enhance PyRC's stability, maintainability, and extensibility, laying a solid foundation for future development.
 
 ## Key Features
 
@@ -184,7 +197,7 @@ PyRC/
 - **UI Enhancements:**
   - Tab completion for commands and nicks.
   - Ctrl+Y/Ctrl+E scrolling in message windows.
-- **SSL/TLS Encryption:** Secure connections, with `verify_ssl_cert` option.
+  - SSL/TLS Encryption: Secure connections, with `verify_ssl_cert` option.
 
 ## Prerequisites
 
@@ -244,7 +257,7 @@ Download the latest release from the [Releases](https://github.com/edgeof8/PyRC/
 
 PyRC uses `pyterm_irc_config.ini` in its root directory. Copy `pyterm_irc_config.ini.example` and customize.
 
-**Key Config Sections & Settings:**
+**Key Config Sections & Settings (Managed by `AppConfig`):**
 
 - **`[Server.YourServerName]`**: Define multiple server profiles.
   - `address`, `port`, `ssl`, `nick`, `channels` (comma-separated).
@@ -269,7 +282,7 @@ PyRC uses `pyterm_irc_config.ini` in its root directory. Copy `pyterm_irc_config
   - `cleanup_enabled`, `cleanup_interval_seconds`, `transfer_max_age_seconds`.
   - DCC logging settings (`log_enabled`, `log_file`, etc.).
 
-Use `/set`, `/rehash`, `/save` in-client to manage configuration.
+Use `/set`, `/rehash`, `/save` in-client to manage configuration. These commands interact directly with the `AppConfig` instance to update and persist settings.
 
 ## Usage
 
@@ -376,7 +389,7 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ## Headless Operation
 
-Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), event management (`EventManager`), and the trigger system (if enabled via config) remain fully functional. Ideal for bots and AI integrations.
+Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional. Ideal for bots, AI integrations, and automated testing. The `scripts/test_headless.py` and `scripts/ai_api_test_script.py` scripts provide examples and a framework for such tests.
 
 ## Scripting System
 
@@ -450,68 +463,59 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 - Ctrl+Y/Ctrl+E: Scroll message buffer.
 - Ctrl+N / Ctrl+P: Switch windows.
 - Ctrl+U: Scroll user list.
-Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional. Ideal for bots, AI integrations, and automated testing. The `scripts/test_headless.py` script provides an example and a framework for such tests.
+  Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional. Ideal for bots, AI integrations, and automated testing. The `scripts/test_headless.py` script provides an example and a framework for such tests.
 
 ## State Management System
 
-PyRC's `StateManager` provides a robust, thread-safe solution for managing all client state with comprehensive validation, reliable persistence, and efficient change notifications. This core component ensures:
+PyRC's `StateManager` provides a robust, thread-safe, and persistent solution for managing all client state. It acts as the **single source of truth** for all connection, session, and client-specific runtime data, ensuring:
 
-- Single source of truth for all connection and session state
-- Predictable state transitions
-- Easier debugging and testing
-- Better separation of concerns
+- Predictable and consistent state across the application.
+- Easier debugging and testing due to centralized state.
+- Enhanced separation of concerns between data and logic.
 
 ### Key Features
 
-- **Robust State Validation**
-  - Comprehensive type checking and validation for all state updates
-  - Smart default values with automatic recovery from invalid states
-  - Immutable state snapshots for consistent state representation
-
-- **Efficient Change Notifications**
-  - Fine-grained subscription to specific state changes
-  - Batched updates to minimize UI redraws and improve performance
-  - Thread-safe event dispatching with guaranteed delivery order
-  - Automatic reconnection to state updates after client restart
-
-- **State Persistence**
-  - Automatic state loading from JSON file
-  - Configurable auto-save with interval
-  - Manual save capability
-  - Error handling for file operations
-
-- **State Validation**
-  - Extensible validator system with `StateValidator` base class
-  - Per-key validators
-  - Validation on state changes
-  - Bulk validation capability
-  - Error message support
-
-- **State Change Notifications**
-  - Event-based notification system
-  - Support for key-specific and global handlers
-  - Detailed change events with metadata
-  - Error handling for handlers
+- **Centralized State Storage:** Holds all critical client state, including `ConnectionInfo` (server, nick, channels, passwords, SASL details), `ConnectionState` (DISCONNECTED, CONNECTING, REGISTERED, etc.), and various runtime statistics.
+- **Robust State Validation:**
+  - Employs an extensible validator system (`StateValidator`) to ensure data integrity.
+  - Performs comprehensive type checking and validation for all state updates, including complex dataclasses like `ConnectionInfo`.
+  - Provides clear error messages for invalid configurations or state transitions.
+- **Efficient Change Notifications:**
+  - Implements an event-based notification system (`StateChange`) for fine-grained updates.
+  - Supports both key-specific and global handlers, allowing components to react precisely to relevant state changes.
+  - Ensures thread-safe event dispatching.
+- **Reliable State Persistence:**
+  - Automatically loads state from a JSON file (`state.json`) on startup.
+  - Offers configurable auto-save intervals and manual save capabilities.
+  - Handles file operation errors gracefully to prevent data corruption.
+- **Thread Safety:** All state access and modification methods are thread-safe, protecting against race conditions in a multi-threaded environment.
 
 ### Usage Example
 
 ```python
-from state_manager import StateManager, StateValidator
+from pyrc_core.state_manager import StateManager, StateValidator, ConnectionInfo, ConnectionState
+from typing import Optional, Dict, Any
 
-# Create a custom validator
-class NumberValidator(StateValidator[int]):
-    def __init__(self, min_value: int, max_value: int):
-        self.min_value = min_value
-        self.max_value = max_value
+# Example: A custom validator for connection details
+class ConnectionInfoValidator(StateValidator[ConnectionInfo]):
+    def validate(self, value: ConnectionInfo) -> bool:
+        value.config_errors.clear()
+        is_valid = True
+        if not value.server:
+            value.config_errors.append("Server address is required")
+            is_valid = False
+        if not value.nick:
+            value.config_errors.append("Nickname is required")
+            is_valid = False
+        # Example: SASL validation (simplified)
+        if value.sasl_username and not value.sasl_password:
+            value.config_errors.append("SASL username provided but no password")
+            is_valid = False
+        return is_valid
 
-    def validate(self, value: int) -> bool:
-        return self.min_value <= value <= self.max_value
-
-    def get_error_message(self, value: int) -> Optional[str]:
-        if value < self.min_value:
-            return f"Value {value} is below minimum {self.min_value}"
-        if value > self.max_value:
-            return f"Value {value} is above maximum {self.max_value}"
+    def get_error_message(self, value: ConnectionInfo) -> Optional[str]:
+        if value.config_errors:
+            return "\n".join(value.config_errors)
         return None
 
 # Initialize state manager
@@ -522,45 +526,44 @@ state_manager = StateManager(
     validate_on_change=True
 )
 
-# Register a validator
-state_manager.register_validator("score", NumberValidator(0, 100))
+# Register a validator for connection information
+state_manager.register_validator("connection_info", ConnectionInfoValidator())
 
-# Register change handlers
-def on_score_change(change):
-    print(f"Score changed from {change.old_value} to {change.new_value}")
+# Register a handler for connection state changes
+def on_connection_state_change(change: StateChange[ConnectionState]):
+    print(f"Connection state changed from {change.old_value.name if change.old_value else 'N/A'} to {change.new_value.name}")
+    if change.new_value == ConnectionState.CONFIG_ERROR:
+        errors = change.metadata.get("config_errors", [])
+        print(f"Configuration errors: {'; '.join(errors)}")
 
-state_manager.register_change_handler("score", on_score_change)
+state_manager.register_change_handler("connection_state", on_connection_state_change)
 
-# Use the state manager
-state_manager.set("score", 50)  # Valid value
-state_manager.set("score", 150)  # Invalid value, will be rejected
-score = state_manager.get("score", default=0)  # Get current score
+# Example usage: Setting and validating connection info
+initial_conn_info = ConnectionInfo(server="irc.example.com", port=6667, ssl=False, nick="TestNick")
+if state_manager.set_connection_info(initial_conn_info):
+    print("Connection info set successfully.")
+else:
+    print("Failed to set connection info due to validation errors.")
+
+# Attempt to set invalid connection info (missing nick)
+invalid_conn_info = ConnectionInfo(server="irc.bad.com", port=6667, ssl=False, nick="")
+if not state_manager.set_connection_info(invalid_conn_info):
+    print(f"Attempted to set invalid connection info. Errors: {state_manager.get_config_errors()}")
+
+# Get current state
+current_nick = state_manager.get_connection_info().nick if state_manager.get_connection_info() else "N/A"
+current_state = state_manager.get_connection_state().name
+print(f"Current nick: {current_nick}, Current state: {current_state}")
 ```
 
-### Best Practices
+### Best Practices for State Management
 
-1. **Validation**
-
-   - Always validate state changes
-   - Use specific validators for different types
-   - Provide clear error messages
-
-2. **Persistence**
-
-   - Enable auto-save for critical state
-   - Use appropriate save intervals
-   - Handle file operation errors
-
-3. **Change Handling**
-
-   - Register handlers for important state changes
-   - Use global handlers for system-wide changes
-   - Handle errors in change handlers
-
-4. **Thread Safety**
-   - Use the provided thread-safe methods
-   - Don't bypass the state manager
-   - Handle concurrent access properly
+1. **Access State via `StateManager`:** Always use `state_manager.get()` and `state_manager.set()` (or specific helper methods like `set_connection_info()`) to interact with state. Avoid direct attribute access on `_state` dictionary.
+2. **Utilize `ConnectionInfo`:** For connection-specific details, retrieve the `ConnectionInfo` dataclass via `state_manager.get_connection_info()`. Modify its attributes and then call `state_manager.set_connection_info()` to persist changes and trigger validation.
+3. **Handle Validation Results:** When setting state that has a registered validator, check the boolean return value of `set()` or `set_connection_info()`. If `False`, retrieve and display `config_errors` from the `StateManager`.
+4. **Subscribe to Changes:** Register change handlers for specific keys (`register_change_handler`) or for all changes (`register_global_handler`) to react to state updates in a decoupled manner.
+5. **Thread Safety:** Remember that `StateManager` methods are thread-safe. When reading or modifying state from different threads, always use the provided methods.
+6. **Error Handling:** Implement robust error handling around state interactions, especially when dealing with user input or external data that might lead to invalid states.
 
 ## Contributing
 
