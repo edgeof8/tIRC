@@ -1,11 +1,15 @@
 # pyrc_core/commands/command_handler.py
 import logging
-import os
+import os # Keep for os.path.abspath if still needed, but not for walk
 import importlib
+import pkgutil # Import pkgutil
 from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Callable, Any
+
+# Import the commands package itself to access __path__ and __name__
+import pyrc_core.commands
+
 from pyrc_core.features.triggers.trigger_commands import TriggerCommands
 from pyrc_core.context_manager import ChannelJoinStatus, Context
-# No direct imports from app_config here; access via client.config
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -27,88 +31,75 @@ class CommandHandler:
             "on": lambda client, args_str: self.trigger_commands.handle_on_command(args_str),
         }
 
-        # --- START OF FIX ---
-        # Corrected path to point to this file's directory, which is inside pyrc_core/commands/
-        commands_dir_path = os.path.dirname(os.path.abspath(__file__))
-        logger.info(f"Starting dynamic command loading from: {commands_dir_path}")
+        logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
 
-        all_py_files_found = []
-        for root, _, files in os.walk(commands_dir_path):
-            for filename in files:
-                if filename.endswith(".py") and filename != "__init__.py":
-                    full_path = os.path.join(root, filename)
-                    all_py_files_found.append(full_path)
-        logger.debug(f"All .py files discovered by os.walk for command loading: {all_py_files_found}")
+        for module_loader, module_name, is_pkg in pkgutil.walk_packages(
+            path=pyrc_core.commands.__path__,  # Path to the commands package
+            prefix=pyrc_core.commands.__name__ + '.',  # Prefix for full module names
+            onerror=lambda x: logger.error(f"Error importing module during walk_packages: {x}")
+        ):
+            if is_pkg:
+                logger.debug(f"Skipping package: {module_name}")
+                continue
 
+            # module_name is the full Python path to the module, e.g., 'pyrc_core.commands.core.help_command'
+            python_module_name = module_name
 
-        for root, _, files in os.walk(commands_dir_path):
-            for filename in files:
-                if filename.endswith(".py") and filename != "__init__.py":
-                    module_path_on_disk = os.path.join(root, filename)
-                    logger.debug(f"Processing potential command module: {module_path_on_disk}")
+            try:
+                logger.debug(f"Attempting to import module: {python_module_name}")
+                module = importlib.import_module(python_module_name)
+                logger.debug(f"Successfully imported module: {python_module_name}")
 
-                    relative_path_from_commands_dir = os.path.relpath(module_path_on_disk, commands_dir_path)
-                    module_name_parts = relative_path_from_commands_dir[:-3].split(os.sep)
+                if hasattr(module, 'COMMAND_DEFINITIONS'):
+                    logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}")
+                    for cmd_def in module.COMMAND_DEFINITIONS:
+                        cmd_name = cmd_def["name"].lower()
+                        handler_name_str = cmd_def["handler"]
+                        handler_func = getattr(module, handler_name_str, None)
 
-                    # Corrected module prefix for the new package structure
-                    python_module_name = "pyrc_core.commands." + ".".join(module_name_parts)
-                    # --- END OF FIX ---
+                        if handler_func and callable(handler_func):
+                            if cmd_name in self.command_map:
+                                logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                            self.command_map[cmd_name] = handler_func
 
-                    try:
-                        logger.debug(f"Attempting to import module: {python_module_name}")
-                        module = importlib.import_module(python_module_name)
-                        logger.debug(f"Successfully imported module: {python_module_name}")
-
-                        if hasattr(module, 'COMMAND_DEFINITIONS'):
-                            logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}")
-                            for cmd_def in module.COMMAND_DEFINITIONS:
-                                cmd_name = cmd_def["name"].lower()
-                                handler_name_str = cmd_def["handler"]
-                                handler_func = getattr(module, handler_name_str, None)
-
-                                if handler_func and callable(handler_func):
-                                    if cmd_name in self.command_map:
-                                        logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
-                                    self.command_map[cmd_name] = handler_func
-
-                                    if "help" in cmd_def and cmd_def["help"]:
-                                        help_info = cmd_def["help"]
-                                        self.registered_command_help[cmd_name] = {
-                                            "help_text": f"{help_info['usage']}\n  {help_info['description']}",
-                                            "aliases": [a.lower() for a in help_info.get("aliases", [])],
-                                            "script_name": "core",
-                                            "is_alias": False,
-                                            "module_path": python_module_name
-                                        }
-                                        for alias_raw in help_info.get("aliases", []):
-                                            alias = alias_raw.lower()
-                                            if alias in self.command_map:
-                                                 logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
-                                            self.command_map[alias] = handler_func
-                                            self.registered_command_help[alias] = {
-                                                "help_text": f"{help_info['usage']}\n  {help_info['description']}",
-                                                "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
-                                                "script_name": "core",
-                                                "is_alias": True,
-                                                "primary_command": cmd_name,
-                                                "module_path": python_module_name
-                                            }
-                                    logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}.")
-                                else:
-                                    logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
+                            if "help" in cmd_def and cmd_def["help"]:
+                                help_info = cmd_def["help"]
+                                self.registered_command_help[cmd_name] = {
+                                    "help_text": f"{help_info['usage']}\n  {help_info['description']}",
+                                    "aliases": [a.lower() for a in help_info.get("aliases", [])],
+                                    "script_name": "core",
+                                    "is_alias": False,
+                                    "module_path": python_module_name
+                                }
+                                for alias_raw in help_info.get("aliases", []):
+                                    alias = alias_raw.lower()
+                                    if alias in self.command_map:
+                                         logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                                    self.command_map[alias] = handler_func
+                                    self.registered_command_help[alias] = {
+                                        "help_text": f"{help_info['usage']}\n  {help_info['description']}",
+                                        "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
+                                        "script_name": "core",
+                                        "is_alias": True,
+                                        "primary_command": cmd_name,
+                                        "module_path": python_module_name
+                                    }
+                            logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}.")
                         else:
-                             logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
+                            logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
+                else:
+                     logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
 
-                    except ImportError as e:
-                        logger.error(f"Failed to import module {python_module_name}: {e}", exc_info=True)
-                    except Exception as e:
-                        logger.error(f"Error processing module {python_module_name}: {e}", exc_info=True)
+            except ImportError as e:
+                logger.error(f"Failed to import module {python_module_name}: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Error processing module {python_module_name}: {e}", exc_info=True)
         logger.info("Finished dynamic command loading.")
 
         self.command_primary_map = {}
         seen_handlers = {}
         for cmd_name, handler_func in self.command_map.items():
-            if cmd_name in ["help", "h"]:
+            if cmd_name in ["help", "h"]: # Assuming "help" and "h" are handled specially or are core
                 continue
 
             if handler_func in seen_handlers:
@@ -117,7 +108,6 @@ class CommandHandler:
             else:
                 seen_handlers[handler_func] = cmd_name
 
-    # ... rest of the CommandHandler class is unchanged ...
     def get_available_commands_for_tab_complete(self) -> List[str]:
         core_cmds = ["/" + cmd for cmd in self.command_map.keys()]
         script_cmds_data = (
@@ -159,12 +149,10 @@ class CommandHandler:
 
     def process_user_command(self, line: str) -> bool:
         self._processing_depth += 1
-        if self._processing_depth > 1: # Basic re-entrancy check
-            # More sophisticated checks might involve checking the exact line or command type
-            # to allow certain benign re-entrant calls if absolutely necessary.
+        if self._processing_depth > 1:
             logger.error(f"RE-ENTRANCY DETECTED in process_user_command for line: '{line}'. Current depth: {self._processing_depth}. Aborting this call.")
             self._processing_depth -= 1
-            return False # Indicate command was not processed due to re-entrancy
+            return False
 
         try:
             if not line.startswith("/"):
@@ -208,7 +196,6 @@ class CommandHandler:
                     script_handler = script_cmd_data["handler"]
                     event_data_for_script = {
                         "client_logic_ref": self.client, "raw_line": line, "command": cmd,
-                        "args_str": args_str,
                         "args_str": args_str,
                         "client_nick": (lambda:
                             (conn_info := self.client.state_manager.get_connection_info()) and
