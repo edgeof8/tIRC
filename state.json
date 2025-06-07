@@ -25,7 +25,6 @@
         "config_errors": [],
         "user_modes": [],
         "currently_joined_channels": [
-            "#libera",
             "#pyrc"
         ],
         "last_attempted_nick_change": null

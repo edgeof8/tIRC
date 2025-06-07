@@ -49,7 +49,38 @@ class ConnectionState(Enum):
 
 @dataclass
 class ConnectionInfo:
-    """Holds all state related to a single server connection."""
+    """
+    Holds all dynamic runtime state related to a single server connection.
+    This dataclass is managed by `StateManager` and is distinct from `ServerConfig`
+    which holds static configuration loaded from `AppConfig`.
+
+    Attributes:
+        server (str): The server address (hostname or IP).
+        port (int): The port to connect to.
+        ssl (bool): True if SSL/TLS should be used for the connection.
+        nick (str): The current nickname in use.
+        username (Optional[str]): The username sent during USER registration.
+        realname (Optional[str]): The real name sent during USER registration.
+        server_password (Optional[str]): Password for connecting to the server.
+        nickserv_password (Optional[str]): Password for NickServ identification.
+        sasl_username (Optional[str]): Username for SASL PLAIN authentication.
+        sasl_password (Optional[str]): Password for SASL PLAIN authentication.
+        verify_ssl_cert (bool): True to verify SSL certificates.
+        auto_connect (bool): True if this server was configured for auto-connect.
+        initial_channels (List[str]): Channels configured to auto-join.
+        desired_caps (List[str]): IRCv3 capabilities requested.
+
+        # Runtime state (not from AppConfig)
+        last_error (Optional[str]): The last error message encountered during connection.
+        last_error_time (Optional[datetime]): Timestamp of the last error.
+        connection_attempts (int): Count of connection attempts.
+        last_connection_attempt (Optional[datetime]): Timestamp of the last connection attempt.
+        last_successful_connection (Optional[datetime]): Timestamp of the last successful connection.
+        config_errors (List[str]): List of configuration validation errors.
+        user_modes (List[str]): Current user modes (e.g., '+i', '+w').
+        currently_joined_channels (Set[str]): Set of channels currently joined.
+        last_attempted_nick_change (Optional[str]): The last nickname attempted to change to.
+    """
     server: str
     port: int
     ssl: bool
@@ -64,14 +95,13 @@ class ConnectionInfo:
     auto_connect: bool = False
     initial_channels: List[str] = field(default_factory=list)
     desired_caps: List[str] = field(default_factory=list)
-    # Runtime state
+    # Runtime state (not from config)
     last_error: Optional[str] = None
     last_error_time: Optional[datetime] = None
     connection_attempts: int = 0
     last_connection_attempt: Optional[datetime] = None
     last_successful_connection: Optional[datetime] = None
     config_errors: List[str] = field(default_factory=list)
-    # Runtime state not from config
     user_modes: List[str] = field(default_factory=list)
     currently_joined_channels: Set[str] = field(default_factory=set)
     last_attempted_nick_change: Optional[str] = None
@@ -79,8 +109,17 @@ class ConnectionInfo:
 
 @dataclass
 class StateChange(Generic[T]):
-    """Represents a state change event."""
+    """
+    Represents a state change event, dispatched by the `StateManager`.
 
+    Attributes:
+        key (str): The key of the state that changed.
+        old_value (Optional[T]): The value of the state before the change.
+        new_value (Optional[T]): The new value of the state after the change.
+        change_type (StateChangeType): The type of change (e.g., CREATED, UPDATED, DELETED).
+        timestamp (datetime): The time when the change occurred.
+        metadata (Dict[str, Any]): Additional metadata related to the change.
+    """
     key: str
     old_value: Optional[T]
     new_value: Optional[T]
@@ -90,59 +129,97 @@ class StateChange(Generic[T]):
 
 
 class StateValidator(Generic[T]):
-    """Base class for state validators."""
+    """
+    Base class for state validators. Subclasses implement specific validation logic
+    for different parts of the application state.
+    """
 
     def validate(self, value: T) -> bool:
-        """Validate a state value."""
+        """
+        Validates a given state value.
+
+        Args:
+            value (T): The state value to validate.
+
+        Returns:
+            bool: True if the value is valid, False otherwise.
+        """
         return True
 
     def get_error_message(self, value: T) -> Optional[str]:
-        """Get error message for invalid state."""
+        """
+        Returns an error message if the state value is invalid.
+
+        Args:
+            value (T): The state value that failed validation.
+
+        Returns:
+            Optional[str]: A string describing the validation error, or None if no error.
+        """
         return None
 
 
 class ConnectionStateValidator(StateValidator[ConnectionInfo]):
-    """Validator for connection information."""
+    """
+    A specific validator for the `ConnectionInfo` dataclass, ensuring that
+    connection parameters are valid before being set in the `StateManager`.
+    """
 
     def validate(self, value: ConnectionInfo) -> bool:
-        """Validate connection information."""
+        """
+        Validates the provided `ConnectionInfo` object.
+        Populates `value.config_errors` with specific error messages.
+
+        Args:
+            value (ConnectionInfo): The connection information to validate.
+
+        Returns:
+            bool: True if the `ConnectionInfo` is valid, False otherwise.
+        """
         value.config_errors.clear()  # Clear previous errors
 
         if not value.server:
-            value.config_errors.append("Server address is required")
-            return False
+            value.config_errors.append("Server address is required.")
 
-        if not value.port or value.port < 1 or value.port > 65535:
+        if not value.port or not (1 <= value.port <= 65535):
             value.config_errors.append(
-                f"Port must be between 1 and 65535 (got {value.port})"
+                f"Port must be between 1 and 65535 (got {value.port})."
             )
-            return False
 
         if not value.nick:
-            value.config_errors.append("Nickname is required")
-            return False
+            value.config_errors.append("Nickname is required.")
 
         # Validate SSL configuration
         if value.ssl and value.port not in [6697, 6698, 6699]:
             value.config_errors.append(
-                f"SSL typically uses ports 6697-6699 (got {value.port})"
+                f"SSL typically uses ports 6697-6699 (got {value.port})."
             )
-            return False
 
         # Validate SASL configuration
         if value.sasl_username and not value.sasl_password:
-            value.config_errors.append("SASL username provided but no password")
-            return False
+            value.config_errors.append("SASL username provided but no password.")
 
         # Validate NickServ configuration
+        # Note: NickServ can be used without a username if the server allows it,
+        # but typically it's used with a registered username. This check
+        # ensures consistency if a password is given but no username to associate it with.
         if value.nickserv_password and not value.username:
-            value.config_errors.append("NickServ password provided but no username")
-            return False
+            value.config_errors.append("NickServ password provided but no username for registration.")
 
-        return True
+        return not bool(value.config_errors)
+
 
     def get_error_message(self, value: ConnectionInfo) -> Optional[str]:
-        """Get error message for invalid connection info."""
+        """
+        Retrieves a consolidated error message from the `ConnectionInfo` object's
+        `config_errors` list.
+
+        Args:
+            value (ConnectionInfo): The `ConnectionInfo` object containing validation errors.
+
+        Returns:
+            Optional[str]: A newline-separated string of error messages, or None if no errors.
+        """
         if value.config_errors:
             return "\n".join(value.config_errors)
         return None

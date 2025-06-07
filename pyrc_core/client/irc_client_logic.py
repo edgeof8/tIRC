@@ -82,6 +82,7 @@ class IRCClient_Logic:
         self.dcc_manager = DCCManager(self, self.event_manager, self.config)
         self.command_handler = CommandHandler(self)
         self.trigger_manager = TriggerManager(os.path.join(self.config.BASE_DIR, "config")) if self.config.enable_trigger_system else None
+        self.cap_negotiator: Optional[CapNegotiator] = None
         self.state_ui_handler = StateChangeUIHandler(self)
 
         # Register event handler for CLIENT_READY to ensure UI switches to joined channel
@@ -665,9 +666,10 @@ class IRCClient_Logic:
                     context_name=current_active_name_str or "Status",
                 )
 
-    def is_cap_negotiation_pending(self) -> bool: # This method name is fine
+    def is_cap_negotiation_pending(self) -> bool:
+        """Check if CAP negotiation is still pending."""
         # --- MODIFICATION START ---
-        return self.cap_negotiator.cap_negotiation_pending if self.cap_negotiator else False
+        return self.cap_negotiator.cap_negotiation_pending if self.cap_negotiation else False
         # --- MODIFICATION END ---
 
     def is_sasl_completed(self) -> bool:

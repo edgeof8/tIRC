@@ -76,7 +76,26 @@ DEFAULT_DCC_LOG_BACKUP_COUNT = 3
 
 @dataclass
 class ServerConfig:
-    """A simple data container for a single server's configuration."""
+    """
+    A dataclass to hold the configuration for a single IRC server.
+
+    Attributes:
+        server_id (str): Unique identifier for this server configuration.
+        address (str): The server address (hostname or IP).
+        port (int): The port to connect to.
+        ssl (bool): True if SSL/TLS should be used for the connection.
+        nick (str): The primary nickname to use on this server.
+        channels (List[str]): A list of channels to auto-join upon successful registration.
+        username (Optional[str]): The username to send during USER registration. Defaults to `nick`.
+        realname (Optional[str]): The real name to send during USER registration. Defaults to `nick`.
+        server_password (Optional[str]): Password for connecting to the server (if required).
+        nickserv_password (Optional[str]): Password for NickServ identification (if applicable).
+        sasl_username (Optional[str]): Username for SASL PLAIN authentication.
+        sasl_password (Optional[str]): Password for SASL PLAIN authentication.
+        verify_ssl_cert (bool): True to verify SSL certificates, False to bypass. Defaults to True.
+        auto_connect (bool): True if this server should be automatically connected to on startup.
+        desired_caps (List[str]): A list of IRCv3 capabilities to request.
+    """
     server_id: str
     address: str
     port: int
@@ -93,33 +112,30 @@ class ServerConfig:
     auto_connect: bool = False
     desired_caps: List[str] = field(default_factory=list)
 
-    def __post_init__(self):
-        """Set default values based on other fields after initialization."""
+    def __post_init__(self) -> None:
+        """
+        Post-initialization processing to set default values for username and realname
+        if not explicitly provided, and to handle SASL credential defaulting.
+        """
         if self.username is None:
             self.username = self.nick
         if self.realname is None:
             self.realname = self.nick
-        # Refined SASL default logic:
-        # Only default sasl_username to nick if sasl_password is also being defaulted from nickserv_password
-        # OR if sasl_username is explicitly set but sasl_password is not (which is an error caught by validator).
-        # The main goal is to avoid defaulting sasl_username if there's no corresponding password.
 
-        # If sasl_password is not set, try to use nickserv_password for it.
+        # SASL credential defaulting logic:
+        # If SASL password is not set but NickServ password is, use NickServ password for SASL.
+        # If SASL username is also not set, default it to the client's nick.
         if self.sasl_password is None and self.nickserv_password is not None:
             self.sasl_password = self.nickserv_password
-            # If we just defaulted sasl_password, and sasl_username is still None,
-            # then it's reasonable to default sasl_username to nick.
             if self.sasl_username is None:
                 self.sasl_username = self.nick
-        elif self.sasl_username is not None and self.sasl_password is None and self.nickserv_password is None:
-            # This is the problematic case: sasl_username is set (either directly or defaulted from nick if old logic was used)
-            # but no password source. The validator will catch this.
-            # If sasl_username was explicitly set in INI but password wasn't, this is a user config error.
-            # If sasl_username was None, and nickserv_password was also None, then sasl_username should remain None.
-            pass # Let validator handle if sasl_username is set but sasl_password is not.
+        # If SASL password is set but SASL username is not, default SASL username to the client's nick.
+        # This covers cases where only sasl_password is provided in config.
         elif self.sasl_username is None and self.sasl_password is not None:
-            # If password is set but username is not, default username to nick.
             self.sasl_username = self.nick
+        # If sasl_username is provided but sasl_password is not (and no nickserv_password to default from),
+        # this is an incomplete SASL configuration. The StateValidator will catch this as an error.
+        # No action needed here, as the validator is responsible for flagging invalid states.
 
 # --- Main Configuration Class ---
 
