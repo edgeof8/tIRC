@@ -88,7 +88,7 @@ class RegistrationHandler:
         if not self.nick_user_sent:
             self._proceed_with_nick_user_registration()
 
-        if self.cap_negotiator and self.cap_negotiator.is_cap_negotiation_pending():
+        if self.cap_negotiator and self.cap_negotiator.cap_negotiation_pending:
             self.cap_negotiator.on_cap_end_confirmed()
 
         if self.cap_negotiator:

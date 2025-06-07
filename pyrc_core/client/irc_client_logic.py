@@ -665,8 +665,10 @@ class IRCClient_Logic:
                     context_name=current_active_name_str or "Status",
                 )
 
-    def is_cap_negotiation_pending(self) -> bool:
-        return self.cap_negotiator.is_cap_negotiation_pending()
+    def is_cap_negotiation_pending(self) -> bool: # This method name is fine
+        # --- MODIFICATION START ---
+        return self.cap_negotiator.cap_negotiation_pending if self.cap_negotiator else False
+        # --- MODIFICATION END ---
 
     def is_sasl_completed(self) -> bool:
         return (

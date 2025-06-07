@@ -24,7 +24,9 @@
         "last_successful_connection": null,
         "config_errors": [],
         "user_modes": [],
-        "currently_joined_channels": [],
+        "currently_joined_channels": [
+            "#pyrc"
+        ],
         "last_attempted_nick_change": null
     },
     "last_error": "SASL username provided but no password",

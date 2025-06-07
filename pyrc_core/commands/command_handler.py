@@ -33,11 +33,15 @@ class CommandHandler:
 
         logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
 
+        logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
+        logger.info(f"pkgutil.walk_packages path: {pyrc_core.commands.__path__}, prefix: {pyrc_core.commands.__name__ + '.'}")
+
         for module_loader, module_name, is_pkg in pkgutil.walk_packages(
             path=pyrc_core.commands.__path__,  # Path to the commands package
             prefix=pyrc_core.commands.__name__ + '.',  # Prefix for full module names
             onerror=lambda x: logger.error(f"Error importing module during walk_packages: {x}")
         ):
+            logger.debug(f"Discovered module: {module_name}, is_pkg: {is_pkg}")
             if is_pkg:
                 logger.debug(f"Skipping package: {module_name}")
                 continue
@@ -51,11 +55,12 @@ class CommandHandler:
                 logger.debug(f"Successfully imported module: {python_module_name}")
 
                 if hasattr(module, 'COMMAND_DEFINITIONS'):
-                    logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}")
+                    logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}. Definitions: {getattr(module, 'COMMAND_DEFINITIONS')}")
                     for cmd_def in module.COMMAND_DEFINITIONS:
                         cmd_name = cmd_def["name"].lower()
                         handler_name_str = cmd_def["handler"]
                         handler_func = getattr(module, handler_name_str, None)
+                        logger.debug(f"Processing command definition: name='{cmd_name}', handler='{handler_name_str}'")
 
                         if handler_func and callable(handler_func):
                             if cmd_name in self.command_map:
