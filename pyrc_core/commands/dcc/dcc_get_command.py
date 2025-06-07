@@ -1,63 +1,78 @@
+# pyrc_core/commands/dcc/dcc_get_command.py
 import argparse
 import logging
-from typing import TYPE_CHECKING, List, Dict
-
-from pyrc_core.commands.dcc.dcc_command_base import DCCCommandHandler, DCCCommandResult
+from typing import TYPE_CHECKING, List, Dict, Any
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.commands.dcc.get")
 
-class DCCGetCommandHandler(DCCCommandHandler):
+COMMAND_NAME = "get"
+COMMAND_ALIASES: List[str] = []
+COMMAND_HELP: Dict[str, str] = {
+    "usage": "/dcc get <nick> \"<filename>\" --token <token>",
+    "description": "Accepts a passive (reverse) DCC SEND offer from a specified nickname and filename, using a provided token.",
+    "aliases": "None"
+}
+
+def _handle_dcc_error(client_logic: 'IRCClient_Logic', message: str, context_name: str, log_level: int = logging.ERROR, exc_info: bool = False):
+    """Helper to log and display DCC command errors."""
+    logger.log(log_level, message, exc_info=exc_info)
+    client_logic.add_message(message, "error", context_name=context_name)
+
+def _ensure_dcc_context(client_logic: 'IRCClient_Logic', dcc_context_name: str):
+    """Helper to ensure DCC context is active."""
+    if client_logic.context_manager.active_context_name != dcc_context_name:
+        client_logic.switch_active_context(dcc_context_name)
+
+def handle_dcc_get_command(client_logic: 'IRCClient_Logic', cmd_args: List[str], active_context_name: str, dcc_context_name: str):
     """
-    Handles the /dcc get command, used to accept passive DCC SEND offers.
-    Inherits common DCC command functionality from DCCCommandHandler.
+    Handles the /dcc get command.
+    Parses arguments and attempts to accept a passive DCC offer.
     """
-    command_name: str = "get"
-    command_aliases: List[str] = []
-    command_help: Dict[str, str] = {
-        "usage": "/dcc get <nick> \"<filename>\" --token <token>",
-        "description": "Accepts a passive (reverse) DCC SEND offer from a specified nickname and filename, using a provided token.",
-        "aliases": "None"
-    }
+    dcc_m = client_logic.dcc_manager
+    if not dcc_m:
+        _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
+        return
+    if not dcc_m.dcc_config.get("enabled"):
+        _handle_dcc_error(client_logic, f"DCC is currently disabled. Cannot use /dcc {COMMAND_NAME}.", active_context_name)
+        return
 
-    def __init__(self, client_logic: 'IRCClient_Logic'):
-        super().__init__(client_logic)
+    parser = argparse.ArgumentParser(prog=f"/dcc {COMMAND_NAME}", add_help=False)
+    parser.add_argument("nick", help="Sender's nickname.")
+    parser.add_argument("filename", help="Filename offered (can be quoted).")
+    parser.add_argument("--token", required=True, help="The token provided with the passive offer.")
 
-    def execute(self, cmd_args: List[str]):
-        """
-        Executes the /dcc get command.
-        Parses arguments and attempts to accept a passive DCC offer.
-        """
-        if not self.check_dcc_available(self.command_name):
-            return
+    try:
+        parsed_args = parser.parse_args(cmd_args)
+        nick = parsed_args.nick
+        filename = parsed_args.filename.strip('"')
+        token = parsed_args.token
 
-        parser = argparse.ArgumentParser(prog=f"/dcc {self.command_name}", add_help=False)
-        parser.add_argument("nick", help="Sender's nickname.")
-        parser.add_argument("filename", help="Filename offered (can be quoted).")
-        parser.add_argument("--token", required=True, help="The token provided with the passive offer.")
-
-        try:
-            parsed_args = parser.parse_args(cmd_args)
-            nick = parsed_args.nick
-            filename = parsed_args.filename.strip('"')
-            token = parsed_args.token
-
-            if hasattr(self.dcc_m, "accept_passive_offer_by_token"):
-                result = self.dcc_m.accept_passive_offer_by_token(nick, filename, token)
-                if result.get("success"):
-                    self.client_logic.add_message(f"Attempting to GET '{filename}' from {nick} via passive DCC (ID: {result.get('transfer_id', 'N/A')[:8]}).", "system", context_name=self.dcc_context_name)
-                else:
-                    self.handle_error(f"DCC GET for '{filename}' from {nick} failed: {result.get('error', 'Unknown error')}", context_name=self.dcc_context_name)
+        if hasattr(dcc_m, "accept_passive_offer_by_token"):
+            result = dcc_m.accept_passive_offer_by_token(nick, filename, token)
+            if result.get("success"):
+                client_logic.add_message(f"Attempting to GET '{filename}' from {nick} via passive DCC (ID: {result.get('transfer_id', 'N/A')[:8]}).", "system", context_name=dcc_context_name)
             else:
-                self.handle_error(f"DCC GET command logic not fully implemented in DCCManager.", context_name=self.dcc_context_name)
+                _handle_dcc_error(client_logic, f"DCC GET for '{filename}' from {nick} failed: {result.get('error', 'Unknown error')}", dcc_context_name)
+        else:
+            _handle_dcc_error(client_logic, "DCC GET command logic not fully implemented in DCCManager.", dcc_context_name)
 
-            self.ensure_dcc_context()
+        _ensure_dcc_context(client_logic, dcc_context_name)
 
-        except argparse.ArgumentError as e:
-            self.handle_error(f"Error: {e.message}\nUsage: {self.command_help['usage']}", log_level=logging.WARNING)
-        except SystemExit:
-            self.client_logic.add_message(f"Usage: {self.command_help['usage']}", "error", context_name=self.active_context_name)
-        except Exception as e:
-            self.handle_error(f"Error processing /dcc {self.command_name}: {e}. Usage: {self.command_help['usage']}", exc_info=True)
+    except argparse.ArgumentError as e:
+        _handle_dcc_error(client_logic, f"Error: {e.message}\nUsage: {COMMAND_HELP['usage']}", active_context_name, log_level=logging.WARNING)
+    except SystemExit:
+        client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", "error", context_name=active_context_name)
+    except Exception as e:
+        _handle_dcc_error(client_logic, f"Error processing /dcc {COMMAND_NAME}: {e}. Usage: {COMMAND_HELP['usage']}", dcc_context_name, exc_info=True)
+
+# This function will be called by the main dcc_commands.py dispatcher
+def get_dcc_command_handler() -> Dict[str, Any]:
+    return {
+        "name": COMMAND_NAME,
+        "aliases": COMMAND_ALIASES,
+        "help": COMMAND_HELP,
+        "handler_function": handle_dcc_get_command
+    }
