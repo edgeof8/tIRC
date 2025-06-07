@@ -154,7 +154,6 @@ PyRC/
 │   │   ├── registration_handler.py  # Manages NICK/USER registration sequence.
 │   │   ├── sasl_authenticator.py    # Handles SASL PLAIN authentication.
 │   │   └── handlers/          # Specific handlers for different IRC commands/numerics.
-│   │   └── handlers/          # Specific handlers for different IRC commands/numerics.
 │   │       ├── __init__.py
 │   │       ├── membership_handlers.py
 │   │       └── message_handlers.py
@@ -217,12 +216,7 @@ This section highlights the significant architectural changes and robustness imp
   - This decomposition significantly improves separation of concerns, making the UI system more modular, testable, and easier to extend. `UIManager` now acts as an orchestrator for these components.
   - Fixed issues with color handling and window management through the introduction of `SafeCursesUtils`.
 
-- **Centralized Configuration (`AppConfig`):
-
-This section highlights the significant architectural changes and robustness improvements implemented in recent development cycles.
-
 - **Centralized Configuration (`AppConfig`):**
-
   - All application and server settings are now loaded and managed centrally by the `AppConfig` class. This ensures a single, consistent source of truth for configuration values across the client.
   - Configuration is automatically loaded from `pyterm_irc_config.ini` and can be dynamically updated and saved in-client.
 
@@ -237,9 +231,9 @@ This section highlights the significant architectural changes and robustness imp
   - Commands are now more modular and easier to maintain, with clear separation between different command categories.
 
 - **Enhanced IRCv3 Feature Handling:**
-  - **CAP Negotiator (`CapNegotiator`):** Now coordinated by `ConnectionOrchestrator`, it implements comprehensive timeout mechanisms to prevent hangs during capability negotiation. Enhanced state tracking and clearer coordination with SASL authentication.
-  - **SASL Authenticator (`SaslAuthenticator`):** Integrated with `ConnectionOrchestrator`, it features step-based timeouts for SASL authentication flow, ensuring timely progression or failure. Improved error handling and defensive checks for credentials and CAP status.
-  - **Registration Handler (`RegistrationHandler`):** Managed by `ConnectionOrchestrator`, it implements a refined registration flow that coordinates with CAP and SASL operations, ensuring proper sequencing of post-registration actions like channel joins and NickServ identification.
+  - **`CapNegotiator`:** Coordinated by `ConnectionOrchestrator`, now implements comprehensive timeout mechanisms to prevent hangs during capability negotiation, with enhanced state tracking and SASL coordination.
+  - **`SaslAuthenticator`:** Integrated with `ConnectionOrchestrator`, features step-based timeouts for SASL authentication flow, ensuring timely progression or failure, with improved error handling.
+  - **`RegistrationHandler`:** Managed by `ConnectionOrchestrator`, implements a refined registration flow that coordinates with CAP and SASL operations, ensuring proper sequencing of post-registration actions.
 
 - **Streamlined DCC Command Handling:**
 
