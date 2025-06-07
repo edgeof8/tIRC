@@ -1,5 +1,6 @@
 import base64
 import logging
+import threading # Import threading for Timer
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,7 +20,9 @@ class SaslAuthenticator:
 
         self.sasl_authentication_initiated: bool = False
         self.sasl_flow_active: bool = False
-        self.sasl_authentication_succeeded: Optional[bool] = None # None = not yet determined, True = success, False = failure
+        self.sasl_authentication_succeeded: Optional[bool] = None
+        self._sasl_timeout_timer: Optional[threading.Timer] = None
+        self.sasl_timeout_seconds: float = 20.0 # Timeout for SASL steps
 
     def _add_status_message(self, message: str, color_key: str = "system"):
         logger.info(f"[SaslAuthenticator Status via Client] {message}") # Keep local log
@@ -33,6 +36,30 @@ class SaslAuthenticator:
             self.client_logic_ref.add_message(
                 message, color_attr, context_name="Status"
             )
+
+    def _start_sasl_step_timeout(self):
+        self._cancel_sasl_step_timeout()
+        if self.sasl_timeout_seconds > 0:
+            logger.debug(f"SaslAuthenticator: Starting SASL step timeout ({self.sasl_timeout_seconds}s).")
+            self._sasl_timeout_timer = threading.Timer(self.sasl_timeout_seconds, self._handle_sasl_step_timeout)
+            self._sasl_timeout_timer.daemon = True
+            self._sasl_timeout_timer.start()
+
+    def _cancel_sasl_step_timeout(self):
+        if self._sasl_timeout_timer and self._sasl_timeout_timer.is_alive():
+            logger.debug("SaslAuthenticator: Cancelling SASL step timeout timer.")
+            self._sasl_timeout_timer.cancel()
+        self._sasl_timeout_timer = None
+
+    def _handle_sasl_step_timeout(self):
+        if not self.sasl_flow_active:
+            logger.debug("SaslAuthenticator: SASL step timeout, but flow no longer active.")
+            return
+
+        logger.warning("SaslAuthenticator: SASL authentication step timed out.")
+        self._add_status_message("SASL authentication timed out waiting for server response.", "error")
+        self._handle_failure("SASL step timed out")
+
 
     def has_credentials(self) -> bool:
         return bool(self.password)
@@ -72,9 +99,9 @@ class SaslAuthenticator:
             self._notify_completion(False) # Signal failure
             return
 
-        if not self.cap_negotiator.is_cap_enabled("sasl"):
-            self._add_status_message("SASL: 'sasl' CAP not enabled by server. Cannot start SASL.", color_key="error")
-            logger.error("SASL: Attempted to start SASL authentication but 'sasl' CAP is not enabled.")
+        if not self.cap_negotiator or not self.cap_negotiator.is_cap_enabled("sasl"): # Added check for self.cap_negotiator
+            self._add_status_message("SASL: 'sasl' CAP not enabled by server or CapNegotiator missing. Cannot start SASL.", color_key="error")
+            logger.error("SASL: Attempted to start SASL authentication but 'sasl' CAP is not enabled or CapNegotiator missing.")
             self._notify_completion(False)
             return
 
@@ -82,8 +109,9 @@ class SaslAuthenticator:
         logger.info("SASL: Initiating PLAIN authentication.")
         self.sasl_authentication_initiated = True
         self.sasl_flow_active = True
-        self.sasl_authentication_succeeded = None # Reset previous result
+        self.sasl_authentication_succeeded = None
         self.network_handler.send_authenticate("PLAIN")
+        self._start_sasl_step_timeout() # Start timeout for server's AUTHENTICATE + response
 
     def on_authenticate_challenge_received(self, challenge: str):
         # 1. Trigger: Called by `irc_protocol.handle_authenticate()` when an "AUTHENTICATE +" message (challenge)
@@ -114,14 +142,23 @@ class SaslAuthenticator:
         """Handles the AUTHENTICATE + challenge from the server."""
         if not self.sasl_flow_active:
             logger.warning("SASL: Received AUTHENTICATE challenge but SASL flow not active. Ignoring.")
+            self._cancel_sasl_step_timeout() # If flow is not active, cancel timer
             return
+
+        self._cancel_sasl_step_timeout() # Received response, cancel current step timer
 
         if challenge == "+":
             logger.info("SASL: Received '+' challenge. Sending PLAIN credentials.")
-            # Use current nick from client_logic_ref as authcid and authzid
-            current_client_nick = self.client_logic_ref.nick if self.client_logic_ref else "fallback_nick" # Added fallback for safety, though client_logic_ref should always exist
-            if not self.client_logic_ref:
+            current_client_nick = "fallback_nick" # Default
+            if self.client_logic_ref:
+                 current_client_nick = self.client_logic_ref.nick if self.client_logic_ref.nick else "UnknownNick"
+            else:
                 logger.error("SASL: client_logic_ref is None when trying to get current nick!")
+
+            if not self.password: # Should have been caught by has_credentials, but defensive
+                logger.error("SASL: Password is None when trying to send credentials!")
+                self._handle_failure("Internal error: Password missing for SASL PLAIN.")
+                return
 
             payload_str = f"{current_client_nick}\0{current_client_nick}\0{self.password}"
             payload_b64 = base64.b64encode(payload_str.encode("utf-8")).decode("utf-8")
@@ -131,6 +168,7 @@ class SaslAuthenticator:
             logger.debug(f"SASL: Sending AUTHENTICATE payload (masked): {masked_payload_b64}")
 
             self.network_handler.send_authenticate(payload_b64)
+            self._start_sasl_step_timeout() # Start timeout for server's SASL result numeric
         else:
             logger.warning(f"SASL: Received unexpected challenge: {challenge}. Aborting SASL.")
             self._add_status_message(f"SASL: Unexpected challenge '{challenge}'. Aborting.", color_key="error")
@@ -156,7 +194,13 @@ class SaslAuthenticator:
         #    - A status message indicating SASL success or failure is added to the UI.
         #    - Subsequent step: `CapNegotiator` handles the SASL completion, potentially sending "CAP END".
         #      Then, `RegistrationHandler` proceeds with NICK/USER if CAP/SASL phase is complete.
-        """Handles SASL success (900, 903) or failure (904, etc.) numerics."""
+        if not self.sasl_flow_active and self.sasl_authentication_succeeded is not None:
+            logger.info(f"SASL: Received SASL result ({message}), but flow no longer active and already determined. Ignoring.")
+            self._cancel_sasl_step_timeout()
+            return
+
+        self._cancel_sasl_step_timeout() # SASL result received, cancel timer
+
         if success:
             self._handle_success(message)
         else:
@@ -184,6 +228,7 @@ class SaslAuthenticator:
         self._add_status_message(f"SASL: Authentication FAILED. Reason: {reason}", color_key="error")
         self.sasl_authentication_succeeded = False
         self.sasl_flow_active = False
+        self._cancel_sasl_step_timeout() # Ensure timer is cancelled on any failure path
         self._notify_completion(False)
 
     def notify_sasl_cap_rejected(self):
@@ -194,10 +239,11 @@ class SaslAuthenticator:
         else:
             logger.info("SASL CAP was NAKed. SASL authentication will not proceed.")
             # Ensure state reflects that SASL won't happen
-            self.sasl_authentication_initiated = True # Attempted via CAP REQ
-            self.sasl_authentication_succeeded = False # Failed due to NAK
+            self.sasl_authentication_initiated = True
+            self.sasl_authentication_succeeded = False
             self.sasl_flow_active = False
-            self._notify_completion(False) # Notify CapNegotiator that this path is done (failed)
+            self._cancel_sasl_step_timeout()
+            self._notify_completion(False)
 
 
     def abort_authentication(self, reason: str):
@@ -208,6 +254,7 @@ class SaslAuthenticator:
             self._handle_failure(f"Aborted: {reason}")
         else:
             logger.info(f"SASL: Request to abort, but no SASL flow active. Reason: {reason}")
+            self._cancel_sasl_step_timeout()
 
     def _notify_completion(self, success: bool):
         """Notifies the CapNegotiator that the SASL flow has completed."""
@@ -219,6 +266,7 @@ class SaslAuthenticator:
     def reset_authentication_state(self):
         """Resets SASL state, typically on disconnect or new negotiation."""
         logger.debug("Resetting SaslAuthenticator state.")
+        self._cancel_sasl_step_timeout()
         self.sasl_authentication_initiated = False
         self.sasl_flow_active = False
         self.sasl_authentication_succeeded = None
