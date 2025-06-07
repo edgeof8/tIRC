@@ -669,7 +669,10 @@ class IRCClient_Logic:
     def is_cap_negotiation_pending(self) -> bool:
         """Check if CAP negotiation is still pending."""
         # --- MODIFICATION START ---
-        return self.cap_negotiator.cap_negotiation_pending if self.cap_negotiation else False
+        if self.cap_negotiator is not None:
+            return self.cap_negotiator.cap_negotiation_pending
+        else:
+            return False
         # --- MODIFICATION END ---
 
     def is_sasl_completed(self) -> bool:
