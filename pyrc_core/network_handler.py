@@ -1,14 +1,14 @@
 # START OF MODIFIED FILE: network_handler.py
+import asyncio
 import socket
 import ssl
-import threading
-import time
 import logging
+import concurrent.futures
 from typing import List, Optional, Set, TYPE_CHECKING
-from pyrc_core.app_config import AppConfig # Import AppConfig
+from pyrc_core.app_config import AppConfig
 from pyrc_core.state_manager import ConnectionState
 
-if TYPE_CHECKING:  # To avoid circular import with client_logic
+if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
 
 logger = logging.getLogger("pyrc.network")
@@ -17,88 +17,87 @@ logger = logging.getLogger("pyrc.network")
 class NetworkHandler:
     def __init__(self, client_logic_ref: "IRCClient_Logic"):
         self.client_logic_ref = client_logic_ref
-        self.config: AppConfig = client_logic_ref.config # Store reference to AppConfig
-        self.socket = None
+        self.config: AppConfig = client_logic_ref.config
         self.connected = False
         self.connection_params = None
-        self._network_thread = None
-        self._stop_event = threading.Event()
-        self._thread_shutdown_complete = threading.Event()
-        self._shutdown_timeout = 3.0  # 3 seconds timeout for shutdown
-        self._force_shutdown = False
+        self._network_task: Optional[asyncio.Task] = None
+        self._stop_event = asyncio.Event()
+        self._reader: Optional[asyncio.StreamReader] = None
+        self._writer: Optional[asyncio.StreamWriter] = None
         self.logger = logging.getLogger("pyrc.network")
-        self.reconnect_delay: int = self.config.reconnect_initial_delay # Use config
+        self.reconnect_delay: int = self.config.reconnect_initial_delay
         self.channels_to_join_on_connect: List[str] = []
         self.is_handling_nick_collision: bool = False
         self.buffer: bytes = b""
         self._disconnect_event_sent_for_current_session = False
 
-    def start(self) -> bool:
-        """Start the network handler and its thread."""
-        if self._network_thread is not None and self._network_thread.is_alive():
-            self.logger.warning("Network thread already running")
+    async def start(self) -> bool:
+        """Start the network handler and its asyncio task."""
+        if self._network_task is not None and not self._network_task.done():
+            self.logger.warning("Network task already running")
             return False
 
         self._stop_event.clear()
-        self._thread_shutdown_complete.clear()
-        self._force_shutdown = False
-        self._network_thread = threading.Thread(target=self._network_loop, daemon=True)
-        self._network_thread.start()
+        self._network_task = asyncio.create_task(self._network_loop())
+        self.logger.info("Network task started.")
         return True
 
-    def stop(self) -> bool:
-        """Stop the network handler and wait for thread completion."""
-        if self._network_thread is None or not self._network_thread.is_alive():
+    async def stop(self) -> bool:
+        """Stop the network handler and wait for task completion."""
+        if self._network_task is None or self._network_task.done():
             return True
 
         self.logger.info("Stopping network handler...")
         self._stop_event.set()
 
-        # Wait for thread to complete with timeout
-        thread_joined = self._thread_shutdown_complete.wait(
-            timeout=self._shutdown_timeout
-        )
-
-        if not thread_joined:
-            self.logger.warning(
-                "Network thread did not complete in time, forcing shutdown..."
-            )
-            self._force_shutdown = True
-            # Give a brief moment for forced shutdown
-            time.sleep(0.5)
-
-            if self._network_thread.is_alive():
-                self.logger.error("Network thread still alive after forced shutdown!")
-                return False
-            else:
-                self.logger.info("Network thread terminated after forced shutdown")
+        try:
+            # Wait for the network task to complete
+            await asyncio.wait_for(self._network_task, timeout=3.0)
+            self.logger.info("Network task stopped successfully.")
+            return True
+        except asyncio.TimeoutError:
+            self.logger.warning("Network task did not complete in time, cancelling...")
+            self._network_task.cancel()
+            try:
+                await self._network_task
+            except asyncio.CancelledError:
+                self.logger.info("Network task cancelled.")
                 return True
+            except Exception as e:
+                self.logger.error(f"Error awaiting cancelled network task: {e}")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error stopping network task: {e}")
+            return False
+        return False # Ensure a boolean is always returned at the end
 
-        self.logger.info("Network handler stopped successfully")
-        return True
-
-    def disconnect_gracefully(self, quit_message: Optional[str] = None) -> None:
+    async def disconnect_gracefully(self, quit_message: Optional[str] = None) -> None:
         """Disconnect from the server gracefully."""
-        if self.connected and self.socket:
+        if self.connected and self._writer:
             try:
                 if quit_message:
-                    self.send_raw(f"QUIT :{quit_message}")
+                    await self.send_raw(f"QUIT :{quit_message}")
                 else:
-                    self.send_raw("QUIT :Client disconnected")
+                    await self.send_raw("QUIT :Client disconnected")
             except Exception as e:
                 self.logger.error(f"Error sending QUIT message: {e}")
 
-        self.stop()
+        await self.stop()
         self.connected = False
-        if self.socket:
+        if self._reader:
             try:
-                self.socket.close()
+                self._reader = None
             except Exception as e:
-                self.logger.error(f"Error closing socket: {e}")
-            finally:
-                self.socket = None
+                self.logger.error(f"Error clearing reader: {e}")
+        if self._writer:
+            try:
+                self._writer.close()
+                await self._writer.wait_closed()
+                self._writer = None
+            except Exception as e:
+                self.logger.error(f"Error closing writer: {e}")
 
-    def update_connection_params(
+    async def update_connection_params(
         self,
         server: str,
         port: int,
@@ -124,10 +123,15 @@ class NetworkHandler:
                 if current_server_lower != new_server_lower
                 else "Reconnecting"
             )
-            self.disconnect_gracefully(quit_msg)
-            # Give some time for the disconnect to process if the network thread is busy
-            if self._network_thread and self._network_thread.is_alive():
-                self._network_thread.join(timeout=1.0)
+            await self.disconnect_gracefully(quit_msg)
+            # Give some time for the disconnect to process if the network task is busy
+            if self._network_task and not self._network_task.done():
+                try:
+                    await asyncio.wait_for(self._network_task, timeout=1.0)
+                except asyncio.TimeoutError:
+                    self.logger.warning("Previous network task did not stop gracefully in time.")
+                except Exception as e:
+                    self.logger.error(f"Error waiting for previous network task to stop: {e}")
 
         if channels_to_join is not None:
             self.channels_to_join_on_connect = channels_to_join
@@ -141,12 +145,12 @@ class NetworkHandler:
 
         self.reconnect_delay = self.config.reconnect_initial_delay
 
-        if not self._network_thread or not self._network_thread.is_alive():
-            logger.info("Network thread not running, starting it after param update.")
-            self.start()
+        if not self._network_task or self._network_task.done():
+            logger.info("Network task not running, starting it after param update.")
+            asyncio.create_task(self.start())
         else:
             logger.debug(
-                "Network thread is alive. Setting connected=False to force re-evaluation in loop."
+                "Network task is alive. Setting connected=False to force re-evaluation in loop."
             )
             # Reset critical handshake components
             if (
@@ -167,54 +171,54 @@ class NetworkHandler:
 
             self.connected = False  # This will trigger _connect_socket in the loop
 
-    def send_cap_ls(self, version: Optional[str] = "302"):
-        if self.connected and self.socket:
+    async def send_cap_ls(self, version: Optional[str] = "302"):
+        if self.connected and self._writer:
             if version:
-                self.send_raw(f"CAP LS {version}")
+                await self.send_raw(f"CAP LS {version}")
             else:
-                self.send_raw("CAP LS")
+                await self.send_raw("CAP LS")
         else:
-            logger.warning("send_cap_ls called but not connected or no socket.")
+            logger.warning("send_cap_ls called but not connected or no writer.")
 
-    def send_cap_req(self, capabilities: List[str]):
-        if self.connected and self.socket:
+    async def send_cap_req(self, capabilities: List[str]):
+        if self.connected and self._writer:
             if capabilities:
-                self.send_raw(f"CAP REQ :{ ' '.join(capabilities)}")
+                await self.send_raw(f"CAP REQ :{ ' '.join(capabilities)}")
         else:
-            logger.warning("send_cap_req called but not connected or no socket.")
+            logger.warning("send_cap_req called but not connected or no writer.")
 
-    def send_cap_end(self):
-        if self.connected and self.socket:  # Check socket as well
+    async def send_cap_end(self):
+        if self.connected and self._writer:
             logger.debug("Sending CAP END")
-            self.send_raw("CAP END")
+            await self.send_raw("CAP END")
         else:
-            logger.warning("send_cap_end called but not connected or no socket.")
+            logger.warning("send_cap_end called but not connected or no writer.")
 
-    def send_authenticate(self, payload: str):
-        if self.connected and self.socket:  # Check socket
+    async def send_authenticate(self, payload: str):
+        if self.connected and self._writer:
             logger.debug(f"Sending AUTHENTICATE {payload[:20]}...")
-            self.send_raw(f"AUTHENTICATE {payload}")
+            await self.send_raw(f"AUTHENTICATE {payload}")
         else:
-            logger.warning("send_authenticate called but not connected or no socket.")
+            logger.warning("send_authenticate called but not connected or no writer.")
 
 # In pyrc_core/network_handler.py
 
-    def _reset_connection_state(self, dispatch_event: bool = True):
+    async def _reset_connection_state(self, dispatch_event: bool = True):
         logger.debug(
             f"Resetting connection state. Dispatch disconnect event: {dispatch_event}"
         )
 
-        if self.socket:
+        if self._reader:
+            self._reader = None
+        if self._writer:
             try:
-                self.socket.shutdown(socket.SHUT_RDWR)
-            except (OSError, socket.error):
-                pass
-            try:
-                self.socket.close()
-                logger.debug("Socket closed by _reset_connection_state.")
-            except (OSError, socket.error):
-                pass
-            self.socket = None
+                self._writer.close()
+                await self._writer.wait_closed()
+                logger.debug("Writer closed by _reset_connection_state.")
+            except Exception as e:
+                logger.error(f"Error closing writer in reset: {e}")
+            finally:
+                self._writer = None
 
         if self.connected:
             self.client_logic_ref.state_manager.set_connection_state(ConnectionState.DISCONNECTED)
@@ -250,7 +254,7 @@ class NetworkHandler:
         logger.debug("Connection state reset complete")
 
 
-    def _connect_socket(self):
+    async def _connect_socket(self) -> bool:
         self.is_handling_nick_collision = False
         conn_info = (
             self.client_logic_ref.state_manager.get_connection_info()
@@ -270,7 +274,6 @@ class NetworkHandler:
             )
             return False
 
-        # Update connection state to CONNECTING
         self.client_logic_ref.state_manager.set_connection_state(ConnectionState.CONNECTING)
         try:
             conn_info = self.client_logic_ref.state_manager.get_connection_info()
@@ -288,53 +291,47 @@ class NetworkHandler:
             use_ssl = conn_info.ssl if conn_info.ssl is not None else False
 
             logger.info(
-                f"Attempting socket connection to {server}:{port} (SSL: {use_ssl})"
+                f"Attempting asyncio.open_connection to {server}:{port} (SSL: {use_ssl})"
             )
-            sock = socket.create_connection(
-                (server, port),
-                timeout=float(self.config.connection_timeout) if self.config.connection_timeout is not None else None,
-            )
-            logger.debug("Socket created.")
+
+            ssl_context = None
             if use_ssl:
-                logger.debug("SSL is enabled, wrapping socket.")
-                context = ssl.create_default_context()
+                logger.debug("SSL is enabled, creating SSL context.")
+                ssl_context = ssl.create_default_context()
                 try:
-                    context.minimum_version = (
-                        ssl.TLSVersion.TLSv1_2
-                    )  # More secure default
-                    logger.info(
-                        f"Set SSLContext minimum_version to TLSv1_2 for {self.client_logic_ref.server}"
-                    )
+                    ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    logger.info(f"Set SSLContext minimum_version to TLSv1_2 for {server}")
                 except AttributeError:
                     logger.warning(
-                        "ssl.TLSVersion.TLSv1_2 not available, or context does not support minimum_version (older Python?). Default TLS settings will be used."
+                        "ssl.TLSVersion.TLSv1_2 not available. Default TLS settings will be used."
                     )
 
-                logger.info(
-                    f"VERIFY_SSL_CERT value in _connect_socket for {server}: {conn_info.verify_ssl_cert}"
-                )
                 verify_ssl = conn_info.verify_ssl_cert if conn_info.verify_ssl_cert is not None else True
                 if not verify_ssl:
                     logger.warning(
                         "SSL certificate verification is DISABLED. This is insecure."
                     )
-                    context.check_hostname = False
-                    context.verify_mode = ssl.CERT_NONE
-                sock = context.wrap_socket(
-                    sock, server_hostname=server
-                )
-                logger.debug("Socket wrapped with SSL.")
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
 
-            self.socket = sock
+            # Use asyncio.open_connection
+            self._reader, self._writer = await asyncio.open_connection(
+                server,
+                port,
+                ssl=ssl_context,
+                limit=4096,
+                happy_eyeballs_delay=0.25
+            )
+
+            logger.debug("Asyncio connection established.")
+
             self.connected = True
             self.reconnect_delay = self.config.reconnect_initial_delay
             logger.info(
                 f"Successfully connected to {server}:{port}. SSL: {use_ssl}"
             )
-            # Update connection state to CONNECTED
             self.client_logic_ref.state_manager.set_connection_state(ConnectionState.CONNECTED)
 
-            # Start CAP negotiation if available
             if (
                 hasattr(self.client_logic_ref, "cap_negotiator")
                 and self.client_logic_ref.cap_negotiator
@@ -348,12 +345,11 @@ class NetworkHandler:
                     "Error: CAP negotiator not initialized.", "error"
                 )
 
-            # Dispatch connection event
             if (
                 self.client_logic_ref
                 and hasattr(self.client_logic_ref, "event_manager")
                 and self.client_logic_ref.event_manager
-            ):  # Check for event_manager
+            ):
                 self.client_logic_ref.event_manager.dispatch_client_connected(
                     server=server,
                     port=port,
@@ -363,29 +359,8 @@ class NetworkHandler:
                 )
 
             return True
-        except socket.timeout as e:
-            error_msg = f"Connection to {server}:{port} timed out"
-            logger.warning(error_msg)
-            self.client_logic_ref.state_manager.set_connection_state(
-                ConnectionState.ERROR,
-                error=error_msg
-            )
-        except socket.gaierror as e:
-            error_msg = f"Hostname {self.client_logic_ref.server} could not be resolved: {e}"
-            logger.error(error_msg)
-            self.client_logic_ref.state_manager.set_connection_state(
-                ConnectionState.ERROR,
-                error=error_msg
-            )
-        except ConnectionRefusedError as e:
-            error_msg = f"Connection refused by {server}:{port}: {e}"
-            logger.error(error_msg)
-            self.client_logic_ref.state_manager.set_connection_state(
-                ConnectionState.ERROR,
-                error=error_msg
-            )
-        except ssl.SSLError as e:
-            error_msg = f"SSL Error during connection: {e}"
+        except (asyncio.TimeoutError, ConnectionRefusedError, socket.gaierror, ssl.SSLError) as e:
+            error_msg = f"Connection error to {server}:{port}: {e}"
             logger.error(error_msg, exc_info=True)
             self.client_logic_ref.state_manager.set_connection_state(
                 ConnectionState.ERROR,
@@ -393,24 +368,24 @@ class NetworkHandler:
             )
         except Exception as e:
             error_msg = f"Unexpected error during connection: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.critical(error_msg, exc_info=True)
             self.client_logic_ref.state_manager.set_connection_state(
                 ConnectionState.ERROR,
                 error=error_msg
             )
 
-        self._reset_connection_state()
+        await self._reset_connection_state()
         return False
 
-    def send_raw(self, data: str):
+    async def send_raw(self, data: str):
         # Re-check connection status immediately before sending
-        if not self.socket or not self.connected:
+        if not self._writer or not self.connected:
             logger.warning(
-                f"Attempted to send data while not truly connected or no socket: {data.strip()}"
+                f"Attempted to send data while not truly connected or no writer: {data.strip()}"
             )
             if (
                 self.client_logic_ref
-            ):  # Only add message if client and thus UI/context manager exists
+            ):
                 self.client_logic_ref._add_status_message(
                     "Cannot send: Not connected.", "error"
                 )
@@ -421,7 +396,8 @@ class NetworkHandler:
         try:
             if not data.endswith("\r\n"):
                 data += "\r\n"
-            self.socket.sendall(data.encode("utf-8", errors="replace"))
+            self._writer.write(data.encode("utf-8", errors="replace"))
+            await self._writer.drain()
 
             log_data = data.strip()
             if log_data.upper().startswith("PASS "):
@@ -438,7 +414,7 @@ class NetworkHandler:
             logger.debug(f"C >> {log_data}")
 
             if (
-                self.client_logic_ref  # Check if client exists
+                self.client_logic_ref
                 and hasattr(self.client_logic_ref, "show_raw_log_in_ui")
                 and self.client_logic_ref.show_raw_log_in_ui
             ):
@@ -453,9 +429,9 @@ class NetworkHandler:
                 self.is_handling_nick_collision = False
         except (
             OSError,
-            socket.error,
+            ConnectionError,
             ssl.SSLError,
-        ) as e:  # Catch broader socket/SSL errors
+        ) as e:
             logger.error(f"Error sending data: {e}", exc_info=True)
             if self.client_logic_ref:
                 self.client_logic_ref._add_status_message(
@@ -463,10 +439,10 @@ class NetworkHandler:
                 )
                 if not self.client_logic_ref.is_headless:
                     self.client_logic_ref.ui_needs_update.set()
-            self._reset_connection_state(
+            await self._reset_connection_state(
                 dispatch_event=True
-            )  # Dispatch disconnect on send error
-        except Exception as e_unhandled_send:  # Catch any other unexpected error
+            )
+        except Exception as e_unhandled_send:
             logger.critical(
                 f"Unhandled error sending data: {e_unhandled_send}", exc_info=True
             )
@@ -476,14 +452,13 @@ class NetworkHandler:
                     "error",
                     context_name="Status",
                 )
-            self._reset_connection_state(dispatch_event=True)
+            await self._reset_connection_state(dispatch_event=True)
 
-    def _network_loop(self) -> None:
+    async def _network_loop(self) -> None:
         """Main network handling loop."""
         try:
             while not self._stop_event.is_set():
-                if not self.connected or not self.socket:
-                    # Attempt to connect if we have connection parameters
+                if not self.connected or not self._reader:
                     conn_info = (
                         self.client_logic_ref.state_manager.get_connection_info()
                         if self.client_logic_ref
@@ -497,59 +472,51 @@ class NetworkHandler:
                         logger.info(
                             f"Attempting to connect to {conn_info.server}:{conn_info.port}"
                         )
-                        if self._connect_socket():
+                        if await self._connect_socket():
                             logger.info("Successfully connected to server")
                             self.connected = True
+                            self._disconnect_event_sent_for_current_session = False
                         else:
                             logger.warning(
                                 "Failed to connect, will retry in next iteration"
                             )
-                            time.sleep(0.1)  # Small delay before retry
+                            await asyncio.sleep(0.1)
                     else:
                         logger.debug("No connection parameters available, waiting...")
-                        time.sleep(0.1)
+                        await asyncio.sleep(0.1)
                     continue
 
                 try:
-                    # Set a timeout for socket operations
-                    self.socket.settimeout(0.5)
-                    data = self.socket.recv(4096)
+                    data = await self._reader.read(4096)
 
                     if not data:
                         logger.info("Connection closed by server")
-                        self._reset_connection_state()
+                        await self._reset_connection_state()
                         continue
 
-                    # Process received data
                     self._process_received_data(data)
 
-                except socket.timeout:
+                except asyncio.IncompleteReadError:
+                    logger.info("Server closed connection during read.")
+                    await self._reset_connection_state()
                     continue
                 except ConnectionError as e:
-                    logger.error(f"Connection error: {e}")
-                    self._reset_connection_state()
+                    logger.error(f"Connection error in network loop: {e}")
+                    await self._reset_connection_state()
                     continue
                 except Exception as e:
-                    logger.error(f"Error in network loop: {e}")
-                    self._reset_connection_state()
+                    logger.error(f"Error in network loop: {e}", exc_info=True)
+                    await self._reset_connection_state()
                     continue
 
+        except asyncio.CancelledError:
+            logger.info("Network loop cancelled.")
         except Exception as e:
-            logger.error(f"Critical error in network loop: {e}")
+            logger.critical(f"Critical error in network loop: {e}", exc_info=True)
         finally:
-            # Ensure cleanup happens even if there's an error
-            if not self._force_shutdown:
-                self.connected = False
-                if self.socket:
-                    try:
-                        self.socket.close()
-                    except Exception as e:
-                        logger.error(f"Error closing socket in cleanup: {e}")
-                    finally:
-                        self.socket = None
-
-            self._thread_shutdown_complete.set()
-            logger.info("Network thread shutdown complete")
+            self.connected = False
+            await self._reset_connection_state(dispatch_event=True)
+            logger.info("Network loop shutdown complete.")
 
     def _process_received_data(self, data: bytes) -> None:
         """Process received data from the network socket.

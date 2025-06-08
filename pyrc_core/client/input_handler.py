@@ -1,7 +1,9 @@
 import curses
 from collections import deque
 import logging
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
+import asyncio
+import concurrent.futures
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import (
@@ -26,11 +28,25 @@ class InputHandler:
         self.command_history: deque = deque(maxlen=COMMAND_HISTORY_MAX_SIZE)
         self.history_idx: int = -1
         self.current_input_snapshot: str = ""
+        self._input_queue = asyncio.Queue() # Queue to pass input from thread to main loop
+    async def async_input_reader(self, executor: concurrent.futures.ThreadPoolExecutor):
+        """Asynchronously reads input by running curses.getch in a separate thread."""
+        loop = asyncio.get_running_loop()
+        while True:
+            try:
+                # Run the blocking getch in a separate thread
+                key_code = await loop.run_in_executor(executor, self.client_logic.ui.get_input_char)
+                if key_code != curses.ERR:
+                    await self._input_queue.put(key_code)
+                await asyncio.sleep(0.01) # Small sleep to yield control
+            except asyncio.CancelledError:
+                logger.info("Input reader task cancelled.")
+                break
+            except Exception as e:
+                logger.error(f"Error in async_input_reader: {e}", exc_info=True)
+                await asyncio.sleep(1.0) # Wait before retrying on error
 
-    def get_current_input_buffer(self) -> str:
-        return self.input_buffer
-
-    def handle_key_press(self, key_code: int):
+    async def handle_key_press(self, key_code: int):
         if key_code == curses.ERR:
             return
 
@@ -60,7 +76,7 @@ class InputHandler:
         elif key_code in [curses.KEY_ENTER, 10, 13]:
             if self.input_buffer:
                 command_to_process = self.input_buffer
-                command_handler.process_user_command(command_to_process)
+                await command_handler.process_user_command(command_to_process)
                 if command_to_process:
                     if (
                         not self.command_history
@@ -112,11 +128,7 @@ class InputHandler:
             )
             if current_context and current_context.type == "channel":
                 total_users = len(current_context.users)
-                # sidebar_height = (
-                #     self.client_logic.ui._calculate_available_lines_for_user_list()
-                # )
-                sidebar_height = 0  # Default value
-                # Check if ui exists, then if the method exists, then if it's callable
+                sidebar_height = 0
                 if (
                     self.client_logic.ui
                     and hasattr(
@@ -149,7 +161,7 @@ class InputHandler:
 
                     self.client_logic.ui_needs_update.set()
         elif key_code == 9:
-            self.do_tab_complete()
+            await self.do_tab_complete()
         elif key_code >= 0:
             try:
                 if key_code <= 255:
@@ -167,7 +179,7 @@ class InputHandler:
 
         self.client_logic.ui_needs_update.set()
 
-    def do_tab_complete(self):
+    async def do_tab_complete(self):
         if not self.input_buffer:
             self.tab_completion_candidates = []
             self.tab_completion_index = -1
@@ -204,7 +216,7 @@ class InputHandler:
             if len(cmd_candidates) == 1:
                 self.input_buffer = cmd_candidates[0] + " "
             elif len(cmd_candidates) > 1:
-                self.client_logic.add_message(
+                await self.client_logic.add_message(
                     f"Commands: {' '.join(sorted(cmd_candidates))}",
                     ui_colors["system"],
                     prefix_time=False,

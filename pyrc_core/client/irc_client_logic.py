@@ -1,9 +1,8 @@
 # pyrc_core/client/irc_client_logic.py
 from __future__ import annotations
 import curses
-import threading
-import time
-import socket
+import asyncio
+import concurrent.futures # For running blocking calls in a thread pool
 from collections import deque
 from typing import Optional, Any, List, Set, Dict, Tuple
 import logging
@@ -64,17 +63,18 @@ class IRCClient_Logic:
         self.args = args
         self.config: AppConfig = config
 
-        self.should_quit = False
-        self.ui_needs_update = threading.Event()
-        self._server_switch_disconnect_event: Optional[threading.Event] = None
+        self.should_quit = asyncio.Event() # Use asyncio.Event for graceful shutdown
+        self.ui_needs_update = asyncio.Event()
+        self._server_switch_disconnect_event: Optional[asyncio.Event] = None
         self._server_switch_target_config_name: Optional[str] = None
-        self.echo_sent_to_status: bool = True
+        self.echo_sent_to_status = True
         self.show_raw_log_in_ui: bool = False
         self.last_join_command_target: Optional[str] = None
         self.active_list_context_name: Optional[str] = None
         self._final_quit_message: Optional[str] = None
         self.max_reconnect_delay: float = 300.0
         self.last_attempted_nick_change: Optional[str] = None
+        self._executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
         # --- Stage 2: Initialize All Manager Components ---
         self.state_manager = StateManager()
@@ -116,34 +116,41 @@ class IRCClient_Logic:
 
         self._log_startup_status()
 
-    def run_main_loop(self):
-        """Main loop to handle user input and update the UI."""
+    async def run_main_loop(self):
+        """Main asyncio loop to handle user input and update the UI."""
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
+
+        # Initialize thread pool for blocking operations
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+
         try:
             conn_info = self.state_manager.get_connection_info()
             if conn_info and conn_info.server and conn_info.port is not None and conn_info.auto_connect:
                 logger.info(f"Auto-connecting to {conn_info.server}:{conn_info.port}")
-                if not self.network_handler._network_thread or not self.network_handler._network_thread.is_alive():
-                     self.network_handler.start()
-                     logger.info("Network handler started for auto-connect.")
+                await self.network_handler.start() # Await the async start
+                logger.info("Network handler started for auto-connect.")
 
-            while not self.should_quit:
+            # Create tasks for network and input handling
+            network_task = asyncio.create_task(self.network_handler._network_loop())
+            input_task = None
+            if not self.is_headless and self.input_handler:
+                input_task = asyncio.create_task(self.input_handler.async_input_reader(self._executor))
+
+            # Main loop
+            while not self.should_quit.is_set(): # Check asyncio.Event
                 try:
-                    if not self.is_headless:
-                        self._handle_user_input()
-                    self._update_ui()
-                    time.sleep(0.01)
+                    await self._update_ui() # Await UI update
+                    await asyncio.sleep(0.01) # Use asyncio.sleep
 
-                except KeyboardInterrupt:
-                    logger.info("Keyboard interrupt received, initiating shutdown...")
-                    self.should_quit = True
+                except asyncio.CancelledError:
+                    logger.info("Main loop cancelled.")
                     break
                 except curses.error as e:
                     logger.error(f"curses error in main loop: {e}")
                     if not self.is_headless:
                         self.ui_needs_update.set()
                 except Exception as e:
-                    logger.error(f"Error in main loop: {e}", exc_info=True)
+                    logger.critical(f"Error in main loop: {e}", exc_info=True)
                     if not self.is_headless:
                         self.ui_needs_update.set()
 
@@ -152,7 +159,7 @@ class IRCClient_Logic:
         finally:
             quit_msg = self._final_quit_message or "Client shutting down"
             if self.network_handler:
-                self.network_handler.disconnect_gracefully(quit_msg)
+                await self.network_handler.disconnect_gracefully(quit_msg) # Await disconnect
 
             if not self.is_headless and self.ui and hasattr(self.ui, 'shutdown') and callable(self.ui.shutdown):
                 logger.info("Shutting down UI (from main_loop finally).")
@@ -160,6 +167,10 @@ class IRCClient_Logic:
 
             if self.dcc_manager:
                 self.dcc_manager.shutdown()
+
+            if self._executor:
+                self._executor.shutdown(wait=True)
+                logger.info("ThreadPoolExecutor shut down.")
 
             logger.info("Main client loop ended.")
 
@@ -295,23 +306,20 @@ class IRCClient_Logic:
             logger.debug("CLIENT_READY: No initial channels configured for auto-switch.")
         self.ui_needs_update.set()
 
-    def _handle_user_input(self):
-        """Handle user input from the UI."""
-        if self.input_handler and not self.is_headless and self.ui:
-            key = self.ui.get_input_char()
-            if key != -1:
-                self.input_handler.handle_key_press(key)
-
-    def _update_ui(self):
+    async def _update_ui(self):
         """Update the UI if needed."""
         if self.ui and self.ui_needs_update.is_set():
             self.ui.refresh_all_windows()
             self.ui_needs_update.clear()
 
 
-    def _start_connection_if_auto(self):
+    async def _start_connection_if_auto(self):
         conn_info = self.state_manager.get_connection_info()
         if conn_info and conn_info.auto_connect:
+            # establish_connection returns None, so we should not await it.
+            # Instead, ensure it correctly initiates the connection via the network handler.
+            # The network handler's start method is already awaited in run_main_loop if auto_connect is true.
+            # This method's primary role is to set up the connection info for the network handler.
             self.connection_orchestrator.establish_connection(conn_info)
 
 
@@ -359,15 +367,15 @@ class IRCClient_Logic:
             self.trigger_manager.load_triggers()
 
 
-    def _add_status_message(self, text: str, color_key: str = "system"):
+    async def _add_status_message(self, text: str, color_key: str = "system"):
         if self.ui:
             color_attr = self.ui.colors.get(color_key, self.ui.colors.get("system", 0))
-            self.add_message(text, color_attr, context_name="Status")
+            await self.add_message(text, color_attr, context_name="Status")
         else:
             logger.info(f"[StatusUpdate via Helper - No UI] ColorKey: '{color_key}', Text: {text}")
 
 
-    def _configure_from_server_config(self, config_data: ServerConfig, config_name: str) -> bool:
+    async def _configure_from_server_config(self, config_data: ServerConfig, config_name: str) -> bool:
         """
         Initialize connection info from a ServerConfig and update state.
         """
@@ -404,152 +412,15 @@ class IRCClient_Logic:
             self.state_manager.set_connection_state(ConnectionState.CONFIG_ERROR, f"Internal error processing config {config_name}")
             return False
 
-    def add_message(
-        self,
-        text: str,
-        color_attr_or_key: Any,
-        prefix_time: bool = True,
-        context_name: Optional[str] = None,
-        source_full_ident: Optional[str] = None,
-        is_privmsg_or_notice: bool = False,
-    ):
-        resolved_color_attr: int
-        if not self.ui:
-            logger.info(f"[Message (No UI) to {context_name or 'Active'}]: {text}")
-            return
 
-        if isinstance(color_attr_or_key, str):
-            resolved_color_attr = self.ui.colors.get(
-                color_attr_or_key, self.ui.colors.get("default", 0)
-            )
-        elif isinstance(color_attr_or_key, int):
-            resolved_color_attr = color_attr_or_key
-        else:
-            logger.warning(
-                f"add_message: Unexpected type for color_attr_or_key: {type(color_attr_or_key)}. Using default color."
-            )
-            resolved_color_attr = self.ui.colors.get("default", 0)
-
-        target_context_name = (
-            context_name
-            if context_name is not None
-            else self.context_manager.active_context_name
-        )
-        if not target_context_name:
-            target_context_name = "Status"
-
-        if (
-            is_privmsg_or_notice
-            and source_full_ident
-            and self.config.is_source_ignored(source_full_ident)
-        ):
-            logger.debug(
-                f"Ignoring message from {source_full_ident} due to ignore list match."
-            )
-            return
-
-        target_ctx_exists = self.context_manager.get_context(target_context_name)
-        if not target_ctx_exists:
-            context_type = "generic"
-            initial_join_status_for_new_channel: Optional[ChannelJoinStatus] = None
-            if target_context_name.startswith(("#", "&", "+", "!")):
-                context_type = "channel"
-                initial_join_status_for_new_channel = ChannelJoinStatus.NOT_JOINED
-            elif (
-                target_context_name != "Status"
-                and target_context_name != "DCC"
-                and ":" not in target_context_name
-                and not target_context_name.startswith(("#", "&", "+", "!"))
-            ):
-                context_type = "query"
-
-            if not self.context_manager.create_context(
-                target_context_name,
-                context_type=context_type,
-                initial_join_status_for_channel=initial_join_status_for_new_channel,
-            ):
-                status_ctx_for_error = self.context_manager.get_context("Status")
-                if not status_ctx_for_error:
-                    self.context_manager.create_context("Status", context_type="status")
-
-                self.context_manager.add_message_to_context(
-                    "Status",
-                    f"[CtxErr for '{target_context_name}'] {text}",
-                    resolved_color_attr,
-                )
-                self.ui_needs_update.set()
-                return
-
-        target_context_obj = self.context_manager.get_context(target_context_name)
-        if not target_context_obj:
-            logger.critical(
-                f"Context '{target_context_name}' unexpectedly None after create/get. Message lost: {text}"
-            )
-            return
-
-        max_w = self.ui.msg_win_width - 1 if self.ui and self.ui.msg_win_width > 1 else 80
-        timestamp = time.strftime("%H:%M:%S ") if prefix_time else ""
-
-        full_message = text
-        if prefix_time and not text.startswith(timestamp.strip()):
-            full_message = f"{timestamp}{text}"
-
-
-        lines = []
-        current_line = ""
-        for word in full_message.split(" "):
-            if current_line and (len(current_line) + len(word) + 1 > max_w):
-                lines.append(current_line)
-                current_line = word
-            else:
-                current_line += (" " if current_line else "") + word
-        if current_line:
-            lines.append(current_line)
-        if not lines and full_message:
-            lines.append(full_message)
-
-        num_lines_added_for_this_message = len(lines)
-        for line_part in lines:
-            self.context_manager.add_message_to_context(
-                target_context_name, line_part, resolved_color_attr, 1
-            )
-
-        if target_context_obj.type == "channel":
-            channel_logger = self.channel_logger_manager.get_channel_logger(target_context_name)
-            if channel_logger:
-                channel_logger.info(text)
-        elif target_context_obj.name == "Status":
-            status_logger = self.channel_logger_manager.get_status_logger()
-            if status_logger:
-                status_logger.info(text)
-
-        if (
-            target_context_name == self.context_manager.active_context_name
-            and hasattr(target_context_obj, "scrollback_offset")
-            and target_context_obj.scrollback_offset > 0
-        ):
-            target_context_obj.scrollback_offset += num_lines_added_for_this_message
-
-        if hasattr(self, 'event_manager') and self.event_manager:
-            self.event_manager.dispatch_message_added_to_context(
-                context_name=target_context_name,
-                text=text,
-                color_key=color_attr_or_key if isinstance(color_attr_or_key, str) else "system",
-                source_full_ident=source_full_ident,
-                is_privmsg_or_notice=is_privmsg_or_notice
-            )
-
-        self.ui_needs_update.set()
-
-
-    def handle_server_message(self, line: str):
+    async def handle_server_message(self, line: str):
         if self.show_raw_log_in_ui:
-            self._add_status_message(f"S << {line.strip()}")
+            await self._add_status_message(f"S << {line.strip()}") # Await this
 
         parsed_msg = IRCMessage.parse(line)
         if not parsed_msg:
             logger.error(f"Failed to parse IRC message: {line.strip()}")
-            self._add_status_message(f"[UNPARSED] {line.strip()}", "error")
+            await self._add_status_message(f"[UNPARSED] {line.strip()}", "error") # Await this
             return
 
         if parsed_msg.command in ("PRIVMSG", "NOTICE"):
@@ -563,16 +434,16 @@ class IRCClient_Logic:
                     self.dcc_manager.handle_incoming_dcc_ctcp(nick_from_parser, full_userhost_from_parser, ctcp_payload)
                     return
 
-        irc_protocol.handle_server_message(self, line)
+        await irc_protocol.handle_server_message(self, line) # Await this
 
 
-    def send_ctcp_privmsg(self, target: str, ctcp_message: str):
+    async def send_ctcp_privmsg(self, target: str, ctcp_message: str):
         if not target or not ctcp_message:
             logger.warning("send_ctcp_privmsg: Target or message is empty.")
             return
         payload = ctcp_message.strip("\x01")
         full_ctcp_command = f"\x01{payload}\x01"
-        self.network_handler.send_raw(f"PRIVMSG {target} :{full_ctcp_command}")
+        await self.network_handler.send_raw(f"PRIVMSG {target} :{full_ctcp_command}") # Await this
         logger.debug(f"Sent CTCP PRIVMSG to {target}: {full_ctcp_command}")
 
     def switch_active_context(self, direction: str):
@@ -752,16 +623,20 @@ class IRCClient_Logic:
                         self.ui_needs_update.set()
 
 
-    def _execute_python_trigger(
+    async def _execute_python_trigger(
         self, code: str, event_data: Dict[str, Any], trigger_info_for_error: str
     ):
         current_context_name = self.context_manager.active_context_name or "Status"
         try:
             python_trigger_api = PythonTriggerAPI(self, script_name=f"trigger_{trigger_info_for_error[:10]}")
 
+            # Define a synchronous wrapper for add_message_to_context
+            def sync_add_message_to_context(context, text, color_key):
+                asyncio.create_task(python_trigger_api.add_message_to_context(context, text, color_key))
+
             execution_globals = {
                 "__builtins__": {
-                    "print": lambda *args, **kwargs: python_trigger_api.add_message_to_context(
+                    "print": lambda *args, **kwargs: sync_add_message_to_context( # Use sync wrapper
                         current_context_name, " ".join(map(str, args)), "system"
                     ),
                     "eval": eval, "str": str, "int": int, "float": float, "list": list,
@@ -776,14 +651,21 @@ class IRCClient_Logic:
                 "event_data": event_data,
                 "logger": logging.getLogger(f"pyrc.trigger.python_exec.{trigger_info_for_error.replace(' ','_')[:20]}")
             }
-            exec(code, execution_globals, execution_locals)
+
+            # Execute the script code in a separate thread to avoid blocking the event loop
+            if self._executor:
+                await asyncio.to_thread(exec, code, execution_globals, execution_locals)
+            else:
+                logger.error("Executor not available for Python trigger execution.")
+                await self._add_status_message("Error: Executor not available for trigger.", "error")
+
         except Exception as e:
             error_message = f"Error executing Python trigger ({trigger_info_for_error}): {type(e).__name__}: {e}"
             logger.error(error_message, exc_info=True)
-            self._add_status_message(error_message, "error")
+            await self._add_status_message(error_message, "error")
 
 
-    def process_trigger_event(
+    async def process_trigger_event(
         self, event_type: str, event_data: Dict[str, Any]
     ) -> Optional[str]:
         if not self.config.enable_trigger_system or not self.trigger_manager:
@@ -820,56 +702,56 @@ class IRCClient_Logic:
             if code:
                 trigger_info = f"Event: {event_type}, Pattern: {result.get('pattern', 'N/A')}"
                 logger.info(f"Trigger action is PYTHON. Executing code snippet for trigger: {trigger_info}")
-                self._execute_python_trigger(code, result.get("event_data", {}), trigger_info)
+                await self._execute_python_trigger(code, result.get("event_data", {}), trigger_info) # Await this
         return None
 
 
-    def handle_text_input(self, text: str):
+    async def handle_text_input(self, text: str):
         active_ctx_name = self.context_manager.active_context_name
         if not active_ctx_name:
-            self._add_status_message("No active window to send message to.", "error")
+            await self._add_status_message("No active window to send message to.", "error") # Await this
             return
         active_ctx = self.context_manager.get_context(active_ctx_name)
         if not active_ctx:
-            self._add_status_message(f"Error: Active context '{active_ctx_name}' not found.", "error")
+            await self._add_status_message(f"Error: Active context '{active_ctx_name}' not found.", "error") # Await this
             return
 
         if active_ctx.type == "channel":
             if hasattr(active_ctx, 'join_status') and isinstance(active_ctx.join_status, ChannelJoinStatus) and \
                active_ctx.join_status == ChannelJoinStatus.FULLY_JOINED:
-                self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
+                await self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}") # Await this
                 if "echo-message" not in self.get_enabled_caps():
                     conn_info = self.state_manager.get_connection_info()
                     current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
-                    self.add_message(f"<{current_nick}> {text}", "my_message", context_name=active_ctx_name)
+                    await self.add_message(f"<{current_nick}> {text}", "my_message", context_name=active_ctx_name) # Await this
                 elif self.echo_sent_to_status:
                     conn_info = self.state_manager.get_connection_info()
                     current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
-                    self.add_message(f"To {active_ctx_name}: <{current_nick}> {text}", "my_message", context_name="Status")
+                    await self.add_message(f"To {active_ctx_name}: <{current_nick}> {text}", "my_message", context_name="Status") # Await this
             else:
                 join_status_name = active_ctx.join_status.name if hasattr(active_ctx, 'join_status') and active_ctx.join_status else 'N/A'
-                self.add_message(
+                await self.add_message( # Await this
                     f"Cannot send message: Channel {active_ctx_name} not fully joined (Status: {join_status_name}).",
                     "error", context_name=active_ctx_name,
                 )
         elif active_ctx.type == "query":
-            self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
+            await self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}") # Await this
             if "echo-message" not in self.get_enabled_caps():
                 conn_info = self.state_manager.get_connection_info()
                 current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
-                self.add_message(f"<{current_nick}> {text}", "my_message", context_name=active_ctx_name)
+                await self.add_message(f"<{current_nick}> {text}", "my_message", context_name=active_ctx_name) # Await this
             elif self.echo_sent_to_status:
                 conn_info = self.state_manager.get_connection_info()
                 current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
-                self.add_message(f"To {active_ctx_name}: <{current_nick}> {text}", "my_message", context_name="Status")
+                await self.add_message(f"To {active_ctx_name}: <{current_nick}> {text}", "my_message", context_name="Status") # Await this
         else:
-            self._add_status_message(
+            await self._add_status_message( # Await this
                 f"Cannot send messages to '{active_ctx_name}' (type: {active_ctx.type}). Try a command like /msg.",
                 "error",
             )
 
 
-    def handle_rehash_config(self):
+    async def handle_rehash_config(self):
         logger.info("Attempting to reload configuration via /rehash...")
         try:
             self.config = AppConfig(config_file_path=self.config.CONFIG_FILE_PATH)
@@ -884,18 +766,18 @@ class IRCClient_Logic:
             if self.script_manager:
                 self.script_manager.disabled_scripts = self.config.disabled_scripts
 
-            self._add_status_message(
+            await self._add_status_message( # Await this
                 "Configuration reloaded from INI. Some changes may require /reconnect or client restart."
             )
             logger.info("Configuration successfully reloaded from INI.")
             self.ui_needs_update.set()
         except Exception as e:
             logger.error(f"Error during /rehash: {e}", exc_info=True)
-            self._add_status_message(f"Error reloading configuration: {e}", "error")
+            await self._add_status_message(f"Error reloading configuration: {e}", "error") # Await this
             self.ui_needs_update.set()
 
 
-    def initialize(self) -> bool:
+    async def initialize(self) -> bool:
         """
         Initializes or re-initializes components. Less critical now with robust __init__.
         """
@@ -907,7 +789,7 @@ class IRCClient_Logic:
             return False
 
 
-    def connect(self, server: str, port: int, use_ssl: bool = False, initial_channels: Optional[List[str]] = None) -> bool:
+    async def connect(self, server: str, port: int, use_ssl: bool = False, initial_channels: Optional[List[str]] = None) -> bool:
         """
         Connects to a server. Delegates to ConnectionOrchestrator.
         """
@@ -932,40 +814,41 @@ class IRCClient_Logic:
 
         if not self.state_manager.set_connection_info(temp_conn_info):
             logger.error(f"Failed to set connection info for {server}:{port}. Validation failed.")
-            self._add_status_message(f"Connection config error for {server}:{port}. Check logs.", "error")
+            await self._add_status_message(f"Connection config error for {server}:{port}. Check logs.", "error") # Await this
             return False
 
-        self.connection_orchestrator.establish_connection(temp_conn_info)
+        await self.connection_orchestrator.establish_connection(temp_conn_info) # Await this
         return True
 
 
-    def disconnect(self, quit_message: str = "Client disconnecting") -> None:
+    async def disconnect(self, quit_message: str = "Client disconnecting") -> None:
         if self.network_handler:
-            self.network_handler.disconnect_gracefully(quit_message)
-        self.should_quit = True
+            await self.network_handler.disconnect_gracefully(quit_message) # Await this
+        self.should_quit.set() # Set asyncio.Event
 
 
-    def handle_reconnect(self) -> None:
+    async def handle_reconnect(self) -> None:
         logger.info("IRCClient_Logic.handle_reconnect called. Reconnection logic is primarily in NetworkHandler.")
         if self.network_handler:
             self.network_handler.reconnect_delay = self.config.reconnect_initial_delay
 
 
-
-    def reset_reconnect_delay(self) -> None:
+    async def reset_reconnect_delay(self) -> None:
         if self.network_handler:
             self.network_handler.reconnect_delay = int(self.config.reconnect_initial_delay)
 
 
-    def _handle_user_input_impl(self):
+    async def _handle_user_input_impl(self):
         if self.input_handler and self.ui:
-            key_code = self.ui.get_input_char()
+            # get_input_char is blocking, so run it in a thread
+            key_code = await asyncio.to_thread(self.ui.get_input_char) # Await this
             if key_code != curses.ERR:
-                self.input_handler.handle_key_press(key_code)
+                await self.input_handler.handle_key_press(key_code) # Await this
 
 
-    def _update_ui_impl(self):
+    async def _update_ui_impl(self):
         if self.ui and self.ui_needs_update.is_set():
             if not self.is_headless:
                 self.ui.refresh_all_windows()
+            self.ui_needs_update.clear()
             self.ui_needs_update.clear()

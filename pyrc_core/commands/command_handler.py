@@ -3,7 +3,9 @@ import logging
 import os # Keep for os.path.abspath if still needed, but not for walk
 import importlib
 import pkgutil # Import pkgutil
-from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Callable, Any
+from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Callable, Any, Awaitable
+import asyncio # Import asyncio
+import inspect # Import inspect to check for coroutines
 
 # Import the commands package itself to access __path__ and __name__
 import pyrc_core.commands
@@ -13,7 +15,8 @@ from pyrc_core.context_manager import ChannelJoinStatus, Context
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    CommandHandlerCallable = Callable[[IRCClient_Logic, str], Any]
+    CommandHandlerCallable = Callable[[IRCClient_Logic, str], Awaitable[Any]]
+    ScriptCommandHandlerCallable = Callable[[str, Dict[str, Any]], Awaitable[Any]]
 
 from pyrc_core.context_manager import Context as CTX_Type
 
@@ -27,8 +30,8 @@ class CommandHandler:
         self.registered_command_help = {}
         self._processing_depth = 0 # For re-entrancy check
 
-        self.command_map: Dict[str, "CommandHandlerCallable"] = {
-            "on": lambda client, args_str: self.trigger_commands.handle_on_command(args_str),
+        self.command_map: Dict[str, Tuple[Callable, bool]] = {
+            "on": (self.trigger_commands.handle_on_command, False), # Assume sync for now, adjust if needed
         }
 
         logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
@@ -57,43 +60,44 @@ class CommandHandler:
                 if hasattr(module, 'COMMAND_DEFINITIONS'):
                     logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}. Definitions: {getattr(module, 'COMMAND_DEFINITIONS')}")
                     for cmd_def in module.COMMAND_DEFINITIONS:
-                        cmd_name = cmd_def["name"].lower()
-                        handler_name_str = cmd_def["handler"]
-                        handler_func = getattr(module, handler_name_str, None)
-                        logger.debug(f"Processing command definition: name='{cmd_name}', handler='{handler_name_str}'")
+                        for cmd_def in module.COMMAND_DEFINITIONS:
+                            cmd_name = cmd_def["name"].lower()
+                            handler_name_str = cmd_def["handler"]
+                            handler_func = getattr(module, handler_name_str, None)
+                            is_async_handler = inspect.iscoroutinefunction(handler_func)
+                            logger.debug(f"Processing command definition: name='{cmd_name}', handler='{handler_name_str}', is_async: {is_async_handler}")
 
-                        if handler_func and callable(handler_func):
-                            if cmd_name in self.command_map:
-                                logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
-                            self.command_map[cmd_name] = handler_func
+                            if handler_func and callable(handler_func):
+                                if cmd_name in self.command_map:
+                                    logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                                self.command_map[cmd_name] = (handler_func, is_async_handler)
 
-                            if "help" in cmd_def and cmd_def["help"]:
-                                help_info = cmd_def["help"]
-                                self.registered_command_help[cmd_name] = {
-                                    "help_text": f"{help_info['usage']}\n  {help_info['description']}",
-                                    "aliases": [a.lower() for a in help_info.get("aliases", [])],
-                                    "script_name": "core",
-                                    "is_alias": False,
-                                    "module_path": python_module_name
-                                }
-                                for alias_raw in help_info.get("aliases", []):
-                                    alias = alias_raw.lower()
-                                    if alias in self.command_map:
-                                         logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
-                                    self.command_map[alias] = handler_func
-                                    self.registered_command_help[alias] = {
+                                if "help" in cmd_def and cmd_def["help"]:
+                                    help_info = cmd_def["help"]
+                                    self.registered_command_help[cmd_name] = {
                                         "help_text": f"{help_info['usage']}\n  {help_info['description']}",
-                                        "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
+                                        "aliases": [a.lower() for a in help_info.get("aliases", [])],
                                         "script_name": "core",
-                                        "is_alias": True,
-                                        "primary_command": cmd_name,
+                                        "is_alias": False,
                                         "module_path": python_module_name
                                     }
-                            logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}.")
-                        else:
-                            logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
-                else:
-                     logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
+                                    for alias_raw in help_info.get("aliases", []):
+                                        alias = alias_raw.lower()
+                                        if alias in self.command_map:
+                                             logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                                        self.command_map[alias] = (handler_func, is_async_handler)
+                                        self.registered_command_help[alias] = {
+                                            "help_text": f"{help_info['usage']}\n  {help_info['description']}",
+                                            "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
+                                            "script_name": "core",
+                                            "is_alias": True,
+                                            "primary_command": cmd_name,
+                                            "module_path": python_module_name
+                                        }
+                                logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}. Is async: {is_async_handler}.")
+                            else:
+                                logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
+                logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
 
             except ImportError as e:
                 logger.error(f"Failed to import module {python_module_name}: {e}", exc_info=True)
@@ -103,8 +107,8 @@ class CommandHandler:
 
         self.command_primary_map = {}
         seen_handlers = {}
-        for cmd_name, handler_func in self.command_map.items():
-            if cmd_name in ["help", "h"]: # Assuming "help" and "h" are handled specially or are core
+        for cmd_name, (handler_func, is_async) in self.command_map.items():
+            if cmd_name in ["help", "h"]:
                 continue
 
             if handler_func in seen_handlers:
@@ -125,16 +129,16 @@ class CommandHandler:
                 script_cmds_and_aliases.append("/" + alias)
         return sorted(list(set(core_cmds + script_cmds_and_aliases)))
 
-    def _ensure_args(
+    async def _ensure_args(
         self, args_str: str, usage_message: str, num_expected_parts: int = 1
     ) -> Optional[List[str]]:
         stripped_args_str = args_str.strip()
 
-        if num_expected_parts == 0: # No arguments expected
-            return [] if not stripped_args_str else [stripped_args_str] # Return [] if truly empty, else the unexpected args
+        if num_expected_parts == 0:
+            return [] if not stripped_args_str else [stripped_args_str]
 
-        if not stripped_args_str: # Arguments expected but none given
-            self.client.add_message(
+        if not stripped_args_str:
+            await self.client.add_message(
                 usage_message, self.client.ui.colors["error"],
                 context_name=self.client.context_manager.active_context_name or "Status",
             )
@@ -145,14 +149,14 @@ class CommandHandler:
 
         parts = stripped_args_str.split(" ", num_expected_parts - 1)
         if len(parts) < num_expected_parts:
-            self.client.add_message(
+            await self.client.add_message(
                 usage_message, self.client.ui.colors["error"],
                 context_name=self.client.context_manager.active_context_name or "Status",
             )
             return None
         return parts
 
-    def process_user_command(self, line: str) -> bool:
+    async def process_user_command(self, line: str) -> bool:
         self._processing_depth += 1
         if self._processing_depth > 1:
             logger.error(f"RE-ENTRANCY DETECTED in process_user_command for line: '{line}'. Current depth: {self._processing_depth}. Aborting this call.")
@@ -162,10 +166,10 @@ class CommandHandler:
         try:
             if not line.startswith("/"):
                 if self.client.context_manager.active_context_name:
-                    self.client.handle_text_input(line)
+                    await self.client.handle_text_input(line)
                     return True
                 else:
-                    self.client.add_message(
+                    await self.client.add_message(
                         "No active window to send message to.",
                         self.client.ui.colors["error"], context_name="Status",
                     )
@@ -187,18 +191,27 @@ class CommandHandler:
                 logger.debug(f"Full command_map keys for missing command '{cmd}': {map_keys_full_list}")
 
             if cmd in self.command_map:
-                handler_func = self.command_map[cmd]
-                logger.info(f"CommandHandler: Dispatching '{cmd}'. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}")
+                handler_func, is_async_handler = self.command_map[cmd]
+                logger.info(f"CommandHandler: Dispatching '{cmd}'. Handler: {getattr(handler_func, '__module__', 'N/A')}.{getattr(handler_func, '__name__', 'N/A')}. Is async: {is_async_handler}")
                 try:
-                    handler_func(self.client, args_str)
+                    if is_async_handler:
+                        await handler_func(self.client, args_str)
+                    else:
+                        if self.client._executor: # Run sync handlers in executor
+                            await asyncio.to_thread(handler_func, self.client, args_str)
+                        else:
+                            logger.error("Executor not available for synchronous command handler.")
+                            await self.client.add_message(f"Error: Executor not available for command /{cmd}.", self.client.ui.colors["error"], context_name="Status")
+                            return False
                 except Exception as e_handler:
                     logger.error(f"Error executing handler for command '{cmd}': {e_handler}", exc_info=True)
-                    self.client.add_message(f"Error in command /{cmd}: {e_handler}", self.client.ui.colors["error"], context_name=self.client.context_manager.active_context_name or "Status")
+                    await self.client.add_message(f"Error in command /{cmd}: {e_handler}", self.client.ui.colors["error"], context_name=self.client.context_manager.active_context_name or "Status")
                 return True
             else:
                 script_cmd_data = self.client.script_manager.get_script_command_handler_and_data(cmd)
                 if script_cmd_data and callable(script_cmd_data.get("handler")):
                     script_handler = script_cmd_data["handler"]
+                    is_script_handler_async = inspect.iscoroutinefunction(script_handler)
                     event_data_for_script = {
                         "client_logic_ref": self.client, "raw_line": line, "command": cmd,
                         "args_str": args_str,
@@ -210,16 +223,24 @@ class CommandHandler:
                         "script_name": script_cmd_data.get("script_name", "UnknownScript"),
                     }
                     try:
-                        script_handler(args_str, event_data_for_script)
+                        if is_script_handler_async:
+                            await script_handler(args_str, event_data_for_script)
+                        else:
+                            if self.client._executor:
+                                await asyncio.to_thread(script_handler, args_str, event_data_for_script)
+                            else:
+                                logger.error("Executor not available for synchronous script command handler.")
+                                await self.client.add_message(f"Error: Executor not available for script command /{cmd}.", self.client.ui.colors["error"], context_name="Status")
+                                return False
                     except Exception as e:
                         logger.error(f"Error executing script command '/{cmd}' from script '{script_cmd_data.get('script_name')}': {e}", exc_info=True)
-                        self.client.add_message(f"Error in script command /{cmd}: {e}", self.client.ui.colors["error"],
+                        await self.client.add_message(f"Error in script command /{cmd}: {e}", self.client.ui.colors["error"],
                                                 context_name=self.client.context_manager.active_context_name or "Status")
                     return True
                 else:
                     logger.warning(f"CommandHandler: Command '{cmd}' NOT found in command_map AND not a known script command. Treating as unknown.")
-                    self.client.add_message(f"Unknown command: {cmd}", self.client.ui.colors["error"],
+                    await self.client.add_message(f"Unknown command: {cmd}", self.client.ui.colors["error"],
                                             context_name=self.client.context_manager.active_context_name or "Status")
-                    return True # Still True because we "handled" it as unknown
+                    return True
         finally:
             self._processing_depth -= 1
