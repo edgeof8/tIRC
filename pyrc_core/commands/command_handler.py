@@ -60,43 +60,42 @@ class CommandHandler:
                 if hasattr(module, 'COMMAND_DEFINITIONS'):
                     logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}. Definitions: {getattr(module, 'COMMAND_DEFINITIONS')}")
                     for cmd_def in module.COMMAND_DEFINITIONS:
-                        for cmd_def in module.COMMAND_DEFINITIONS:
-                            cmd_name = cmd_def["name"].lower()
-                            handler_name_str = cmd_def["handler"]
-                            handler_func = getattr(module, handler_name_str, None)
-                            is_async_handler = inspect.iscoroutinefunction(handler_func)
-                            logger.debug(f"Processing command definition: name='{cmd_name}', handler='{handler_name_str}', is_async: {is_async_handler}")
+                        cmd_name = cmd_def["name"].lower()
+                        handler_name_str = cmd_def["handler"]
+                        handler_func = getattr(module, handler_name_str, None)
+                        is_async_handler = inspect.iscoroutinefunction(handler_func)
+                        logger.debug(f"Processing command definition: name='{cmd_name}', handler='{handler_name_str}', is_async: {is_async_handler}")
 
-                            if handler_func and callable(handler_func):
-                                if cmd_name in self.command_map:
-                                    logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
-                                self.command_map[cmd_name] = (handler_func, is_async_handler)
+                        if handler_func and callable(handler_func):
+                            if cmd_name in self.command_map:
+                                logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                            self.command_map[cmd_name] = (handler_func, is_async_handler)
 
-                                if "help" in cmd_def and cmd_def["help"]:
-                                    help_info = cmd_def["help"]
-                                    self.registered_command_help[cmd_name] = {
+                            if "help" in cmd_def and cmd_def["help"]:
+                                help_info = cmd_def["help"]
+                                self.registered_command_help[cmd_name] = {
+                                    "help_text": f"{help_info['usage']}\n  {help_info['description']}",
+                                    "aliases": [a.lower() for a in help_info.get("aliases", [])],
+                                    "script_name": "core",
+                                    "is_alias": False,
+                                    "module_path": python_module_name
+                                }
+                                for alias_raw in help_info.get("aliases", []):
+                                    alias = alias_raw.lower()
+                                    if alias in self.command_map:
+                                         logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                                    self.command_map[alias] = (handler_func, is_async_handler)
+                                    self.registered_command_help[alias] = {
                                         "help_text": f"{help_info['usage']}\n  {help_info['description']}",
-                                        "aliases": [a.lower() for a in help_info.get("aliases", [])],
+                                        "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
                                         "script_name": "core",
-                                        "is_alias": False,
+                                        "is_alias": True,
+                                        "primary_command": cmd_name,
                                         "module_path": python_module_name
                                     }
-                                    for alias_raw in help_info.get("aliases", []):
-                                        alias = alias_raw.lower()
-                                        if alias in self.command_map:
-                                             logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
-                                        self.command_map[alias] = (handler_func, is_async_handler)
-                                        self.registered_command_help[alias] = {
-                                            "help_text": f"{help_info['usage']}\n  {help_info['description']}",
-                                            "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
-                                            "script_name": "core",
-                                            "is_alias": True,
-                                            "primary_command": cmd_name,
-                                            "module_path": python_module_name
-                                        }
-                                logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}. Is async: {is_async_handler}.")
-                            else:
-                                logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
+                            logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}. Is async: {is_async_handler}.")
+                        else:
+                            logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
                 logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
 
             except ImportError as e:
