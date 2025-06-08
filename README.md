@@ -6,9 +6,7 @@
 
 > 💬 **A modern, modular IRC client built for power users and AI integration**
 
-<div align="center">
-  <img src="Image.png" alt="PyRC Screenshot" width="90%">
-</div>
+![PyRC Screenshot](Image.png)
 
 ## 🚀 Features at a Glance
 
