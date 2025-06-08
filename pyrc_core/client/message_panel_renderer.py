@@ -131,3 +131,25 @@ class MessagePanelRenderer:
             try:
                 SafeCursesUtils._safe_addstr(window, 0, 0, "[Error drawing DCC list]", self.colors.get("error",0), "dcc_draw_error")
             except: pass
+
+    def add_message_to_context(
+        self, text: str, color_attr: int, prefix_time: bool, context_name: str
+    ):
+        """
+        Adds a message to the specified context's message history.
+        This method is called by UIManager, which gets its messages from IRCClient_Logic.
+        """
+        # The actual message adding to the context's message deque is handled
+        # by the ContextManager. This renderer just draws what's already there.
+        # However, for consistency and to avoid circular imports, if a renderer
+        # needs to "add" something that affects the model, it typically delegates
+        # back to the client_logic or context_manager.
+        # Since IRCClient_Logic's add_message handles the context's message deque,
+        # this method in MessagePanelRenderer is primarily a pass-through
+        # or a placeholder if direct message manipulation were needed here.
+        # For now, it simply implies that the message would be added to the context
+        # and then drawn on the next refresh.
+        logger.debug(f"MessagePanelRenderer received message for context '{context_name}': {text[:50]}...")
+        # No direct action needed here as the message is already added to context
+        # by IRCClient_Logic.add_message, which calls this method.
+        # The next refresh_all_windows will pick it up.

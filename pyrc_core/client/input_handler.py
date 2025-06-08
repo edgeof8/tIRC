@@ -119,9 +119,9 @@ class InputHandler:
         elif key_code == curses.KEY_END:
             ui.scroll_messages("end")
         elif key_code == 14:  # CTRL+N
-            self.client_logic.switch_active_context("next")
+            await self.client_logic.switch_active_context("next")
         elif key_code == 16:  # CTRL+P
-            self.client_logic.switch_active_context("prev")
+            await self.client_logic.switch_active_context("prev")
         elif key_code == 21:  # CTRL+U
             current_context = self.client_logic.context_manager.get_context(
                 self.client_logic.context_manager.active_context_name or "Status"

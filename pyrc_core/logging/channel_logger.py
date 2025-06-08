@@ -101,3 +101,32 @@ class ChannelLoggerManager:
         except Exception as e:
             logging.error(f"Failed to create logger for Status messages: {e}", exc_info=True)
             return None
+
+    def log_message(self, context_name: str, message: str, level: int = logging.INFO):
+        """Logs a message to the appropriate channel or status logger."""
+        logger_to_use: Optional[logging.Logger] = None
+
+        if context_name == "Status":
+            logger_to_use = self.get_status_logger()
+        elif context_name in self.channel_loggers:
+            logger_to_use = self.channel_loggers[context_name]
+        else:
+            # Try to get or create a channel logger if it's a channel context
+            logger_to_use = self.get_channel_logger(context_name)
+
+        if logger_to_use:
+            if level == logging.DEBUG:
+                logger_to_use.debug(message)
+            elif level == logging.INFO:
+                logger_to_use.info(message)
+            elif level == logging.WARNING:
+                logger_to_use.warning(message)
+            elif level == logging.ERROR:
+                logger_to_use.error(message)
+            elif level == logging.CRITICAL:
+                logger_to_use.critical(message)
+            else:
+                logger_to_use.info(message) # Default to info
+        else:
+            # Fallback to main logger if no specific logger could be found/created
+            logging.getLogger("pyrc.fallback_logger").log(level, f"[Fallback Log - {context_name}] {message}")

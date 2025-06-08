@@ -153,7 +153,7 @@ class ConnectionOrchestrator:
         client.ui_needs_update.set()
 
 
-    def establish_connection(self, server_config_to_use: ConnectionInfo) -> None:
+    async def establish_connection(self, server_config_to_use: ConnectionInfo) -> None:
         """
         Orchestrates the process of establishing a new connection.
         This includes updating network parameters, starting the network handler if needed,
@@ -166,7 +166,7 @@ class ConnectionOrchestrator:
         self.initialize_handlers()
 
         # Update network handler with new parameters
-        self.network_handler.update_connection_params(
+        await self.network_handler.update_connection_params(
             server=server_config_to_use.server,
             port=server_config_to_use.port,
             use_ssl=server_config_to_use.ssl,
@@ -174,8 +174,8 @@ class ConnectionOrchestrator:
         )
 
         # Start network handler if it's not already running
-        if not self.network_handler._network_thread or not self.network_handler._network_thread.is_alive():
-            self.network_handler.start()
+        if not self.network_handler._network_task or self.network_handler._network_task.done():
+            await self.network_handler.start()
             logger.info("ConnectionOrchestrator: Network handler started.")
         else:
             logger.info("ConnectionOrchestrator: Network handler already running, parameters updated.")

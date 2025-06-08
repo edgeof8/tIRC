@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.handlers.protocol_flow")
 
-def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles CAP messages."""
     params = parsed_msg.params
     trailing = parsed_msg.trailing
@@ -16,7 +16,7 @@ def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_
 
     if not cap_subcommand:
         logger.warning(f"Malformed CAP message received: {raw_line.strip()}")
-        client.add_message(
+        await client.add_message(
             f"[Malformed CAP] {raw_line.strip()}",
             client.ui.colors["error"],
             context_name="Status",
@@ -31,7 +31,7 @@ def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_
         logger.error(
             "CAP message received, but client.cap_negotiator is not initialized."
         )
-        client.add_message(
+        await client.add_message(
             f"[CAP Error] Negotiator not ready for {cap_subcommand}",
             client.ui.colors["error"],
             context_name="Status", # Corrected from "Status" to context_name="Status"
@@ -49,14 +49,14 @@ def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_
     elif cap_subcommand == "DEL":
         client.cap_negotiator.on_cap_del_received(capabilities_str)
     else:
-        client.add_message(
+        await client.add_message(
             f"[CAP] Unknown subcommand: {cap_subcommand} {capabilities_str}",
             client.ui.colors["system"],
             context_name="Status",
         )
 
 # protocol_flow_handlers.py
-def handle_ping_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_ping_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles PING command."""
     ping_payload = parsed_msg.trailing
     if ping_payload is None:
@@ -70,10 +70,10 @@ def handle_ping_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw
         ping_payload = "unexpected_ping_payload_issue"
         logger.error("PING payload was unexpectedly None even after fallback. Using generic token.")
 
-    client.network_handler.send_raw(f"PONG :{ping_payload}")
+    await client.network_handler.send_raw(f"PONG :{ping_payload}")
     logger.debug(f"Responded to PING with PONG targeting '{ping_payload}'")
 
-def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles AUTHENTICATE command."""
     # raw_line is 'line' from the original handle_server_message context
     payload = parsed_msg.params[0] if parsed_msg.params else ""
@@ -81,7 +81,7 @@ def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IRCMessa
         logger.error(
             "AUTHENTICATE received, but client.sasl_authenticator is not initialized."
         )
-        client.add_message(
+        await client.add_message(
             f"[SASL Error] Authenticator not ready for AUTHENTICATE {payload}",
             client.ui.colors["error"],
             context_name="Status", # Corrected
@@ -96,7 +96,7 @@ def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IRCMessa
             f"SASL: Received AUTHENTICATE with payload other than '+': '{payload}'. This is unusual. Relying on numerics for outcome. Raw: {raw_line.strip()}"
         )
 
-def handle_unknown_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_unknown_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles unknown/unsupported commands."""
     # raw_line is 'line' from the original handle_server_message context
     cmd = parsed_msg.command # Get command from parsed_msg
@@ -114,7 +114,7 @@ def handle_unknown_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", 
     logger.warning(
         f"Unhandled command '{cmd.upper()}' from '{display_src}': {display_p}. Raw: {raw_line.strip()}"
     )
-    client.add_message(
+    await client.add_message(
         f"[{cmd.upper()}] From: {display_src}, Data: {display_p}".strip(),
         client.ui.colors["system"],
         context_name="Status",

@@ -38,12 +38,12 @@ COMMAND_DISPATCH_TABLE = {
     # We just need to make sure the main dispatcher routes to it if the command is a digit.
 }
 
-def handle_server_message(client: "IRCClient_Logic", line: str):
+async def handle_server_message(client: "IRCClient_Logic", line: str):
     parsed_msg = IRCMessage.parse(line)
 
     if not parsed_msg:
         logger.error(f"Failed to parse IRC message: {line.strip()}")
-        client.add_message(f"[UNPARSED] {line.strip()}", "error", context_name="Status")
+        await client.add_message(f"[UNPARSED] {line.strip()}", client.ui.colors["error"], context_name="Status")
         return
 
     cmd = parsed_msg.command
@@ -59,7 +59,7 @@ def handle_server_message(client: "IRCClient_Logic", line: str):
             "numeric": (int(parsed_msg.command) if parsed_msg.command.isdigit() else None),
             "tags": parsed_msg.get_all_tags() # Add tags to RAW event
         }
-        final_trigger_action_to_take = client.process_trigger_event("RAW", raw_data)
+        final_trigger_action_to_take = await client.process_trigger_event("RAW", raw_data)
         # If a RAW trigger produces a command, it takes precedence for now.
         # More sophisticated logic could queue actions or allow multiple.
 
@@ -75,13 +75,13 @@ def handle_server_message(client: "IRCClient_Logic", line: str):
         # Check if the handler is one that returns an Optional[str] (trigger action)
         # This is a heuristic based on the original code's specific_handler_trigger_action assignments.
         if handler in [handle_privmsg, handle_membership_changes, handle_nick_message, handle_mode_message, handle_topic_command_event, handle_notice, handle_chghost_command_event]:
-            specific_handler_trigger_action = handler(client, parsed_msg, line)
+            specific_handler_trigger_action = await handler(client, parsed_msg, line)
         else:
-            handler(client, parsed_msg, line)
+            await handler(client, parsed_msg, line)
     elif cmd.isdigit():
-        _handle_numeric_command(client, parsed_msg, line)
+        await _handle_numeric_command(client, parsed_msg, line)
     else:
-        handle_unknown_command(client, parsed_msg, line)
+        await handle_unknown_command(client, parsed_msg, line)
 
     # If a specific handler generated a command from its own trigger processing, use that.
     if specific_handler_trigger_action:
@@ -89,8 +89,8 @@ def handle_server_message(client: "IRCClient_Logic", line: str):
 
     if final_trigger_action_to_take:
         logger.info(f"Executing trigger-generated command: {final_trigger_action_to_take}")
-        client.command_handler.process_user_command(final_trigger_action_to_take)
+        await client.command_handler.process_user_command(final_trigger_action_to_take)
 
-    client.ui_needs_update.set()
+    client.ui_needs_update.set() # This is an asyncio.Event, set() is synchronous
 
 # END OF MODIFIED FILE: irc_protocol.py

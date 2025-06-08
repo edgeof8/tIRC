@@ -341,7 +341,7 @@ class NetworkHandler:
                 logger.error(
                     "NetworkHandler: cap_negotiator not found on client object during _connect_socket."
                 )
-                self.client_logic_ref._add_status_message(
+                await self.client_logic_ref._add_status_message(
                     "Error: CAP negotiator not initialized.", "error"
                 )
 
@@ -386,7 +386,7 @@ class NetworkHandler:
             if (
                 self.client_logic_ref
             ):
-                self.client_logic_ref._add_status_message(
+                await self.client_logic_ref._add_status_message(
                     "Cannot send: Not connected.", "error"
                 )
                 if not self.client_logic_ref.is_headless:
@@ -418,9 +418,9 @@ class NetworkHandler:
                 and hasattr(self.client_logic_ref, "show_raw_log_in_ui")
                 and self.client_logic_ref.show_raw_log_in_ui
             ):
-                self.client_logic_ref.add_message(
+                await self.client_logic_ref.add_message(
                     f"C >> {log_data}",
-                    "system",
+                    self.client_logic_ref.ui.colors["system"],
                     context_name="Status",
                     prefix_time=True,
                 )
@@ -434,7 +434,7 @@ class NetworkHandler:
         ) as e:
             logger.error(f"Error sending data: {e}", exc_info=True)
             if self.client_logic_ref:
-                self.client_logic_ref._add_status_message(
+                await self.client_logic_ref._add_status_message(
                     f"Error sending data: {e}", "error"
                 )
                 if not self.client_logic_ref.is_headless:
@@ -447,9 +447,9 @@ class NetworkHandler:
                 f"Unhandled error sending data: {e_unhandled_send}", exc_info=True
             )
             if self.client_logic_ref:
-                self.client_logic_ref.add_message(
+                await self.client_logic_ref.add_message(
                     f"Critical send error: {e_unhandled_send}",
-                    "error",
+                    self.client_logic_ref.ui.colors["error"],
                     context_name="Status",
                 )
             await self._reset_connection_state(dispatch_event=True)
@@ -494,7 +494,7 @@ class NetworkHandler:
                         await self._reset_connection_state()
                         continue
 
-                    self._process_received_data(data)
+                    await self._process_received_data(data)
 
                 except asyncio.IncompleteReadError:
                     logger.info("Server closed connection during read.")
@@ -518,7 +518,7 @@ class NetworkHandler:
             await self._reset_connection_state(dispatch_event=True)
             logger.info("Network loop shutdown complete.")
 
-    def _process_received_data(self, data: bytes) -> None:
+    async def _process_received_data(self, data: bytes) -> None:
         """Process received data from the network socket.
 
         Args:
@@ -535,7 +535,7 @@ class NetworkHandler:
                     # Decode the line and handle it
                     decoded_line = line.decode("utf-8", errors="replace")
                     if self.client_logic_ref:
-                        self.client_logic_ref.handle_server_message(decoded_line)
+                        await self.client_logic_ref.handle_server_message(decoded_line)
                 except UnicodeDecodeError as e:
                     logger.error(f"Error decoding received data: {e}")
                     continue

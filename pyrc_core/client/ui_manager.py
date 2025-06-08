@@ -303,6 +303,17 @@ class UIManager:
 
         self.curses_manager.update_screen()
 
+    def add_message_to_context(
+        self, text: str, color_attr: int, prefix_time: bool, context_name: str
+    ):
+        """Adds a message to the specified context's message history."""
+        # This method is called from IRCClient_Logic.add_message,
+        # which handles getting the correct context.
+        # Here, we just pass it on to the message panel renderer.
+        self.message_panel_renderer.add_message_to_context(
+            text, color_attr, prefix_time, context_name
+        )
+
     def get_input_char(self):
         if not self.input_win:
             return curses.ERR
