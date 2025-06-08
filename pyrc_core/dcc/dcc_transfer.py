@@ -6,7 +6,6 @@ import socket
 import hashlib
 from enum import Enum, auto
 from typing import Optional, Callable, Any
-import config # For accessing global config values like bandwidth limits
 
 # from dcc_manager import DCCManager # Forward declaration or import later to avoid circularity if needed
 
@@ -96,9 +95,9 @@ class DCCTransfer:
         # Bandwidth Throttling attributes
         self.bandwidth_limit_bps: int = 0
         if self.transfer_type == DCCTransferType.SEND:
-            limit_kbps = config.DCC_BANDWIDTH_LIMIT_SEND_KBPS
+            limit_kbps = self.dcc_manager.dcc_config.dcc_bandwidth_limit_send_kbps
         else: # RECEIVE
-            limit_kbps = config.DCC_BANDWIDTH_LIMIT_RECV_KBPS
+            limit_kbps = self.dcc_manager.dcc_config.dcc_bandwidth_limit_recv_kbps
 
         if limit_kbps > 0:
             self.bandwidth_limit_bps = limit_kbps * 1024
