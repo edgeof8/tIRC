@@ -6,8 +6,6 @@
 
 > 💬 **A modern, modular IRC client built for power users and AI integration**
 
-![PyRC Screenshot](image.png)
-
 ## 🚀 Features at a Glance
 
 - **🤖 AI-Ready**: Built with AI integration in mind, perfect for building IRC-powered AI agents and chatbots
