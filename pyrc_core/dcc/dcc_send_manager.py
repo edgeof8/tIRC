@@ -7,6 +7,7 @@ from typing import Dict, Optional, Any, List, Deque, TYPE_CHECKING
 
 from pyrc_core.dcc.dcc_transfer import DCCSendTransfer, DCCTransferStatus # Assuming DCCTransferType is not directly used here
 from pyrc_core.dcc.dcc_protocol import format_dcc_send_ctcp, format_dcc_resume_ctcp
+from pyrc_core.dcc.dcc_utils import get_listening_socket, get_local_ip_for_ctcp # NEW: Import utility functions
 
 if TYPE_CHECKING:
     from pyrc_core.dcc.dcc_manager import DCCManager
@@ -132,7 +133,7 @@ class DCCSendManager:
                         old_transfer.bytes_transferred < old_transfer.filesize):
                         resume_offset = old_transfer.bytes_transferred
                         self.dcc_event_logger.info(f"Found previous incomplete send of '{original_filename}' to {peer_nick} at offset {resume_offset}. Offering RESUME.")
-                        socket_info_resume = self.manager._get_listening_socket()
+                        socket_info_resume = get_listening_socket(self.manager.dcc_config, self.dcc_event_logger) # Use utility function
                         if not socket_info_resume:
                             self.dcc_event_logger.error(f"Could not get listening socket for DCC RESUME of '{original_filename}' to {peer_nick}.")
                             break
@@ -175,7 +176,7 @@ class DCCSendManager:
 
         if passive:
             passive_token = self.manager._generate_transfer_id()
-            local_ip_for_ctcp = self.manager._get_local_ip_for_ctcp()
+            local_ip_for_ctcp = get_local_ip_for_ctcp(self.manager.dcc_config, self.dcc_event_logger) # Use utility function
             ctcp_message = format_dcc_send_ctcp(original_filename, local_ip_for_ctcp, 0, filesize, passive_token)
             send_transfer_args["is_passive_offer"] = True
             send_transfer_args["passive_token"] = passive_token
@@ -185,12 +186,12 @@ class DCCSendManager:
                 return {"success": False, "error": "Failed to format passive DCC SEND CTCP message."}
             self.dcc_event_logger.debug(f"Passive SEND to {peer_nick} for '{original_filename}'. CTCP: {ctcp_message.strip()}")
         else: # Active DCC
-            socket_info = self.manager._get_listening_socket()
+            socket_info = get_listening_socket(self.manager.dcc_config, self.dcc_event_logger) # Use utility function
             if not socket_info:
                 self.dcc_event_logger.error(f"Could not get listening socket for active SEND of '{original_filename}' to {peer_nick}.")
                 return {"success": False, "error": "Could not create listening socket for active DCC SEND."}
             listening_socket, port = socket_info
-            local_ip_for_ctcp = self.manager._get_local_ip_for_ctcp()
+            local_ip_for_ctcp = get_local_ip_for_ctcp(self.manager.dcc_config, self.dcc_event_logger) # Use utility function
             ctcp_message = format_dcc_send_ctcp(original_filename, local_ip_for_ctcp, port, filesize)
             send_transfer_args["server_socket_for_active_send"] = listening_socket
             status_message_suffix = f". Waiting for connection on port {port}."

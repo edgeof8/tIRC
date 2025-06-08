@@ -4,6 +4,7 @@ from typing import Dict, Optional, Any, TYPE_CHECKING
 
 # Runtime imports needed for type checks or direct use if any
 from pyrc_core.dcc.dcc_transfer import DCCSendTransfer, DCCReceiveTransfer, DCCTransferStatus
+from pyrc_core.dcc.dcc_protocol import parse_dcc_ctcp # NEW: Import parse_dcc_ctcp
 
 if TYPE_CHECKING:
     from pyrc_core.dcc.dcc_manager import DCCManager # To avoid circular import for type hinting
@@ -17,13 +18,18 @@ class DCCCTCPHandler:
         self.manager = manager
         self.dcc_event_logger = manager.dcc_event_logger
 
-    def process_ctcp(self, nick: str, userhost: str, parsed_dcc: Dict[str, Any]):
+    def process_ctcp(self, nick: str, userhost: str, ctcp_payload: str):
         """
-        Processes a parsed DCC CTCP command.
+        Parses a raw DCC CTCP payload and dispatches it to the appropriate handler.
         """
+        parsed_dcc = parse_dcc_ctcp(ctcp_payload)
+        if not parsed_dcc:
+            self.dcc_event_logger.warning(f"Could not parse DCC CTCP from {nick}: {ctcp_payload}")
+            self.manager.client_logic.add_message(f"Received malformed DCC request from {nick}.", "error", context_name="Status")
+            return
+
         dcc_command = parsed_dcc.get("dcc_command")
-        # self.dcc_event_logger.info(f"DCCCTCPHandler: Received DCC Command '{dcc_command}' from {nick} with data: {parsed_dcc}")
-        # This log is already done in DCCManager before calling this, and a more detailed one below.
+        self.dcc_event_logger.info(f"DCCCTCPHandler: Processing DCC Command '{dcc_command}' from {nick}. Data: {parsed_dcc}")
 
         if dcc_command == "SEND":
             self._handle_send_command(nick, userhost, parsed_dcc)
@@ -75,7 +81,6 @@ class DCCCTCPHandler:
                     ip_str=ip_str,
                     userhost=userhost
                 )
-                # self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' (IP: {ip_str}) with token {token}.") # Logged by store_offer
                 self.manager._cleanup_stale_passive_offers() # Manager can still trigger cleanup
                 self.manager.client_logic.add_message(
                     f"Passive DCC SEND offer from {nick} ({userhost}): '{filename}' ({filesize} bytes). "
@@ -96,7 +101,8 @@ class DCCCTCPHandler:
                 # Active offer auto-accept
                 assert filename is not None and ip_str is not None and port is not None and filesize is not None
                 self.dcc_event_logger.info(f"Attempting auto-accept for ACTIVE offer from {nick} for '{str(filename)}'")
-                result = self.manager.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
+                # Delegate to DCCReceiveManager
+                result = self.manager.receive_manager.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
                 if result.get("success"):
                     transfer_id_val = result.get('transfer_id')
                     transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
@@ -111,7 +117,7 @@ class DCCCTCPHandler:
         if is_passive_offer and self.manager.dcc_config.get("auto_accept", False):
             if filename is not None and token is not None:
                 self.dcc_event_logger.info(f"Attempting auto-accept for PASSIVE offer from {nick} for '{filename}' with token {token}")
-                result = self.manager.accept_passive_offer_by_token(nick, filename, token)
+                result = self.manager.accept_passive_offer_by_token(nick, filename, token) # DCCManager delegates this to ReceiveManager
                 if result.get("success"):
                     transfer_id_val = result.get('transfer_id')
                     transfer_id_short = transfer_id_val[:8] if transfer_id_val else "N/A"
@@ -184,7 +190,7 @@ class DCCCTCPHandler:
             if found_resuming_send_transfer:
                 self.dcc_event_logger.info(f"DCC RESUME for '{accepted_filename}' to {nick} acknowledged by peer. Transfer {found_resuming_send_transfer.transfer_id} should proceed.")
             else:
-                self.dcc_event_logger.warning(f"Received Resume DCC ACCEPT from {nick} for '{accepted_filename}', but no matching active RESUME offer found or details mismatch.")
+                self.dcc_event_logger.warning(f"Received unexpected/mismatched Resume DCC ACCEPT from {nick} for '{accepted_filename}'.")
                 self.manager.client_logic.add_message(f"Received unexpected/mismatched Resume DCC ACCEPT from {nick} for '{accepted_filename}'.", "warning", context_name="Status")
             if accepted_filename is None: # Should ideally not happen if parsing was correct
                  self.dcc_event_logger.error(f"Resume DCC ACCEPT from {nick} had None for filename after parsing. This should not happen.")
@@ -256,9 +262,9 @@ class DCCCTCPHandler:
             self.manager.client_logic.add_message(f"Cannot accept DCC RESUME from {nick} for '{resume_filename}': Invalid prior transfer data (filesize).", "error", context_name="DCC")
             return
 
-        # Delegate the actual acceptance logic to a DCCManager method
+        # Delegate the actual acceptance logic to DCCReceiveManager
         # This keeps DCCCTCPHandler focused on parsing and initial dispatch.
-        self.manager.accept_incoming_resume_offer(
+        self.manager.receive_manager.accept_incoming_resume_offer(
             nick, resume_filename, peer_ip_address, resume_peer_port,
             resume_position_offered_by_peer, total_filesize, local_file_path_to_check
         )

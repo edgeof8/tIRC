@@ -61,7 +61,7 @@ def handle_dcc_accept_command(client_logic: 'IRCClient_Logic', cmd_args: List[st
             _handle_dcc_error(client_logic, f"Invalid filesize: {filesize}. Must be non-negative.", dcc_context_name)
             return
 
-        result = dcc_m.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
+        result = dcc_m.receive_manager.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
         if result.get("success"):
             client_logic.add_message(f"Accepted DCC SEND from {nick} for '{filename}' (ID: {result.get('transfer_id', 'N/A')[:8]}). Receiving...", "system", context_name=dcc_context_name)
         else:
