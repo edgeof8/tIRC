@@ -6,7 +6,7 @@
 
 > 💬 **A modern, modular IRC client built for power users and AI integration**
 
-![PyRC Screenshot](Image.png)
+![PyRC Screenshot](image.png)
 
 ## 🚀 Features at a Glance
 
