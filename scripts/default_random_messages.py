@@ -29,15 +29,15 @@ class RandomMessagesScript(ScriptBase):
         self.api.subscribe_to_event("CHANNEL_PART", self.handle_channel_part)
         self.api.log_info("RandomMessagesScript loaded and event handlers registered.")
 
-    def handle_client_shutdown(self, event_data: dict):
+    async def handle_client_shutdown(self, event_data: dict):
         """Handle client shutdown by sending a random quit message."""
         if not self.quit_messages:
             return
 
         message = random.choice(self.quit_messages)
-        self.api.send_raw(f"QUIT :{message}")
+        await self.api.send_raw(f"QUIT :{message}")
 
-    def handle_channel_part(self, event_data: dict):
+    async def handle_channel_part(self, event_data: dict):
         """Handle channel part by sending a random part message."""
         if not self.part_messages:
             return
@@ -47,7 +47,7 @@ class RandomMessagesScript(ScriptBase):
             return
 
         message = random.choice(self.part_messages)
-        self.api.send_raw(f"PART {channel} :{message}")
+        await self.api.send_raw(f"PART {channel} :{message}")
 
 
 def get_script_instance(api):

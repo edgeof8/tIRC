@@ -311,7 +311,7 @@ class ScriptAPIHandler:
             self.script_name, data_filename
         )
 
-    def add_message_to_context(
+    async def add_message_to_context(
         self,
         context_name: str,
         text: str,
@@ -321,86 +321,87 @@ class ScriptAPIHandler:
         color_attr = self.client_logic.ui.colors.get(
             color_key, self.client_logic.ui.colors["system"]
         )
-        self.client_logic.add_message(
+        await self.client_logic.add_message(
             text, color_attr, prefix_time=prefix_time, context_name=context_name
         )
 
-    def send_raw(self, command_string: str):
-        self.client_logic.network_handler.send_raw(command_string)
+    async def send_raw(self, command_string: str): # Made async
+        await self.client_logic.network_handler.send_raw(command_string) # Added await
 
-    def send_message(self, target: str, message: str):
-        self.send_raw(f"PRIVMSG {target} :{message}")
+    async def send_message(self, target: str, message: str): # Made async
+        await self.send_raw(f"PRIVMSG {target} :{message}") # Added await
 
-    def send_action(self, target: str, action_text: str):
+    async def send_action(self, target: str, action_text: str): # Made async
         if not target or not action_text:
             self.log_warning(
                 f"send_action called with empty target ('{target}') or action_text ('{action_text}')."
             )
             return
-        self.send_raw(f"PRIVMSG {target} :\x01ACTION {action_text}\x01")
+        await self.send_raw(f"PRIVMSG {target} :\x01ACTION {action_text}\x01") # Added await
 
-    def send_notice(self, target: str, message: str):
-        self.send_raw(f"NOTICE {target} :{message}")
+    async def send_notice(self, target: str, message: str): # Made async
+        await self.send_raw(f"NOTICE {target} :{message}") # Added await
 
-    def join_channel(self, channel_name: str, key: Optional[str] = None):
+    async def join_channel(self, channel_name: str, key: Optional[str] = None): # Made async
         if not channel_name.startswith(("#", "&", "+", "!")):
             channel_name = "#" + channel_name
         cmd = f"JOIN {channel_name}"
         if key:
             cmd += f" {key}"
-        self.send_raw(cmd)
+        await self.send_raw(cmd) # Added await
 
-    def part_channel(self, channel_name: str, reason: Optional[str] = None):
+    async def part_channel(self, channel_name: str, reason: Optional[str] = None): # Made async
         if not channel_name.startswith(("#", "&", "+", "!")):
             channel_name = "#" + channel_name
         cmd = f"PART {channel_name}"
         if reason:
             cmd += f" :{reason}"
-        self.send_raw(cmd)
+        await self.send_raw(cmd) # Added await
 
-    def set_nick(self, new_nick: str):
-        self.send_raw(f"NICK {new_nick}")
+    async def set_nick(self, new_nick: str): # Made async
+        await self.send_raw(f"NICK {new_nick}") # Added await
 
-    def set_topic(self, channel_name: str, new_topic: str):
+    async def set_topic(self, channel_name: str, new_topic: str): # Made async
         if not channel_name.startswith(("#", "&", "+", "!")):
             channel_name = "#" + channel_name
-        self.send_raw(f"TOPIC {channel_name} :{new_topic}")
+        await self.send_raw(f"TOPIC {channel_name} :{new_topic}") # Added await
 
-    def set_channel_mode(self, channel_name: str, modes: str, *mode_params: str):
+    async def set_channel_mode(self, channel_name: str, modes: str, *mode_params: str): # Made async
         if not channel_name.startswith(("#", "&", "+", "!")):
             channel_name = "#" + channel_name
         cmd = f"MODE {channel_name} {modes}"
         if mode_params:
             cmd += " " + " ".join(mode_params)
-        self.send_raw(cmd)
+        await self.send_raw(cmd) # Added await
 
-    def kick_user(self, channel_name: str, nick: str, reason: Optional[str] = None):
+    async def kick_user(self, channel_name: str, nick: str, reason: Optional[str] = None): # Made async
         if not channel_name.startswith(("#", "&", "+", "!")):
             channel_name = "#" + channel_name
         cmd = f"KICK {channel_name} {nick}"
         if reason:
             cmd += f" :{reason}"
-        self.send_raw(cmd)
+        await self.send_raw(cmd) # Added await
 
-    def invite_user(self, nick: str, channel_name: str):
+    async def invite_user(self, nick: str, channel_name: str): # Made async
         if not channel_name.startswith(("#", "&", "+", "!")):
             channel_name = "#" + channel_name
-        self.send_raw(f"INVITE {nick} {channel_name}")
+        await self.send_raw(f"INVITE {nick} {channel_name}") # Added await
 
-    def quit_client(self, reason: Optional[str] = None):
+    def quit_client(self, reason: Optional[str] = None): # This should remain synchronous as it sets an event
         self.log_info(
             f"Script '{self.script_name}' initiated client quit. Reason: {reason}"
         )
-        self.client_logic.should_quit = True
+        self.client_logic.should_quit.set() # Changed to .set()
 
-    def execute_client_command(self, command_line_with_slash: str) -> bool:
+    async def execute_client_command(self, command_line_with_slash: str) -> bool: # Made async
         if not command_line_with_slash.startswith("/"):
             self.log_error(
                 f"execute_client_command: Command line '{command_line_with_slash}' must start with '/'"
             )
             return False
         self.log_info(f"Executing client command via API: {command_line_with_slash}")
-        return self.client_logic.command_handler.process_user_command(
+        # Assuming process_user_command becomes async or handles async internally
+        return await self.client_logic.command_handler.process_user_command( # Added await
             command_line_with_slash
         )
 

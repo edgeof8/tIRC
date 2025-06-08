@@ -4,12 +4,13 @@ import curses
 import asyncio
 import concurrent.futures # For running blocking calls in a thread pool
 from collections import deque
-from typing import Optional, Any, List, Set, Dict, Tuple
+from typing import Optional, Any, List, Set, Dict, Tuple, cast
 import logging
 import logging.handlers
 import os
 import platform
 from enum import Enum
+from dataclasses import asdict # Import asdict
 # typing.Optional is already imported by __future__.annotations if Python >= 3.9
 # from typing import Optional # Keep for clarity if preferred
 
@@ -55,7 +56,7 @@ class DummyUI:
     def shutdown(self):
         pass
 
-    def add_message_to_context(
+    async def add_message_to_context(
         self, text: str, color_attr: int, prefix_time: bool, context_name: str
     ):
         """Dummy method for headless UI, does nothing."""
@@ -68,6 +69,7 @@ class IRCClient_Logic:
         self.is_headless = stdscr is None
         self.args = args
         self.config: AppConfig = config
+        self.loop = asyncio.get_event_loop()
 
         self.should_quit = asyncio.Event() # Use asyncio.Event for graceful shutdown
         self.ui_needs_update = asyncio.Event()
@@ -114,47 +116,33 @@ class IRCClient_Logic:
             "CLIENT_READY", self._handle_client_ready_for_ui_switch, "IRCClient_Logic_Internal_UI_Switch"
         )
 
-        # Initial synchronous setup
-        # The following calls are now async or depend on async setup, so they cannot be directly awaited in __init__.
-        # Their execution is managed within the main asyncio loop.
-        # self._create_initial_state() # Will be called from run_main_loop
-        # self.connection_orchestrator.initialize_handlers() # Will be called from run_main_loop
-        # self.script_manager.load_scripts() # Will be called from run_main_loop
-        # self._start_connection_if_auto() # Will be called from run_main_loop
-        # self._log_startup_status() # Will be called from run_main_loop
-
     async def run_main_loop(self):
         """Main asyncio loop to handle user input and update the UI."""
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
 
-        # Initialize thread pool for blocking operations
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
         try:
-            # All initial setup that requires asynchronous operations or depends on them
-            # should be called here within the async run_main_loop.
             await self._create_initial_state()
-            self.connection_orchestrator.initialize_handlers() # Synchronous, but depends on _create_initial_state
-            self.script_manager.load_scripts() # Synchronous
+            self.connection_orchestrator.initialize_handlers()
+            self.script_manager.load_scripts()
             await self._log_startup_status()
 
             conn_info = self.state_manager.get_connection_info()
             if conn_info and conn_info.auto_connect:
                 logger.info(f"Auto-connecting to {conn_info.server}:{conn_info.port}")
-                await self._start_connection_if_auto() # This will call network_handler.start()
+                await self._start_connection_if_auto()
                 logger.info("Auto-connection initiated.")
 
-            # Create tasks for network and input handling
             network_task = asyncio.create_task(self.network_handler._network_loop())
             input_task = None
             if not self.is_headless and self.input_handler:
                 input_task = asyncio.create_task(self.input_handler.async_input_reader(self._executor))
 
-            # Main loop
-            while not self.should_quit.is_set(): # Check asyncio.Event
+            while not self.should_quit.is_set():
                 try:
-                    await self._update_ui() # Await UI update
-                    await asyncio.sleep(0.01) # Use asyncio.sleep
+                    await self._update_ui()
+                    await asyncio.sleep(0.01)
 
                 except asyncio.CancelledError:
                     logger.info("Main loop cancelled.")
@@ -173,7 +161,7 @@ class IRCClient_Logic:
         finally:
             quit_msg = self._final_quit_message or "Client shutting down"
             if self.network_handler:
-                await self.network_handler.disconnect_gracefully(quit_msg) # Await disconnect
+                await self.network_handler.disconnect_gracefully(quit_msg)
 
             if not self.is_headless and self.ui and hasattr(self.ui, 'shutdown') and callable(self.ui.shutdown):
                 logger.info("Shutting down UI (from main_loop finally).")
@@ -242,36 +230,39 @@ class IRCClient_Logic:
                 port=port,
                 ssl=ssl,
                 nick=cli_nick,
-                username=cli_nick,
-                realname=cli_nick,
+                username=cli_nick, # Defaulting, __post_init__ will handle if None
+                realname=cli_nick, # Defaulting, __post_init__ will handle if None
                 channels=self.args.channel or [],
                 server_password=self.args.password,
                 nickserv_password=self.args.nickserv_password,
-                sasl_username=None,
-                sasl_password=None,
-                verify_ssl_cert=True,
-                auto_connect=True,
-                desired_caps=[]
+                sasl_username=None, # Will be defaulted by ServerConfig post_init if applicable
+                sasl_password=None, # Will be defaulted by ServerConfig post_init if applicable
+                verify_ssl_cert=True, # Default for CLI
+                auto_connect=True, # CLI implies auto-connect
+                desired_caps=[] # Default for CLI
             )
         elif self.config.default_server_config_name:
             active_config_for_initial_state = self.config.all_server_configs.get(self.config.default_server_config_name)
 
         if active_config_for_initial_state:
+            server_config_dict = asdict(active_config_for_initial_state)
+
+            # Map ServerConfig fields to ConnectionInfo fields
             conn_info = ConnectionInfo(
-                server=active_config_for_initial_state.address,
-                port=active_config_for_initial_state.port,
-                ssl=active_config_for_initial_state.ssl,
-                nick=active_config_for_initial_state.nick,
-                username=active_config_for_initial_state.username or active_config_for_initial_state.nick,
-                realname=active_config_for_initial_state.realname or active_config_for_initial_state.nick,
-                server_password=active_config_for_initial_state.server_password,
-                nickserv_password=active_config_for_initial_state.nickserv_password,
-                sasl_username=active_config_for_initial_state.sasl_username,
-                sasl_password=active_config_for_initial_state.sasl_password,
-                verify_ssl_cert=active_config_for_initial_state.verify_ssl_cert,
-                auto_connect=active_config_for_initial_state.auto_connect,
-                initial_channels=list(active_config_for_initial_state.channels or []),
-                desired_caps=list(active_config_for_initial_state.desired_caps or [])
+                server=server_config_dict["address"],
+                port=server_config_dict["port"],
+                ssl=server_config_dict["ssl"],
+                nick=server_config_dict["nick"],
+                username=server_config_dict["username"],
+                realname=server_config_dict["realname"],
+                server_password=server_config_dict["server_password"],
+                nickserv_password=server_config_dict["nickserv_password"],
+                sasl_username=server_config_dict["sasl_username"],
+                sasl_password=server_config_dict["sasl_password"],
+                verify_ssl_cert=server_config_dict["verify_ssl_cert"],
+                auto_connect=server_config_dict["auto_connect"],
+                initial_channels=server_config_dict["channels"],
+                desired_caps=server_config_dict["desired_caps"]
             )
             if not self.state_manager.set_connection_info(conn_info):
                 logger.error("Initial state creation failed: ConnectionInfo validation error.")
@@ -282,9 +273,11 @@ class IRCClient_Logic:
                 if current_conn_info:
                     current_conn_info.auto_connect = False
                     self.state_manager.set_connection_info(current_conn_info)
-                elif conn_info:
-                    conn_info.auto_connect = False
+                elif conn_info: # Should be the one that just failed validation
+                    conn_info.auto_connect = False # Prevent auto-connect on invalid config
+                    # Attempt to set it again, but it might still fail if other issues persist beyond auto_connect
                     self.state_manager.set_connection_info(conn_info)
+
 
         self.context_manager.create_context("Status", context_type="status")
         if self.config.dcc_enabled:
@@ -330,10 +323,6 @@ class IRCClient_Logic:
     async def _start_connection_if_auto(self):
         conn_info = self.state_manager.get_connection_info()
         if conn_info and conn_info.auto_connect:
-            # establish_connection returns None, so we should not await it.
-            # Instead, ensure it correctly initiates the connection via the network handler.
-            # The network handler's start method is already awaited in run_main_loop if auto_connect is true.
-            # This method's primary role is to set up the connection info for the network handler.
             await self.connection_orchestrator.establish_connection(conn_info)
 
 
@@ -394,24 +383,26 @@ class IRCClient_Logic:
         Initialize connection info from a ServerConfig and update state.
         """
         try:
-            username = config_data.username or config_data.nick
-            realname = config_data.realname or config_data.nick
+            # username = config_data.username # Not needed, __post_init__ in ServerConfig and ConnectionInfo handle this
+            # realname = config_data.realname # Not needed
+
+            config_data_dict = asdict(config_data)
 
             conn_info_obj = ConnectionInfo(
-                server=config_data.address,
-                port=config_data.port,
-                ssl=config_data.ssl,
-                nick=config_data.nick,
-                username=username,
-                realname=realname,
-                server_password=config_data.server_password,
-                nickserv_password=config_data.nickserv_password,
-                sasl_username=config_data.sasl_username,
-                sasl_password=config_data.sasl_password,
-                verify_ssl_cert=config_data.verify_ssl_cert,
-                auto_connect=config_data.auto_connect,
-                initial_channels=list(config_data.channels or []),
-                desired_caps=list(config_data.desired_caps or [])
+                server=config_data_dict["address"],
+                port=config_data_dict["port"],
+                ssl=config_data_dict["ssl"],
+                nick=config_data_dict["nick"],
+                username=config_data_dict["username"],
+                realname=config_data_dict["realname"],
+                server_password=config_data_dict["server_password"],
+                nickserv_password=config_data_dict["nickserv_password"],
+                sasl_username=config_data_dict["sasl_username"],
+                sasl_password=config_data_dict["sasl_password"],
+                verify_ssl_cert=config_data_dict["verify_ssl_cert"],
+                auto_connect=config_data_dict["auto_connect"],
+                initial_channels=config_data_dict["channels"],
+                desired_caps=config_data_dict["desired_caps"]
             )
 
             if not self.state_manager.set_connection_info(conn_info_obj):
@@ -429,12 +420,12 @@ class IRCClient_Logic:
 
     async def handle_server_message(self, line: str):
         if self.show_raw_log_in_ui:
-            await self._add_status_message(f"S << {line.strip()}") # Await this
+            await self._add_status_message(f"S << {line.strip()}")
 
         parsed_msg = IRCMessage.parse(line)
         if not parsed_msg:
             logger.error(f"Failed to parse IRC message: {line.strip()}")
-            await self._add_status_message(f"[UNPARSED] {line.strip()}", "error") # Await this
+            await self._add_status_message(f"[UNPARSED] {line.strip()}", "error")
             return
 
         if parsed_msg.command in ("PRIVMSG", "NOTICE"):
@@ -457,7 +448,7 @@ class IRCClient_Logic:
             return
         payload = ctcp_message.strip("\x01")
         full_ctcp_command = f"\x01{payload}\x01"
-        await self.network_handler.send_raw(f"PRIVMSG {target} :{full_ctcp_command}") # Await this
+        await self.network_handler.send_raw(f"PRIVMSG {target} :{full_ctcp_command}")
         logger.debug(f"Sent CTCP PRIVMSG to {target}: {full_ctcp_command}")
 
     async def switch_active_context(self, direction: str):
@@ -476,7 +467,7 @@ class IRCClient_Logic:
         if status_context in context_names:
             sorted_context_names.append(status_context)
         sorted_context_names.extend(regular_contexts)
-        if dcc_context in context_names and dcc_context not in sorted_context_names :
+        if dcc_context in context_names and dcc_context not in sorted_context_names : # ensure DCC is added if present
             sorted_context_names.append(dcc_context)
 
 
@@ -493,7 +484,7 @@ class IRCClient_Logic:
             if not sorted_context_names: return
             current_active_name = sorted_context_names[0]
 
-        if not current_active_name:
+        if not current_active_name: # Should not happen if logic above is correct
             return
 
         new_active_context_name = None
@@ -510,7 +501,7 @@ class IRCClient_Logic:
             if direction in sorted_context_names:
                 new_active_context_name = direction
             else:
-                try: # Corrected indentation for try block
+                try:
                     num_idx = int(direction) - 1
                     if 0 <= num_idx < num_contexts:
                         new_active_context_name = sorted_context_names[num_idx]
@@ -533,13 +524,13 @@ class IRCClient_Logic:
                     else:
                         exact_match_case_insensitive = [name for name in sorted_context_names if direction.lower() == name.lower()]
                         if len(exact_match_case_insensitive) == 1:
-                            new_active_context_name = exact_match_case_insensitive[0]
+                             new_active_context_name = exact_match_case_insensitive[0]
                         else:
                             await self.add_message(
                                 f"Window '{direction}' not found.",
                                 self.ui.colors["error"], context_name=current_active_name,
                             )
-                            return # Removed redundant `return`
+                            return
         if new_active_context_name:
             self.context_manager.set_active_context(new_active_context_name)
             self.ui_needs_update.set()
@@ -556,7 +547,7 @@ class IRCClient_Logic:
 
         cyclable_contexts = channel_names_only[:]
         if "Status" in all_context_names:
-            if "Status" not in cyclable_contexts:
+            if "Status" not in cyclable_contexts: # Ensure Status is only added if not already part of channels (unlikely)
                  cyclable_contexts.append("Status")
 
         if not cyclable_contexts:
@@ -575,7 +566,7 @@ class IRCClient_Logic:
         num_cyclable = len(cyclable_contexts)
         if num_cyclable == 0: return
 
-        if current_idx == -1:
+        if current_idx == -1: # If current active is not in cyclable (e.g. a query), default to first
             new_active_channel_name_to_set = cyclable_contexts[0]
         elif direction == "next":
             new_idx = (current_idx + 1) % num_cyclable
@@ -604,7 +595,10 @@ class IRCClient_Logic:
 
 
     def is_sasl_completed(self) -> bool:
-        return self.sasl_authenticator.is_completed() if self.sasl_authenticator else True
+        if self.sasl_authenticator is not None:
+            sasl = cast(SaslAuthenticator, self.sasl_authenticator)
+            return sasl.is_completed()
+        return True # If no SASL authenticator, SASL phase is effectively "completed" (as in, not pending)
 
 
     def get_enabled_caps(self) -> Set[str]:
@@ -615,8 +609,8 @@ class IRCClient_Logic:
         logger.info(f"ClientLogic: handle_channel_fully_joined called for {channel_name}")
         normalized_channel_name = self.context_manager._normalize_context_name(channel_name)
 
-        if hasattr(self, "event_manager") and self.event_manager:
-            self.event_manager.dispatch_channel_fully_joined(normalized_channel_name, raw_line="")
+        if hasattr(self, "event_manager") and self.event_manager: # Check for event_manager existence
+            await self.event_manager.dispatch_channel_fully_joined(normalized_channel_name, raw_line="") # Added await
 
         if self.last_join_command_target and \
            self.context_manager._normalize_context_name(self.last_join_command_target) == normalized_channel_name:
@@ -624,7 +618,7 @@ class IRCClient_Logic:
             self.context_manager.set_active_context(normalized_channel_name)
             self.last_join_command_target = None
             self.ui_needs_update.set()
-        else:
+        else: # Check if it's an initial channel and current context is Status
             active_ctx = self.context_manager.get_active_context()
             if not active_ctx or active_ctx.name == "Status":
                 conn_info = self.state_manager.get_connection_info()
@@ -643,14 +637,12 @@ class IRCClient_Logic:
         try:
             python_trigger_api = PythonTriggerAPI(self, script_name=f"trigger_{trigger_info_for_error[:10]}")
 
-            # Define a synchronous wrapper for add_message_to_context
             async def async_add_message_to_context_wrapper(context, text, color_key):
-                # Assuming python_trigger_api.add_message_to_context is now async
                 await python_trigger_api.add_message_to_context(context, text, color_key)
 
             execution_globals = {
                 "__builtins__": {
-                    "print": lambda *args, **kwargs: asyncio.create_task(async_add_message_to_context_wrapper( # Use async wrapper
+                    "print": lambda *args, **kwargs: asyncio.create_task(async_add_message_to_context_wrapper(
                         current_context_name, " ".join(map(str, args)), "system"
                     )),
                     "eval": eval, "str": str, "int": int, "float": float, "list": list,
@@ -666,7 +658,6 @@ class IRCClient_Logic:
                 "logger": logging.getLogger(f"pyrc.trigger.python_exec.{trigger_info_for_error.replace(' ','_')[:20]}")
             }
 
-            # Execute the script code in a separate thread to avoid blocking the event loop
             if self._executor:
                 await asyncio.to_thread(exec, code, execution_globals, execution_locals)
             else:
@@ -697,10 +688,10 @@ class IRCClient_Logic:
         if action_type_enum is not None and isinstance(action_type_enum, Enum):
             action_type_name = action_type_enum.name
         elif action_type_enum is None:
-            action_type_name = "UNKNOWN_ACTION_TYPE_NONE"
+            action_type_name = "UNKNOWN_ACTION_TYPE_NONE" # Should not happen
             logger.error(f"Trigger result had None for action type. Result: {result}")
             return None
-        else:
+        else: # Defensive: if type is not an Enum instance for some reason
             action_type_name = str(action_type_enum)
             logger.warning(f"Trigger action type is not an Enum instance: {action_type_enum}")
 
@@ -716,50 +707,50 @@ class IRCClient_Logic:
             if code:
                 trigger_info = f"Event: {event_type}, Pattern: {result.get('pattern', 'N/A')}"
                 logger.info(f"Trigger action is PYTHON. Executing code snippet for trigger: {trigger_info}")
-                await self._execute_python_trigger(code, result.get("event_data", {}), trigger_info) # Await this
+                await self._execute_python_trigger(code, result.get("event_data", {}), trigger_info)
         return None
 
 
     async def handle_text_input(self, text: str):
         active_ctx_name = self.context_manager.active_context_name
         if not active_ctx_name:
-            await self._add_status_message("No active window to send message to.", "error") # Await this
+            await self._add_status_message("No active window to send message to.", "error")
             return
         active_ctx = self.context_manager.get_context(active_ctx_name)
         if not active_ctx:
-            await self._add_status_message(f"Error: Active context '{active_ctx_name}' not found.", "error") # Await this
+            await self._add_status_message(f"Error: Active context '{active_ctx_name}' not found.", "error")
             return
 
         if active_ctx.type == "channel":
             if hasattr(active_ctx, 'join_status') and isinstance(active_ctx.join_status, ChannelJoinStatus) and \
                active_ctx.join_status == ChannelJoinStatus.FULLY_JOINED:
-                await self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}") # Await this
+                await self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
                 if "echo-message" not in self.get_enabled_caps():
                     conn_info = self.state_manager.get_connection_info()
                     current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
-                    await self.add_message(f"<{current_nick}> {text}", self.ui.colors["my_message"], context_name=active_ctx_name) # Await this
+                    await self.add_message(f"<{current_nick}> {text}", self.ui.colors["my_message"], context_name=active_ctx_name)
                 elif self.echo_sent_to_status:
                     conn_info = self.state_manager.get_connection_info()
                     current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
-                    await self.add_message(f"To {active_ctx_name}: <{current_nick}> {text}", self.ui.colors["my_message"], context_name="Status") # Await this
+                    await self.add_message(f"To {active_ctx_name}: <{current_nick}> {text}", self.ui.colors["my_message"], context_name="Status")
             else:
                 join_status_name = active_ctx.join_status.name if hasattr(active_ctx, 'join_status') and active_ctx.join_status else 'N/A'
-                await self.add_message( # Await this
+                await self.add_message(
                     f"Cannot send message: Channel {active_ctx_name} not fully joined (Status: {join_status_name}).",
                     self.ui.colors["error"], context_name=active_ctx_name,
                 )
         elif active_ctx.type == "query":
-            await self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}") # Await this
+            await self.network_handler.send_raw(f"PRIVMSG {active_ctx_name} :{text}")
             if "echo-message" not in self.get_enabled_caps():
                 conn_info = self.state_manager.get_connection_info()
                 current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
-                await self.add_message(f"<{current_nick}> {text}", self.ui.colors["my_message"], context_name=active_ctx_name) # Await this
+                await self.add_message(f"<{current_nick}> {text}", self.ui.colors["my_message"], context_name=active_ctx_name)
             elif self.echo_sent_to_status:
                 conn_info = self.state_manager.get_connection_info()
                 current_nick = conn_info.nick if conn_info and hasattr(conn_info, 'nick') else "unknown"
-                await self.add_message(f"To {active_ctx_name}: <{current_nick}> {text}", self.ui.colors["my_message"], context_name="Status") # Await this
+                await self.add_message(f"To {active_ctx_name}: <{current_nick}> {text}", self.ui.colors["my_message"], context_name="Status")
         else:
-            await self._add_status_message( # Await this
+            await self._add_status_message(
                 f"Cannot send messages to '{active_ctx_name}' (type: {active_ctx.type}). Try a command like /msg.",
                 "error",
             )
@@ -768,26 +759,27 @@ class IRCClient_Logic:
     async def handle_rehash_config(self):
         logger.info("Attempting to reload configuration via /rehash...")
         try:
-            self.config = AppConfig(config_file_path=self.config.CONFIG_FILE_PATH)
+            self.config = AppConfig(config_file_path=self.config.CONFIG_FILE_PATH) # Re-initialize AppConfig
 
-            self.channel_logger_manager = ChannelLoggerManager(self.config)
-            if self.context_manager:
+            self.channel_logger_manager = ChannelLoggerManager(self.config) # Re-initialize with new config
+            if self.context_manager: # Check if it exists
                  self.context_manager.max_history = self.config.max_history
-            if self.dcc_manager:
-                self.dcc_manager.config = self.config
-                self.dcc_manager.dcc_config = self.dcc_manager._load_dcc_config()
+            if self.dcc_manager: # Check if it exists
+                self.dcc_manager.config = self.config # Update DCCManager's config reference
+                self.dcc_manager.dcc_config = self.dcc_manager._load_dcc_config() # Reload DCC specific parts
 
-            if self.script_manager:
+            if self.script_manager: # Check if it exists
                 self.script_manager.disabled_scripts = self.config.disabled_scripts
+                # Consider if scripts need full reload: self.script_manager.reload_scripts()
 
-            await self._add_status_message( # Await this
+            await self._add_status_message(
                 "Configuration reloaded from INI. Some changes may require /reconnect or client restart."
             )
             logger.info("Configuration successfully reloaded from INI.")
             self.ui_needs_update.set()
         except Exception as e:
             logger.error(f"Error during /rehash: {e}", exc_info=True)
-            await self._add_status_message(f"Error reloading configuration: {e}", "error") # Await this
+            await self._add_status_message(f"Error reloading configuration: {e}", "error")
             self.ui_needs_update.set()
 
 
@@ -814,21 +806,25 @@ class IRCClient_Logic:
         current_nick_from_state = (ci.nick if (ci := self.state_manager.get_connection_info()) else None) or app_config.DEFAULT_NICK
 
         desired_caps_to_use = []
-        if self.config.default_server_config_name:
+        if self.config.default_server_config_name: # Check if default_server_config_name exists
             default_conf = self.config.all_server_configs.get(self.config.default_server_config_name)
-            if default_conf and default_conf.desired_caps:
+            if default_conf and default_conf.desired_caps: # Check if default_conf and desired_caps exist
                 desired_caps_to_use = default_conf.desired_caps
 
+        # For temporary connection info created from `connect` method arguments
         temp_conn_info = ConnectionInfo(
-            server=server, port=port, ssl=use_ssl,
+            server=server,
+            port=port,
+            ssl=use_ssl,
             nick=current_nick_from_state,
             initial_channels=initial_channels or [],
             desired_caps=desired_caps_to_use
+            # Other fields will use their defaults from ConnectionInfo definition
         )
 
         if not self.state_manager.set_connection_info(temp_conn_info):
             logger.error(f"Failed to set connection info for {server}:{port}. Validation failed.")
-            await self._add_status_message(f"Connection config error for {server}:{port}. Check logs.", "error") # Await this
+            await self._add_status_message(f"Connection config error for {server}:{port}. Check logs.", "error")
             return False
 
         await self.connection_orchestrator.establish_connection(temp_conn_info)
@@ -837,8 +833,8 @@ class IRCClient_Logic:
 
     async def disconnect(self, quit_message: str = "Client disconnecting") -> None:
         if self.network_handler:
-            await self.network_handler.disconnect_gracefully(quit_message) # Await this
-        self.should_quit.set() # Set asyncio.Event
+            await self.network_handler.disconnect_gracefully(quit_message)
+        self.should_quit.set()
 
 
     async def handle_reconnect(self) -> None:
@@ -854,10 +850,9 @@ class IRCClient_Logic:
 
     async def _handle_user_input_impl(self):
         if self.input_handler and self.ui:
-            # get_input_char is blocking, so run it in a thread
-            key_code = await asyncio.to_thread(self.ui.get_input_char) # Await this
+            key_code = await asyncio.to_thread(self.ui.get_input_char)
             if key_code != curses.ERR:
-                await self.input_handler.handle_key_press(key_code) # Await this
+                await self.input_handler.handle_key_press(key_code)
 
 
     async def _update_ui_impl(self):
@@ -873,18 +868,18 @@ class IRCClient_Logic:
         prefix_time: bool = True,
         context_name: Optional[str] = None,
         log_level: int = logging.INFO,
+        source_full_ident: Optional[str] = None, # Added for ignore list check
+        is_privmsg_or_notice: bool = False, # Added to differentiate message types for ignore
     ):
         if not self.ui:
             return
 
         active_context_name_str = context_name or self.context_manager.active_context_name
 
-        # Ensure active_context_name_str is not None before passing to get_context
         if active_context_name_str is None:
             logger.warning(f"Attempted to add message with no active context and no context_name provided: {text}")
-            # Fallback to status window if no active context is found
             if self.context_manager.get_context("Status"):
-                self.ui.add_message_to_context(
+                await self.ui.add_message_to_context(
                     text, color_attr, prefix_time, "Status"
                 )
                 self.channel_logger_manager.log_message(
@@ -900,7 +895,7 @@ class IRCClient_Logic:
         current_context = self.context_manager.get_context(active_context_name_str)
 
         if current_context:
-            self.ui.add_message_to_context(
+            await self.ui.add_message_to_context(
                 text, color_attr, prefix_time, current_context.name
             )
             self.channel_logger_manager.log_message(
@@ -911,9 +906,8 @@ class IRCClient_Logic:
             logger.warning(
                 f"Attempted to add message to non-existent context '{active_context_name_str}': {text}"
             )
-            # Fallback to status window if active context is not found
-            if self.context_manager.get_context("Status"):
-                self.ui.add_message_to_context(
+            if self.context_manager.get_context("Status"): # Fallback to status
+                await self.ui.add_message_to_context(
                     text, color_attr, prefix_time, "Status"
                 )
                 self.channel_logger_manager.log_message("Status", text, log_level)

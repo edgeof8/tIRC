@@ -6,6 +6,7 @@ import logging
 import logging.handlers
 import os
 import sys
+import asyncio  # Import asyncio
 from typing import List, Optional
 
 # Import the new AppConfig class and other necessary components
@@ -83,22 +84,22 @@ def setup_logging(config: AppConfig):
         logging.getLogger("pyrc").error(f"Advanced file logging setup failed. Using basic console logging. Error: {e}")
 
 
-def main_curses_wrapper(stdscr, args: argparse.Namespace, config: AppConfig):
+async def main_curses_wrapper(stdscr, args: argparse.Namespace, config: AppConfig):
     """Wraps the main application logic for curses compatibility."""
     main_ui_logger = logging.getLogger("pyrc.main_ui")
     main_ui_logger.info("Starting PyRC curses wrapper.")
     client = None
     try:
         client = IRCClient_Logic(stdscr=stdscr, args=args, config=config)
-        client.run_main_loop()
+        await client.run_main_loop()
     except Exception as e:
         main_ui_logger.critical(f"Critical error in main UI loop: {e}", exc_info=True)
         if client:
-            client.should_quit = True
+            client.should_quit.set()  # Use .set() for asyncio.Event
     finally:
         main_ui_logger.info("Shutting down PyRC (UI mode).")
         if client:
-            client.should_quit = True
+            client.should_quit.set()  # Use .set() for asyncio.Event
 
         if stdscr:
             try:
@@ -113,7 +114,7 @@ def main_curses_wrapper(stdscr, args: argparse.Namespace, config: AppConfig):
         if client and hasattr(client, "event_manager") and client.event_manager:
             try:
                 main_ui_logger.info("Dispatching CLIENT_SHUTDOWN_FINAL from main_curses_wrapper.")
-                client.event_manager.dispatch_client_shutdown_final(raw_line="CLIENT_SHUTDOWN_FINAL from UI wrapper")
+                await client.event_manager.dispatch_client_shutdown_final(raw_line="CLIENT_SHUTDOWN_FINAL from UI wrapper")
             except Exception as e_dispatch:
                 main_ui_logger.error(f"Error dispatching CLIENT_SHUTDOWN_FINAL: {e_dispatch}", exc_info=True)
         main_ui_logger.info("PyRC UI mode shutdown sequence complete.")
@@ -142,7 +143,7 @@ def parse_arguments(default_server_config: Optional[ServerConfig]) -> argparse.N
     return parser.parse_args()
 
 
-def main():
+async def main():
     # Instantiate the configuration object first
     app_config = AppConfig()
 
@@ -163,24 +164,26 @@ def main():
         client = None
         try:
             client = IRCClient_Logic(stdscr=None, args=args, config=app_config)
-            client.run_main_loop()
+            await client.run_main_loop()  # Run the async main loop for headless
         except KeyboardInterrupt:
             app_logger.info("Keyboard interrupt received in headless main(). Signaling client to quit.")
             if client:
-                client.should_quit = True
+                client.should_quit.set()  # Use .set() for asyncio.Event
         except Exception as e:
             app_logger.critical(f"Critical error in headless mode: {e}", exc_info=True)
-            if client: client.should_quit = True
+            if client:
+                client.should_quit.set()  # Use .set() for asyncio.Event
         finally:
             app_logger.info("Shutting down PyRC headless mode.")
             if client and hasattr(client, "event_manager") and client.event_manager:
-                client.event_manager.dispatch_client_shutdown_final(raw_line="CLIENT_SHUTDOWN_FINAL from headless main")
+                await client.event_manager.dispatch_client_shutdown_final(raw_line="CLIENT_SHUTDOWN_FINAL from headless main")
             app_logger.info("PyRC headless mode shutdown sequence complete.")
     else:
         def curses_wrapper_with_args(stdscr):
-            return main_curses_wrapper(stdscr, args, app_config)
+            asyncio.run(main_curses_wrapper(stdscr, args, app_config))
+
         curses.wrapper(curses_wrapper_with_args)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

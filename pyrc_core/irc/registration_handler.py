@@ -42,11 +42,11 @@ class RegistrationHandler:
     def set_cap_negotiator(self, negotiator: 'CapNegotiator'):
         self.cap_negotiator = negotiator
 
-    def _add_status_message(self, message: str, color_key: str = "system"):
+    async def _add_status_message(self, message: str, color_key: str = "system"):
         if self.client_logic_ref:
-            self.client_logic_ref._add_status_message(message, color_key)
+            await self.client_logic_ref._add_status_message(message, color_key)
 
-    def _proceed_with_nick_user_registration(self):
+    async def _proceed_with_nick_user_registration(self):
         if self.nick_user_sent:
             logger.debug("NICK/USER registration already sent, skipping.")
             return
@@ -54,28 +54,28 @@ class RegistrationHandler:
         conn_info = self.state_manager.get_connection_info()
         if not conn_info:
             logger.error("Cannot proceed with registration: ConnectionInfo not found.")
-            self._add_status_message("Registration error: Missing connection details.", "error")
+            await self._add_status_message("Registration error: Missing connection details.", "error")
             # Potentially set client to an error state or attempt disconnect/reconnect logic here
             return
 
         logger.info(f"Proceeding with NICK/USER registration. Nick: {conn_info.nick}, User: {conn_info.username}, Real: {conn_info.realname}")
-        self._add_status_message("Sending NICK/USER to server.")
+        await self._add_status_message("Sending NICK/USER to server.") # Corrected: Added await
 
         if conn_info.server_password:
-            self.network_handler.send_raw(f"PASS {conn_info.server_password}")
+            await self.network_handler.send_raw(f"PASS {conn_info.server_password}")
 
         # Update initial_nick if it changed due to earlier collision before this point
         self.initial_nick = conn_info.nick
 
-        self.network_handler.send_raw(f"NICK {conn_info.nick}")
-        self.network_handler.send_raw(f"USER {conn_info.username or conn_info.nick} 0 * :{conn_info.realname or conn_info.nick}")
+        await self.network_handler.send_raw(f"NICK {conn_info.nick}")
+        await self.network_handler.send_raw(f"USER {conn_info.username or conn_info.nick} 0 * :{conn_info.realname or conn_info.nick}")
         self.nick_user_sent = True
         logger.debug("NICK/USER commands sent.")
 
 
-    def _perform_post_registration_actions(self):
+    async def _perform_post_registration_actions(self):
         logger.info("Performing post-registration actions (channel joins, NickServ IDENTIFY).")
-        self._add_status_message("Performing post-registration actions...")
+        await self._add_status_message("Performing post-registration actions...")
         conn_info = self.state_manager.get_connection_info()
         if not conn_info:
             logger.error("Cannot perform post-registration actions: ConnectionInfo not found.")
@@ -84,9 +84,8 @@ class RegistrationHandler:
         if conn_info.initial_channels:
             logger.info(f"Auto-joining initial channels: {', '.join(conn_info.initial_channels)}")
             for channel_name in conn_info.initial_channels:
-                # Ensure client_logic_ref and command_handler exist
                 if self.client_logic_ref and hasattr(self.client_logic_ref, 'command_handler') and self.client_logic_ref.command_handler:
-                    self.client_logic_ref.command_handler.process_user_command(f"/join {channel_name}")
+                    await self.client_logic_ref.command_handler.process_user_command(f"/join {channel_name}")
                 else:
                     logger.error(f"Cannot auto-join {channel_name}: client_logic_ref or command_handler missing.")
         else:
@@ -98,7 +97,7 @@ class RegistrationHandler:
             if not sasl_completed_successfully:
                 logger.info(f"SASL did not complete successfully (or not used). Sending NickServ IDENTIFY for {conn_info.nick}.")
                 if self.client_logic_ref and hasattr(self.client_logic_ref, 'command_handler') and self.client_logic_ref.command_handler:
-                    self.client_logic_ref.command_handler.process_user_command(f"/msg NickServ IDENTIFY {conn_info.nickserv_password}")
+                    await self.client_logic_ref.command_handler.process_user_command(f"/msg NickServ IDENTIFY {conn_info.nickserv_password}")
                 else:
                      logger.error("Cannot send NickServ IDENTIFY: client_logic_ref or command_handler missing.")
             else:
@@ -107,7 +106,7 @@ class RegistrationHandler:
             logger.info("No NickServ password configured.")
 
 
-    def on_welcome_received(self, confirmed_nick: str):
+    async def on_welcome_received(self, confirmed_nick: str):
         """Handles RPL_WELCOME (001) - server confirms registration."""
         logger.info(f"RPL_WELCOME (001) received. Confirmed nick: {confirmed_nick}")
         conn_info = self.state_manager.get_connection_info()
@@ -115,54 +114,48 @@ class RegistrationHandler:
             if conn_info.nick != confirmed_nick:
                 logger.info(f"Server confirmed nick as '{confirmed_nick}', updating from '{conn_info.nick}'.")
                 conn_info.nick = confirmed_nick
-                self.state_manager.set_connection_info(conn_info) # Persist the confirmed nick
+                self.state_manager.set_connection_info(conn_info)
         else:
             logger.error("Cannot update nick on RPL_WELCOME: ConnectionInfo not found.")
-            # This is a problematic state.
 
         self.state_manager.set_connection_state(ConnectionState.REGISTERED)
 
-        # If CAP negotiation was still somehow pending, 001 implies it's over from server's perspective.
         if self.cap_negotiator and self.cap_negotiator.cap_negotiation_pending:
             logger.info("RPL_WELCOME received while CAP negotiation was pending. Finalizing CAP.")
-            self.cap_negotiator.on_cap_end_confirmed() # This sets cap_negotiation_finished_event
+            # on_cap_end_confirmed is now async.
+            await self.cap_negotiator.on_cap_end_confirmed() # This sets cap_negotiation_finished_event
 
-        # Ensure NICK/USER was sent if it hadn't been by CAP END.
         if not self.nick_user_sent:
             logger.warning("RPL_WELCOME received, but NICK/USER was not yet sent. Sending now.")
-            self._proceed_with_nick_user_registration()
+            await self._proceed_with_nick_user_registration()
 
-        # Now, wait for the overall CAP negotiation to be truly finished before post-reg actions.
-        # This handles cases where SASL might still be ongoing even after 001 (though less common).
         cap_timeout = 5.0
-        if self.cap_negotiator and self.cap_negotiator.wait_for_negotiation_finish(timeout=cap_timeout):
+        if self.cap_negotiator and await self.cap_negotiator.wait_for_negotiation_finish(timeout=cap_timeout):
             logger.info("CAP negotiation confirmed finished after RPL_WELCOME. Proceeding with post-registration.")
-            self._perform_post_registration_actions()
+            await self._perform_post_registration_actions()
         elif self.cap_negotiator:
             logger.warning(f"Timed out ({cap_timeout}s) waiting for CAP negotiation to fully finish after RPL_WELCOME. Proceeding with post-registration actions anyway.")
-            self._perform_post_registration_actions() # Proceed even on timeout
-        else: # No CAP negotiator
+            await self._perform_post_registration_actions()
+        else:
             logger.info("No CAP negotiator. Proceeding with post-registration actions immediately after RPL_WELCOME.")
-            self._perform_post_registration_actions()
+            await self._perform_post_registration_actions()
 
 
-    def on_cap_negotiation_complete(self):
+    async def on_cap_negotiation_complete(self):
         """Called by CapNegotiator when its initial flow is complete (client can send NICK/USER)."""
         logger.info("RegistrationHandler: CAP negotiation initial flow complete. Proceeding with NICK/USER if not already sent.")
         if not self.nick_user_sent:
-            self._proceed_with_nick_user_registration()
+            await self._proceed_with_nick_user_registration()
         else:
             logger.debug("RegistrationHandler: NICK/USER already sent prior to on_cap_negotiation_complete call.")
 
     def update_nick_for_registration(self, new_nick: str):
         """Called by NetworkHandler during nick collision resolution."""
-        # Always update initial_nick, as this is the base for future collision retries
         self.initial_nick = new_nick
         logger.info(f"RegistrationHandler: Initial nick updated to '{new_nick}' due to nick collision handling.")
 
     def reset_registration_state(self):
         logger.debug("Resetting RegistrationHandler state.")
         self.nick_user_sent = False
-        # self.registration_triggered_by_001 = False # Removed
         conn_info = self.state_manager.get_connection_info()
-        self.initial_nick = conn_info.nick if conn_info else "PyRCNick" # Reset initial_nick
+        self.initial_nick = conn_info.nick if conn_info else "PyRCNick"

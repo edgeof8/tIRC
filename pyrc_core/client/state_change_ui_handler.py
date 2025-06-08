@@ -23,14 +23,14 @@ class StateChangeUIHandler:
         # e.g., self.state_manager.register_change_handler("channel_topic_updated", self.on_topic_updated)
         # e.g., self.state_manager.register_change_handler("user_list_updated", self.on_user_list_updated)
 
-    def _safe_add_status_message(self, message: str, msg_type: str = "info"):
+    async def _safe_add_status_message(self, message: str, msg_type: str = "info"):
         """Safely add a status message if the client and UI are available."""
         try:
             # Ensure client and its UI components are accessible
             if hasattr(self.client, 'ui') and self.client.ui and \
                hasattr(self.client, '_add_status_message') and \
                callable(self.client._add_status_message):
-                self.client._add_status_message(message, msg_type)
+                await self.client._add_status_message(message, msg_type)
             else:
                 logger.debug(f"Skipping status message (UI or _add_status_message not available): {message}")
         except Exception as e:
@@ -49,7 +49,7 @@ class StateChangeUIHandler:
             logger.warning(f"Failed to trigger UI update: {e}", exc_info=True)
 
 
-    def on_connection_state_change(self, change: StateChange[ConnectionState]):
+    async def on_connection_state_change(self, change: StateChange[ConnectionState]):
         """Handles changes to the connection state and updates the UI if available."""
         if not change or not hasattr(change, 'new_value'):
             logger.warning("Invalid connection_state change event received.")
@@ -67,11 +67,11 @@ class StateChangeUIHandler:
             logger.debug(f"UI Handler: Connection state changed to: {state_name}")
 
             if new_state == ConnectionState.CONNECTING:
-                self._safe_add_status_message("Connecting to server...")
+                await self._safe_add_status_message("Connecting to server...")
             elif new_state == ConnectionState.CONNECTED:
-                self._safe_add_status_message("Connection established. Negotiating capabilities...")
+                await self._safe_add_status_message("Connection established. Negotiating capabilities...")
             elif new_state == ConnectionState.REGISTERED:
-                self._safe_add_status_message("Successfully registered with the server.", "info")
+                await self._safe_add_status_message("Successfully registered with the server.", "info")
             elif new_state == ConnectionState.DISCONNECTED:
                 # Get the server details from the old_value if possible, or current state if not
                 server_details = "server"
@@ -90,25 +90,25 @@ class StateChangeUIHandler:
                 if old_conn_info and old_conn_info.server:
                     server_details = f"{old_conn_info.server}:{old_conn_info.port}"
 
-                self._safe_add_status_message(f"Disconnected from {server_details}.", "warning")
+                await self._safe_add_status_message(f"Disconnected from {server_details}.", "warning")
 
             elif new_state == ConnectionState.ERROR:
                 error_msg = metadata.get("error", "An unknown connection error occurred.")
                 logger.error(f"UI Handler: Connection error: {error_msg}")
-                self._safe_add_status_message(f"Connection Error: {error_msg}", "error")
+                await self._safe_add_status_message(f"Connection Error: {error_msg}", "error")
             elif new_state == ConnectionState.CONFIG_ERROR:
                 error_msg = metadata.get("error", "Invalid configuration.")
                 logger.error(f"UI Handler: Configuration error: {error_msg}")
-                self._safe_add_status_message(f"Configuration Error: {error_msg}", "error")
+                await self._safe_add_status_message(f"Configuration Error: {error_msg}", "error")
             else:
                 logger.debug(f"UI Handler: Unhandled connection state for UI message: {state_name}")
 
             self._trigger_ui_update()
         except Exception as e:
             logger.error(f"Error in on_connection_state_change UI handler: {e}", exc_info=True)
-            self._safe_add_status_message(f"Error handling connection state UI: {str(e)}", "error")
+            await self._safe_add_status_message(f"Error handling connection state UI: {str(e)}", "error")
 
-    def on_connection_info_change(self, change: StateChange[Optional[ConnectionInfo]]):
+    async def on_connection_info_change(self, change: StateChange[Optional[ConnectionInfo]]):
         """Handles changes to the connection_info (e.g., nick change, server details)."""
         if not change:
             logger.warning("Invalid connection_info change event received.")
@@ -119,15 +119,15 @@ class StateChangeUIHandler:
 
         # Nick change
         if old_info and new_info and old_info.nick != new_info.nick:
-            self._safe_add_status_message(f"Your nick changed from {old_info.nick} to {new_info.nick}.", "system")
+            await self._safe_add_status_message(f"Your nick changed from {old_info.nick} to {new_info.nick}.", "system")
             logger.debug(f"UI Handler: Nick changed from {old_info.nick} to {new_info.nick}")
 
         # Server/port change (less common to change mid-session without disconnect/reconnect, but good to handle)
         if old_info and new_info and (old_info.server != new_info.server or old_info.port != new_info.port):
-            self._safe_add_status_message(f"Connection details updated to {new_info.server}:{new_info.port}.", "system")
+            await self._safe_add_status_message(f"Connection details updated to {new_info.server}:{new_info.port}.", "system")
             logger.debug(f"UI Handler: Connection details changed to {new_info.server}:{new_info.port}")
         elif not old_info and new_info: # Initial connection info set
-            self._safe_add_status_message(f"Configured for {new_info.server}:{new_info.port} as {new_info.nick}.", "system")
+            await self._safe_add_status_message(f"Configured for {new_info.server}:{new_info.port} as {new_info.nick}.", "system")
             logger.debug(f"UI Handler: Initial connection info set for {new_info.server}:{new_info.port}")
 
 

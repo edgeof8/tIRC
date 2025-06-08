@@ -1,4 +1,4 @@
-# pyrc_core/commands/dcc/dcc_commands.py
+# pyrc_core/commands/dcc/dcc_commands.py # Pylance re-evaluation
 import logging
 import importlib
 import os
@@ -39,7 +39,7 @@ def _load_dcc_subcommands():
 
 _load_dcc_subcommands() # Load them when this module is imported
 
-def dcc_command_router(client_logic: 'IRCClient_Logic', args_str: str):
+async def dcc_command_router(client_logic: 'IRCClient_Logic', args_str: str):
     """
     Main dispatcher for /dcc subcommands.
     Routes to the appropriate handler function.
@@ -54,7 +54,7 @@ def dcc_command_router(client_logic: 'IRCClient_Logic', args_str: str):
 
 
     if not hasattr(client_logic, 'dcc_manager') or not client_logic.dcc_manager:
-        client_logic.add_message("DCC system is not initialized or available.", "error", context_name=active_context_name)
+        await client_logic.add_message("DCC system is not initialized or available.", client_logic.ui.colors["error"], context_name=active_context_name)
         return
 
     if not args:
@@ -68,7 +68,7 @@ def dcc_command_router(client_logic: 'IRCClient_Logic', args_str: str):
             help_lines.append(f"  {usage_summary}")
         help_lines.append("Try /dcc <subcommand> --help (or similar if supported by subcommand) or check main /help dcc.")
         for line in help_lines:
-            client_logic.add_message(line, "system", context_name=active_context_name)
+            await client_logic.add_message(line, client_logic.ui.colors["system"], context_name=active_context_name)
         return
 
     subcommand_name_input = args[0].lower()
@@ -82,12 +82,12 @@ def dcc_command_router(client_logic: 'IRCClient_Logic', args_str: str):
         handler_function: Callable = handler_info["handler_function"]
         try:
             # Pass client_logic, command arguments, active_context_name, and dcc_context_name
-            handler_function(client_logic, cmd_args, active_context_name, dcc_context_name)
+            await handler_function(client_logic, cmd_args, active_context_name, dcc_context_name)
         except Exception as e:
             logger.error(f"Error executing DCC subcommand '{actual_subcommand_name}': {e}", exc_info=True)
-            client_logic.add_message(f"Error in /dcc {actual_subcommand_name}: {e}", "error", context_name=dcc_context_name)
+            await client_logic.add_message(f"Error in /dcc {actual_subcommand_name}: {e}", client_logic.ui.colors["error"], context_name=dcc_context_name)
     else:
-        client_logic.add_message(f"Unknown DCC subcommand: {subcommand_name_input}. Try '/dcc' for a list.", "error", context_name=active_context_name)
+        await client_logic.add_message(f"Unknown DCC subcommand: {subcommand_name_input}. Try '/dcc' for a list.", client_logic.ui.colors["error"], context_name=active_context_name)
 
 # This is the main command definition for /dcc itself, registered with the global CommandHandler
 COMMAND_DEFINITIONS = [

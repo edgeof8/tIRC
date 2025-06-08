@@ -7,7 +7,7 @@ import time
 import sys
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set, Tuple, Union
 import threading
-from pyrc_core.app_config import DISABLED_SCRIPTS, ENABLE_TRIGGER_SYSTEM
+from pyrc_core.app_config import AppConfig
 
 from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
 
@@ -149,12 +149,12 @@ class ScriptManager:
                             self.logger.error(f"Script '{script_name}' has an unknown dependency '{dep_name}'. Cannot load '{script_name}'.")
                             deps_met = False
                             missing_deps_for_log.append(f"{dep_name} (unknown)")
-                            break # Hard failure, cannot proceed with this script
+                            break  # Hard failure, cannot proceed with this script
                         elif dep_name in self.disabled_scripts:
                             self.logger.warning(f"Script '{script_name}' depends on disabled script '{dep_name}'. Cannot load '{script_name}'.")
                             deps_met = False
                             missing_deps_for_log.append(f"{dep_name} (disabled)")
-                            break # Hard failure, cannot proceed with this script
+                            break  # Hard failure, cannot proceed with this script
                         else:
                             # Dependency exists but is not yet loaded
                             deps_met = False
@@ -171,7 +171,7 @@ class ScriptManager:
                         satisfied, missing_runtime_deps = api_handler.check_dependencies()
                         if not satisfied:
                             self.logger.error(f"Runtime dependency check failed for '{script_name}': Missing {missing_runtime_deps}. Skipping load.")
-                            still_pending_this_round.append(script_name) # Put back for next round, maybe its dep will load
+                            still_pending_this_round.append(script_name)  # Put back for next round, maybe its dep will load
                             continue
 
                         if hasattr(script_module, "get_script_instance"):
@@ -344,29 +344,29 @@ class ScriptManager:
             primary_cmd_name = self.command_aliases[cmd_lower]
             if primary_cmd_name in self.registered_commands:
                 cmd_data = self.registered_commands[primary_cmd_name]
-                help_info = cmd_data.get("help_info", "")
+                help_info = cmd_data.get("help_info", "") # Define help_info here
 
-                # If help_info is a dict, format it into a help_text string
-                if isinstance(help_info, dict):
-                    help_text = help_info.get("usage", "")
-                    if help_info.get("description"):
-                        help_text += f"\n{help_info['description']}"
-                else:
-                    help_text = str(help_info)
+            # If help_info is a dict, format it into a help_text string
+            if isinstance(help_info, dict):
+                help_text = help_info.get("usage", "")
+                if help_info.get("description"):
+                    help_text += f"\n{help_info['description']}"
+            else:
+                help_text = str(help_info)
 
-                all_aliases = cmd_data.get("aliases", [])
-                # Construct aliases list for this alias, pointing to primary and other aliases
-                alias_list_for_this = [primary_cmd_name] + [
-                    a for a in all_aliases if a != cmd_lower
-                ]
-                return {
-                    "help_text": help_text,
-                    "aliases": alias_list_for_this,
-                    "script_name": cmd_data.get("script_name", "script"),
-                    "is_alias": True,
-                    "primary_command": primary_cmd_name,
-                    "help_info": help_info,  # Include the original help_info
-                }
+            all_aliases = cmd_data.get("aliases", [])
+            # Construct aliases list for this alias, pointing to primary and other aliases
+            alias_list_for_this = [primary_cmd_name] + [
+                a for a in all_aliases if a != cmd_lower
+            ]
+            return {
+                "help_text": help_text,
+                "aliases": alias_list_for_this,
+                "script_name": cmd_data.get("script_name", "script"),
+                "is_alias": True,
+                "primary_command": primary_cmd_name,
+                "help_info": help_info,  # Include the original help_info
+            }
 
         # Check INI help texts
         for section_name, section_content in self.ini_help_texts.items():
@@ -465,7 +465,7 @@ class ScriptManager:
                 f"Script '{script_name}' unsubscribed handler '{handler_function.__name__}' from event '{event_name}'."
             )
 
-    def dispatch_event(
+    async def dispatch_event(
         self, event_name: str, event_data: Optional[Dict[str, Any]] = None
     ) -> None:
         if event_data is None:
@@ -495,7 +495,7 @@ class ScriptManager:
                         exc_info=True,
                     )
                     error_message = f"Error in script '{script_name}' event handler for '{event_name}': {e}"
-                    self.client_logic_ref.add_message(
+                    await self.client_logic_ref.add_message(
                         error_message,
                         self.client_logic_ref.ui.colors.get("error", 0),
                         context_name="Status",
@@ -708,6 +708,5 @@ class ScriptManager:
             if alias_target in self.registered_commands:  # Ensure target exists
                 return self.registered_commands[alias_target]
         return None
-
 
 # END OF MODIFIED FILE: script_manager.py

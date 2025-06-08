@@ -107,7 +107,7 @@ class FunCommandsScript(ScriptBase):
 
         self.api.log_info("FunCommandsScript loaded and commands registered.")
 
-    def handle_slap_command(self, args_str: str, event_data: Dict[str, Any]):
+    async def handle_slap_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /slap command"""
         parts = self.ensure_command_args(args_str, "slap", 1)
         if not parts:
@@ -115,9 +115,9 @@ class FunCommandsScript(ScriptBase):
 
         target = parts[0]
         item = random.choice(self.slap_items)
-        self.api.send_action(target, f"slaps {target} with {item}")
+        await self.api.send_action(target, f"slaps {target} with {item}")
 
-    def handle_8ball_command(self, args_str: str, event_data: Dict[str, Any]):
+    async def handle_8ball_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /8ball command"""
         parts = self.ensure_command_args(args_str, "8ball", 1)
         if not parts:
@@ -131,7 +131,7 @@ class FunCommandsScript(ScriptBase):
             "system",
         )
 
-    def handle_dice_command(self, args_str: str, event_data: Dict[str, Any]):
+    async def handle_dice_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /dice command"""
         parts = self.ensure_command_args(args_str, "dice", 1)
         if not parts:
@@ -166,7 +166,7 @@ class FunCommandsScript(ScriptBase):
             "system",
         )
 
-    def handle_rainbow_command(self, args_str: str, event_data: Dict[str, Any]):
+    async def handle_rainbow_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /rainbow command"""
         parts = self.ensure_command_args(args_str, "rainbow", 1)
         if not parts:
@@ -184,7 +184,7 @@ class FunCommandsScript(ScriptBase):
             event_data.get("active_context_name", "Status"), rainbow_text, "system"
         )
 
-    def handle_reverse_command(self, args_str: str, event_data: Dict[str, Any]):
+    async def handle_reverse_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /reverse command"""
         parts = self.ensure_command_args(args_str, "reverse", 1)
         if not parts:
@@ -196,7 +196,7 @@ class FunCommandsScript(ScriptBase):
             event_data.get("active_context_name", "Status"), reversed_text, "system"
         )
 
-    def handle_wave_command(self, args_str: str, event_data: Dict[str, Any]):
+    async def handle_wave_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /wave command"""
         parts = self.ensure_command_args(args_str, "wave", 1)
         if not parts:
@@ -213,7 +213,7 @@ class FunCommandsScript(ScriptBase):
             event_data.get("active_context_name", "Status"), wave_text, "system"
         )
 
-    def handle_ascii_command(self, args_str: str, event_data: Dict[str, Any]):
+    async def handle_ascii_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /ascii command"""
         if not self.pyfiglet_available:
             self.api.add_message_to_context(

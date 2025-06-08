@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.handlers.membership")
 
-def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles JOIN messages."""
     src_nick = parsed_msg.source_nick
     params = parsed_msg.params
@@ -22,7 +22,7 @@ def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
 
     if not joined_channel:
         logger.warning(f"JOIN command received with no channel: {raw_line.strip()}")
-        client.add_message(
+        await client.add_message(
             f"[INVALID JOIN] {raw_line.strip()}", client.ui.colors["error"], context_name="Status"
         )
         return
@@ -49,9 +49,9 @@ def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
         else:
             logger.error(f"Context for {joined_channel} not found after self-JOIN.")
 
-        client.network_handler.send_raw(f"NAMES {joined_channel}")
-        client.network_handler.send_raw(f"MODE {joined_channel}")
-        client.add_message(
+        await client.network_handler.send_raw(f"NAMES {joined_channel}")
+        await client.network_handler.send_raw(f"MODE {joined_channel}")
+        await client.add_message(
             f"Joining {joined_channel}...",
             client.ui.colors["join_part"],
             context_name=joined_channel,
@@ -59,7 +59,7 @@ def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
     else:
         if joined_ctx:
             client.context_manager.add_user(joined_channel, src_nick)
-            client.add_message(
+            await client.add_message(
                 f"{src_nick} joined {joined_channel}",
                 client.ui.colors["join_part"],
                 context_name=joined_channel,
@@ -82,7 +82,7 @@ def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
             is_self=(src_nick_lower == client_nick_lower), raw_line=raw_line
         )
 
-def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles PART messages."""
     src_nick = parsed_msg.source_nick
     params = parsed_msg.params
@@ -96,7 +96,7 @@ def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
 
     if not parted_channel:
         logger.warning(f"PART command received with no channel: {raw_line.strip()}")
-        client.add_message(
+        await client.add_message(
             f"[INVALID PART] {raw_line.strip()}", client.ui.colors["error"], context_name="Status"
         )
         return
@@ -116,7 +116,7 @@ def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
         if conn_info:
             conn_info.currently_joined_channels.discard(parted_channel)
             client.state_manager.set("connection_info", conn_info)
-        client.add_message(
+        await client.add_message(
             f"You left {parted_channel}{reason_message}",
             client.ui.colors["join_part"],
             context_name=parted_channel,
@@ -130,17 +130,17 @@ def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
                 list(conn_info.currently_joined_channels if conn_info else set()), key=str.lower
             )
             if other_joined_channels:
-                client.switch_active_context(other_joined_channels[0])
+                await client.switch_active_context(other_joined_channels[0])
             elif "Status" in client.context_manager.get_all_context_names():
-                client.switch_active_context("Status")
+                await client.switch_active_context("Status")
             else:
                 all_ctx_names = client.context_manager.get_all_context_names()
                 if all_ctx_names:
-                    client.switch_active_context(all_ctx_names[0])
+                    await client.switch_active_context(all_ctx_names[0])
     else:
         if parted_ctx_obj:
             client.context_manager.remove_user(parted_channel, src_nick)
-            client.add_message(
+            await client.add_message(
                 f"{src_nick} left {parted_channel}{reason_message}",
                 client.ui.colors["join_part"],
                 context_name=parted_channel,
@@ -158,7 +158,7 @@ def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
             is_self=(src_nick_lower == client_nick_lower), raw_line=raw_line
         )
 
-def handle_quit_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_quit_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles QUIT messages."""
     src_nick = parsed_msg.source_nick
     trailing = parsed_msg.trailing
@@ -179,7 +179,7 @@ def handle_quit_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
     for ctx_name, ctx_obj in client.context_manager.contexts.items():
         if ctx_obj.type == "channel" and src_nick and src_nick in ctx_obj.users:
             client.context_manager.remove_user(ctx_name, src_nick)
-            client.add_message(
+            await client.add_message(
                 f"{display_src_nick} quit{quit_reason}",
                 client.ui.colors["join_part"],
                 context_name=ctx_name,
@@ -193,7 +193,7 @@ def handle_quit_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
             raw_line=raw_line
         )
 
-def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles KICK messages."""
     src_nick = parsed_msg.source_nick
     params = parsed_msg.params
@@ -218,7 +218,7 @@ def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
     ):
         logger.debug(f"Ensured channel context exists for KICK: {channel_kicked_from}")
 
-    client.add_message(
+    await client.add_message(
         kick_message, client.ui.colors["join_part"], context_name=channel_kicked_from
     )
 
@@ -246,23 +246,23 @@ def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_l
                 list(conn_info.currently_joined_channels if conn_info else set()), key=str.lower
             )
             if other_joined_channels:
-                client.switch_active_context(other_joined_channels[0])
+                await client.switch_active_context(other_joined_channels[0])
             elif "Status" in client.context_manager.get_all_context_names():
-                client.switch_active_context("Status")
+                await client.switch_active_context("Status")
             else:
                 all_ctx_names = client.context_manager.get_all_context_names()
                 if all_ctx_names:
-                    client.switch_active_context(all_ctx_names[0])
+                    await client.switch_active_context(all_ctx_names[0])
 
-def handle_membership_changes(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+async def handle_membership_changes(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
     """Handles JOIN, PART, QUIT, KICK messages."""
     cmd = parsed_msg.command
 
     if cmd == "JOIN":
-        handle_join_event(client, parsed_msg, raw_line)
+        await handle_join_event(client, parsed_msg, raw_line)
     elif cmd == "PART":
-        handle_part_event(client, parsed_msg, raw_line)
+        await handle_part_event(client, parsed_msg, raw_line)
     elif cmd == "QUIT":
-        handle_quit_event(client, parsed_msg, raw_line)
+        await handle_quit_event(client, parsed_msg, raw_line)
     elif cmd == "KICK":
-        handle_kick_event(client, parsed_msg, raw_line)
+        await handle_kick_event(client, parsed_msg, raw_line)

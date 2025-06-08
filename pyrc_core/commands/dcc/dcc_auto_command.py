@@ -1,4 +1,4 @@
-# pyrc_core/commands/dcc/dcc_auto_command.py
+# pyrc_core/commands/dcc/dcc_auto_command.py # Pylance re-evaluation
 import logging
 from typing import TYPE_CHECKING, List, Dict, Any
 
@@ -17,24 +17,24 @@ COMMAND_HELP: Dict[str, str] = {
     "aliases": "None"
 }
 
-def _handle_dcc_error(client_logic: 'IRCClient_Logic', message: str, context_name: str, log_level: int = logging.ERROR, exc_info: bool = False):
+async def _handle_dcc_error(client_logic: 'IRCClient_Logic', message: str, context_name: str, log_level: int = logging.ERROR, exc_info: bool = False):
     """Helper to log and display DCC command errors."""
     logger.log(log_level, message, exc_info=exc_info)
-    client_logic.add_message(message, "error", context_name=context_name)
+    await client_logic.add_message(message, client_logic.ui.colors["error"], context_name=context_name)
 
-def handle_dcc_auto_command(client_logic: 'IRCClient_Logic', cmd_args: List[str], active_context_name: str, dcc_context_name: str):
+async def handle_dcc_auto_command(client_logic: 'IRCClient_Logic', cmd_args: List[str], active_context_name: str, dcc_context_name: str):
     """
     Handles the /dcc auto command.
     Toggles or sets the DCC auto-accept feature.
     """
     dcc_m = client_logic.dcc_manager
     if not dcc_m:
-        _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
+        await _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
         return
 
     if not cmd_args:
         current_auto_accept = dcc_m.dcc_config.get("auto_accept", False)
-        client_logic.add_message(f"DCC auto-accept is currently {'ON' if current_auto_accept else 'OFF'}.", "system", context_name=active_context_name)
+        await client_logic.add_message(f"DCC auto-accept is currently {'ON' if current_auto_accept else 'OFF'}.", client_logic.ui.colors["system"], context_name=active_context_name)
     elif len(cmd_args) == 1:
         setting = cmd_args[0].lower()
         new_value_str = ""
@@ -43,7 +43,7 @@ def handle_dcc_auto_command(client_logic: 'IRCClient_Logic', cmd_args: List[str]
         elif setting == "off":
             new_value_str = "false"
         else:
-            client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", "error", context_name=active_context_name)
+            await client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", client_logic.ui.colors["error"], context_name=active_context_name)
             return
 
         try:
@@ -53,23 +53,23 @@ def handle_dcc_auto_command(client_logic: 'IRCClient_Logic', cmd_args: List[str]
 
             # Persist this change to the INI file using the AppConfig instance
             if client_logic.config.set_config_value("DCC", "auto_accept", new_value_str):
-                client_logic.add_message(
+                await client_logic.add_message(
                     f"DCC auto-accept set to {new_value_str.upper()}. Configuration saved.",
-                    "system",
+                    client_logic.ui.colors["system"],
                     context_name=active_context_name
                 )
             else:
-                client_logic.add_message(
+                await client_logic.add_message(
                     f"DCC auto-accept set to {new_value_str.upper()} for current session. Config save failed.",
-                    "warning",
+                    client_logic.ui.colors["warning"],
                     context_name=active_context_name
                 )
 
         except Exception as e:
             logger.error(f"Error setting DCC auto_accept: {e}", exc_info=True)
-            _handle_dcc_error(client_logic, f"Error setting DCC auto-accept: {e}", active_context_name)
+            await _handle_dcc_error(client_logic, f"Error setting DCC auto-accept: {e}", active_context_name)
     else:
-        client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", "error", context_name=active_context_name)
+        await client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", client_logic.ui.colors["error"], context_name=active_context_name)
 
 # This function will be called by the main dcc_commands.py dispatcher
 def get_dcc_command_handler() -> Dict[str, Any]:

@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.handlers.message")
 
-def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str) -> Optional[str]:
+async def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str) -> Optional[str]:
     nick = parsed_msg.source_nick
     source_full_ident = parsed_msg.prefix
 
@@ -40,7 +40,7 @@ def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line
 
     if is_private_msg_to_me:
         target_context_name = nick
-        client.context_manager.create_context(
+        client.context_manager.create_context( # Not an awaitable function
             target_context_name, context_type="query"
         )
         display_nick = f"*{nick}*"
@@ -60,15 +60,15 @@ def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line
     formatted_msg = f"{display_nick} {message_body}"
 
     logger.debug(f"HANDLE_PRIVMSG: Adding to context '{target_context_name}': '{formatted_msg}' with color_key '{color_key}'")
-    client.add_message(
+    await client.add_message(
         formatted_msg,
-        color_key,
+        client.ui.colors[color_key],
         context_name=target_context_name,
         source_full_ident=source_full_ident,
         is_privmsg_or_notice=True,
     )
 
-    action_from_text_trigger = client.process_trigger_event(
+    action_from_text_trigger = await client.process_trigger_event(
         "TEXT",
         {
             "nick": nick, "userhost": source_full_ident, "target": target,
@@ -82,7 +82,7 @@ def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line
     )
 
     if hasattr(client, "event_manager") and client.event_manager:
-        client.event_manager.dispatch_privmsg(
+        await client.event_manager.dispatch_privmsg(
             nick=nick, userhost=source_full_ident, target=target,
             message=message_body, is_channel_msg=is_channel_msg,
             tags=parsed_msg.get_all_tags(), raw_line=raw_line
@@ -91,7 +91,7 @@ def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line
     return action_from_text_trigger
 
 
-def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str) -> Optional[str]:
+async def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str) -> Optional[str]:
     nick = parsed_msg.source_nick
     source_full_ident = parsed_msg.prefix
     logger.debug(f"HANDLE_NOTICE: Raw='{raw_line.strip()}', Parsed Nick='{parsed_msg.source_nick}', Target='{parsed_msg.params[0] if parsed_msg.params else None}', Body='{parsed_msg.trailing}'")
@@ -117,17 +117,17 @@ def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line:
     elif target.lower() == client_nick.lower():
         if nick and source_full_ident and "!" in source_full_ident:
             target_context_name = nick
-            client.context_manager.create_context(target_context_name, context_type="query")
+            client.context_manager.create_context(target_context_name, context_type="query") # Not an awaitable function
 
     formatted_msg = f"{notice_prefix} {message_body}"
 
     logger.debug(f"HANDLE_NOTICE: Adding to context '{target_context_name}': '{formatted_msg}'")
-    client.add_message(
-        formatted_msg, "system", context_name=target_context_name,
+    await client.add_message(
+        formatted_msg, client.ui.colors["system"], context_name=target_context_name,
         source_full_ident=source_full_ident, is_privmsg_or_notice=True,
     )
 
-    action_from_notice_trigger = client.process_trigger_event(
+    action_from_notice_trigger = await client.process_trigger_event(
         "NOTICE",
         {
             "nick": nick, "userhost": source_full_ident, "target": target,
@@ -141,7 +141,7 @@ def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line:
     )
 
     if hasattr(client, "event_manager") and client.event_manager:
-        client.event_manager.dispatch_notice(
+        await client.event_manager.dispatch_notice(
             nick=nick, userhost=source_full_ident, target=target,
             message=message_body, is_channel_notice=is_channel_notice,
             tags=parsed_msg.get_all_tags(), raw_line=raw_line

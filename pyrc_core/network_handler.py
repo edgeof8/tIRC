@@ -157,7 +157,7 @@ class NetworkHandler:
                 hasattr(self.client_logic_ref, "cap_negotiator")
                 and self.client_logic_ref.cap_negotiator
             ):
-                self.client_logic_ref.cap_negotiator.reset_negotiation_state()
+                await self.client_logic_ref.cap_negotiator.reset_negotiation_state()
             if (
                 hasattr(self.client_logic_ref, "sasl_authenticator")
                 and self.client_logic_ref.sasl_authenticator
@@ -231,7 +231,7 @@ class NetworkHandler:
             # --- START OF FIX ---
             # Reset all handshake components to prepare for a new connection
             if hasattr(self.client_logic_ref, "cap_negotiator") and self.client_logic_ref.cap_negotiator:
-                self.client_logic_ref.cap_negotiator.reset_negotiation_state()
+                await self.client_logic_ref.cap_negotiator.reset_negotiation_state()
             if hasattr(self.client_logic_ref, "sasl_authenticator") and self.client_logic_ref.sasl_authenticator:
                 self.client_logic_ref.sasl_authenticator.reset_authentication_state()
             if hasattr(self.client_logic_ref, "registration_handler") and self.client_logic_ref.registration_handler:
@@ -245,7 +245,7 @@ class NetworkHandler:
             ):
                 conn_info = self.client_logic_ref.state_manager.get_connection_info()
                 if conn_info and conn_info.server and conn_info.port is not None:
-                    self.client_logic_ref.event_manager.dispatch_client_disconnected(
+                    await self.client_logic_ref.event_manager.dispatch_client_disconnected(
                         conn_info.server, conn_info.port, raw_line=""
                     )
                     self._disconnect_event_sent_for_current_session = True
@@ -336,7 +336,7 @@ class NetworkHandler:
                 hasattr(self.client_logic_ref, "cap_negotiator")
                 and self.client_logic_ref.cap_negotiator
             ):
-                self.client_logic_ref.cap_negotiator.start_negotiation()
+                await self.client_logic_ref.cap_negotiator.start_negotiation()
             else:
                 logger.error(
                     "NetworkHandler: cap_negotiator not found on client object during _connect_socket."
@@ -350,7 +350,7 @@ class NetworkHandler:
                 and hasattr(self.client_logic_ref, "event_manager")
                 and self.client_logic_ref.event_manager
             ):
-                self.client_logic_ref.event_manager.dispatch_client_connected(
+                await self.client_logic_ref.event_manager.dispatch_client_connected(
                     server=server,
                     port=port,
                     nick=conn_info.nick or "",

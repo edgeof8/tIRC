@@ -9,6 +9,7 @@ from enum import Enum, auto
 import threading
 from pathlib import Path
 import time
+import asyncio # New import # Pylance re-evaluation
 class StateEncoder(json.JSONEncoder):
     """Custom JSON encoder to handle Enum, datetime, and set objects."""
     def default(self, obj):
@@ -244,8 +245,9 @@ class StateManager:
         # State storage
         self._state: Dict[str, Any] = {}
         self._validators: Dict[str, StateValidator] = {}
-        self._change_handlers: Dict[str, List[Callable[[StateChange], None]]] = {}
-        self._global_handlers: List[Callable[[StateChange], None]] = []
+        self._change_handlers: Dict[str, List[Callable[[StateChange], Any]]] = {} # Updated type hint
+        self._global_handlers: List[Callable[[StateChange], Any]] = [] # Updated type hint
+        self.loop = asyncio.get_event_loop() # Get the event loop
 
         # Thread safety
         self._lock = threading.RLock()
@@ -392,7 +394,7 @@ class StateManager:
             self._validators.pop(key, None)
 
     def register_change_handler(
-        self, key: str, handler: Callable[[StateChange], None]
+        self, key: str, handler: Callable[[StateChange], Any] # Corrected type hint
     ) -> None:
         """Register a handler for state changes on a specific key."""
         with self._lock:
@@ -400,20 +402,20 @@ class StateManager:
                 self._change_handlers[key] = []
             self._change_handlers[key].append(handler)
 
-    def register_global_handler(self, handler: Callable[[StateChange], None]) -> None:
+    def register_global_handler(self, handler: Callable[[StateChange], Any]) -> None: # Updated type hint
         """Register a handler for all state changes."""
         with self._lock:
             self._global_handlers.append(handler)
 
     def unregister_change_handler(
-        self, key: str, handler: Callable[[StateChange], None]
+        self, key: str, handler: Callable[[StateChange], Any] # Updated type hint
     ) -> None:
         """Unregister a handler for state changes on a specific key."""
         with self._lock:
             if key in self._change_handlers:
                 self._change_handlers[key].remove(handler)
 
-    def unregister_global_handler(self, handler: Callable[[StateChange], None]) -> None:
+    def unregister_global_handler(self, handler: Callable[[StateChange], Any]) -> None: # Corrected type hint
         """Unregister a global state change handler."""
         with self._lock:
             if handler in self._global_handlers:
@@ -425,16 +427,26 @@ class StateManager:
         if change.key in self._change_handlers:
             for handler in self._change_handlers[change.key]:
                 try:
-                    handler(change)
+                    result = handler(change)
+                    if asyncio.iscoroutine(result):
+                        if self.loop.is_running():
+                            asyncio.create_task(result) # Schedule coroutine
+                        else:
+                            self.logger.warning(f"Async handler for key '{change.key}' called when no loop is running: {handler.__name__}")
                 except Exception as e:
-                    self.logger.error(f"Error in change handler: {e}")
+                    self.logger.error(f"Error in change handler for key '{change.key}': {e}", exc_info=True)
 
         # Notify global handlers
         for handler in self._global_handlers:
             try:
-                handler(change)
+                result = handler(change)
+                if asyncio.iscoroutine(result):
+                    if self.loop.is_running():
+                        asyncio.create_task(result) # Schedule coroutine
+                    else:
+                        self.logger.warning(f"Async global handler called when no loop is running: {handler.__name__}")
             except Exception as e:
-                self.logger.error(f"Error in global handler: {e}")
+                self.logger.error(f"Error in global handler: {e}", exc_info=True)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a state value."""

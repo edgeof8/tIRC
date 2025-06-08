@@ -194,7 +194,7 @@ class UIManager:
         if self.ui_is_too_small or not self.input_win or not self.client.input_handler:
             return
 
-        current_input_buffer = self.client.input_handler.get_current_input_buffer()
+        current_input_buffer = self.client.input_handler.input_buffer
         cursor_pos_in_buffer = len(current_input_buffer)
 
         self.input_line_renderer.draw(self.input_win, current_input_buffer, cursor_pos_in_buffer)
@@ -303,7 +303,7 @@ class UIManager:
 
         self.curses_manager.update_screen()
 
-    def add_message_to_context(
+    async def add_message_to_context(
         self, text: str, color_attr: int, prefix_time: bool, context_name: str
     ):
         """Adds a message to the specified context's message history."""

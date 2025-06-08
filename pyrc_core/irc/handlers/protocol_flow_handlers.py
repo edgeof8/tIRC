@@ -39,15 +39,15 @@ async def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage"
         return
 
     if cap_subcommand == "LS":
-        client.cap_negotiator.on_cap_ls_received(capabilities_str)
+        await client.cap_negotiator.on_cap_ls_received(capabilities_str)
     elif cap_subcommand == "ACK":
-        client.cap_negotiator.on_cap_ack_received(capabilities_str)
+        await client.cap_negotiator.on_cap_ack_received(capabilities_str)
     elif cap_subcommand == "NAK":
-        client.cap_negotiator.on_cap_nak_received(capabilities_str)
+        await client.cap_negotiator.on_cap_nak_received(capabilities_str)
     elif cap_subcommand == "NEW":
-        client.cap_negotiator.on_cap_new_received(capabilities_str)
+        await client.cap_negotiator.on_cap_new_received(capabilities_str)
     elif cap_subcommand == "DEL":
-        client.cap_negotiator.on_cap_del_received(capabilities_str)
+        await client.cap_negotiator.on_cap_del_received(capabilities_str)
     else:
         await client.add_message(
             f"[CAP] Unknown subcommand: {cap_subcommand} {capabilities_str}",
@@ -90,7 +90,7 @@ async def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IR
 
     if payload == "+":
         logger.info(f"SASL: Received AUTHENTICATE + challenge. Raw: {raw_line.strip()}")
-        client.sasl_authenticator.on_authenticate_challenge_received(payload)
+        await client.sasl_authenticator.on_authenticate_challenge_received(payload)
     else:
         logger.warning(
             f"SASL: Received AUTHENTICATE with payload other than '+': '{payload}'. This is unusual. Relying on numerics for outcome. Raw: {raw_line.strip()}"

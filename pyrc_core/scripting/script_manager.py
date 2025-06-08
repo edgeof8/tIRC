@@ -1,4 +1,4 @@
-# START OF MODIFIED FILE: script_manager.py
+# START OF MODIFIED FILE: script_manager.py # Pylance re-evaluation
 import os
 import importlib.util
 import logging
@@ -7,6 +7,7 @@ import time
 import sys
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set, Tuple, Union
 import threading
+import asyncio # New import
 # No direct imports from app_config for global constants here; access via client.config
 from pyrc_core.app_config import AppConfig # Import AppConfig
 
@@ -469,7 +470,7 @@ class ScriptManager:
                 f"Script '{script_name}' unsubscribed handler '{handler_function.__name__}' from event '{event_name}'."
             )
 
-    def dispatch_event(
+    async def dispatch_event(
         self, event_name: str, event_data: Optional[Dict[str, Any]] = None
     ) -> None:
         if event_data is None:
@@ -492,14 +493,20 @@ class ScriptManager:
                     self.logger.debug(
                         f"Calling handler '{handler.__name__}' from script '{script_name}' for event '{event_name}'."
                     )
-                    handler(event_data)
+                    result = handler(event_data)
+                    if asyncio.iscoroutine(result):
+                        if self.client_logic_ref.loop.is_running(): # Access the event loop from client_logic_ref
+                            asyncio.create_task(result) # Schedule coroutine
+                        else:
+                            self.logger.warning(f"Async handler '{handler.__name__}' for event '{event_name}' called when no loop is running.")
                 except Exception as e:
                     self.logger.error(
                         f"Error in event handler '{handler.__name__}' from script '{script_name}' for event '{event_name}': {e}",
                         exc_info=True,
                     )
                     error_message = f"Error in script '{script_name}' event handler for '{event_name}': {e}"
-                    self.client_logic_ref.add_message(
+                    # Use await for add_message as it's now async
+                    await self.client_logic_ref.add_message(
                         error_message,
                         self.client_logic_ref.ui.colors.get("error", 0),
                         context_name="Status",
