@@ -19,3 +19,15 @@ def handle_nick_command(client: "IRCClient_Logic", args_str: str):
     new_nick = parts[0]
     client.last_attempted_nick_change = new_nick
     client.network_handler.send_raw(f"NICK {new_nick}")
+
+COMMAND_DEFINITIONS = [
+    {
+        "name": "nick",
+        "handler": "handle_nick_command",
+        "help": {
+            "usage": "/nick <newnick>",
+            "description": "Changes your nickname on the IRC server.",
+            "aliases": []
+        }
+    }
+]

@@ -74,6 +74,7 @@ class IRCClient_Logic:
         self.active_list_context_name: Optional[str] = None
         self._final_quit_message: Optional[str] = None
         self.max_reconnect_delay: float = 300.0
+        self.last_attempted_nick_change: Optional[str] = None
 
         # --- Stage 2: Initialize All Manager Components ---
         self.state_manager = StateManager()
