@@ -18,6 +18,25 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.protocol")
 
+COMMAND_DISPATCH_TABLE = {
+    "CAP": handle_cap_message,
+    "PING": handle_ping_command,
+    "AUTHENTICATE": handle_authenticate_command,
+    "PRIVMSG": handle_privmsg,
+    "JOIN": handle_membership_changes,
+    "PART": handle_membership_changes,
+    "QUIT": handle_membership_changes,
+    "KICK": handle_membership_changes,
+    "NICK": handle_nick_message,
+    "MODE": handle_mode_message,
+    "TOPIC": handle_topic_command_event,
+    "NOTICE": handle_notice,
+    "CHGHOST": handle_chghost_command_event,
+    # Numeric commands are handled by _handle_numeric_command, which dispatches further
+    # We will explicitly map common numerics that were previously in the if/elif chain
+    # The _handle_numeric_command function already has its own dispatch table.
+    # We just need to make sure the main dispatcher routes to it if the command is a digit.
+}
 
 def handle_server_message(client: "IRCClient_Logic", line: str):
     parsed_msg = IRCMessage.parse(line)
@@ -49,29 +68,18 @@ def handle_server_message(client: "IRCClient_Logic", line: str):
     # This precedence (specific over RAW) is generally desirable.
 
     specific_handler_trigger_action: Optional[str] = None
-    if cmd == "CAP":
-        handle_cap_message(client, parsed_msg, line)
-    elif cmd == "PING":
-        handle_ping_command(client, parsed_msg, line)
-    elif cmd == "AUTHENTICATE":
-        handle_authenticate_command(client, parsed_msg, line)
-    elif cmd == "PRIVMSG":
-        specific_handler_trigger_action = handle_privmsg(client, parsed_msg, line)
-    elif cmd in ["JOIN", "PART", "QUIT", "KICK"]:
-        # Modify these handlers to also return Optional[str] if they process triggers
-        specific_handler_trigger_action = handle_membership_changes(client, parsed_msg, line)
-    elif cmd == "NICK":
-        specific_handler_trigger_action = handle_nick_message(client, parsed_msg, line)
+
+    handler = COMMAND_DISPATCH_TABLE.get(cmd)
+
+    if handler:
+        # Check if the handler is one that returns an Optional[str] (trigger action)
+        # This is a heuristic based on the original code's specific_handler_trigger_action assignments.
+        if handler in [handle_privmsg, handle_membership_changes, handle_nick_message, handle_mode_message, handle_topic_command_event, handle_notice, handle_chghost_command_event]:
+            specific_handler_trigger_action = handler(client, parsed_msg, line)
+        else:
+            handler(client, parsed_msg, line)
     elif cmd.isdigit():
-        _handle_numeric_command(client, parsed_msg, line) # Numeric handlers might call process_trigger_event internally
-    elif cmd == "MODE":
-        specific_handler_trigger_action = handle_mode_message(client, parsed_msg, line)
-    elif cmd == "TOPIC":
-        specific_handler_trigger_action = handle_topic_command_event(client, parsed_msg, line)
-    elif cmd == "NOTICE":
-        specific_handler_trigger_action = handle_notice(client, parsed_msg, line)
-    elif cmd == "CHGHOST":
-        specific_handler_trigger_action = handle_chghost_command_event(client, parsed_msg, line)
+        _handle_numeric_command(client, parsed_msg, line)
     else:
         handle_unknown_command(client, parsed_msg, line)
 
