@@ -1,5 +1,23 @@
 # PyRC - Python Terminal IRC Client
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+
+> 💬 **A modern, modular IRC client built for power users and AI integration**
+
+<div align="center">
+  <img src="Image.png" alt="PyRC Screenshot" width="90%">
+</div>
+
+## 🚀 Features at a Glance
+
+- **🤖 AI-Ready**: Built with AI integration in mind, perfect for building IRC-powered AI agents and chatbots
+- 🚀 **Lightning Fast**: Pure Python implementation optimized for speed and low resource usage
+- 🧩 **Extremely Modular**: Every component is pluggable and replaceable
+- 💻 **Terminal-First**: Beautiful, responsive UI that stays in your terminal
+- 🔄 **Persistent State**: Never lose your place with automatic session restoration
+
 PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It provides a feature-rich, lightweight, and user-friendly experience for IRC users who prefer the command line. With a focus on extreme modularity and stability, PyRC enables both traditional IRC usage and programmatic integration with AI agents or other automated systems.
 
 ![PyRC Screenshot](Image.png)
