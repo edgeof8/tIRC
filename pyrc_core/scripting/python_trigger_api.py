@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Dict, Any
+from typing import TYPE_CHECKING, Dict, Any, Optional
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -28,6 +28,6 @@ class PythonTriggerAPI:
     def add_message_to_context(self, ctx_name: str, text: str, color_key: str = "system"):
         self._client_logic.add_message(text, color_key, context_name=ctx_name)
 
-    def get_client_nick(self) -> str:
+    def get_client_nick(self) -> Optional[str]:
         return self._client_logic.nick
     # Add other commonly used API methods as needed by Python triggers
