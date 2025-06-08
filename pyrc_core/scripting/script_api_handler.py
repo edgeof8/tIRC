@@ -417,6 +417,11 @@ class ScriptAPIHandler:
     def is_connected(self) -> bool:
         return self.client_logic.network_handler.connected
 
+    def get_connection_state(self) -> Optional[str]:
+        """Returns the current connection state as a string (e.g., 'DISCONNECTED', 'REGISTERED')."""
+        state_enum = self.client_logic.state_manager.get_connection_state()
+        return state_enum.name if state_enum else None
+
     def get_server_info(self) -> Dict[str, Any]:
         return {
             "server": self.client_logic.server,

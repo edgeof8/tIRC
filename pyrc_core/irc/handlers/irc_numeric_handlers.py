@@ -385,6 +385,9 @@ def _handle_err_nicknameinuse(
             conn_info.nick = new_try_nick
             client.state_manager.set("connection_info", conn_info)
             client.registration_handler.update_nick_for_registration(new_try_nick)
+
+            # Also update the nickname in state.json
+            client.state_manager._save_state()
         else:
             logger.warning(
                 "ERR_NICKNAMEINUSE for our nick, but no registration_handler to manage retry."

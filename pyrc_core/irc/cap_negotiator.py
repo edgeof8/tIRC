@@ -39,7 +39,7 @@ class CapNegotiator:
         self._negotiation_timer: Optional[threading.Timer] = None
 
         # Timeout for the entire CAP negotiation process
-        self.negotiation_timeout_seconds: float = 30.0 # Configurable?
+        self.negotiation_timeout_seconds: float = 60.0 # Increased timeout
         self._negotiation_timer: Optional[threading.Timer] = None
 
 

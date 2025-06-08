@@ -80,16 +80,13 @@ class HeadlessTestRunner:
         self.current_test_start = time.time()
         self.log_test_event("Running connection test (verifying client is connected via CLIENT_READY event)...")
 
-        # --- MODIFICATION: Use StateManager for connection state ---
-        is_connected_state = client_logic.state_manager.get_connection_state() in [ConnectionState.CONNECTED, ConnectionState.REGISTERED, ConnectionState.READY]
-        # Or more simply, use the API if it reflects the desired state
-        # is_connected_api = self.api.is_connected() # Assuming this reflects being fully ready or at least registered
+        # --- MODIFICATION: Use ScriptAPIHandler for connection state ---
+        current_state_name = self.api.get_connection_state()
+        is_connected_state = current_state_name in ["CONNECTED", "REGISTERED", "READY"]
 
-        if is_connected_state: # Or use is_connected_api
-            return TestResult("Connection", True, "Client connected and registered (signaled by CLIENT_READY event).", time.time() - self.current_test_start)
+        if is_connected_state:
+            return TestResult("Connection", True, f"Client connected and registered (Current State: {current_state_name}).", time.time() - self.current_test_start)
         else:
-            current_state_val = client_logic.state_manager.get_connection_state()
-            current_state_name = current_state_val.name if current_state_val else "Unknown"
             return TestResult("Connection", False, f"Client not in a connected state (Current: {current_state_name}) despite CLIENT_READY event (unexpected state).", time.time() - self.current_test_start)
 
     def run_channel_join_test(self, client_logic) -> TestResult:
@@ -132,9 +129,9 @@ class HeadlessTestRunner:
             return TestResult("Channel Re-Join", True, f"Successfully PARTed and re-JOINed (fully) channel {normalized_test_channel}", duration)
         else:
             joined_channels = self.api.get_joined_channels()
-            # --- MODIFICATION: Access context via client_logic.context_manager ---
-            ctx = client_logic.context_manager.get_context(normalized_test_channel)
-            ctx_status = ctx.join_status.name if ctx and hasattr(ctx, 'join_status') and ctx.join_status else "N/A"
+            # --- MODIFICATION: Access context via ScriptAPIHandler ---
+            ctx_info = self.api.get_context_info(normalized_test_channel)
+            ctx_status = ctx_info.get('join_status', 'N/A') if ctx_info else 'N/A'
             return TestResult("Channel Re-Join", False, f"Failed to confirm full re-join for {normalized_test_channel} within timeout. Currently joined: {joined_channels}. Context status: {ctx_status}", duration)
 
     def run_message_send_test(self, client_logic) -> TestResult:

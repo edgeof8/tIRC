@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 from pyrc_core.app_config import DEFAULT_PORT, DEFAULT_SSL_PORT
 from pyrc_core.context_manager import ChannelJoinStatus # For _reset_client_contexts
+from pyrc_core.state_manager import ConnectionInfo # Import ConnectionInfo
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -78,34 +79,46 @@ def handle_connect_command(client: "IRCClient_Logic", args_str: str):
     if client.network_handler.connected:
         client.network_handler.disconnect_gracefully("Changing servers via /connect")
 
-    # Update client's main connection parameters
-    client.server = new_server_host
-    client.port = new_port
-    client.use_ssl = new_ssl
-    # Note: /connect doesn't inherently change client.nick, client.password etc.
-    # It primarily establishes a new connection. Server-specific profiles are handled by /server.
+    # Create a temporary ConnectionInfo object and set it in the StateManager
+    # This will allow IRCClient_Logic's properties and network_handler to pick up the new values
+    conn_info = client.state_manager.get_connection_info()
+    current_nick = conn_info.nick if conn_info else "PyRC" # Use existing nick or default
+
+    temp_conn_info = ConnectionInfo(
+        server=new_server_host,
+        port=new_port,
+        ssl=new_ssl,
+        nick=current_nick, # Keep current nick for /connect
+        username=current_nick,
+        realname=current_nick,
+        auto_connect=False, # This is a manual connect, not auto
+        initial_channels=[], # /connect doesn't specify initial channels
+        desired_caps=[] # /connect doesn't specify caps
+    )
+
+    if not client.state_manager.set_connection_info(temp_conn_info):
+        client.add_message(f"Failed to set connection info for {new_server_host}:{new_port}. Validation failed.", "error", context_name="Status")
+        logger.error(f"Failed to set connection info for {new_server_host}:{new_port}. Validation failed.")
+        return
 
     client.add_message(
-        f"Attempting to connect to: {client.server}:{client.port} (SSL: {client.use_ssl})",
-        "system", # Semantic color key
+        f"Attempting to connect to: {client.server}:{client.port} (SSL: {client.use_ssl})", # Use properties
+        "system",
         context_name="Status",
     )
     logger.info(
-        f"Attempting new connection via /connect: {client.server}:{client.port} (SSL: {client.use_ssl})"
+        f"Attempting new connection via /connect: {client.server}:{client.port} (SSL: {client.use_ssl})" # Use properties
     )
 
-    client._reset_state_for_new_connection()
+    # The functionality of _reset_state_for_new_connection is now handled by ConnectionOrchestrator
+    # and other initialization logic, so this call can be removed.
 
-    # This will also re-initialize CAP, SASL, Registration handlers based on new connection params
-    client.network_handler.update_connection_params(
-        server=client.server,
-        port=client.port,
-        use_ssl=client.use_ssl,
-        # channels_to_join will be handled by RegistrationHandler based on client.initial_channels_list
-        # or if specific channels are passed to update_connection_params (not typical for raw /connect)
-    )
-    # The network_handler.start() or its internal reconnect logic will pick up the new params.
-    # If not already running, ensure it starts. If it was running, disconnect_gracefully + update_connection_params
-    # should trigger a reconnect with new params.
-    if not client.network_handler._network_thread or not client.network_handler._network_thread.is_alive():
-         client.network_handler.start()
+    # Ensure connection_info is not None before passing to establish_connection
+    final_conn_info = client.state_manager.get_connection_info()
+    if not final_conn_info:
+        client.add_message("Internal error: Connection info not available after /connect setup.", "error", context_name="Status")
+        logger.error("Connection info is None after setting it in StateManager during /connect.")
+        return
+
+    # The connection orchestrator will now use the connection info from StateManager
+    client.connection_orchestrator.establish_connection(final_conn_info)

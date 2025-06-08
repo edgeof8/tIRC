@@ -173,6 +173,20 @@ class IRCClient_Logic:
         info = self.state_manager.get_connection_info()
         return info.server if info else None
 
+    @property
+    def port(self) -> Optional[int]:
+        info = self.state_manager.get_connection_info()
+        return info.port if info else None
+
+    @property
+    def use_ssl(self) -> Optional[bool]:
+        info = self.state_manager.get_connection_info()
+        return info.ssl if info else None
+
+    @property
+    def currently_joined_channels(self) -> Set[str]:
+        return self.context_manager.get_all_channels()
+
     def _create_initial_state(self):
         """
         Determines the initial connection state from CLI args and AppConfig,

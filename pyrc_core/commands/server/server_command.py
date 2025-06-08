@@ -53,21 +53,15 @@ def _proceed_with_new_server_connection(client: "IRCClient_Logic", config_name: 
     # client.active_server_config_name = config_name
     # client.active_server_config = new_conf # This might still be useful for client logic to know current named config
 
-    client._initialize_connection_handlers() # Re-initialize based on new state_manager.connection_info
-    client._reset_state_for_new_connection()
+    # The direct assignments and _reset_state_for_new_connection are no longer needed
+    # as _configure_from_server_config and ConnectionOrchestrator manage the state.
+    # client.active_server_config_name = config_name
+    # client.active_server_config = new_conf # This might still be useful for client logic to know current named config
 
+    # The ConnectionOrchestrator handles initialization and connection establishment
+    # based on the connection info already set in StateManager by _configure_from_server_config.
     if conn_info.server and conn_info.port is not None:
-        client.network_handler.update_connection_params(
-            server=conn_info.server,
-            port=conn_info.port,
-            use_ssl=conn_info.ssl,
-            channels_to_join=conn_info.initial_channels # Ensure this is passed
-        )
-        # network_handler.start() is usually called by update_connection_params if not running,
-        # or connection is re-attempted in its loop.
-        # For /server, explicitly ensure it starts if not alive.
-        if not client.network_handler._network_thread or not client.network_handler._network_thread.is_alive():
-            client.network_handler.start()
+        client.connection_orchestrator.establish_connection(conn_info)
 
         client.add_message(
             f"Switched active server configuration to '{config_name}'. Attempting to connect...",

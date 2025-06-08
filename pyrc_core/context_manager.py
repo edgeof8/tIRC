@@ -8,6 +8,7 @@ from typing import (
     Tuple,
     Dict,
     List,
+    Set,
 )
 
 
@@ -222,6 +223,14 @@ class ContextManager:
 
     def get_all_context_names(self) -> List[str]:
         return list(self.contexts.keys())
+
+    def get_all_channels(self) -> Set[str]:
+        """Returns a set of all active channel names."""
+        channels = set()
+        for name, context in self.contexts.items():
+            if context.type == "channel":
+                channels.add(name)
+        return channels
 
     def add_message_to_context(
         self,

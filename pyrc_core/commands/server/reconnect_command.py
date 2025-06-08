@@ -52,9 +52,12 @@ def handle_reconnect_command(client: "IRCClient_Logic", args_str: str):
     if client.network_handler.connected:
         client.network_handler.disconnect_gracefully("Reconnecting")
 
-    client.network_handler.update_connection_params(
-        server=current_server,
-        port=current_port,
-        use_ssl=client.use_ssl,
-        channels_to_join=client.network_handler.channels_to_join_on_connect,
-    )
+    # The connection orchestrator will now use the connection info from StateManager
+    # for reconnection.
+    conn_info = client.state_manager.get_connection_info()
+    if not conn_info:
+        client.add_message("Internal error: Connection info not available for reconnection.", "error", context_name="Status")
+        logger.error("Connection info is None when attempting /reconnect.")
+        return
+
+    client.connection_orchestrator.establish_connection(conn_info)
