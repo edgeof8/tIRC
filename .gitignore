@@ -52,3 +52,13 @@ state.json*
 # Builder
 build.py
 test_build.py
+scripts/ai_api_test_script.py
+scripts/api_responder_agent.py
+scripts/event_test_script.py
+scripts/run_headless_tests.py
+scripts/test_dcc_features.py
+scripts/test_headless.py
+scripts/test_script.py
+pyterm_irc_config.ini
+asyncio_migration_plan.md
+pyterm_irc_config.ini
