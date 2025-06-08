@@ -21,6 +21,7 @@ import pyrc_core.app_config as app_config
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
     from pyrc_core.scripting.script_manager import ScriptManager
+    from pyrc_core.app_config import AppConfig
 
 
 @dataclass
@@ -165,7 +166,7 @@ class ScriptAPIHandler:
     def add_trigger(
         self, event_type: str, pattern: str, action_type: str, action_content: str
     ) -> Optional[int]:
-        if not app_config.ENABLE_TRIGGER_SYSTEM:
+        if not self.client_logic.config.enable_trigger_system:
             self.log_warning("Trigger system is disabled. Cannot add trigger.")
             return None
         if (
@@ -186,7 +187,7 @@ class ScriptAPIHandler:
             return None
 
     def remove_trigger(self, trigger_id: int) -> bool:
-        if not app_config.ENABLE_TRIGGER_SYSTEM:
+        if not self.client_logic.config.enable_trigger_system:
             self.log_warning("Trigger system is disabled. Cannot remove trigger.")
             return False
         if (
@@ -204,7 +205,7 @@ class ScriptAPIHandler:
     def list_triggers(
         self, event_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        if not app_config.ENABLE_TRIGGER_SYSTEM:
+        if not self.client_logic.config.enable_trigger_system:
             self.log_warning("Trigger system is disabled. Cannot list triggers.")
             return []
         if (
@@ -222,7 +223,7 @@ class ScriptAPIHandler:
             return []
 
     def set_trigger_enabled(self, trigger_id: int, enabled: bool) -> bool:
-        if not app_config.ENABLE_TRIGGER_SYSTEM:
+        if not self.client_logic.config.enable_trigger_system:
             self.log_warning("Trigger system is disabled. Cannot set trigger state.")
             return False
         if (
