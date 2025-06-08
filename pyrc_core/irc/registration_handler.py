@@ -155,12 +155,10 @@ class RegistrationHandler:
             logger.debug("RegistrationHandler: NICK/USER already sent prior to on_cap_negotiation_complete call.")
 
     def update_nick_for_registration(self, new_nick: str):
-        """Called by NetworkHandler during nick collision resolution before NICK/USER is sent."""
-        if not self.nick_user_sent:
-            self.initial_nick = new_nick # Update the base nick if collision happens before initial NICK
-            logger.info(f"RegistrationHandler: Initial nick updated to '{new_nick}' due to pre-registration collision handling.")
-        # If NICK/USER already sent, this method doesn't change the already sent USER command's username part.
-        # The server will handle the NICK change, and RPL_WELCOME will confirm the final nick.
+        """Called by NetworkHandler during nick collision resolution."""
+        # Always update initial_nick, as this is the base for future collision retries
+        self.initial_nick = new_nick
+        logger.info(f"RegistrationHandler: Initial nick updated to '{new_nick}' due to nick collision handling.")
 
     def reset_registration_state(self):
         logger.debug("Resetting RegistrationHandler state.")

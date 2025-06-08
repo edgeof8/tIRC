@@ -1,4 +1,5 @@
 import logging
+import random # Added for random nick generation
 from typing import Optional
 
 from pyrc_core.irc.irc_message import IRCMessage
@@ -332,14 +333,13 @@ def _handle_err_nicknameinuse(
         return
 
     if (
-        conn_info.last_attempted_nick_change is not None
-        and conn_info.last_attempted_nick_change.lower() == failed_nick.lower()
+        client.last_attempted_nick_change is not None
+        and client.last_attempted_nick_change.lower() == failed_nick.lower()
     ):
         logger.info(
-            f"ERR_NICKNAMEINUSE for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change."
+            f"ERR_NICKNAMEINUSE for user-attempted nick {failed_nick}. Resetting client.last_attempted_nick_change."
         )
-        conn_info.last_attempted_nick_change = None
-        client.state_manager.set("connection_info", conn_info)
+        client.last_attempted_nick_change = None
         return  # Don't auto-retry for user-initiated nick changes
 
     is_our_nick_colliding = conn_info.nick and conn_info.nick.lower() == failed_nick.lower()
@@ -349,27 +349,13 @@ def _handle_err_nicknameinuse(
             current_nick_for_logic = conn_info.nick
             initial_nick_for_logic = client.registration_handler.initial_nick
 
-            # Generate a new nickname based on the current state
-            if current_nick_for_logic.lower() == initial_nick_for_logic.lower():
-                # First collision with initial nick, try with underscore
-                new_try_nick = f"{initial_nick_for_logic}_"
-            else:
-                # Handle subsequent collisions
-                if current_nick_for_logic.endswith("_"):
-                    # If current nick ends with underscore, switch to number suffix
-                    new_try_nick = f"{current_nick_for_logic[:-1]}1"
-                elif current_nick_for_logic[-1].isdigit():
-                    # If current nick ends with a number, increment it
-                    try:
-                        base_nick = current_nick_for_logic[:-1]
-                        current_num = int(current_nick_for_logic[-1])
-                        new_try_nick = f"{base_nick}{current_num + 1}"
-                    except ValueError:
-                        # Fallback if number parsing fails
-                        new_try_nick = f"{current_nick_for_logic}_"
-                else:
-                    # Default case: append underscore
-                    new_try_nick = f"{current_nick_for_logic}_"
+            # Generate a new nickname with a random suffix
+            base_nick = initial_nick_for_logic
+            # Ensure base_nick is not too long before adding suffix
+            if len(base_nick) > 5: # Leave room for a 4-char random suffix
+                base_nick = base_nick[:5]
+            random_suffix = ''.join(random.choices('0123456789abcdef', k=4))
+            new_try_nick = f"{base_nick}-{random_suffix}"
 
             # Ensure the new nickname isn't too long (IRC limit is typically 9 chars)
             if len(new_try_nick) > 9:
@@ -599,7 +585,7 @@ def _handle_rpl_whowasuser(
     # display_params[0] is <nick>
     # display_params[1] is <user>
     # display_params[2] is <host>
-    # trailing is <real_name>
+    # display_params[3] is <host>
 
     nick = display_params[0] if len(display_params) > 0 else "N/A"
     user = display_params[1] if len(display_params) > 1 else "N/A"
@@ -797,16 +783,14 @@ def _handle_err_erroneusnickname(
         client.ui.colors["error"],
         "Status",
     )
-    conn_info = client.state_manager.get_connection_info()
-    if conn_info and (
-        conn_info.last_attempted_nick_change is not None
-        and conn_info.last_attempted_nick_change.lower() == failed_nick.lower()
+    if (
+        client.last_attempted_nick_change is not None
+        and client.last_attempted_nick_change.lower() == failed_nick.lower()
     ):
         logger.info(
-            f"ERR_ERRONEUSNICKNAME for user-attempted nick {failed_nick}. Resetting last_attempted_nick_change."
+            f"ERR_ERRONEUSNICKNAME for user-attempted nick {failed_nick}. Resetting client.last_attempted_nick_change."
         )
-        conn_info.last_attempted_nick_change = None
-        client.state_manager.set("connection_info", conn_info)
+        client.last_attempted_nick_change = None
 
 
 def _handle_err_nickcollision(
@@ -822,27 +806,25 @@ def _handle_err_nickcollision(
     error_reason = trailing if trailing else "Nickname collision"
     logger.warning(f"ERR_NICKCOLLISION (436) for {collided_nick}: {error_reason}")
     client.add_message(
-        f"Cannot change nick to {collided_nick}: {error_reason}. The server killed your nick, attempting to restore to {client.initial_nick}.",
+        f"Cannot change nick to {collided_nick}: {error_reason}. The server killed your nick, attempting to restore to {client.registration_handler.initial_nick}.",
         client.ui.colors["error"],
         "Status",
     )
-    conn_info = client.state_manager.get_connection_info()
-    if conn_info and (
-        conn_info.last_attempted_nick_change is not None
-        and conn_info.last_attempted_nick_change.lower() == collided_nick.lower()
+    if (
+        client.last_attempted_nick_change is not None
+        and client.last_attempted_nick_change.lower() == collided_nick.lower()
     ):
         logger.info(
-            f"ERR_NICKCOLLISION for user-attempted nick {collided_nick}. Resetting last_attempted_nick_change."
+            f"ERR_NICKCOLLISION for user-attempted nick {collided_nick}. Resetting client.last_attempted_nick_change."
         )
-        conn_info.last_attempted_nick_change = None
-        client.state_manager.set("connection_info", conn_info)
+        client.last_attempted_nick_change = None
 
     # Attempt to reclaim initial nick or a variant if collision occurs
     conn_info = client.state_manager.get_connection_info()
     if conn_info and conn_info.nick.lower() == collided_nick.lower():  # If our current nick is the one that collided
-        client.network_handler.send_raw(f"NICK {client.initial_nick}")
+        client.network_handler.send_raw(f"NICK {client.registration_handler.initial_nick}") # Use registration_handler.initial_nick
         client.add_message(
-            f"Attempting to restore nick to {client.initial_nick}.",
+            f"Attempting to restore nick to {client.registration_handler.initial_nick}.", # Use registration_handler.initial_nick
             client.ui.colors["system"],
             "Status",
         )
