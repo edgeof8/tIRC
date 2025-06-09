@@ -20,7 +20,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_quit_command(client: "IRCClient_Logic", args_str: str):
+async def handle_quit_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /quit command"""
     reason: str
     if args_str:
@@ -40,13 +40,13 @@ def handle_quit_command(client: "IRCClient_Logic", args_str: str):
         else:
             reason = "PyRC Client Exiting"  # Fallback if no script provides a message
 
-    client.add_message(
+    await client.add_message(
         f"Quitting... (Reason: {reason})",
-        "system",
+        client.ui.colors["system"],
         context_name="Status"
     )
     logger.info(f"User initiated /quit. Reason: {reason}")
     # The disconnect_gracefully method will also set client.should_quit = True via its call to self.stop()
-    client.network_handler.disconnect_gracefully(reason)
+    await client.network_handler.disconnect_gracefully(reason)
     # Ensure should_quit is explicitly set if not already handled by disconnect_gracefully's chain
-    client.should_quit = True
+    client.should_quit.set()

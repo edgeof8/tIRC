@@ -23,18 +23,17 @@ class StateChangeUIHandler:
         # e.g., self.state_manager.register_change_handler("channel_topic_updated", self.on_topic_updated)
         # e.g., self.state_manager.register_change_handler("user_list_updated", self.on_user_list_updated)
 
-    async def _safe_add_status_message(self, message: str, msg_type: str = "info"):
+    async def _safe_add_status_message(self, message: str, color_key: str = "system"):
         """Safely add a status message if the client and UI are available."""
         try:
-            # Ensure client and its UI components are accessible
-            if hasattr(self.client, 'ui') and self.client.ui and \
-               hasattr(self.client, '_add_status_message') and \
-               callable(self.client._add_status_message):
-                await self.client._add_status_message(message, msg_type)
+            if hasattr(self.client, 'add_status_message') and callable(self.client.add_status_message):
+                await self.client.add_status_message(message, color_key)
+            elif hasattr(self.client, 'ui') and self.client.ui:
+                logger.debug(f"Skipping status message (add_status_message not available): {message}")
             else:
-                logger.debug(f"Skipping status message (UI or _add_status_message not available): {message}")
+                logger.debug(f"Skipping status message (UI not available): {message}")
         except Exception as e:
-            logger.warning(f"Failed to add status message via _safe_add_status_message: {e}", exc_info=True)
+            logger.warning(f"Failed to add status message: {e}", exc_info=True)
 
     def _trigger_ui_update(self):
         """Safely trigger a UI update if the client and UI are available."""
@@ -119,7 +118,7 @@ class StateChangeUIHandler:
 
         # Nick change
         if old_info and new_info and old_info.nick != new_info.nick:
-            await self._safe_add_status_message(f"Your nick changed from {old_info.nick} to {new_info.nick}.", "system")
+            await self._safe_add_status_message(f"Your nick changed from {old_info.nick} to {new_info.nick}.", "info")
             logger.debug(f"UI Handler: Nick changed from {old_info.nick} to {new_info.nick}")
 
         # Server/port change (less common to change mid-session without disconnect/reconnect, but good to handle)

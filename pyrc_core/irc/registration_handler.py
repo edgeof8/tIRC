@@ -15,12 +15,14 @@ from pyrc_core.state_manager import ConnectionState
 logger = logging.getLogger("pyrc.registration")
 
 class RegistrationHandler:
-    def __init__(self,
-                 network_handler: 'NetworkHandler',
-                 command_handler: 'CommandHandler',
-                 state_manager: 'StateManager',
-                 cap_negotiator: Optional['CapNegotiator'] = None,
-                 client_logic_ref: Optional['IRCClient_Logic'] = None):
+    def __init__(
+        self,
+        network_handler: 'NetworkHandler',
+        command_handler: 'CommandHandler',
+        state_manager: 'StateManager',
+        cap_negotiator: Optional['CapNegotiator'] = None,
+        client_logic_ref: Optional['IRCClient_Logic'] = None
+    ):
         self.network_handler = network_handler
         self.command_handler = command_handler
         self.state_manager = state_manager
@@ -35,7 +37,6 @@ class RegistrationHandler:
         conn_info = self.state_manager.get_connection_info()
         self.initial_nick = conn_info.nick if conn_info else "PyRCNick" # Fallback if no conn_info at init
 
-
     def set_sasl_authenticator(self, authenticator: 'SaslAuthenticator'):
         self.sasl_authenticator = authenticator
 
@@ -43,8 +44,14 @@ class RegistrationHandler:
         self.cap_negotiator = negotiator
 
     async def _add_status_message(self, message: str, color_key: str = "system"):
+        """Helper method to safely send status messages through client logic."""
         if self.client_logic_ref:
-            await self.client_logic_ref._add_status_message(message, color_key)
+            if hasattr(self.client_logic_ref, 'add_status_message'):
+                await self.client_logic_ref.add_status_message(message, color_key)
+            else:
+                logger.error("add_status_message method not found on client_logic_ref")
+        else:
+            logger.error("client_logic_ref is None - cannot send status message")
 
     async def _proceed_with_nick_user_registration(self):
         if self.nick_user_sent:
@@ -72,7 +79,6 @@ class RegistrationHandler:
         self.nick_user_sent = True
         logger.debug("NICK/USER commands sent.")
 
-
     async def _perform_post_registration_actions(self):
         logger.info("Performing post-registration actions (channel joins, NickServ IDENTIFY).")
         await self._add_status_message("Performing post-registration actions...")
@@ -91,7 +97,6 @@ class RegistrationHandler:
         else:
             logger.info("No initial channels to auto-join.")
 
-
         if conn_info.nickserv_password:
             sasl_completed_successfully = self.sasl_authenticator and self.sasl_authenticator.sasl_authentication_succeeded
             if not sasl_completed_successfully:
@@ -99,12 +104,11 @@ class RegistrationHandler:
                 if self.client_logic_ref and hasattr(self.client_logic_ref, 'command_handler') and self.client_logic_ref.command_handler:
                     await self.client_logic_ref.command_handler.process_user_command(f"/msg NickServ IDENTIFY {conn_info.nickserv_password}")
                 else:
-                     logger.error("Cannot send NickServ IDENTIFY: client_logic_ref or command_handler missing.")
+                    logger.error("Cannot send NickServ IDENTIFY: client_logic_ref or command_handler missing.")
             else:
                 logger.info("SASL authentication succeeded. Skipping NickServ IDENTIFY.")
         else:
             logger.info("No NickServ password configured.")
-
 
     async def on_welcome_received(self, confirmed_nick: str):
         """Handles RPL_WELCOME (001) - server confirms registration."""
@@ -140,7 +144,6 @@ class RegistrationHandler:
             logger.info("No CAP negotiator. Proceeding with post-registration actions immediately after RPL_WELCOME.")
             await self._perform_post_registration_actions()
 
-
     async def on_cap_negotiation_complete(self):
         """Called by CapNegotiator when its initial flow is complete (client can send NICK/USER)."""
         logger.info("RegistrationHandler: CAP negotiation initial flow complete. Proceeding with NICK/USER if not already sent.")
@@ -159,3 +162,21 @@ class RegistrationHandler:
         self.nick_user_sent = False
         conn_info = self.state_manager.get_connection_info()
         self.initial_nick = conn_info.nick if conn_info else "PyRCNick"
+
+    async def on_connection_established(self):
+        """Called when the connection to the server is established."""
+        if not hasattr(self, 'cap_negotiator') or not self.cap_negotiator:
+            logger.error("CapNegotiator not found on RegistrationHandler during on_connection_established.")
+            if self.client_logic_ref:
+                if hasattr(self.client_logic_ref, 'add_status_message'):
+                    await self.client_logic_ref.add_status_message("Error: CAP negotiator not initialized.", "error")
+            return
+
+        # Ensure network is actually connected before starting CAP
+        if not self.network_handler.connected:
+            logger.warning("NetworkHandler reports not connected despite on_connection_established call")
+            await self._add_status_message("Connected but network not ready for CAP negotiation", "warning")
+            return
+
+        logger.info("Starting CAP negotiation after connection established")
+        await self.cap_negotiator.start_negotiation()

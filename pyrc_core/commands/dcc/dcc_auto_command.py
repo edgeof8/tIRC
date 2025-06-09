@@ -33,7 +33,7 @@ async def handle_dcc_auto_command(client_logic: 'IRCClient_Logic', cmd_args: Lis
         return
 
     if not cmd_args:
-        current_auto_accept = dcc_m.dcc_config.get("auto_accept", False)
+        current_auto_accept = dcc_m.dcc_config.auto_accept
         await client_logic.add_message(f"DCC auto-accept is currently {'ON' if current_auto_accept else 'OFF'}.", client_logic.ui.colors["system"], context_name=active_context_name)
     elif len(cmd_args) == 1:
         setting = cmd_args[0].lower()
@@ -49,7 +49,7 @@ async def handle_dcc_auto_command(client_logic: 'IRCClient_Logic', cmd_args: Lis
         try:
             new_bool_val = True if new_value_str == "true" else False
             # Update the live dcc_config dictionary in DCCManager first
-            dcc_m.dcc_config["auto_accept"] = new_bool_val
+            dcc_m.dcc_config.auto_accept = new_bool_val
 
             # Persist this change to the INI file using the AppConfig instance
             if client_logic.config.set_config_value("DCC", "auto_accept", new_value_str):

@@ -76,7 +76,7 @@ async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
         real_name = parsed_msg.trailing.split(':', 1)[-1] if parsed_msg.trailing and ':' in parsed_msg.trailing else src_nick # Simplistic realname from JOIN, better from WHOIS if needed
         userhost = parsed_msg.prefix # Should be nick!user@host
 
-        client.event_manager.dispatch_join(
+        await client.event_manager.dispatch_join(
             nick=src_nick, userhost=userhost, channel=joined_channel,
             account=account_name, real_name=real_name, # Pass new fields
             is_self=(src_nick_lower == client_nick_lower), raw_line=raw_line
@@ -152,7 +152,7 @@ async def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
 
     # Dispatch PART event
     if hasattr(client, "event_manager") and client.event_manager:
-        client.event_manager.dispatch_part(
+        await client.event_manager.dispatch_part(
             nick=src_nick, userhost=parsed_msg.prefix, channel=parted_channel, # Use parsed_msg.prefix for userhost
             reason=(parsed_msg.trailing.lstrip(":") if parsed_msg.trailing else ""),
             is_self=(src_nick_lower == client_nick_lower), raw_line=raw_line
@@ -187,7 +187,7 @@ async def handle_quit_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
 
     # Dispatch QUIT event
     if hasattr(client, "event_manager") and client.event_manager:
-        client.event_manager.dispatch_quit(
+        await client.event_manager.dispatch_quit(
             nick=src_nick, userhost=parsed_msg.prefix, # Use parsed_msg.prefix for userhost
             reason=(parsed_msg.trailing.lstrip(":") if parsed_msg.trailing else ""),
             raw_line=raw_line

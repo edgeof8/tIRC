@@ -7,18 +7,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pyrc.commands.user.nick")
 
-def handle_nick_command(client: "IRCClient_Logic", args_str: str):
+async def handle_nick_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /nick command"""
     help_data = client.script_manager.get_help_text_for_command("nick")
     usage_msg = help_data["help_text"] if help_data else "Usage: /nick <newnick>"
 
     # _ensure_args is part of CommandHandler, accessed via client.command_handler
-    parts = client.command_handler._ensure_args(args_str, usage_msg)
+    parts = await client.command_handler._ensure_args(args_str, usage_msg)
     if not parts:
         return
     new_nick = parts[0]
     client.last_attempted_nick_change = new_nick
-    client.network_handler.send_raw(f"NICK {new_nick}")
+    await client.network_handler.send_raw(f"NICK {new_nick}")
 
 COMMAND_DEFINITIONS = [
     {

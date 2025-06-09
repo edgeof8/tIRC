@@ -18,13 +18,13 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_disconnect_command(client: "IRCClient_Logic", args_str: str):
+async def handle_disconnect_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /disconnect command"""
     reason = args_str if args_str else "Disconnecting"
-    client.add_message(
+    await client.add_message(
         f"Disconnecting from server... (Reason: {reason})",
-        "system",
+        client.ui.colors["system"],
         context_name="Status"
     )
     logger.info(f"User initiated /disconnect. Reason: {reason}")
-    client.network_handler.disconnect_gracefully(reason)
+    await client.network_handler.disconnect_gracefully(reason)

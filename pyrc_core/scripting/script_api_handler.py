@@ -431,7 +431,10 @@ class ScriptAPIHandler:
         }
 
     def get_server_capabilities(self) -> Set[str]:
-        return self.client_logic.get_enabled_caps()
+        """Get currently enabled server capabilities."""
+        if hasattr(self.client_logic, 'cap_negotiator') and self.client_logic.cap_negotiator:
+            return self.client_logic.cap_negotiator.get_enabled_caps()
+        return set()
 
     def get_joined_channels(self) -> List[str]:
         return list(self.client_logic.currently_joined_channels)

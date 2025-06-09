@@ -18,7 +18,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_cyclechannel_command(client: "IRCClient_Logic", args_str: str):
+async def handle_cyclechannel_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /cyclechannel command"""
     # args_str is not used for /cyclechannel, but kept for consistency with handler signature
 
@@ -26,19 +26,19 @@ def handle_cyclechannel_command(client: "IRCClient_Logic", args_str: str):
     current_context = client.context_manager.get_context(current_active_context_name)
 
     if not current_context or current_context.type != "channel":
-        client.add_message(
+        await client.add_message(
             "Not in a channel to cycle.",
-            "error",
+            client.ui.colors["error"],
             context_name=current_active_context_name,
         )
         return
 
     channel = current_context.name
 
-    client.add_message(
+    await client.add_message(
         f"Cycling channel {channel}...",
-        "system",
+        client.ui.colors["system"],
         context_name=channel # Or current_active_context_name
     )
-    client.network_handler.send_raw(f"PART {channel}")
-    client.network_handler.send_raw(f"JOIN {channel}")
+    await client.network_handler.send_raw(f"PART {channel}")
+    await client.network_handler.send_raw(f"JOIN {channel}")

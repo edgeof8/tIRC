@@ -80,7 +80,7 @@ class CursesManager:
 
     def resize_term(self, height: int, width: int):
         try:
-            curses.resizeterm(height, width)
+            curses.resize_term(height, width)
             self.stdscr.clearok(True)
         except curses.error as e:
             logger.error(f"Curses error resizing terminal to {height}x{width}: {e}")

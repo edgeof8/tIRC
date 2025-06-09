@@ -38,7 +38,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_ignore_command(client: "IRCClient_Logic", args_str: str):
+async def handle_ignore_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /ignore command."""
     help_data = client.script_manager.get_help_text_for_command("ignore")
     usage_msg = (
@@ -48,37 +48,37 @@ def handle_ignore_command(client: "IRCClient_Logic", args_str: str):
     system_color_key = "system"
     warning_color_key = "warning"
 
-    parts = client.command_handler._ensure_args(args_str, usage_msg)
+    parts = await client.command_handler._ensure_args(args_str, usage_msg)
     if not parts:
         return
 
     pattern_to_ignore = parts[0]
-    original_arg = pattern_to_ignore # Keep original for messages
+    original_arg = pattern_to_ignore  # Keep original for messages
 
     if "!" not in pattern_to_ignore and "@" not in pattern_to_ignore:
         if "*" not in pattern_to_ignore and "?" not in pattern_to_ignore:
             interpreted_pattern = f"{pattern_to_ignore}!*@*"
-            client.add_message(
+            await client.add_message(
                 f"Interpreting '{original_arg}' as hostmask pattern: '{interpreted_pattern}'",
-                system_color_key,
+                client.ui.colors[system_color_key],
                 context_name=active_context_name,
             )
             pattern_to_ignore = interpreted_pattern
 
-    if client.config.add_ignore_pattern(pattern_to_ignore): # add_ignore_pattern now handles lowercasing
-        client.add_message(
+    if client.config.add_ignore_pattern(pattern_to_ignore):  # add_ignore_pattern now handles lowercasing
+        await client.add_message(
             f"Now ignoring: {pattern_to_ignore}",
-            system_color_key,
+            client.ui.colors[system_color_key],
             context_name=active_context_name,
         )
     else:
-        client.add_message(
+        await client.add_message(
             f"Pattern '{pattern_to_ignore}' is already in the ignore list or is empty.",
-            warning_color_key,
+            client.ui.colors[warning_color_key],
             context_name=active_context_name,
         )
 
-def handle_unignore_command(client: "IRCClient_Logic", args_str: str):
+async def handle_unignore_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /unignore command."""
     help_data = client.script_manager.get_help_text_for_command("unignore")
     usage_msg = (
@@ -88,7 +88,7 @@ def handle_unignore_command(client: "IRCClient_Logic", args_str: str):
     system_color_key = "system"
     error_color_key = "error"
 
-    parts = client.command_handler._ensure_args(args_str, usage_msg)
+    parts = await client.command_handler._ensure_args(args_str, usage_msg)
     if not parts:
         return
 
@@ -98,53 +98,57 @@ def handle_unignore_command(client: "IRCClient_Logic", args_str: str):
 
     removed = False
     if client.config.remove_ignore_pattern(pattern_to_unignore_arg):
-        client.add_message(
-            f"Removed from ignore list: {pattern_to_unignore_arg.lower()}", # Show what was actually removed
-            system_color_key,
+        await client.add_message(
+            f"Removed from ignore list: {pattern_to_unignore_arg.lower()}",  # Show what was actually removed
+            client.ui.colors[system_color_key],
             context_name=active_context_name,
         )
         removed = True
     else:
         # If simple nick and not a pattern, try derived hostmask
-        if "!" not in pattern_to_unignore_arg and "@" not in pattern_to_unignore_arg and \
-           "*" not in pattern_to_unignore_arg and "?" not in pattern_to_unignore_arg:
+        if (
+            "!" not in pattern_to_unignore_arg
+            and "@" not in pattern_to_unignore_arg
+            and "*" not in pattern_to_unignore_arg
+            and "?" not in pattern_to_unignore_arg
+        ):
             derived_pattern = f"{pattern_to_unignore_arg.lower()}!*@*"
             if client.config.remove_ignore_pattern(derived_pattern):
-                client.add_message(
+                await client.add_message(
                     f"Removed derived hostmask from ignore list: {derived_pattern}",
-                    system_color_key,
+                    client.ui.colors[system_color_key],
                     context_name=active_context_name,
                 )
                 removed = True
 
     if not removed:
-        client.add_message(
+        await client.add_message(
             f"Pattern '{pattern_to_unignore_arg}' (or its derived hostmask) not found in ignore list.",
-            error_color_key,
+            client.ui.colors[error_color_key],
             context_name=active_context_name,
         )
 
-def handle_listignores_command(client: "IRCClient_Logic", args_str: str):
+async def handle_listignores_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /listignores command."""
     active_context_name = client.context_manager.active_context_name or "Status"
     system_color_key = "system"
 
     if not client.config.ignored_patterns:
-        client.add_message(
+        await client.add_message(
             "Ignore list is empty.",
-            system_color_key,
+            client.ui.colors[system_color_key],
             context_name=active_context_name,
         )
         return
 
-    client.add_message(
+    await client.add_message(
         "Current ignore patterns:",
-        system_color_key,
+        client.ui.colors[system_color_key],
         context_name=active_context_name,
     )
     for pattern in sorted(list(client.config.ignored_patterns)):
-        client.add_message(
+        await client.add_message(
             f"- {pattern}",
-            system_color_key,
+            client.ui.colors[system_color_key],
             context_name=active_context_name,
         )

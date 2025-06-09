@@ -23,8 +23,6 @@ class ConnectionOrchestrator:
         self.network_handler: "NetworkHandler" = client_logic_ref.network_handler
         self.state_manager: "StateManager" = client_logic_ref.state_manager
         self.config: "AppConfig" = client_logic_ref.config
-        # _add_status_message is a method on client_logic_ref
-        self._add_status_message = client_logic_ref._add_status_message
 
     def initialize_handlers(self) -> None:
         """
@@ -106,7 +104,7 @@ class ConnectionOrchestrator:
                 new_status_context.scrollback_offset = status_scroll_offset
 
         # Recreate DCC context if enabled
-        if client.config.dcc_enabled:
+        if client.config.dcc.enabled:
             client.context_manager.create_context("DCC", context_type="dcc_transfers")
 
 

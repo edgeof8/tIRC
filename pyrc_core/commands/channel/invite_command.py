@@ -18,7 +18,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_invite_command(client: "IRCClient_Logic", args_str: str):
+async def handle_invite_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /invite command"""
     help_data = client.script_manager.get_help_text_for_command("invite")
     usage_msg = (
@@ -45,25 +45,25 @@ def handle_invite_command(client: "IRCClient_Logic", args_str: str):
         if active_ctx and active_ctx.type == "channel":
             channel_to_invite_to = active_ctx.name
         else:
-            client.add_message(
+            await client.add_message(
                 "No channel specified and current window is not a channel.",
-                "error",
+                client.ui.colors["error"],
                 context_name="Status",
             )
             return
 
     # Final validation of channel_to_invite_to
     if not channel_to_invite_to.startswith("#"):
-        client.add_message(
+        await client.add_message(
             f"Cannot invite to '{channel_to_invite_to}'. Not a valid channel.",
-            "error",
+            client.ui.colors["error"],
             context_name="Status", # Or active_ctx_name if preferred for this error
         )
         return
 
-    client.add_message(
+    await client.add_message(
         f"Inviting {nick} to {channel_to_invite_to}...",
-        "system",
+        client.ui.colors["system"],
         context_name= client.context_manager.active_context_name or "Status"
     )
-    client.network_handler.send_raw(f"INVITE {nick} {channel_to_invite_to}")
+    await client.network_handler.send_raw(f"INVITE {nick} {channel_to_invite_to}")

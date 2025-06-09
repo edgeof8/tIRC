@@ -20,7 +20,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_part_command(client: "IRCClient_Logic", args_str: str):
+async def handle_part_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /part command"""
     help_data = client.script_manager.get_help_text_for_command("part")
     usage_msg = (
@@ -46,12 +46,12 @@ def handle_part_command(client: "IRCClient_Logic", args_str: str):
         reason_arg = parts[1] if len(parts) > 1 else None
     else: # No args given
         if not current_active_channel_name:
-            client.add_message(
+            await client.add_message(
                 "No channel specified and not currently in a channel window.",
-                "error",
+                client.ui.colors["error"],
                 context_name="Status"
             )
-            client.add_message(usage_msg, "error", context_name="Status")
+            await client.add_message(usage_msg, client.ui.colors["error"], context_name="Status")
             return
         channel_to_part_arg = current_active_channel_name
         reason_arg = None
@@ -88,4 +88,4 @@ def handle_part_command(client: "IRCClient_Logic", args_str: str):
         if not reason:
             reason = "Leaving"  # Fallback if no script provides a message
 
-    client.network_handler.send_raw(f"PART {channel_to_part} :{reason}")
+    await client.network_handler.send_raw(f"PART {channel_to_part} :{reason}")

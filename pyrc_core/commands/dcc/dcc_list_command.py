@@ -34,7 +34,7 @@ async def handle_dcc_list_command(client_logic: 'IRCClient_Logic', cmd_args: Lis
     if not dcc_m:
         await _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
         return
-    if not dcc_m.dcc_config.get("enabled"):
+    if not dcc_m.dcc_config.enabled:
         await _handle_dcc_error(client_logic, f"DCC is currently disabled. Cannot use /dcc {COMMAND_NAME}.", active_context_name)
         return
 
@@ -43,16 +43,50 @@ async def handle_dcc_list_command(client_logic: 'IRCClient_Logic', cmd_args: Lis
         return
 
     try:
-        statuses = dcc_m.get_transfer_statuses()
-        await client_logic.add_message("--- DCC Transfers ---", client_logic.ui.colors["system"], context_name=dcc_context_name)
-        for status_line in statuses:
-            await client_logic.add_message(status_line, client_logic.ui.colors["system"], context_name=dcc_context_name)
-        await client_logic.add_message("---------------------", client_logic.ui.colors["system"], context_name=dcc_context_name)
+        transfers = dcc_m.get_all_transfers()
+        if not transfers:
+            await client_logic.add_message(
+                "No active or pending DCC transfers.",
+                client_logic.ui.colors["system"],
+                context_name=dcc_context_name,
+            )
+        else:
+            await client_logic.add_message(
+                "--- DCC Transfers ---", client_logic.ui.colors["system"], context_name=dcc_context_name
+            )
+            for t in transfers:
+                progress_percent = (
+                    (t.bytes_transferred / t.file_size * 100)
+                    if t.file_size > 0
+                    else 0
+                )
+                status_line = (
+                    f"ID: {t.id[:8]}, Type: {t.transfer_type.name}, Peer: {t.peer_nick}, "
+                    f"File: {t.filename}, Size: {t.file_size} bytes, "
+                    f"Status: {t.status.name}"
+                )
+                if t.status == t.status.IN_PROGRESS:
+                    status_line += f", Progress: {progress_percent:.2f}%"
+                elif t.status == t.status.FAILED and t.error_message:
+                    status_line += f", Error: {t.error_message}"
+                await client_logic.add_message(
+                    status_line, client_logic.ui.colors["system"], context_name=dcc_context_name
+                )
+            await client_logic.add_message(
+                "---------------------", client_logic.ui.colors["system"], context_name=dcc_context_name
+            )
+        await client_logic.add_message(
+            "---------------------", client_logic.ui.colors["system"], context_name=dcc_context_name
+        )
 
         await _ensure_dcc_context(client_logic, dcc_context_name)
     except Exception as e:
-        await _handle_dcc_error(client_logic, f"Error retrieving DCC status: {e}", dcc_context_name, exc_info=True)
-
+        await _handle_dcc_error(
+            client_logic,
+            f"Error retrieving DCC status: {e}",
+            dcc_context_name,
+            exc_info=True,
+        )
 # This function will be called by the main dcc_commands.py dispatcher
 def get_dcc_command_handler() -> Dict[str, Any]:
     return {

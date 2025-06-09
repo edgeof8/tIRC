@@ -2,6 +2,7 @@
 import logging
 import time
 from typing import TYPE_CHECKING, Dict, Any, Optional, List, Set # Added List, Set
+from pyrc_core.dcc.dcc_transfer import DCCTransfer, DCCTransferType
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -169,6 +170,70 @@ class EventManager:
             "is_privmsg_or_notice": is_privmsg_or_notice
         }
         await self.dispatch_event("CLIENT_MESSAGE_ADDED_TO_CONTEXT", data, raw_line)
+
+    async def dispatch_raw_server_message(self, client: "IRCClient_Logic", line: str, raw_line: str = ""):
+        """Dispatches an event with the raw server message."""
+        data = {"client": client, "line": line}
+        await self.dispatch_event("RAW_SERVER_MESSAGE", data, raw_line)
+
+    async def dispatch_dcc_transfer_status_change(self, transfer: 'DCCTransfer', raw_line: str = ""):
+        """
+        Dispatches an event when a DCC transfer's status changes.
+        Args:
+            transfer (DCCTransfer): The DCC transfer object.
+            raw_line (str): Optional raw IRC line that triggered this status change.
+        """
+        data = {
+            "transfer_id": transfer.id,
+            "transfer_type": transfer.transfer_type.name,
+            "peer_nick": transfer.peer_nick,
+            "filename": transfer.filename,
+            "file_size": transfer.file_size,
+            "bytes_transferred": transfer.bytes_transferred,
+            "status": transfer.status.name,
+            "error_message": transfer.error_message,
+            "local_filepath": transfer.local_filepath,
+            "checksum_status": transfer.checksum_status,
+            "is_incoming": transfer.transfer_type == DCCTransferType.RECEIVE,
+        }
+        await self.dispatch_event("DCC_TRANSFER_STATUS_CHANGE", data, raw_line)
+
+    async def dispatch_dcc_transfer_progress(self, transfer: 'DCCTransfer', raw_line: str = ""):
+        """
+        Dispatches an event when a DCC transfer's progress changes.
+        Args:
+            transfer (DCCTransfer): The DCC transfer object.
+            raw_line (str): Optional raw IRC line that triggered this progress update.
+        """
+        data = {
+            "transfer_id": transfer.id,
+            "transfer_type": transfer.transfer_type.name,
+            "peer_nick": transfer.peer_nick,
+            "filename": transfer.filename,
+            "file_size": transfer.file_size,
+            "bytes_transferred": transfer.bytes_transferred,
+            "current_rate_bps": transfer.current_rate_bps,
+            "estimated_eta_seconds": transfer.estimated_eta_seconds,
+            "is_incoming": transfer.transfer_type == DCCTransferType.RECEIVE,
+        }
+        await self.dispatch_event("DCC_TRANSFER_PROGRESS", data, raw_line)
+
+    async def dispatch_dcc_transfer_checksum_update(self, transfer: 'DCCTransfer', raw_line: str = ""):
+        """
+        Dispatches an event when a DCC transfer's checksum status is updated.
+        Args:
+            transfer (DCCTransfer): The DCC transfer object.
+            raw_line (str): Optional raw IRC line that triggered this checksum update.
+        """
+        data = {
+            "transfer_id": transfer.id,
+            "transfer_type": transfer.transfer_type.name,
+            "peer_nick": transfer.peer_nick,
+            "filename": transfer.filename,
+            "checksum_status": transfer.checksum_status,
+            "is_incoming": transfer.transfer_type == DCCTransferType.RECEIVE,
+        }
+        await self.dispatch_event("DCC_TRANSFER_CHECKSUM_UPDATE", data, raw_line)
 
     # --- Raw IRC Line & Numeric Event Dispatchers ---
     # RAW_IRC_LINE is special: typically dispatched directly by ScriptManager before IRCMessage parsing if needed.

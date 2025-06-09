@@ -18,7 +18,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_who_command(client: "IRCClient_Logic", args_str: str):
+async def handle_who_command(client: "IRCClient_Logic", args_str: str):
     target = args_str.strip()
     if not target:
         active_context = client.context_manager.get_active_context()
@@ -32,13 +32,13 @@ def handle_who_command(client: "IRCClient_Logic", args_str: str):
                 if help_data
                 else "Usage: /who [channel|nick]"
             )
-            client.add_message(
-                usage_msg, "error", context_name="Status"
+            await client.add_message(
+                usage_msg, client.ui.colors["error"], context_name="Status"
             )
             return
 
     if target:
-        client.network_handler.send_raw(f"WHO {target}")
+        await client.network_handler.send_raw(f"WHO {target}")
     else:
         # This case should ideally be caught by the logic above,
         # but as a fallback, show usage if no target could be determined.
@@ -46,6 +46,6 @@ def handle_who_command(client: "IRCClient_Logic", args_str: str):
         usage_msg = (
             help_data["help_text"] if help_data else "Usage: /who [channel|nick]"
         )
-        client.add_message(
-            usage_msg, "error", context_name="Status"
+        await client.add_message(
+            usage_msg, client.ui.colors["error"], context_name="Status"
         )

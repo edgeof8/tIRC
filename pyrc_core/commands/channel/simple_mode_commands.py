@@ -45,7 +45,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def _handle_simple_mode_change(
+async def _handle_simple_mode_change(
     client: "IRCClient_Logic",
     args_str: str,
     mode_char: str,
@@ -56,9 +56,9 @@ def _handle_simple_mode_change(
     """Helper for /op, /deop, /voice, /devoice"""
     active_ctx = client.context_manager.get_active_context()
     if not active_ctx or active_ctx.type != "channel":
-        client.add_message(
+        await client.add_message(
             "This command can only be used in a channel.",
-            "error",
+            client.ui.colors["error"],
             context_name="Status",
         )
         return
@@ -68,32 +68,32 @@ def _handle_simple_mode_change(
     usage_msg = (
         help_data["help_text"] if help_data else f"Usage: /{usage_key} <nick>"
     )
-    parts = client.command_handler._ensure_args(args_str, usage_msg)
+    parts = await client.command_handler._ensure_args(args_str, usage_msg)
     if not parts:
         return
     nick = parts[0]
 
-    client.network_handler.send_raw(
+    await client.network_handler.send_raw(
         f"MODE {channel_name} {action}{mode_char} {nick}"
     )
-    client.add_message(
+    await client.add_message(
         f"{feedback_verb} {nick} in {channel_name}...",
-        "system",
+        client.ui.colors["system"],
         context_name=channel_name,
     )
 
-def handle_op_command(client: "IRCClient_Logic", args_str: str):
+async def handle_op_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /op command"""
-    _handle_simple_mode_change(client, args_str, "o", "+", "op", "Opping")
+    await _handle_simple_mode_change(client, args_str, "o", "+", "op", "Opping")
 
-def handle_deop_command(client: "IRCClient_Logic", args_str: str):
+async def handle_deop_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /deop command"""
-    _handle_simple_mode_change(client, args_str, "o", "-", "deop", "De-opping")
+    await _handle_simple_mode_change(client, args_str, "o", "-", "deop", "De-opping")
 
-def handle_voice_command(client: "IRCClient_Logic", args_str: str):
+async def handle_voice_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /voice command"""
-    _handle_simple_mode_change(client, args_str, "v", "+", "voice", "Voicing")
+    await _handle_simple_mode_change(client, args_str, "v", "+", "voice", "Voicing")
 
-def handle_devoice_command(client: "IRCClient_Logic", args_str: str):
+async def handle_devoice_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /devoice command"""
-    _handle_simple_mode_change(client, args_str, "v", "-", "devoice", "De-voicing")
+    await _handle_simple_mode_change(client, args_str, "v", "-", "devoice", "De-voicing")

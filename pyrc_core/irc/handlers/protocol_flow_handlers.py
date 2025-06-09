@@ -63,7 +63,7 @@ async def handle_ping_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage
         if parsed_msg.params: # If there are params, the first one is the target
             ping_payload = parsed_msg.params[0]
         else: # No trailing, no params (e.g., server sends just "PING")
-            ping_payload = client.server if client.server else "heartbeat" # Fallback
+            ping_payload = client.server if client and client.server else "heartbeat" # Fallback
             logger.warning(f"PING received with no parameters. Responding with PONG targeting '{ping_payload}'")
 
     if ping_payload is None: # Should be extremely rare with the fallback

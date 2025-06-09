@@ -19,7 +19,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_list_command(client: "IRCClient_Logic", args_str: str):
+async def handle_list_command(client: "IRCClient_Logic", args_str: str):
     pattern = args_str.strip()
 
     unique_list_context_name = f"##LIST_RESULTS_{time.time_ns()}##"
@@ -45,7 +45,7 @@ def handle_list_command(client: "IRCClient_Logic", args_str: str):
         # for changing behavior beyond logging.
         # The command_handler.py version of switch_active_context might have side effects like messages.
         # For now, just calling it as it was.
-        client.switch_active_context(unique_list_context_name)
+        await client.switch_active_context(unique_list_context_name)
         # The original logic for client.add_message on failure to switch is complex
         # and tied to the UIManager. For now, we assume switch_active_context handles
         # user feedback internally if it fails, or that the UI updates regardless.
@@ -59,10 +59,10 @@ def handle_list_command(client: "IRCClient_Logic", args_str: str):
             f"Failed to create temporary context '{unique_list_context_name}' for /list. Output will go to Status."
         )
         client.active_list_context_name = None
-        client.add_message(
+        await client.add_message(
             "Error: Could not create list results window. Output will appear in Status.",
-            "error",
+            client.ui.colors["error"],
             context_name="Status"
         )
 
-    client.network_handler.send_raw(f"LIST {pattern}" if pattern else "LIST")
+    await client.network_handler.send_raw(f"LIST {pattern}" if pattern else "LIST")

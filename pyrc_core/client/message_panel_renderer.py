@@ -100,13 +100,13 @@ class MessagePanelRenderer:
             max_y, max_x = window.getmaxyx()
             if max_y <= 0 or max_x <= 0: return
 
-            transfers_status_lines = self.dcc_manager.get_transfer_statuses()
+            transfers = self.dcc_manager.get_all_transfers()
 
-            if not transfers_status_lines:
+            if not transfers:
                 SafeCursesUtils._safe_addstr(window, 0, 0, "No active DCC transfers.", self.colors.get("system",0), "dcc_empty")
                 return
 
-            total_lines = len(transfers_status_lines)
+            total_lines = len(transfers)
             scrollback_offset = 0
             if hasattr(context_obj, 'scrollback_offset') and isinstance(context_obj.scrollback_offset, int):
                 scrollback_offset = max(0, context_obj.scrollback_offset)
@@ -119,10 +119,10 @@ class MessagePanelRenderer:
             if start_idx >= end_idx: return
 
             line_render_idx = 0
-            for status_line in transfers_status_lines[start_idx:end_idx]:
+            for transfer in transfers[start_idx:end_idx]:
                 if line_render_idx >= max_y: break
                 SafeCursesUtils._safe_addstr(
-                    window, line_render_idx, 0, status_line[:max_x], self.colors.get("system",0), "dcc_status_line"
+                    window, line_render_idx, 0, str(transfer)[:max_x], self.colors.get("system",0), "dcc_status_line"
                 )
                 line_render_idx +=1
 

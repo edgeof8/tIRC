@@ -2,11 +2,13 @@ import base64
 import logging
 import threading # Import threading for Timer
 import asyncio # New import
-from typing import Optional
+from typing import Optional, TYPE_CHECKING # New import
 
 from pyrc_core.network_handler import NetworkHandler # To avoid circular import
 from pyrc_core.irc.cap_negotiator import CapNegotiator # For callbacks
-from pyrc_core.client.irc_client_logic import IRCClient_Logic
+
+if TYPE_CHECKING: # New block
+    from pyrc_core.client.irc_client_logic import IRCClient_Logic # Moved here
 
 logger = logging.getLogger("pyrc.sasl")
 
@@ -28,20 +30,10 @@ class SaslAuthenticator:
 
     async def _add_status_message(self, message: str, color_key: str = "system"):
         logger.info(f"[SaslAuthenticator Status via Client] {message}") # Keep local log
-        # Explicitly check type for Pylance
-        if isinstance(self.client_logic_ref, IRCClient_Logic):
-            if hasattr(self.client_logic_ref, '_add_status_message') and callable(self.client_logic_ref._add_status_message):
-                await self.client_logic_ref._add_status_message(message, color_key)
-            else: # Fallback (defensive)
-                logger.warning("SaslAuthenticator: client_logic_ref._add_status_message not found or not callable, using direct add_message.")
-                color_attr = self.client_logic_ref.ui.colors.get(
-                    color_key, self.client_logic_ref.ui.colors["system"]
-                )
-                await self.client_logic_ref.add_message(
-                    text=message, color_attr=color_attr, context_name="Status"
-                )
+        if self.client_logic_ref and hasattr(self.client_logic_ref, 'add_status_message') and callable(self.client_logic_ref.add_status_message):
+            await self.client_logic_ref.add_status_message(message, color_key)
         else:
-            logger.warning("SaslAuthenticator: client_logic_ref is not an IRCClient_Logic instance, cannot add status message to UI.")
+            logger.warning("SaslAuthenticator: client_logic_ref is None or add_status_message method is not available.")
 
     def _start_sasl_step_timeout(self):
         self._cancel_sasl_step_timeout()

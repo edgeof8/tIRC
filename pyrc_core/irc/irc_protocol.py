@@ -2,7 +2,7 @@
 import re
 import logging
 from collections import deque
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Awaitable, TYPE_CHECKING, Coroutine, Any
 import time
 from pyrc_core.context_manager import ChannelJoinStatus
 from pyrc_core.irc.irc_message import IRCMessage
@@ -38,13 +38,17 @@ COMMAND_DISPATCH_TABLE = {
     # We just need to make sure the main dispatcher routes to it if the command is a digit.
 }
 
-async def handle_server_message(client: "IRCClient_Logic", line: str):
+async def handle_server_message(client: "IRCClient_Logic", line: str) -> Optional[Coroutine[Any, Any, None]]:
+    if client is None:
+        logger.warning("handle_server_message: Client is None, skipping message processing.")
+        return None
+
     parsed_msg = IRCMessage.parse(line)
 
     if not parsed_msg:
         logger.error(f"Failed to parse IRC message: {line.strip()}")
-        await client.add_message(f"[UNPARSED] {line.strip()}", client.ui.colors["error"], context_name="Status")
-        return
+        await client.ui.add_message_to_context(f"[UNPARSED] {line.strip()}", client.ui.colors["error"], context_name="Status", prefix_time=False)
+        return None
 
     cmd = parsed_msg.command
     final_trigger_action_to_take: Optional[str] = None
@@ -59,10 +63,15 @@ async def handle_server_message(client: "IRCClient_Logic", line: str):
             "numeric": (int(parsed_msg.command) if parsed_msg.command.isdigit() else None),
             "tags": parsed_msg.get_all_tags() # Add tags to RAW event
         }
-        final_trigger_action_to_take = await client.process_trigger_event("RAW", raw_data)
+        if hasattr(client, "trigger_manager") and client.trigger_manager and hasattr(client.trigger_manager, "process_trigger") and callable(client.trigger_manager.process_trigger):
+            trigger_result = client.trigger_manager.process_trigger("RAW", raw_data)
+            if trigger_result and trigger_result.get("type") == "COMMAND":
+                final_trigger_action_to_take = trigger_result.get("content")
+        else:
+            logger.warning("client.trigger_manager.process_trigger is not defined or trigger_manager is not enabled, skipping RAW trigger processing.")
+            final_trigger_action_to_take = None
         # If a RAW trigger produces a command, it takes precedence for now.
         # More sophisticated logic could queue actions or allow multiple.
-
     # Specific command handlers (which might also call process_trigger_event for specific event types)
     # If a specific handler's trigger also produces a command, it could override the RAW trigger's command.
     # This precedence (specific over RAW) is generally desirable.
@@ -75,7 +84,11 @@ async def handle_server_message(client: "IRCClient_Logic", line: str):
         # Check if the handler is one that returns an Optional[str] (trigger action)
         # This is a heuristic based on the original code's specific_handler_trigger_action assignments.
         if handler in [handle_privmsg, handle_membership_changes, handle_nick_message, handle_mode_message, handle_topic_command_event, handle_notice, handle_chghost_command_event]:
-            specific_handler_trigger_action = await handler(client, parsed_msg, line)
+            if client:
+                specific_handler_trigger_action = await handler(client, parsed_msg, line)
+            else:
+                logger.warning(f"Client is None, skipping handler {handler.__name__}")
+                specific_handler_trigger_action = None
         else:
             await handler(client, parsed_msg, line)
     elif cmd.isdigit():
@@ -92,5 +105,5 @@ async def handle_server_message(client: "IRCClient_Logic", line: str):
         await client.command_handler.process_user_command(final_trigger_action_to_take)
 
     client.ui_needs_update.set() # This is an asyncio.Event, set() is synchronous
-
+    return None
 # END OF MODIFIED FILE: irc_protocol.py

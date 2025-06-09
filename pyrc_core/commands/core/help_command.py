@@ -84,7 +84,7 @@ def get_summary_from_help_data(help_data_from_manager: Dict[str, Any]) -> str:
         return lines[0].replace("Usage: ", "").strip() # Fallback to usage content
     return lines[0].strip() # Default to the first line
 
-def handle_help_command(client: "IRCClient_Logic", args_str: str):
+async def handle_help_command(client: "IRCClient_Logic", args_str: str):
     system_color = client.ui.colors["system"]
     error_color = client.ui.colors["error"]
     active_context_name = client.context_manager.active_context_name or "Status"
@@ -95,7 +95,7 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
     target_arg2: Optional[str] = args[1] if len(args) > 1 else None
 
     if not target_arg1:
-        client.add_message("\nHelp Categories:", system_color, context_name=active_context_name)
+        await client.add_message("\nHelp Categories:", system_color, context_name=active_context_name)
         core_categories_map: Dict[str, str] = {
             "core": "Core Client", "channel": "Channel Ops", "information": "Information",
             "server": "Server/Connection", "ui": "User Interface", "user": "User Interaction", "utility": "Utilities"
@@ -114,101 +114,101 @@ def handle_help_command(client: "IRCClient_Logic", args_str: str):
                  if "core" in core_categories_map: active_core_categories.add("core")
 
         if active_core_categories:
-             client.add_message("\nCore Command Categories:", system_color, context_name=active_context_name)
-             for cat_key in sorted(list(active_core_categories)):
-                 client.add_message(f"  /help {cat_key}  ({core_categories_map.get(cat_key, cat_key.title())})", system_color, context_name=active_context_name)
 
-        script_commands_by_script = client.script_manager.get_all_script_commands_with_help()
-        if script_commands_by_script:
-            client.add_message("\nScript Command Categories:", system_color, context_name=active_context_name)
-            for script_name_raw in sorted(script_commands_by_script.keys()):
-                display_name = script_name_raw.replace("_", " ").title()
-                client.add_message(f"  /help script {script_name_raw}  ({display_name})", system_color, context_name=active_context_name)
+                     if active_core_categories:
+                          await client.add_message("\nCore Command Categories:", system_color, context_name=active_context_name)
+                          for cat_key in sorted(list(active_core_categories)):
+                              await client.add_message(f"  /help {cat_key}  ({core_categories_map.get(cat_key, cat_key.title())})", system_color, context_name=active_context_name)
 
-        client.add_message("\nUse /help <category_name>, /help script <script_name>, or /help <command> for more details.", system_color, context_name=active_context_name)
-        return
+                     script_commands_by_script = client.script_manager.get_all_script_commands_with_help()
+                     if script_commands_by_script:
+                         await client.add_message("\nScript Command Categories:", system_color, context_name=active_context_name)
+                         for script_name_raw in sorted(script_commands_by_script.keys()):
+                             display_name = script_name_raw.replace("_", " ").title()
+                             await client.add_message(f"  /help script {script_name_raw}  ({display_name})", system_color, context_name=active_context_name)
 
+                     await client.add_message("\nUse /help <category_name>, /help script <script_name>, or /help <command> for more details.", system_color, context_name=active_context_name)
     is_script_category_help = target_arg1 == "script"
 
     if is_script_category_help:
         if not target_arg2:
-            client.add_message("Usage: /help script <script_name>", error_color, context_name=active_context_name)
+            if not target_arg2:
+                await client.add_message("Usage: /help script <script_name>", error_color, context_name=active_context_name)
+                return
+            category_to_list = target_arg2
+        elif target_arg1 in ["core", "channel", "information", "server", "ui", "user", "utility"]:
+            category_to_list = target_arg1
+        else: # Argument is likely a command name for specific help
+            cmd_to_get_help_for = target_arg1
+            if cmd_to_get_help_for.startswith("/"):
+                cmd_to_get_help_for = cmd_to_get_help_for[1:]
+
+            # First, check core commands (which includes aliases resolved by CommandHandler)
+            # ScriptManager.get_help_text_for_command handles both core and script, prioritizing script.
+            # We need to ensure core command help is also checked if script manager doesn't find it.
+
+            # Let ScriptManager try first, as it has combined knowledge
+            help_data = client.script_manager.get_help_text_for_command(cmd_to_get_help_for)
+
+            if help_data:
+                source_info = f"(from script: {help_data.get('script_name', 'Unknown')})" if help_data.get('script_name') != 'core' else "(core command)"
+                await client.add_message(f"\nHelp for /{cmd_to_get_help_for} {source_info}:", system_color, context_name=active_context_name)
+                formatted_help = format_help_text_for_display(help_data)
+                await client.add_message(formatted_help, system_color, context_name=active_context_name)
+            else:
+                await client.add_message(f"No help available for command or category: {cmd_to_get_help_for}", error_color, context_name=active_context_name)
             return
-        category_to_list = target_arg2
-    elif target_arg1 in ["core", "channel", "information", "server", "ui", "user", "utility"]:
-        category_to_list = target_arg1
-    else: # Argument is likely a command name for specific help
-        cmd_to_get_help_for = target_arg1
-        if cmd_to_get_help_for.startswith("/"):
-            cmd_to_get_help_for = cmd_to_get_help_for[1:]
 
-        # First, check core commands (which includes aliases resolved by CommandHandler)
-        # ScriptManager.get_help_text_for_command handles both core and script, prioritizing script.
-        # We need to ensure core command help is also checked if script manager doesn't find it.
+        # This block is for listing commands within a category
+        commands_to_display: List[Tuple[str, str]] = []
+        if is_script_category_help:
+            script_commands = client.script_manager.get_all_script_commands_with_help()
+            normalized_category_key = category_to_list # Already lowercased by initial arg processing
 
-        # Let ScriptManager try first, as it has combined knowledge
-        help_data = client.script_manager.get_help_text_for_command(cmd_to_get_help_for)
+            found_script_name_key = None
+            for sn_key in script_commands.keys():
+                if sn_key.lower() == normalized_category_key:
+                    found_script_name_key = sn_key
+                    break
 
-        if help_data:
-            source_info = f"(from script: {help_data.get('script_name', 'Unknown')})" if help_data.get('script_name') != 'core' else "(core command)"
-            client.add_message(f"\nHelp for /{cmd_to_get_help_for} {source_info}:", system_color, context_name=active_context_name)
-            formatted_help = format_help_text_for_display(help_data)
-            client.add_message(formatted_help, system_color, context_name=active_context_name)
-        else:
-            client.add_message(f"No help available for command or category: {cmd_to_get_help_for}", error_color, context_name=active_context_name)
-        return
-
-    # This block is for listing commands within a category
-    commands_to_display: List[Tuple[str, str]] = []
-    if is_script_category_help:
-        script_commands = client.script_manager.get_all_script_commands_with_help()
-        normalized_category_key = category_to_list # Already lowercased by initial arg processing
-
-        found_script_name_key = None
-        for sn_key in script_commands.keys():
-            if sn_key.lower() == normalized_category_key:
-                found_script_name_key = sn_key
-                break
-
-        if found_script_name_key and found_script_name_key in script_commands:
-            script_display_name = found_script_name_key.replace("_", " ").title()
-            client.add_message(f"\nCommands from script '{script_display_name}':", system_color, context_name=active_context_name)
-            for cmd_name, cmd_data_dict in sorted(script_commands[found_script_name_key].items()):
-                summary = get_summary_from_help_data(cmd_data_dict)
-                commands_to_display.append((cmd_name, summary))
-        else:
-            client.add_message(f"Script category '{category_to_list}' not found.", error_color, context_name=active_context_name)
-            return
-    else: # Core category
-        if category_to_list == "core":
-            client.add_message(f"\nCore Commands:", system_color, context_name=active_context_name)
-            for cmd_name, help_data_val in client.command_handler.registered_command_help.items():
-                if help_data_val.get("is_alias"): continue
-                if help_data_val.get("script_name") == "core":
-                    summary_input_dict = {"help_text": help_data_val["help_text"], "help_info": help_data_val["help_text"]}
-                    summary = get_summary_from_help_data(summary_input_dict)
+            if found_script_name_key and found_script_name_key in script_commands:
+                script_display_name = found_script_name_key.replace("_", " ").title()
+                await client.add_message(f"\nCommands from script '{script_display_name}':", system_color, context_name=active_context_name)
+                for cmd_name, cmd_data_dict in sorted(script_commands[found_script_name_key].items()):
+                    summary = get_summary_from_help_data(cmd_data_dict)
                     commands_to_display.append((cmd_name, summary))
+            else:
+                await client.add_message(f"Script category '{category_to_list}' not found.", error_color, context_name=active_context_name)
+                return
+        else: # Core category
+            if category_to_list == "core":
+                await client.add_message(f"\nCore Commands:", system_color, context_name=active_context_name)
+                for cmd_name, help_data_val in client.command_handler.registered_command_help.items():
+                    if help_data_val.get("is_alias"): continue
+                    if help_data_val.get("script_name") == "core":
+                        summary_input_dict = {"help_text": help_data_val["help_text"], "help_info": help_data_val["help_text"]}
+                        summary = get_summary_from_help_data(summary_input_dict)
+                        commands_to_display.append((cmd_name, summary))
+            else:
+                await client.add_message(f"\n{category_to_list.title()} Commands:", system_color, context_name=active_context_name)
+                for cmd_name, help_data_val in client.command_handler.registered_command_help.items():
+                    if help_data_val.get("is_alias"): continue
+                    module_path = help_data_val.get("module_path", "core")
+                    cmd_category_key = "core"
+                    if module_path.startswith("commands."):
+                        try:
+                            cmd_category_key = module_path.split(".")[1].lower()
+                        except IndexError:
+                            pass
+                    if cmd_category_key == category_to_list:
+                        summary_input_dict = {"help_text": help_data_val["help_text"], "help_info": help_data_val["help_text"]}
+                        summary = get_summary_from_help_data(summary_input_dict)
+                        commands_to_display.append((cmd_name, summary))
+
+        if not commands_to_display:
+            await client.add_message(f"No commands found in category '{category_to_list}'.", system_color, context_name=active_context_name)
         else:
-            client.add_message(f"\n{category_to_list.title()} Commands:", system_color, context_name=active_context_name)
-            for cmd_name, help_data_val in client.command_handler.registered_command_help.items():
-                if help_data_val.get("is_alias"): continue
-                module_path = help_data_val.get("module_path", "core")
-                cmd_category_key = "core"
-                if module_path.startswith("commands."):
-                    try:
-                        cmd_category_key = module_path.split(".")[1].lower()
-                    except IndexError:
-                        pass
-                if cmd_category_key == category_to_list:
-                    summary_input_dict = {"help_text": help_data_val["help_text"], "help_info": help_data_val["help_text"]}
-                    summary = get_summary_from_help_data(summary_input_dict)
-                    commands_to_display.append((cmd_name, summary))
-
-    if not commands_to_display:
-        client.add_message(f"No commands found in category '{category_to_list}'.", system_color, context_name=active_context_name)
-    else:
-        for cmd_name, summary in sorted(commands_to_display):
-             client.add_message(f"  /{cmd_name}: {summary}", system_color, context_name=active_context_name)
-    client.add_message("\nUse /help <command> for detailed help on a specific command.", system_color, context_name=active_context_name)
-
+            for cmd_name, summary in sorted(commands_to_display):
+                 await client.add_message(f"  /{cmd_name}: {summary}", system_color, context_name=active_context_name)
+        await client.add_message("\nUse /help <command> for detailed help on a specific command.", system_color, context_name=active_context_name)
 # END OF MODIFIED FILE: commands/core/help_command.py

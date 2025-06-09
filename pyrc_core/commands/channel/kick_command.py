@@ -18,7 +18,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_kick_command(client: "IRCClient_Logic", args_str: str):
+async def handle_kick_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /kick command"""
     help_data = client.script_manager.get_help_text_for_command("kick")
     usage_msg = (
@@ -38,9 +38,9 @@ def handle_kick_command(client: "IRCClient_Logic", args_str: str):
     current_context = client.context_manager.get_context(current_active_context_name)
 
     if not current_context or current_context.type != "channel":
-        client.add_message(
+        await client.add_message(
             "Not in a channel to kick from.",
-            "error",
+            client.ui.colors["error"],
             context_name=current_active_context_name,
         )
         return
@@ -52,13 +52,13 @@ def handle_kick_command(client: "IRCClient_Logic", args_str: str):
     else:
         kick_message += "..."
 
-    client.add_message(kick_message, "system", context_name=channel_name)
+    await client.add_message(kick_message, client.ui.colors["system"], context_name=channel_name)
 
     if reason:
-        client.network_handler.send_raw(
+        await client.network_handler.send_raw(
             f"KICK {channel_name} {target} :{reason}"
         )
     else:
-        client.network_handler.send_raw(
+        await client.network_handler.send_raw(
             f"KICK {channel_name} {target}"
         )

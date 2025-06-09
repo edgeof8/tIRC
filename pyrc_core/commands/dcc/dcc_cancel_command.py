@@ -34,7 +34,7 @@ async def handle_dcc_cancel_command(client_logic: 'IRCClient_Logic', cmd_args: L
     if not dcc_m:
         await _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
         return
-    if not dcc_m.dcc_config.get("enabled"):
+    if not dcc_m.dcc_config.enabled:
         await _handle_dcc_error(client_logic, f"DCC is currently disabled. Cannot use /dcc {COMMAND_NAME}.", active_context_name)
         return
 
@@ -66,8 +66,9 @@ async def handle_dcc_cancel_command(client_logic: 'IRCClient_Logic', cmd_args: L
 
     # If not cancelled as an active transfer, try to cancel a pending passive offer
     if not cancelled:
-        if dcc_m.cancel_pending_passive_offer(identifier_prefix):
-            # Message is handled by cancel_pending_passive_offer in DCCManager
+        actual_token, _ = dcc_m.passive_offer_manager.cancel_offer_by_prefix(identifier_prefix)
+        if actual_token:
+            await client_logic.add_message(f"Cancelled pending passive offer with token {actual_token[:8]}...", client_logic.ui.colors["system"], context_name=dcc_context_name)
             cancelled = True
 
     if not cancelled:

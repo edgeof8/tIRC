@@ -41,7 +41,7 @@ DEFAULT_LOG_FILE = "pyrc_core.log"
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_ERROR_FILE = "pyrc_error.log"
 DEFAULT_LOG_ERROR_LEVEL = "WARNING"
-DEFAULT_LOG_MAX_BYTES = 1024 * 1024 * 5  # 5 MB
+DEFAULT_LOG_MAX_BYTES = 1024 * 1024 * 5
 DEFAULT_LOG_BACKUP_COUNT = 3
 DEFAULT_CHANNEL_LOG_ENABLED = True
 DEFAULT_STATUS_WINDOW_LOG_FILE = "client_status_messages.log"
@@ -71,6 +71,38 @@ DEFAULT_DCC_LOG_FILE = "dcc.log"
 DEFAULT_DCC_LOG_LEVEL = "INFO"
 DEFAULT_DCC_LOG_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_DCC_LOG_BACKUP_COUNT = 3
+
+# --- Color Constants ---
+DEFAULT_COLOR_SYSTEM = 0
+DEFAULT_COLOR_JOIN_PART = 1
+DEFAULT_COLOR_NICK_CHANGE = 2
+DEFAULT_COLOR_MY_MESSAGE = 3
+DEFAULT_COLOR_OTHER_MESSAGE = 4
+DEFAULT_COLOR_HIGHLIGHT = 5
+DEFAULT_COLOR_ERROR = 6
+DEFAULT_COLOR_STATUS_BAR = 7
+DEFAULT_COLOR_SIDEBAR_HEADER = 8
+DEFAULT_COLOR_SIDEBAR_ITEM = 9
+DEFAULT_COLOR_SIDEBAR_USER = 10
+DEFAULT_COLOR_INPUT = 11
+DEFAULT_COLOR_PM = 12
+DEFAULT_COLOR_USER_PREFIX = 13
+DEFAULT_COLOR_WARNING = 14
+DEFAULT_COLOR_INFO = 15
+DEFAULT_COLOR_DEBUG = 16
+DEFAULT_COLOR_TIMESTAMP = 17
+DEFAULT_COLOR_NICK = 18
+DEFAULT_COLOR_CHANNEL = 19
+DEFAULT_COLOR_QUERY = 20
+DEFAULT_COLOR_STATUS = 21
+DEFAULT_COLOR_LIST = 22
+DEFAULT_COLOR_LIST_SELECTED = 23
+DEFAULT_COLOR_LIST_HEADER = 24
+DEFAULT_COLOR_LIST_FOOTER = 25
+DEFAULT_COLOR_LIST_HIGHLIGHT = 26
+DEFAULT_COLOR_LIST_SELECTED_HIGHLIGHT = 27
+DEFAULT_COLOR_LIST_SELECTED_HEADER = 28
+DEFAULT_COLOR_LIST_SELECTED_HIGHLIGHT_FOOTER = 29
 
 # --- Data Classes ---
 
@@ -134,8 +166,42 @@ class ServerConfig:
         elif self.sasl_username is None and self.sasl_password is not None:
             self.sasl_username = self.nick
         # If sasl_username is provided but sasl_password is not (and no nickserv_password to default from),
-        # this is an incomplete SASL configuration. The StateValidator will catch this as an error.
+        # this is an an incomplete SASL configuration. The StateValidator will catch this as an error.
         # No action needed here, as the validator is responsible for flagging invalid states.
+
+@dataclass
+class DccConfig:
+    """
+    A dataclass to hold all DCC-related configuration settings.
+    """
+    enabled: bool = DEFAULT_DCC_ENABLED
+    download_dir: str = DEFAULT_DCC_DOWNLOAD_DIR
+    upload_dir: str = DEFAULT_DCC_UPLOAD_DIR
+    auto_accept: bool = DEFAULT_DCC_AUTO_ACCEPT
+    max_file_size: int = DEFAULT_DCC_MAX_FILE_SIZE
+    port_range_start: int = DEFAULT_DCC_PORT_RANGE_START
+    port_range_end: int = DEFAULT_DCC_PORT_RANGE_END
+    timeout: int = DEFAULT_DCC_TIMEOUT
+    resume_enabled: bool = DEFAULT_DCC_RESUME_ENABLED
+    checksum_verify: bool = DEFAULT_DCC_CHECKSUM_VERIFY
+    checksum_algorithm: str = DEFAULT_DCC_CHECKSUM_ALGORITHM
+    bandwidth_limit_send_kbps: int = DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS
+    bandwidth_limit_recv_kbps: int = DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS
+    blocked_extensions: List[str] = field(default_factory=lambda: list(DEFAULT_DCC_BLOCKED_EXTENSIONS))
+    passive_mode_token_timeout: int = DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT
+    advertised_ip: Optional[str] = DEFAULT_DCC_ADVERTISED_IP
+    cleanup_enabled: bool = DEFAULT_DCC_CLEANUP_ENABLED
+    cleanup_interval_seconds: int = DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS
+    transfer_max_age_seconds: int = DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS
+    log_enabled: bool = DEFAULT_DCC_LOG_ENABLED
+    log_file: str = DEFAULT_DCC_LOG_FILE
+    log_level: str = DEFAULT_DCC_LOG_LEVEL
+    log_max_bytes: int = DEFAULT_DCC_LOG_MAX_BYTES
+    log_backup_count: int = DEFAULT_DCC_LOG_BACKUP_COUNT
+
+    def get_log_level_int(self) -> int:
+        return getattr(logging, self.log_level.upper(), logging.INFO)
+
 
 # --- Main Configuration Class ---
 
@@ -150,10 +216,15 @@ class AppConfig:
         self.CONFIG_FILE_PATH = config_file_path or os.path.join(self.BASE_DIR, self.CONFIG_FILE_NAME)
 
         self._config_parser = configparser.ConfigParser()
+
         self.all_server_configs: Dict[str, ServerConfig] = {}
         self.default_server_config_name: Optional[str] = None
         self.ignored_patterns: Set[str] = set()
 
+        # Initialize DCC attributes
+        self.dcc: DccConfig = DccConfig() # Initialize DccConfig instance
+
+        # Load configurations
         self._load_config_file()
         self._load_all_settings()
         self._load_server_configurations()
@@ -187,7 +258,8 @@ class AppConfig:
                         else []
                     )
                 return self._config_parser.get(section, key)
-            except (ValueError, configparser.Error):
+            except (ValueError, configparser.Error) as e:
+                logger.error(f"Error getting config value: {e}")
                 return fallback
         return fallback
 
@@ -250,36 +322,36 @@ class AppConfig:
         self.channel_log_enabled = self._get_config_value("Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool)
         self.status_window_log_file = self._get_config_value("Logging", "status_window_log_file", DEFAULT_STATUS_WINDOW_LOG_FILE, str)
 
-        # Feature Settings
+        # Features
         self.enable_trigger_system = self._get_config_value("Features", "enable_trigger_system", DEFAULT_ENABLE_TRIGGER_SYSTEM, bool)
         self.disabled_scripts = set(self._get_config_value("Scripts", "disabled_scripts", list(DEFAULT_DISABLED_SCRIPTS), list))
 
         # DCC Configuration
-        self.dcc_enabled = self._get_config_value("DCC", "enabled", DEFAULT_DCC_ENABLED, bool)
-        self.dcc_download_dir = self._get_config_value("DCC", "download_dir", DEFAULT_DCC_DOWNLOAD_DIR, str)
-        self.dcc_upload_dir = self._get_config_value("DCC", "upload_dir", DEFAULT_DCC_UPLOAD_DIR, str)
-        self.dcc_auto_accept = self._get_config_value("DCC", "auto_accept", DEFAULT_DCC_AUTO_ACCEPT, bool)
-        self.dcc_max_file_size = self._get_config_value("DCC", "max_file_size", DEFAULT_DCC_MAX_FILE_SIZE, int)
-        self.dcc_port_range_start = self._get_config_value("DCC", "port_range_start", DEFAULT_DCC_PORT_RANGE_START, int)
-        self.dcc_port_range_end = self._get_config_value("DCC", "port_range_end", DEFAULT_DCC_PORT_RANGE_END, int)
-        self.dcc_timeout = self._get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
-        self.dcc_resume_enabled = self._get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
-        self.dcc_checksum_verify = self._get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool)
-        self.dcc_checksum_algorithm = self._get_config_value("DCC", "checksum_algorithm", DEFAULT_DCC_CHECKSUM_ALGORITHM, str).lower()
-        self.dcc_bandwidth_limit_send_kbps = self._get_config_value("DCC", "bandwidth_limit_send_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS, int)
-        self.dcc_bandwidth_limit_recv_kbps = self._get_config_value("DCC", "bandwidth_limit_recv_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS, int)
-        self.dcc_blocked_extensions = self._get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
-        self.dcc_passive_mode_token_timeout = self._get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int)
-        self.dcc_advertised_ip = self._get_config_value("DCC", "dcc_advertised_ip", DEFAULT_DCC_ADVERTISED_IP, str)
-        if self.dcc_advertised_ip == "": self.dcc_advertised_ip = None
-        self.dcc_cleanup_enabled = self._get_config_value("DCC", "cleanup_enabled", DEFAULT_DCC_CLEANUP_ENABLED, bool)
-        self.dcc_cleanup_interval_seconds = self._get_config_value("DCC", "cleanup_interval_seconds", DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS, int)
-        self.dcc_transfer_max_age_seconds = self._get_config_value("DCC", "transfer_max_age_seconds", DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS, int)
-        self.dcc_log_enabled = self._get_config_value("DCC", "log_enabled", DEFAULT_DCC_LOG_ENABLED, bool)
-        self.dcc_log_file = self._get_config_value("DCC", "log_file", DEFAULT_DCC_LOG_FILE, str)
-        self.dcc_log_level_str = self._get_config_value("DCC", "log_level", DEFAULT_DCC_LOG_LEVEL, str).upper()
-        self.dcc_log_max_bytes = self._get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
-        self.dcc_log_backup_count = self._get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
+        self.dcc.enabled = self._get_config_value("DCC", "enabled", DEFAULT_DCC_ENABLED, bool)
+        self.dcc.download_dir = self._get_config_value("DCC", "download_dir", DEFAULT_DCC_DOWNLOAD_DIR, str)
+        self.dcc.upload_dir = self._get_config_value("DCC", "upload_dir", DEFAULT_DCC_UPLOAD_DIR, str)
+        self.dcc.auto_accept = self._get_config_value("DCC", "auto_accept", DEFAULT_DCC_AUTO_ACCEPT, bool)
+        self.dcc.max_file_size = self._get_config_value("DCC", "max_file_size", DEFAULT_DCC_MAX_FILE_SIZE, int)
+        self.dcc.port_range_start = self._get_config_value("DCC", "port_range_start", DEFAULT_DCC_PORT_RANGE_START, int)
+        self.dcc.port_range_end = self._get_config_value("DCC", "port_range_end", DEFAULT_DCC_PORT_RANGE_END, int)
+        self.dcc.timeout = self._get_config_value("DCC", "timeout", DEFAULT_DCC_TIMEOUT, int)
+        self.dcc.resume_enabled = self._get_config_value("DCC", "resume_enabled", DEFAULT_DCC_RESUME_ENABLED, bool)
+        self.dcc.checksum_verify = self._get_config_value("DCC", "checksum_verify", DEFAULT_DCC_CHECKSUM_VERIFY, bool)
+        self.dcc.checksum_algorithm = self._get_config_value("DCC", "checksum_algorithm", DEFAULT_DCC_CHECKSUM_ALGORITHM, str).lower()
+        self.dcc.bandwidth_limit_send_kbps = self._get_config_value("DCC", "bandwidth_limit_send_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_SEND_KBPS, int)
+        self.dcc.bandwidth_limit_recv_kbps = self._get_config_value("DCC", "bandwidth_limit_recv_kbps", DEFAULT_DCC_BANDWIDTH_LIMIT_RECV_KBPS, int)
+        self.dcc.blocked_extensions = self._get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
+        self.dcc.passive_mode_token_timeout = self._get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int)
+        self.dcc.advertised_ip = self._get_config_value("DCC", "dcc_advertised_ip", DEFAULT_DCC_ADVERTISED_IP, str)
+        if self.dcc.advertised_ip == "": self.dcc.advertised_ip = None # Convert empty string to None
+        self.dcc.cleanup_enabled = self._get_config_value("DCC", "cleanup_enabled", DEFAULT_DCC_CLEANUP_ENABLED, bool)
+        self.dcc.cleanup_interval_seconds = self._get_config_value("DCC", "cleanup_interval_seconds", DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS, int)
+        self.dcc.transfer_max_age_seconds = self._get_config_value("DCC", "transfer_max_age_seconds", DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS, int)
+        self.dcc.log_enabled = self._get_config_value("DCC", "log_enabled", DEFAULT_DCC_LOG_ENABLED, bool)
+        self.dcc.log_file = self._get_config_value("DCC", "log_file", DEFAULT_DCC_LOG_FILE, str)
+        self.dcc.log_level = self._get_config_value("DCC", "log_level", DEFAULT_DCC_LOG_LEVEL, str).upper()
+        self.dcc.log_max_bytes = self._get_config_value("DCC", "log_max_bytes", DEFAULT_DCC_LOG_MAX_BYTES, int)
+        self.dcc.log_backup_count = self._get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
 
     def _load_server_configurations(self):
         """Loads all server-specific configurations."""
@@ -292,7 +364,7 @@ class AppConfig:
                 server_id = section_name[7:]
                 if not server_id:
                     logger.warning(f"Skipping server section with empty ID: {section_name}")
-                    continue
+                    continue # Changed to continue to avoid processing empty server_id
 
                 try:
                     desired_caps_str = self._get_config_value(section_name, "desired_caps", None, str)
@@ -392,4 +464,4 @@ class AppConfig:
 
     @property
     def dcc_log_level_int(self) -> int:
-        return self.get_log_level_int_from_str(self.dcc_log_level_str, logging.INFO)
+        return self.dcc.get_log_level_int()

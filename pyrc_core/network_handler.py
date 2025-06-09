@@ -1,15 +1,17 @@
 # START OF MODIFIED FILE: network_handler.py
 import asyncio
+import inspect
 import socket
 import ssl
 import logging
 import concurrent.futures
-from typing import List, Optional, Set, TYPE_CHECKING
+from typing import List, Optional, Set, cast, TYPE_CHECKING, Coroutine, Any  # Added TYPE_CHECKING
 from pyrc_core.app_config import AppConfig
 from pyrc_core.state_manager import ConnectionState
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from pyrc_core.client.irc_client_logic import IRCClient_Logic  # Guarded import
+
 
 logger = logging.getLogger("pyrc.network")
 
@@ -21,6 +23,7 @@ class NetworkHandler:
         self.connected = False
         self.connection_params = None
         self._network_task: Optional[asyncio.Task] = None
+        self._task_start_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
@@ -33,14 +36,25 @@ class NetworkHandler:
 
     async def start(self) -> bool:
         """Start the network handler and its asyncio task."""
-        if self._network_task is not None and not self._network_task.done():
-            self.logger.warning("Network task already running")
-            return False
+        stack = inspect.stack()
+        self.logger.info(f"NetworkHandler.start called by {stack[1].filename}:{stack[1].lineno} - {stack[1].function}")
+        try:
+            async with self._task_start_lock:
+                if self._network_task is not None and not self._network_task.done():
+                    self.logger.warning(f"Network task already running. Called by {stack[1].filename}:{stack[1].lineno}")
+                    return False
 
-        self._stop_event.clear()
-        self._network_task = asyncio.create_task(self._network_loop())
-        self.logger.info("Network task started.")
-        return True
+                self.logger.info("Lock acquired, starting network task...")
+                self._stop_event.clear()
+                self.logger.info("Creating and starting network task...")
+                self._network_task = asyncio.create_task(self.network_loop())
+                self.logger.info("Network task creation initiated.")
+                return True
+        except Exception as e:
+            self.logger.error(f"Error starting network task: {e}", exc_info=True)
+            return False
+        finally:
+            pass  # Ensure lock is released in network_loop
 
     async def stop(self) -> bool:
         """Stop the network handler and wait for task completion."""
@@ -69,7 +83,7 @@ class NetworkHandler:
         except Exception as e:
             self.logger.error(f"Error stopping network task: {e}")
             return False
-        return False # Ensure a boolean is always returned at the end
+        return False  # Ensure a boolean is always returned at the end
 
     async def disconnect_gracefully(self, quit_message: Optional[str] = None) -> None:
         """Disconnect from the server gracefully."""
@@ -147,7 +161,7 @@ class NetworkHandler:
 
         if not self._network_task or self._network_task.done():
             logger.info("Network task not running, starting it after param update.")
-            asyncio.create_task(self.start())
+            #asyncio.create_task(self.start())  # Remove this line
         else:
             logger.debug(
                 "Network task is alive. Setting connected=False to force re-evaluation in loop."
@@ -169,7 +183,7 @@ class NetworkHandler:
             ):
                 self.client_logic_ref.registration_handler.reset_registration_state()
 
-            self.connected = False  # This will trigger _connect_socket in the loop
+            self.connected = False  # This will trigger connect_socket in the loop
 
     async def send_cap_ls(self, version: Optional[str] = "302"):
         if self.connected and self._writer:
@@ -204,6 +218,9 @@ class NetworkHandler:
 # In pyrc_core/network_handler.py
 
     async def _reset_connection_state(self, dispatch_event: bool = True):
+        logger.info(
+            f"Resetting connection state. Dispatch disconnect event: {dispatch_event}. Called by: {inspect.stack()[1].filename}:{inspect.stack()[1].lineno} - {inspect.stack()[1].function}"
+        )
         logger.debug(
             f"Resetting connection state. Dispatch disconnect event: {dispatch_event}"
         )
@@ -306,6 +323,7 @@ class NetworkHandler:
                         "ssl.TLSVersion.TLSv1_2 not available. Default TLS settings will be used."
                     )
 
+                # Revert temporary change, but ensure we explicitly set verify_mode to CERT_NONE if verify_ssl is False
                 verify_ssl = conn_info.verify_ssl_cert if conn_info.verify_ssl_cert is not None else True
                 if not verify_ssl:
                     logger.warning(
@@ -313,6 +331,11 @@ class NetworkHandler:
                     )
                     ssl_context.check_hostname = False
                     ssl_context.verify_mode = ssl.CERT_NONE
+                else:
+                    # Default is CERT_REQUIRED and hostname check is True for create_default_context
+                    # Explicitly set for clarity if needed, but create_default_context does this by default
+                    ssl_context.check_hostname = True
+                    ssl_context.verify_mode = ssl.CERT_REQUIRED
 
             # Use asyncio.open_connection
             self._reader, self._writer = await asyncio.open_connection(
@@ -336,14 +359,21 @@ class NetworkHandler:
                 hasattr(self.client_logic_ref, "cap_negotiator")
                 and self.client_logic_ref.cap_negotiator
             ):
-                await self.client_logic_ref.cap_negotiator.start_negotiation()
+                self.logger.debug("CapNegotiator found on client object during _connect_socket. Starting CAP negotiation.")
+                #await self.client_logic_ref.cap_negotiator.start_negotiation() # Moved to RegistrationHandler after connect
             else:
-                logger.error(
-                    "NetworkHandler: cap_negotiator not found on client object during _connect_socket."
-                )
-                await self.client_logic_ref._add_status_message(
-                    "Error: CAP negotiator not initialized.", "error"
-                )
+                logger.warning("NetworkHandler: cap_negotiator not found on client object during _connect_socket. CAP negotiation will not start.")
+                await self.client_logic_ref.add_status_message("Warning: CAP negotiator not initialized.", "warning")
+
+            if (
+                hasattr(self.client_logic_ref, "registration_handler")
+                and self.client_logic_ref.registration_handler
+            ):
+                await self.client_logic_ref.registration_handler.on_connection_established()
+            else:
+                logger.error("RegistrationHandler not found on client object during _connect_socket.")
+                await self.client_logic_ref.add_status_message("Error: Registration handler not initialized.", "error")
+                return False
 
             if (
                 self.client_logic_ref
@@ -364,14 +394,14 @@ class NetworkHandler:
             logger.error(error_msg, exc_info=True)
             self.client_logic_ref.state_manager.set_connection_state(
                 ConnectionState.ERROR,
-                error=error_msg
+                error_msg
             )
         except Exception as e:
             error_msg = f"Unexpected error during connection: {e}"
             logger.critical(error_msg, exc_info=True)
             self.client_logic_ref.state_manager.set_connection_state(
                 ConnectionState.ERROR,
-                error=error_msg
+                error_msg
             )
 
         await self._reset_connection_state()
@@ -383,10 +413,8 @@ class NetworkHandler:
             logger.warning(
                 f"Attempted to send data while not truly connected or no writer: {data.strip()}"
             )
-            if (
-                self.client_logic_ref
-            ):
-                await self.client_logic_ref._add_status_message(
+            if self.client_logic_ref and hasattr(self.client_logic_ref, 'add_status_message'):
+                await self.client_logic_ref.add_status_message(
                     "Cannot send: Not connected.", "error"
                 )
                 if not self.client_logic_ref.is_headless:
@@ -418,12 +446,23 @@ class NetworkHandler:
                 and hasattr(self.client_logic_ref, "show_raw_log_in_ui")
                 and self.client_logic_ref.show_raw_log_in_ui
             ):
-                await self.client_logic_ref.add_message(
-                    f"C >> {log_data}",
-                    self.client_logic_ref.ui.colors["system"],
-                    context_name="Status",
-                    prefix_time=True,
-                )
+                # Use TYPE_CHECKING to allow Pylance to see the attribute, but avoid runtime circular import
+                if TYPE_CHECKING:
+                    logger.debug("send_raw: Executing TYPE_CHECKING block")
+                    await self.client_logic_ref.add_status_message(
+                        f"C >> {log_data}",
+                        "system"
+                    )
+                else:
+                    logger.debug("send_raw: Executing ELSE block")
+                    # Fallback for runtime if TYPE_CHECKING is False
+                    if hasattr(self.client_logic_ref, 'add_status_message'):
+                        await self.client_logic_ref.add_status_message(
+                            f"C >> {log_data}",
+                            "system"
+                        )
+                    else:
+                        logger.error("send_raw: add_status_message not found on client_logic_ref!")
 
             if data.upper().startswith("NICK "):
                 self.is_handling_nick_collision = False
@@ -434,7 +473,7 @@ class NetworkHandler:
         ) as e:
             logger.error(f"Error sending data: {e}", exc_info=True)
             if self.client_logic_ref:
-                await self.client_logic_ref._add_status_message(
+                await self.client_logic_ref.add_status_message(
                     f"Error sending data: {e}", "error"
                 )
                 if not self.client_logic_ref.is_headless:
@@ -447,67 +486,87 @@ class NetworkHandler:
                 f"Unhandled error sending data: {e_unhandled_send}", exc_info=True
             )
             if self.client_logic_ref:
-                await self.client_logic_ref.add_message(
-                    f"Critical send error: {e_unhandled_send}",
-                    self.client_logic_ref.ui.colors["error"],
-                    context_name="Status",
-                )
+                if self.client_logic_ref:
+                    # Use TYPE_CHECKING to allow Pylance to see the attribute, but avoid runtime circular import
+                    if TYPE_CHECKING:
+                        await self.client_logic_ref.add_status_message(
+                            f"Critical send error: {e_unhandled_send}",
+                            "error"
+                        )
+                    else:
+                        # Fallback for runtime if TYPE_CHECKING is False
+                        if hasattr(self.client_logic_ref, 'ui') and hasattr(self.client_logic_ref.ui, 'add_message_to_context'):
+                            await self.client_logic_ref.ui.add_message_to_context(
+                                f"Critical send error: {e_unhandled_send}",
+                                self.client_logic_ref.ui.colors["error"],
+                                context_name="Status",
+                                prefix_time=True,
+                            )
             await self._reset_connection_state(dispatch_event=True)
 
-    async def _network_loop(self) -> None:
+    async def network_loop(self) -> None:
         """Main network handling loop."""
         try:
-            while not self._stop_event.is_set():
-                if not self.connected or not self._reader:
-                    conn_info = (
-                        self.client_logic_ref.state_manager.get_connection_info()
-                        if self.client_logic_ref
-                        else None
-                    )
-                    if (
-                        conn_info
-                        and conn_info.server
-                        and conn_info.port is not None
-                    ):
-                        logger.info(
-                            f"Attempting to connect to {conn_info.server}:{conn_info.port}"
+            async with self._task_start_lock:
+                self.logger.info("Network loop started, holding task start lock.")
+                while not self._stop_event.is_set():
+                    if not self.connected or not self._reader:
+                        conn_info = (
+                            self.client_logic_ref.state_manager.get_connection_info()
+                            if self.client_logic_ref
+                            else None
                         )
-                        if await self._connect_socket():
-                            logger.info("Successfully connected to server")
-                            self.connected = True
-                            self._disconnect_event_sent_for_current_session = False
-                        else:
-                            logger.warning(
-                                "Failed to connect, will retry in next iteration"
+                        if (
+                            conn_info
+                            and conn_info.server
+                            and conn_info.port is not None
+                        ):
+                            logger.info(
+                                f"Attempting to connect to {conn_info.server}:{conn_info.port}"
                             )
+                            if await self._connect_socket():
+                                logger.info("Successfully connected to server")
+                                self.connected = True
+                                self._disconnect_event_sent_for_current_session = False
+                            else:
+                                logger.warning(
+                                    "Failed to connect, will retry in next iteration"
+                                )
+                                # Exponential backoff for reconnects
+                                await asyncio.sleep(self.reconnect_delay)
+                                self.reconnect_delay = min(self.reconnect_delay * 2, self.config.reconnect_max_delay)
+                        else:
+                            logger.debug("No connection parameters available, waiting...")
                             await asyncio.sleep(0.1)
-                    else:
-                        logger.debug("No connection parameters available, waiting...")
-                        await asyncio.sleep(0.1)
-                    continue
-
-                try:
-                    data = await self._reader.read(4096)
-
-                    if not data:
-                        logger.info("Connection closed by server")
-                        await self._reset_connection_state()
                         continue
 
-                    await self._process_received_data(data)
+                    try:
+                        data = await self._reader.read(4096)
+                        if not data:
+                            logger.info("Connection closed by server")
+                            await self._reset_connection_state()
+                            continue
 
-                except asyncio.IncompleteReadError:
-                    logger.info("Server closed connection during read.")
-                    await self._reset_connection_state()
-                    continue
-                except ConnectionError as e:
-                    logger.error(f"Connection error in network loop: {e}")
-                    await self._reset_connection_state()
-                    continue
-                except Exception as e:
-                    logger.error(f"Error in network loop: {e}", exc_info=True)
-                    await self._reset_connection_state()
-                    continue
+                        await self._process_received_data(data)
+
+                    except asyncio.IncompleteReadError:
+                        logger.info("Server closed connection during read.")
+                        await self._reset_connection_state()
+                        continue
+                    except ConnectionError as e:
+                        logger.error(f"Connection error in network loop: {e}", exc_info=True)
+                        await self._reset_connection_state()
+                        continue
+                    except ssl.SSLError as e:
+                        logger.error(f"SSL error in network loop: {e}", exc_info=True)
+                        if self.client_logic_ref:
+                            await self.client_logic_ref.add_status_message(f"SSL Error: {e}", "error")
+                        await self._reset_connection_state()
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error in network loop: {e}", exc_info=True)
+                        await self._reset_connection_state()
+                        continue
 
         except asyncio.CancelledError:
             logger.info("Network loop cancelled.")
@@ -516,7 +575,7 @@ class NetworkHandler:
         finally:
             self.connected = False
             await self._reset_connection_state(dispatch_event=True)
-            logger.info("Network loop shutdown complete.")
+            self.logger.info("Network loop shutdown complete, releasing task start lock.")
 
     async def _process_received_data(self, data: bytes) -> None:
         """Process received data from the network socket.
@@ -534,19 +593,25 @@ class NetworkHandler:
                 try:
                     # Decode the line and handle it
                     decoded_line = line.decode("utf-8", errors="replace")
-                    if self.client_logic_ref:
-                        await self.client_logic_ref.handle_server_message(decoded_line)
+                    # Capture client reference in case it changes during await
+                    client_ref = self.client_logic_ref
+                    if client_ref is None:
+                        logger.warning("Skipping message processing - client_logic_ref is None")
+                        continue
+
+                    if hasattr(client_ref, 'event_manager'):
+                        await client_ref.event_manager.dispatch_raw_server_message(client=client_ref, line=decoded_line)
+                    else:
+                        logger.warning("IRCClient_Logic instance has no event_manager")
                 except UnicodeDecodeError as e:
                     logger.error(f"Error decoding received data: {e}")
                     continue
                 except Exception as e:
-                    logger.error(f"Error processing received line: {e}")
-                    continue
+                    logger.error(f"Error processing received line: {e}", exc_info=True)
 
         except Exception as e:
             logger.error(f"Error in _process_received_data: {e}", exc_info=True)
             # Don't clear buffer on error to avoid losing data
             pass
-
 
 # END OF MODIFIED FILE: network_handler.py

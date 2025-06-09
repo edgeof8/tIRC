@@ -137,13 +137,14 @@ def parse_arguments(default_server_config: Optional[ServerConfig]) -> argparse.N
     parser.add_argument("--password", default=None, help="IRC server password. Overrides config.")
     parser.add_argument("--nickserv-password", default=None, help="NickServ password. Overrides config.")
     parser.add_argument("--ssl", action=argparse.BooleanOptionalAction, default=None, help=f"Use SSL/TLS. Overrides config. (Default: {default_ssl_val})")
+    parser.add_argument("--verify-ssl-cert", action=argparse.BooleanOptionalAction, default=None, help="Verify SSL/TLS certificate. Overrides config. (Default: True)")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode (no UI)")
     parser.add_argument("--disable-script", action="append", default=[], metavar="SCRIPT_NAME", help="Disable a specific script.")
 
     return parser.parse_args()
 
 
-async def main():
+def main():
     # Instantiate the configuration object first
     app_config = AppConfig()
 
@@ -163,27 +164,31 @@ async def main():
         app_logger.info("Starting PyRC in headless mode.")
         client = None
         try:
-            client = IRCClient_Logic(stdscr=None, args=args, config=app_config)
-            await client.run_main_loop()  # Run the async main loop for headless
+            # For headless, we run the async main loop directly
+            asyncio.run(IRCClient_Logic(stdscr=None, args=args, config=app_config).run_main_loop())
         except KeyboardInterrupt:
             app_logger.info("Keyboard interrupt received in headless main(). Signaling client to quit.")
-            if client:
-                client.should_quit.set()  # Use .set() for asyncio.Event
+            # If client is not explicitly available here, the run_main_loop would need to handle its own shutdown.
+            # For simplicity, we'll assume the loop naturally exits on KeyboardInterrupt.
         except Exception as e:
             app_logger.critical(f"Critical error in headless mode: {e}", exc_info=True)
-            if client:
-                client.should_quit.set()  # Use .set() for asyncio.Event
         finally:
-            app_logger.info("Shutting down PyRC headless mode.")
-            if client and hasattr(client, "event_manager") and client.event_manager:
-                await client.event_manager.dispatch_client_shutdown_final(raw_line="CLIENT_SHUTDOWN_FINAL from headless main")
             app_logger.info("PyRC headless mode shutdown sequence complete.")
     else:
+        app_logger.info("Starting PyRC in UI mode.")
+        # Define a synchronous wrapper for curses.wrapper
         def curses_wrapper_with_args(stdscr):
-            asyncio.run(main_curses_wrapper(stdscr, args, app_config))
+            # Create a new event loop for curses and run the async main_curses_wrapper
+            # This ensures curses runs in its own context without conflicting with an outer loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(main_curses_wrapper(stdscr, args, app_config))
+            finally:
+                pass
+                # loop.close()
 
         curses.wrapper(curses_wrapper_with_args)
 
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -61,7 +61,7 @@ async def handle_dcc_send_command(client_logic: 'IRCClient_Logic', cmd_args: Lis
     if not dcc_m:
         await _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
         return
-    if not dcc_m.dcc_config.get("enabled"):
+    if not dcc_m.dcc_config.enabled:
         await _handle_dcc_error(client_logic, f"DCC is currently disabled. Cannot use /dcc {COMMAND_NAME}.", active_context_name)
         return
 
@@ -76,7 +76,7 @@ async def handle_dcc_send_command(client_logic: 'IRCClient_Logic', cmd_args: Lis
         filepaths_to_send = parsed_args.filepath
         passive_mode = parsed_args.passive
 
-        results = dcc_m.initiate_sends(nick, filepaths_to_send, passive=passive_mode)
+        results = await dcc_m.initiate_sends(nick, filepaths_to_send, passive=passive_mode)
         await _handle_send_results(client_logic, results, nick, dcc_context_name)
         await _ensure_dcc_context(client_logic, dcc_context_name)
 

@@ -18,11 +18,11 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_names_command(client: "IRCClient_Logic", args_str: str):
+async def handle_names_command(client: "IRCClient_Logic", args_str: str):
     channel_arg = args_str.strip()
 
     if channel_arg:
-        client.network_handler.send_raw(f"NAMES {channel_arg}")
+        await client.network_handler.send_raw(f"NAMES {channel_arg}")
         # Determine context for feedback message
         feedback_context_name = "Status"
         target_channel_context = client.context_manager.get_context(
@@ -31,9 +31,9 @@ def handle_names_command(client: "IRCClient_Logic", args_str: str):
         if target_channel_context and target_channel_context.type == "channel":
             feedback_context_name = target_channel_context.name
 
-        client.add_message(
+        await client.add_message(
             f"Refreshing names for {channel_arg}...",
-            "system", # Using semantic color key
+            client.ui.colors["system"], # Using semantic color key
             context_name=feedback_context_name,
         )
     else:
@@ -43,16 +43,16 @@ def handle_names_command(client: "IRCClient_Logic", args_str: str):
         # Could add logic to use active channel if desired.
         active_context = client.context_manager.get_active_context()
         if active_context and active_context.type == "channel":
-             client.network_handler.send_raw(f"NAMES {active_context.name}")
-             client.add_message(
+             await client.network_handler.send_raw(f"NAMES {active_context.name}")
+             await client.add_message(
                 f"Refreshing names for current channel {active_context.name}...",
-                "system",
+                client.ui.colors["system"],
                 context_name=active_context.name,
             )
         else:
-            client.network_handler.send_raw("NAMES")
-            client.add_message(
+            await client.network_handler.send_raw("NAMES")
+            await client.add_message(
                 "Requesting names (no specific channel)...", # Using semantic color key
-                "system",
+                client.ui.colors["system"],
                 context_name="Status",
             )

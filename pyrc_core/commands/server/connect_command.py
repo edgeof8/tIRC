@@ -22,7 +22,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def _parse_connect_args_internal(client: "IRCClient_Logic", args_str: str) -> Optional[Tuple[str, int, bool]]:
+async def _parse_connect_args_internal(client: "IRCClient_Logic", args_str: str) -> Optional[Tuple[str, int, bool]]:
     conn_args = args_str.split()
     if not conn_args:
         help_data = client.script_manager.get_help_text_for_command("connect")
@@ -31,17 +31,18 @@ def _parse_connect_args_internal(client: "IRCClient_Logic", args_str: str) -> Op
             if help_data
             else "Usage: /connect <server[:port]> [ssl|nossl]"
         )
-        client.add_message(
+        await client.add_message(
             usage_msg,
-            "error",
-            context_name=client.context_manager.active_context_name,
+            client.ui.colors["error"],
+            context_name=client.context_manager.active_context_name or "Status",
         )
         return None
 
     new_server_host, port_str_arg = conn_args[0], None
     new_port: Optional[int] = None
     # Default to current SSL setting if not specified otherwise
-    new_ssl: bool = client.use_ssl if client.use_ssl is not None else False
+    # client.use_ssl returns a string representation of bool or None, convert to bool
+    new_ssl: bool = client.use_ssl.lower() == 'true' if client.use_ssl is not None else False
 
 
     if ":" in new_server_host:
@@ -49,10 +50,10 @@ def _parse_connect_args_internal(client: "IRCClient_Logic", args_str: str) -> Op
         try:
             new_port = int(port_str_arg)
         except ValueError:
-            client.add_message(
+            await client.add_message(
                 f"Invalid port: {port_str_arg}",
-                "error",
-                context_name=client.context_manager.active_context_name,
+                client.ui.colors["error"],
+                context_name=client.context_manager.active_context_name or "Status",
             )
             return None
 
@@ -69,15 +70,15 @@ def _parse_connect_args_internal(client: "IRCClient_Logic", args_str: str) -> Op
 
     return new_server_host, new_port, new_ssl
 
-def handle_connect_command(client: "IRCClient_Logic", args_str: str):
-    parsed_args = _parse_connect_args_internal(client, args_str)
+async def handle_connect_command(client: "IRCClient_Logic", args_str: str):
+    parsed_args = await _parse_connect_args_internal(client, args_str)
     if parsed_args is None:
         return
 
     new_server_host, new_port, new_ssl = parsed_args
 
     if client.network_handler.connected:
-        client.network_handler.disconnect_gracefully("Changing servers via /connect")
+        await client.network_handler.disconnect_gracefully("Changing servers via /connect")
 
     # Create a temporary ConnectionInfo object and set it in the StateManager
     # This will allow IRCClient_Logic's properties and network_handler to pick up the new values
@@ -97,13 +98,13 @@ def handle_connect_command(client: "IRCClient_Logic", args_str: str):
     )
 
     if not client.state_manager.set_connection_info(temp_conn_info):
-        client.add_message(f"Failed to set connection info for {new_server_host}:{new_port}. Validation failed.", "error", context_name="Status")
+        await client.add_message(f"Failed to set connection info for {new_server_host}:{new_port}. Validation failed.", client.ui.colors["error"], context_name="Status")
         logger.error(f"Failed to set connection info for {new_server_host}:{new_port}. Validation failed.")
         return
 
-    client.add_message(
+    await client.add_message(
         f"Attempting to connect to: {client.server}:{client.port} (SSL: {client.use_ssl})", # Use properties
-        "system",
+        client.ui.colors["system"],
         context_name="Status",
     )
     logger.info(
@@ -116,9 +117,9 @@ def handle_connect_command(client: "IRCClient_Logic", args_str: str):
     # Ensure connection_info is not None before passing to establish_connection
     final_conn_info = client.state_manager.get_connection_info()
     if not final_conn_info:
-        client.add_message("Internal error: Connection info not available after /connect setup.", "error", context_name="Status")
+        await client.add_message("Internal error: Connection info not available after /connect setup.", client.ui.colors["error"], context_name="Status")
         logger.error("Connection info is None after setting it in StateManager during /connect.")
         return
 
     # The connection orchestrator will now use the connection info from StateManager
-    client.connection_orchestrator.establish_connection(final_conn_info)
+    await client.connection_orchestrator.establish_connection(final_conn_info)

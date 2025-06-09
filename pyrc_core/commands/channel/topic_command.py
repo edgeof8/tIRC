@@ -18,7 +18,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_topic_command(client: "IRCClient_Logic", args_str: str):
+async def handle_topic_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /topic command."""
     topic_parts = args_str.split(" ", 1)
     current_active_ctx_name = client.context_manager.active_context_name
@@ -26,9 +26,9 @@ def handle_topic_command(client: "IRCClient_Logic", args_str: str):
     new_topic = None
 
     if not target_channel_ctx_name:
-        client.add_message(
+        await client.add_message(
             "No active window to get/set topic from.",
-            "error",
+            client.ui.colors["error"],
             context_name="Status",
         )
         return
@@ -40,9 +40,9 @@ def handle_topic_command(client: "IRCClient_Logic", args_str: str):
     # Determine target channel and new topic based on arguments
     if not args_str.strip(): # /topic (no args)
         if not (current_context and current_context.type == "channel"):
-            client.add_message(
+            await client.add_message(
                 "Not in a channel to get topic. Current window is not a channel.",
-                "error",
+                client.ui.colors["error"],
                 context_name=target_channel_ctx_name,
             )
             return
@@ -56,9 +56,9 @@ def handle_topic_command(client: "IRCClient_Logic", args_str: str):
         # If no new_topic, it's a request for topic of specified channel
     else: # /topic new topic for current channel
         if not (current_context and current_context.type == "channel"):
-            client.add_message(
+            await client.add_message(
                 "Not in a channel to set topic. Current window is not a channel.",
-                "error",
+                client.ui.colors["error"],
                 context_name=target_channel_ctx_name,
             )
             return
@@ -76,19 +76,19 @@ def handle_topic_command(client: "IRCClient_Logic", args_str: str):
         )
 
     if new_topic is not None:
-        client.network_handler.send_raw(
+        await client.network_handler.send_raw(
             f"TOPIC {target_channel_ctx_name} :{new_topic}"
         )
-        client.add_message(
+        await client.add_message(
             f"Attempting to set topic for {target_channel_ctx_name}...",
-            "system",
+            client.ui.colors["system"],
             context_name=target_channel_ctx_name # Feedback in the target channel
         )
     else:
         # Requesting the topic
-        client.network_handler.send_raw(f"TOPIC {target_channel_ctx_name}")
-        client.add_message(
+        await client.network_handler.send_raw(f"TOPIC {target_channel_ctx_name}")
+        await client.add_message(
             f"Requesting topic for {target_channel_ctx_name}...",
-            "system",
+            client.ui.colors["system"],
             context_name=target_channel_ctx_name # Feedback in the target channel
         )

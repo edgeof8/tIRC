@@ -35,7 +35,7 @@ async def handle_dcc_accept_command(client_logic: 'IRCClient_Logic', cmd_args: L
     if not dcc_m:
         await _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
         return
-    if not dcc_m.dcc_config.get("enabled"):
+    if not dcc_m.dcc_config.enabled:
         await _handle_dcc_error(client_logic, f"DCC is currently disabled. Cannot use /dcc {COMMAND_NAME}.", active_context_name)
         return
     parser = argparse.ArgumentParser(prog=f"/dcc {COMMAND_NAME}", add_help=False)
@@ -60,13 +60,18 @@ async def handle_dcc_accept_command(client_logic: 'IRCClient_Logic', cmd_args: L
             await _handle_dcc_error(client_logic, f"Invalid filesize: {filesize}. Must be non-negative.", dcc_context_name)
             return
 
-        result = dcc_m.receive_manager.accept_incoming_send_offer(nick, filename, ip_str, port, filesize)
-        if result.get("success"):
-            await client_logic.add_message(text=f"Accepted DCC SEND from {nick} for '{filename}' (ID: {result.get('transfer_id', 'N/A')[:8]}). Receiving...", color_attr=client_logic.ui.colors["system"], context_name=dcc_context_name)
+        # Get transfer ID using the helper function
+        transfer_id = dcc_m.receive_manager.get_transfer_id_by_args(nick, filename, ip_str, port, filesize)
+        if not transfer_id:
+            await _handle_dcc_error(client_logic, f"No pending DCC transfer found for {nick} '{filename}' at {ip_str}:{port} ({filesize} bytes). It may have expired.", dcc_context_name)
+            return
+
+        # Accept the DCC offer using the transfer ID
+        success = await dcc_m.receive_manager.accept_dcc_offer(transfer_id)
+        if success:
+            await client_logic.add_message(text=f"Accepted DCC SEND from {nick} for '{filename}' (ID: {transfer_id[:8]}). Receiving...", color_attr=client_logic.ui.colors["system"], context_name=dcc_context_name)
         else:
-            err_msg = result.get('error', 'Unknown error')
-            fn_for_err = result.get('sanitized_filename', filename)
-            await _handle_dcc_error(client_logic, f"DCC ACCEPT for '{fn_for_err}' from {nick} failed: {err_msg}", dcc_context_name)
+            await _handle_dcc_error(client_logic, f"DCC ACCEPT for '{filename}' from {nick} failed. Check logs for details.", dcc_context_name)
 
         await _ensure_dcc_context(client_logic, dcc_context_name)
 

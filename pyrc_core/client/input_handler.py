@@ -220,7 +220,7 @@ class InputHandler:
                     f"Commands: {' '.join(sorted(cmd_candidates))}",
                     ui_colors["system"],
                     prefix_time=False,
-                    context_name=active_context_name,
+                    context_name=active_context_name or "Status",
                 )
             self.client_logic.ui_needs_update.set()
             return

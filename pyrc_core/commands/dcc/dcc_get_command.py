@@ -35,7 +35,7 @@ async def handle_dcc_get_command(client_logic: 'IRCClient_Logic', cmd_args: List
     if not dcc_m:
         await _handle_dcc_error(client_logic, f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
         return
-    if not dcc_m.dcc_config.get("enabled"):
+    if not dcc_m.dcc_config.enabled:
         await _handle_dcc_error(client_logic, f"DCC is currently disabled. Cannot use /dcc {COMMAND_NAME}.", active_context_name)
         return
 
@@ -51,7 +51,7 @@ async def handle_dcc_get_command(client_logic: 'IRCClient_Logic', cmd_args: List
         token = parsed_args.token
 
         if hasattr(dcc_m, "accept_passive_offer_by_token"):
-            result = dcc_m.accept_passive_offer_by_token(nick, filename, token)
+            result = await dcc_m.accept_passive_offer_by_token(nick, filename, token)
             if result.get("success"):
                 await client_logic.add_message(f"Attempting to GET '{filename}' from {nick} via passive DCC (ID: {result.get('transfer_id', 'N/A')[:8]}).", client_logic.ui.colors["system"], context_name=dcc_context_name)
             else:

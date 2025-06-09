@@ -1,17 +1,18 @@
 import logging
 import time
+import threading
 from typing import Dict, Optional, Any, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyrc_core.dcc.dcc_manager import DCCManager # To avoid circular import for type hinting
+    from pyrc_core.app_config import DccConfig # Import DccConfig for type hinting
 
 logger = logging.getLogger("pyrc.dcc.passiveoffermgr")
 
 class DCCPassiveOfferManager:
-    def __init__(self, manager_ref: 'DCCManager'):
-        self.manager = manager_ref
-        self.dcc_event_logger = manager_ref.dcc_event_logger
-        self._lock = manager_ref._lock # Use the manager's lock for consistency
+    def __init__(self, lock: threading.Lock, dcc_event_logger: logging.Logger, dcc_config: 'DccConfig'):
+        self._lock = lock
+        self.dcc_event_logger = dcc_event_logger
+        self.dcc_config = dcc_config
         self.pending_passive_offers: Dict[str, Dict[str, Any]] = {}
 
     def store_offer(self, token: str, nick: str, filename: str, filesize: int, ip_str: str, userhost: str) -> None:
@@ -27,10 +28,10 @@ class DCCPassiveOfferManager:
             }
         self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' (IP: {ip_str}) with token {token}.")
         # Opportunistic cleanup can be called by DCCManager after this
-        # self.cleanup_stale_offers(self.manager.dcc_config.get("passive_mode_token_timeout", 120))
+        # self.cleanup_stale_offers(self.dcc_config.passive_mode_token_timeout)
 
 
-    def get_offer(self, token: str) -> Optional[Dict[str, Any]]:
+    def retrieve_offer(self, token: str) -> Optional[Dict[str, Any]]:
         """Retrieves a pending offer by its exact token."""
         with self._lock:
             return self.pending_passive_offers.get(token)
@@ -44,11 +45,11 @@ class DCCPassiveOfferManager:
                 return True
             return False
 
-    def cleanup_stale_offers(self) -> int:
+    def remove_stale_offers(self) -> int:
         """Removes pending passive offers that have timed out. Returns count of removed offers."""
         now = time.time()
         stale_tokens = []
-        timeout_duration = self.manager.dcc_config.get("passive_mode_token_timeout", 120)
+        timeout_duration = self.dcc_config.passive_mode_token_timeout # Use dcc_config attribute
 
         with self._lock:
             for token, offer_details in self.pending_passive_offers.items():

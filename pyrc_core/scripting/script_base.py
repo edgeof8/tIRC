@@ -1,5 +1,5 @@
 import os
-from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Any
+from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Any, Set
 
 if TYPE_CHECKING:
     from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
@@ -129,7 +129,17 @@ class ScriptBase:
             )
             return default_items.copy()
 
-    def ensure_command_args(
+    def get_enabled_caps(self) -> Set[str]:
+        """Get the set of currently enabled capabilities from the cap negotiator.
+
+        Returns:
+            Set[str]: Set of enabled capability names, or empty set if CAP not supported/initialized
+        """
+        if hasattr(self.api.client_logic, 'cap_negotiator') and self.api.client_logic.cap_negotiator:
+            return self.api.client_logic.cap_negotiator.get_enabled_caps()
+        return set()
+
+    async def ensure_command_args(
         self, args_str: str, command_name: str, num_expected_parts: int = 1
     ) -> Optional[List[str]]:
         """Helper method to validate command arguments and display usage message if needed.
@@ -153,7 +163,7 @@ class ScriptBase:
         # Split args and check count
         parts = args_str.strip().split()
         if len(parts) < num_expected_parts:
-            self.api.add_message_to_context(
+            await self.api.add_message_to_context(
                 self.api.get_current_context_name() or "Status", usage_msg, "error"
             )
             return None

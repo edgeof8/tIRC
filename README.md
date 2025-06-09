@@ -10,16 +10,17 @@
 
 ## 🚀 Features at a Glance
 
-- **🤖 AI-Ready**: Built with AI integration in mind, perfect for building IRC-powered AI agents and chatbots
-- 🚀 **Lightning Fast**: Pure Python implementation optimized for speed and low resource usage
-- 🧩 **Extremely Modular**: Every component is pluggable and replaceable
-- 💻 **Terminal-First**: Beautiful, responsive UI that stays in your terminal
-- 🔄 **Persistent State**: Never lose your place with automatic session restoration
+- **🤖 AI-Ready**: Built with AI integration in mind, perfect for building IRC-powered AI agents and chatbots.
+- 🚀 **Lightning Fast**: Modern `asyncio`-based core optimized for speed and low resource usage.
+- 🧩 **Extremely Modular**: Every component is pluggable and replaceable.
+- 💻 **Terminal-First**: Beautiful, responsive UI that stays in your terminal.
+- 🔄 **Persistent State**: Never lose your place with automatic session restoration.
 
 PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It provides a feature-rich, lightweight, and user-friendly experience for IRC users who prefer the command line. With a focus on extreme modularity and stability, PyRC enables both traditional IRC usage and programmatic integration with AI agents or other automated systems.
 
 ## Key Architectural Features
 
+- **Asynchronous Core (`asyncio`):** The entire client is built on Python's `asyncio` framework, providing high performance and efficiency for network I/O without the complexity of traditional multi-threading.
 - **Modular Core (`pyrc_core`):** All core logic is encapsulated within the `pyrc_core` package, separating it from scripts and configuration.
 - **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator, initializing core components and coordinating their interactions, while delegating detailed operational logic (like connection management and UI rendering) to specialized sub-components.
 - **Connection Lifecycle Management:** The `ConnectionOrchestrator` component (in `pyrc_core/client/connection_orchestrator.py`) manages the entire lifecycle of server connections, including capability negotiation, authentication, registration, and reconnection logic. It coordinates between `CapNegotiator`, `SaslAuthenticator`, and `RegistrationHandler` to establish and maintain connections.
@@ -43,7 +44,7 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 - **Dynamic Command System:** All core client commands are implemented in individual Python modules within a structured `commands/` directory. They are dynamically discovered using `pkgutil.walk_packages` and registered at startup, making the client easily extensible.
 - **Extensible Scripting System:** A powerful Python scripting system allows for deep customization. Scripts can register commands, subscribe to a wide range of events, and interact with the client through a rich `ScriptAPIHandler`.
 
-```markdown
+```
 PyRC/
 ├── pyrc.py                     # Main application entry point.
 ├── pyterm_irc_config.ini       # Main configuration file.
@@ -150,9 +151,15 @@ PyRC/
 │   │
 │   ├── dcc/                   # DCC (Direct Client-to-Client) feature implementation.
 │   │   ├── __init__.py
+│   │   ├── dcc_ctcp_handler.py # Handles incoming DCC CTCP requests.
 │   │   ├── dcc_manager.py      # Main orchestrator for all DCC functionality.
-│   │   ├── dcc_protocol.py    # Parses and formats DCC CTCP messages.
-│   │   └── dcc_transfer.py     # Base classes for DCC send/receive transfer logic.
+│   │   ├── dcc_passive_offer_manager.py # Manages passive (reverse) DCC offers.
+│   │   ├── dcc_protocol.py     # Parses and formats DCC CTCP messages.
+│   │   ├── dcc_receive_manager.py # Manages all incoming file transfers.
+│   │   ├── dcc_security.py     # Filename sanitization and path validation.
+│   │   ├── dcc_send_manager.py # Manages all outgoing file transfers.
+│   │   ├── dcc_transfer.py     # Base classes for DCC send/receive transfer logic.
+│   │   └── dcc_utils.py        # Shared utility functions (e.g., socket creation).
 │   │
 │   ├── features/              # Self-contained, optional features.
 │   │   └── triggers/          # Implementation of the /on command trigger system.
@@ -169,14 +176,19 @@ PyRC/
 │   │   ├── sasl_authenticator.py    # Handles SASL PLAIN authentication.
 │   │   └── handlers/          # Specific handlers for different IRC commands/numerics.
 │   │       ├── __init__.py
-│   │       ├── membership_handlers.py
-│   │       └── message_handlers.py
+│   │       ├── irc_numeric_handlers.py # Handlers for server numeric replies.
+│   │       ├── membership_handlers.py  # Handlers for JOIN, PART, QUIT, KICK.
+│   │       ├── message_handlers.py     # Handlers for PRIVMSG, NOTICE.
+│   │       ├── protocol_flow_handlers.py # Handlers for PING, CAP, etc.
+│   │       └── state_change_handlers.py # Handlers for NICK, MODE, etc.
 │   │
 │   ├── logging/              # Logging-specific components.
 │   │   └── channel_logger.py  # Manages per-channel and status window log files.
 │   │
 │   └── scripting/            # The Python scripting engine.
 │       ├── __init__.py
+│       ├── api_responder_agent.py # Example AI agent script.
+│       ├── python_trigger_api.py  # API for the /on <event> PY <code> trigger action.
 │       ├── script_api_handler.py  # Provides the `api` object for scripts.
 │       ├── script_base.py     # A base class for scripts to inherit from.
 │       └── script_manager.py  # Discovers, loads, and manages all user scripts.
@@ -211,17 +223,26 @@ PyRC/
 **PyRC is a stable and mature IRC client** that continues to evolve with regular updates and improvements. The current focus is on enhancing stability, improving the user experience, and maintaining compatibility with modern IRC networks. Recent development has focused on robust state management, reliable session persistence, and comprehensive IRCv3 support. We welcome contributions and feedback to help make PyRC even better.
 
 {{ ... }}
+
 ## Recent Architectural Refactoring & Improvements
 
 This section highlights the significant architectural changes and robustness improvements implemented in recent development cycles.
 
+- **Asynchronous Core with `asyncio`**:
+
+  - The entire client core has been migrated from a `threading`-based model to a modern `asyncio` architecture.
+  - This change provides significant performance improvements for I/O-bound operations, reduces resource consumption, and simplifies concurrency management.
+  - All network I/O is now non-blocking, and `async`/`await` syntax is used throughout the core logic for cleaner, more efficient code.
+
 - **Modular Connection Management (`ConnectionOrchestrator`):**
+
   - Introduced the `ConnectionOrchestrator` component to centralize and manage the entire server connection lifecycle.
   - Coordinates capability negotiation (`CapNegotiator`), authentication (`SaslAuthenticator`), and registration (`RegistrationHandler`).
   - Simplifies `IRCClient_Logic` by delegating complex connection state management and sequencing, leading to more robust and maintainable connection handling.
   - Implements comprehensive timeout mechanisms and error recovery for each connection phase.
 
 - **Decomposed UI System (Modular Renderers & Managers):**
+
   - The previously monolithic `UIManager` has been refactored into a set of specialized components:
     - `CursesManager`: Handles low-level Curses setup and terminal interactions.
     - `WindowLayoutManager`: Manages the creation, sizing, and positioning of all UI windows.
@@ -231,6 +252,7 @@ This section highlights the significant architectural changes and robustness imp
   - Fixed issues with color handling and window management through the introduction of `SafeCursesUtils`.
 
 - **Centralized Configuration (`AppConfig`):**
+
   - All application and server settings are now loaded and managed centrally by the `AppConfig` class. This ensures a single, consistent source of truth for configuration values across the client.
   - Configuration is automatically loaded from `pyterm_irc_config.ini` and can be dynamically updated and saved in-client.
 
@@ -240,11 +262,13 @@ This section highlights the significant architectural changes and robustness imp
   - Features robust validation, thread-safe access, and automatic persistence to `state.json`, ensuring reliable session continuity and easier debugging.
 
 - **Dynamic Command System (`pkgutil`):**
+
   - The command loading mechanism has been refactored to use `pkgutil.walk_packages`, enabling more reliable and extensible discovery of commands from nested directories within `pyrc_core/commands/`.
   - This resolves issues with commands not being found and simplifies the addition of new command modules.
   - Commands are now more modular and easier to maintain, with clear separation between different command categories.
 
 - **Enhanced IRCv3 Feature Handling:**
+
   - **`CapNegotiator`:** Coordinated by `ConnectionOrchestrator`, now implements comprehensive timeout mechanisms to prevent hangs during capability negotiation, with enhanced state tracking and SASL coordination.
   - **`SaslAuthenticator`:** Integrated with `ConnectionOrchestrator`, features step-based timeouts for SASL authentication flow, ensuring timely progression or failure, with improved error handling.
   - **`RegistrationHandler`:** Managed by `ConnectionOrchestrator`, implements a refined registration flow that coordinates with CAP and SASL operations, ensuring proper sequencing of post-registration actions.
@@ -280,14 +304,14 @@ These architectural improvements significantly enhance PyRC's stability, maintai
 - **Extensible Scripting System (Python):**
   - Load custom Python scripts from a `scripts/` directory.
   - **Dependency Management:** Scripts can declare dependencies in their metadata, and `ScriptManager` now attempts to load scripts in an order that satisfies these dependencies, warning about missing or circular dependencies.
-  - Rich `ScriptAPIHandler` for client interaction (see "Scripting System" section).
+  - Rich `ScriptAPIHandler` for client interaction (see "Scripting System" section). Many API methods are now `async` and must be `await`ed.
   - Scripts can register commands with structured help (usage, description, aliases).
 - **Advanced Event-Driven Trigger System (`/on` command & API):**
   - Define custom actions (client commands or Python code via `PythonTriggerAPI`) based on IRC events.
   - Persistent triggers saved to `config/triggers.json`.
 - **Modular Event Management:** A dedicated `EventManager` handles consistent dispatching of script-facing events. Includes a `CLIENT_MESSAGE_ADDED_TO_CONTEXT` event.
 - **Headless Operation & Testing:**
-  - Full functionality with `--headless` flag.
+  - Full functionality with `--headless` flag. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional, all running on an efficient `asyncio` event loop.
   - Refactored headless test script (`scripts/test_headless.py`) using an event-driven verification framework for increased reliability.
 - **Logging:**
   - Comprehensive main application log (`logs/pyrc_core.log`).
@@ -505,18 +529,20 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ## Headless Operation
 
-Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional. Ideal for bots, AI integrations, and automated testing. The `scripts/test_headless.py` and `scripts/ai_api_test_script.py` scripts provide examples and a framework for such tests.
+Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional, all running on an efficient `asyncio` event loop. Ideal for bots, AI integrations, and automated testing. The `scripts/test_headless.py` and `scripts/ai_api_test_script.py` scripts provide examples and a framework for such tests.
 
 ## Scripting System
 
 PyRC features a Python scripting system in `scripts/`. Scripts inherit from `ScriptBase`, use `ScriptAPIHandler` (`self.api`), and can define dependencies in their `metadata.json`.
 
+Scripts can define event handlers as either standard synchronous functions or as `async def` coroutines. The `EventManager` will correctly `await` asynchronous handlers, allowing for non-blocking I/O operations (like network requests or disk I/O) within scripts without freezing the client.
+
 ### Key `ScriptAPIHandler` Capabilities (Summary):
 
 _(This section can remain largely the same, but ensure it's up-to-date with any API changes.)_
 
-- **Sending:** `send_raw`, `send_message`, `send_action`, etc.
-- **UI Interaction:** `add_message_to_context`.
+- **Sending:** `send_raw`, `send_message`, `send_action`, etc. (now `async`).
+- **UI Interaction:** `add_message_to_context` (now `async`).
 - **Information Retrieval:** `get_client_nick`, `get_context_messages`, etc.
 - **Trigger Management API:** `add_trigger`, `remove_trigger`, etc.
 - **Command/Help Registration:** `register_command` (now accepts rich help dict), `register_help_text`, `create_command_help`.
@@ -593,7 +619,6 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 - Ctrl+Y/Ctrl+E: Scroll message buffer.
 - Ctrl+N / Ctrl+P: Switch windows.
 - Ctrl+U: Scroll user list.
-  Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional. Ideal for bots, AI integrations, and automated testing. The `scripts/test_headless.py` script provides an example and a framework for such tests.
 
 ## State Management System
 
@@ -622,7 +647,7 @@ PyRC's `StateManager` provides a robust, thread-safe, and persistent solution fo
 
 ### Usage Example
 
-```python
+````python
 from pyrc_core.state_manager import StateManager, StateValidator, ConnectionInfo, ConnectionState
 from typing import Optional, Dict, Any
 
@@ -680,11 +705,12 @@ invalid_conn_info = ConnectionInfo(server="irc.bad.com", port=6667, ssl=False, n
 if not state_manager.set_connection_info(invalid_conn_info):
     print(f"Attempted to set invalid connection info. Errors: {state_manager.get_config_errors()}")
 
+```python
 # Get current state
 current_nick = state_manager.get_connection_info().nick if state_manager.get_connection_info() else "N/A"
 current_state = state_manager.get_connection_state().name
 print(f"Current nick: {current_nick}, Current state: {current_state}")
-```
+````
 
 ### Best Practices for State Management
 
@@ -733,6 +759,7 @@ This project is licensed under the MIT License.
    ```
 
 2. **Run the build script:**
+
    ```bash
    python build.py
    ```
@@ -769,3 +796,21 @@ The build process creates the following files in the `dist/` directory:
   - Windows: `pyrc-0.1.0-win64.exe`
   - Linux: `pyrc-0.1.0-linux`
   - macOS: `pyrc-0.1.0-macos`
+
+## Support
+
+For support, please [open an issue](https://github.com/edgeof8/PyRC/issues) on GitHub.
+
+## Acknowledgments
+
+- Built with ❤️ by the PyRC contributors
+- Thanks to all the open source projects that made this possible
+
+---
+
+<p align="center">
+  <a href="https://github.com/edgeof8/PyRC">GitHub</a> •
+  <a href="https://pypi.org/project/pyrc/">PyPI</a> •
+  <a href="https://github.com/edgeof8/PyRC/issues">Issues</a> •
+  <a href="https://github.com/edgeof8/PyRC/pulls">Pull Requests</a>
+</p>

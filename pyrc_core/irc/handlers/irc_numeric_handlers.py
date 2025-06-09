@@ -34,7 +34,7 @@ async def _handle_rpl_welcome(
             conn_info.nick = confirmed_nick
             client.state_manager.set("connection_info", conn_info)
 
-    server_name = client.server or "the server"
+    server_name = client.server if client and client.server else "the server"
     await client.add_message(
         f"Welcome to {server_name}: {trailing if trailing else ''}",
         client.ui.colors["system"],

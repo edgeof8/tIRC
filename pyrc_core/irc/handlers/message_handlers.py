@@ -1,7 +1,6 @@
-
 import logging
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Awaitable
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -49,7 +48,6 @@ async def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", ra
         color_key = "my_message"
         logger.debug(f"HANDLE_PRIVMSG: Echoed self-message to channel. Nick: {nick}, Target: {target_context_name}, Color: {color_key}, Message: '{message_body[:50]}...'")
 
-
     if (
         client_nick
         and client_nick.lower() in message_body.lower()
@@ -68,18 +66,24 @@ async def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", ra
         is_privmsg_or_notice=True,
     )
 
-    action_from_text_trigger = await client.process_trigger_event(
-        "TEXT",
-        {
-            "nick": nick, "userhost": source_full_ident, "target": target,
-            "channel": target if is_channel_msg else "", "message": message_body,
-            "message_words": message_body.split(),
-            "client_nick": client_nick,
-            "raw_line": raw_line,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "tags": parsed_msg.get_all_tags(),
-        },
-    )
+    action_from_text_trigger = None
+    if client and hasattr(client, "process_trigger_event") and client.process_trigger_event:
+        task: Optional[Awaitable[str]] = client.process_trigger_event(
+            "TEXT",
+            {
+                "nick": nick, "userhost": source_full_ident, "target": target,
+                "channel": target if is_channel_msg else "", "message": message_body,
+                 "message_words": message_body.split(),
+                "client_nick": client_nick,
+                "raw_line": raw_line,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "tags": parsed_msg.get_all_tags(),
+            }
+        )
+        if task is not None:
+            action_from_text_trigger = await task
+        else:
+            action_from_text_trigger = None
 
     if hasattr(client, "event_manager") and client.event_manager:
         await client.event_manager.dispatch_privmsg(
@@ -92,10 +96,13 @@ async def handle_privmsg(client: "IRCClient_Logic", parsed_msg: "IRCMessage", ra
 
 
 async def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str) -> Optional[str]:
+    if client is None:
+        logger.warning("handle_notice: Client is None. Skipping message processing.")
+        return None
+
     nick = parsed_msg.source_nick
     source_full_ident = parsed_msg.prefix
     logger.debug(f"HANDLE_NOTICE: Raw='{raw_line.strip()}', Parsed Nick='{parsed_msg.source_nick}', Target='{parsed_msg.params[0] if parsed_msg.params else None}', Body='{parsed_msg.trailing}'")
-
 
     target = parsed_msg.params[0] if parsed_msg.params else None
     message_body = parsed_msg.trailing if parsed_msg.trailing else ""
@@ -127,18 +134,24 @@ async def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw
         source_full_ident=source_full_ident, is_privmsg_or_notice=True,
     )
 
-    action_from_notice_trigger = await client.process_trigger_event(
-        "NOTICE",
-        {
-            "nick": nick, "userhost": source_full_ident, "target": target,
-            "channel": target if is_channel_notice else "", "message": message_body,
-             "message_words": message_body.split(),
-            "client_nick": client_nick,
-            "raw_line": raw_line,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "tags": parsed_msg.get_all_tags(),
-        }
-    )
+    action_from_notice_trigger = None
+    if client:
+        task: Optional[Awaitable[str]] = client.process_trigger_event(
+            "NOTICE",
+            {
+                "nick": nick, "userhost": source_full_ident, "target": target,
+                "channel": target if is_channel_notice else "", "message": message_body,
+                 "message_words": message_body.split(),
+                "client_nick": client_nick,
+                "raw_line": raw_line,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "tags": parsed_msg.get_all_tags(),
+            }
+        )
+        if task is not None:
+            action_from_notice_trigger = await task
+        else:
+            action_from_notice_trigger = None
 
     if hasattr(client, "event_manager") and client.event_manager:
         await client.event_manager.dispatch_notice(
