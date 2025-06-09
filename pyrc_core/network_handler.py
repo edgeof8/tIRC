@@ -7,7 +7,7 @@ import logging
 import concurrent.futures
 from typing import List, Optional, Set, cast, TYPE_CHECKING, Coroutine, Any  # Added TYPE_CHECKING
 from pyrc_core.app_config import AppConfig
-from pyrc_core.state_manager import ConnectionState
+from pyrc_core.state_manager import ConnectionState, ConnectionInfo
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic  # Guarded import
@@ -218,60 +218,80 @@ class NetworkHandler:
 # In pyrc_core/network_handler.py
 
     async def _reset_connection_state(self, dispatch_event: bool = True):
-        logger.info(
+        self.logger.info(
             f"Resetting connection state. Dispatch disconnect event: {dispatch_event}. Called by: {inspect.stack()[1].filename}:{inspect.stack()[1].lineno} - {inspect.stack()[1].function}"
         )
-        logger.debug(
-            f"Resetting connection state. Dispatch disconnect event: {dispatch_event}"
-        )
 
-        if self._reader:
-            self._reader = None
-        if self._writer:
-            try:
-                self._writer.close()
-                await self._writer.wait_closed()
-                logger.debug("Writer closed by _reset_connection_state.")
-            except Exception as e:
-                logger.error(f"Error closing writer in reset: {e}")
-            finally:
-                self._writer = None
-
-        if self.connected:
-            self.client_logic_ref.state_manager.set_connection_state(ConnectionState.DISCONNECTED)
-
-        was_connected = self.connected
-        self.connected = False
+        was_connected = self.connected # Capture state before changing
+        self.connected = False # <<< SET FALSE EARLIER
         self.is_handling_nick_collision = False
 
-        if self.client_logic_ref:
-            # --- START OF FIX ---
-            # Reset all handshake components to prepare for a new connection
+        if self._writer:
+            try:
+                if not self._writer.is_closing(): # Only close if not already closing
+                    self._writer.close()
+                await self._writer.wait_closed() # Wait for actual close
+                self.logger.debug("Writer closed by _reset_connection_state.")
+            except Exception as e:
+                self.logger.error(f"Error closing writer in reset: {e}") # SSL error might happen here
+            finally:
+                self._writer = None # Ensure it's None after attempt
+
+        if self._reader: # pragma: no cover
+            # StreamReader doesn't have a close method. It's tied to the transport.
+            # Setting to None is sufficient to indicate it's no longer usable.
+            self._reader = None
+            self.logger.debug("Reader reference cleared by _reset_connection_state.")
+
+        # Update StateManager state only if it was previously in a connected-like state
+        if self.client_logic_ref: # Ensure client_logic_ref exists
+            current_sm_state = self.client_logic_ref.state_manager.get_connection_state()
+            if current_sm_state not in [ConnectionState.DISCONNECTED, ConnectionState.ERROR, ConnectionState.CONFIG_ERROR]:
+                 self.client_logic_ref.state_manager.set_connection_state(ConnectionState.DISCONNECTED)
+
+            # Reset handshake components
             if hasattr(self.client_logic_ref, "cap_negotiator") and self.client_logic_ref.cap_negotiator:
                 await self.client_logic_ref.cap_negotiator.reset_negotiation_state()
             if hasattr(self.client_logic_ref, "sasl_authenticator") and self.client_logic_ref.sasl_authenticator:
                 self.client_logic_ref.sasl_authenticator.reset_authentication_state()
             if hasattr(self.client_logic_ref, "registration_handler") and self.client_logic_ref.registration_handler:
                 self.client_logic_ref.registration_handler.reset_registration_state()
-            # --- END OF FIX ---
 
             if (
                 dispatch_event
-                and was_connected
+                and was_connected # Use the captured state
                 and not self._disconnect_event_sent_for_current_session
             ):
-                conn_info = self.client_logic_ref.state_manager.get_connection_info()
-                if conn_info and conn_info.server and conn_info.port is not None:
+                # Try to get connection info from snapshot if available, else current
+                conn_info_snapshot_dict = self.client_logic_ref.state_manager.get("connection_info_snapshot")
+                conn_info_to_use: Optional[ConnectionInfo] = None
+
+                if isinstance(conn_info_snapshot_dict, dict):
+                    try:
+                        # Reconstruct ConnectionInfo from the dictionary snapshot
+                        conn_info_to_use = ConnectionInfo(**conn_info_snapshot_dict)
+                    except TypeError: # pragma: no cover
+                        self.logger.warning("Failed to reconstruct ConnectionInfo from snapshot in _reset_connection_state.")
+                        conn_info_to_use = self.client_logic_ref.state_manager.get_connection_info()
+                else:
+                    conn_info_to_use = self.client_logic_ref.state_manager.get_connection_info()
+
+                if conn_info_to_use and conn_info_to_use.server and conn_info_to_use.port is not None:
                     await self.client_logic_ref.event_manager.dispatch_client_disconnected(
-                        conn_info.server, conn_info.port, raw_line=""
+                        conn_info_to_use.server, conn_info_to_use.port, raw_line=""
                     )
                     self._disconnect_event_sent_for_current_session = True
+                    # Clear the snapshot after using it
+                    self.client_logic_ref.state_manager.delete("connection_info_snapshot")
+                else:
+                    self.logger.warning("Could not dispatch disconnect event: server/port info missing from current or snapshot.")
 
-        self.buffer = b""
-        logger.debug("Connection state reset complete")
+        self.buffer = b"" # Clear any partial data
+        self.logger.debug("Connection state reset complete")
 
 
     async def _connect_socket(self) -> bool:
+        self.logger.info(f"NetworkHandler._connect_socket: Entered. Current connected state: {self.connected}")
         self.is_handling_nick_collision = False
         conn_info = (
             self.client_logic_ref.state_manager.get_connection_info()
@@ -284,58 +304,58 @@ class NetworkHandler:
             or conn_info.port is None
         ):
             error_msg = "Server or port not configured"
-            logger.error(f"NetworkHandler._connect_socket: {error_msg}")
-            self.client_logic_ref.state_manager.set_connection_state(
-                ConnectionState.ERROR,
-                error_msg
-            )
-            return False
-
-        self.client_logic_ref.state_manager.set_connection_state(ConnectionState.CONNECTING)
-        try:
-            conn_info = self.client_logic_ref.state_manager.get_connection_info()
-            if not conn_info:
-                error_msg = "Cannot connect - no connection info available"
-                logger.error(error_msg)
+            self.logger.error(f"NetworkHandler._connect_socket: {error_msg}")
+            if self.client_logic_ref:
                 self.client_logic_ref.state_manager.set_connection_state(
                     ConnectionState.ERROR,
-                    error=error_msg
+                    error_msg
                 )
+            return False
+
+        if self.client_logic_ref:
+            self.client_logic_ref.state_manager.set_connection_state(ConnectionState.CONNECTING)
+        try:
+            if not conn_info:
+                error_msg = "Cannot connect - no connection info available (secondary check)"
+                self.logger.error(error_msg)
+                if self.client_logic_ref:
+                    self.client_logic_ref.state_manager.set_connection_state(
+                        ConnectionState.ERROR,
+                        error=error_msg
+                    )
                 return False
 
-            server = conn_info.server or ""
-            port = conn_info.port or 6667
+            server = conn_info.server
+            port = conn_info.port
             use_ssl = conn_info.ssl if conn_info.ssl is not None else False
 
-            logger.info(
+            self.logger.info(
                 f"Attempting asyncio.open_connection to {server}:{port} (SSL: {use_ssl})"
             )
 
             ssl_context = None
             if use_ssl:
-                logger.debug("SSL is enabled, creating SSL context.")
+                self.logger.debug("SSL is enabled, creating SSL context.")
                 ssl_context = ssl.create_default_context()
                 try:
                     ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
-                    logger.info(f"Set SSLContext minimum_version to TLSv1_2 for {server}")
+                    self.logger.info(f"Set SSLContext minimum_version to TLSv1_2 for {server}")
                 except AttributeError:
-                    logger.warning(
+                    self.logger.warning(
                         "ssl.TLSVersion.TLSv1_2 not available. Default TLS settings will be used."
                     )
 
-                # Revert temporary change, but ensure we explicitly set verify_mode to CERT_NONE if verify_ssl is False
                 verify_ssl = conn_info.verify_ssl_cert if conn_info.verify_ssl_cert is not None else True
                 if not verify_ssl:
-                    logger.warning(
+                    self.logger.warning(
                         "SSL certificate verification is DISABLED. This is insecure."
                     )
                     ssl_context.check_hostname = False
                     ssl_context.verify_mode = ssl.CERT_NONE
                 else:
-                    # Default is CERT_REQUIRED and hostname check is True for create_default_context
-                    # Explicitly set for clarity if needed, but create_default_context does this by default
                     ssl_context.check_hostname = True
                     ssl_context.verify_mode = ssl.CERT_REQUIRED
+                    self.logger.info(f"SSL certificate verification ENABLED for {server}.")
 
             # Use asyncio.open_connection
             self._reader, self._writer = await asyncio.open_connection(
@@ -408,14 +428,14 @@ class NetworkHandler:
         return False
 
     async def send_raw(self, data: str):
-        # Re-check connection status immediately before sending
-        if not self._writer or not self.connected:
-            logger.warning(
-                f"Attempted to send data while not truly connected or no writer: {data.strip()}"
+        # Re-check connection status and writer state immediately before sending
+        if not self._writer or not self.connected or self._writer.is_closing(): # Added is_closing check
+            self.logger.warning(
+                f"Attempted to send data while not truly connected, no writer, or writer closing: {data.strip()}"
             )
-            if self.client_logic_ref and hasattr(self.client_logic_ref, 'add_status_message'):
+            if self.client_logic_ref and hasattr(self.client_logic_ref, 'add_status_message'): # pragma: no cover
                 await self.client_logic_ref.add_status_message(
-                    "Cannot send: Not connected.", "error"
+                    "Cannot send: Not connected or connection closing.", "error"
                 )
                 if not self.client_logic_ref.is_headless:
                     self.client_logic_ref.ui_needs_update.set()
@@ -428,117 +448,96 @@ class NetworkHandler:
             await self._writer.drain()
 
             log_data = data.strip()
+            # Mask sensitive information before logging
             if log_data.upper().startswith("PASS "):
                 log_data = "PASS ******"
-            elif log_data.upper().startswith("AUTHENTICATE ") and len(log_data) > 15:
+            elif log_data.upper().startswith("AUTHENTICATE ") and len(log_data) > 15: # Check length to avoid splitting short non-sensitive AUTHENTICATE
                 log_data = log_data.split(" ", 1)[0] + " ******"
             elif log_data.upper().startswith("PRIVMSG NICKSERV :IDENTIFY"):
                 parts = log_data.split(" ", 3)
-                if len(parts) >= 3:
+                if len(parts) >= 3: # Ensure enough parts to avoid index error
                     log_data = f"{parts[0]} {parts[1]} {parts[2]} ******"
-                else:
-                    log_data = "PRIVMSG NickServ :IDENTIFY ******"
+                else: # pragma: no cover
+                    log_data = "PRIVMSG NickServ :IDENTIFY ******" # Fallback if split fails unexpectedly
 
-            logger.debug(f"C >> {log_data}")
+            self.logger.debug(f"C >> {log_data}")
 
             if (
                 self.client_logic_ref
                 and hasattr(self.client_logic_ref, "show_raw_log_in_ui")
                 and self.client_logic_ref.show_raw_log_in_ui
+                and hasattr(self.client_logic_ref, 'add_status_message') # Ensure method exists
             ):
-                # Use TYPE_CHECKING to allow Pylance to see the attribute, but avoid runtime circular import
-                if TYPE_CHECKING:
-                    logger.debug("send_raw: Executing TYPE_CHECKING block")
-                    await self.client_logic_ref.add_status_message(
-                        f"C >> {log_data}",
-                        "system"
-                    )
-                else:
-                    logger.debug("send_raw: Executing ELSE block")
-                    # Fallback for runtime if TYPE_CHECKING is False
-                    if hasattr(self.client_logic_ref, 'add_status_message'):
-                        await self.client_logic_ref.add_status_message(
-                            f"C >> {log_data}",
-                            "system"
-                        )
-                    else:
-                        logger.error("send_raw: add_status_message not found on client_logic_ref!")
+                await self.client_logic_ref.add_status_message(
+                    f"C >> {log_data}",
+                    "system" # Use a semantic color key if available, or direct attribute
+                )
 
             if data.upper().startswith("NICK "):
-                self.is_handling_nick_collision = False
+                self.is_handling_nick_collision = False # Reset flag after sending NICK
         except (
-            OSError,
-            ConnectionError,
-            ssl.SSLError,
-        ) as e:
-            logger.error(f"Error sending data: {e}", exc_info=True)
-            if self.client_logic_ref:
+            OSError, # Covers a range of OS-level I/O errors
+            ConnectionError, # More specific connection errors like ConnectionResetError
+            ssl.SSLError, # Specific SSL errors during send
+        ) as e: # pragma: no cover
+            self.logger.error(f"Network error sending data: {e}", exc_info=False) # exc_info=False for common network errors
+            if self.client_logic_ref and hasattr(self.client_logic_ref, 'add_status_message'):
                 await self.client_logic_ref.add_status_message(
                     f"Error sending data: {e}", "error"
                 )
                 if not self.client_logic_ref.is_headless:
                     self.client_logic_ref.ui_needs_update.set()
+            # Critical: Reset connection state if send fails due to network issue
             await self._reset_connection_state(
-                dispatch_event=True
+                dispatch_event=True # Ensure disconnect event is dispatched
             )
-        except Exception as e_unhandled_send:
-            logger.critical(
-                f"Unhandled error sending data: {e_unhandled_send}", exc_info=True
+        except Exception as e_unhandled_send: # pragma: no cover
+            # Catch any other unexpected errors during send
+            self.logger.critical(
+                f"Unhandled critical error sending data: {e_unhandled_send}", exc_info=True
             )
-            if self.client_logic_ref:
-                if self.client_logic_ref:
-                    # Use TYPE_CHECKING to allow Pylance to see the attribute, but avoid runtime circular import
-                    if TYPE_CHECKING:
-                        await self.client_logic_ref.add_status_message(
-                            f"Critical send error: {e_unhandled_send}",
-                            "error"
-                        )
-                    else:
-                        # Fallback for runtime if TYPE_CHECKING is False
-                        if hasattr(self.client_logic_ref, 'ui') and hasattr(self.client_logic_ref.ui, 'add_message_to_context'):
-                            await self.client_logic_ref.ui.add_message_to_context(
-                                f"Critical send error: {e_unhandled_send}",
-                                self.client_logic_ref.ui.colors["error"],
-                                context_name="Status",
-                                prefix_time=True,
-                            )
+            if self.client_logic_ref and hasattr(self.client_logic_ref, 'add_status_message'):
+                await self.client_logic_ref.add_status_message(
+                    f"Critical send error: {e_unhandled_send}",
+                    "error"
+                )
+            # Reset connection state on unhandled critical send errors
             await self._reset_connection_state(dispatch_event=True)
 
     async def network_loop(self) -> None:
         """Main network handling loop."""
         try:
-            async with self._task_start_lock:
-                self.logger.info("Network loop started, holding task start lock.")
-                while not self._stop_event.is_set():
-                    if not self.connected or not self._reader:
-                        conn_info = (
-                            self.client_logic_ref.state_manager.get_connection_info()
-                            if self.client_logic_ref
-                            else None
+            self.logger.info("Network loop initiated.")
+            while not self._stop_event.is_set():
+                if not self.connected or not self._reader or not self._writer: # Added _writer check
+                    current_sm_state = self.client_logic_ref.state_manager.get_connection_state() if self.client_logic_ref else ConnectionState.DISCONNECTED
+
+                    if current_sm_state == ConnectionState.CONNECTING:
+                        self.logger.info("Network_loop: StateManager reports CONNECTING. Waiting for external connection process.")
+                        await asyncio.sleep(0.2) # Wait for the explicit connect call to complete/fail
+                        continue # Re-evaluate main loop condition
+
+                    conn_info = self.client_logic_ref.state_manager.get_connection_info() if self.client_logic_ref else None
+                    if conn_info and conn_info.server and conn_info.port is not None:
+                        self.logger.info(
+                            f"Network_loop: Not connected. Attempting to connect to {conn_info.server}:{conn_info.port}"
                         )
-                        if (
-                            conn_info
-                            and conn_info.server
-                            and conn_info.port is not None
-                        ):
-                            logger.info(
-                                f"Attempting to connect to {conn_info.server}:{conn_info.port}"
-                            )
-                            if await self._connect_socket():
-                                logger.info("Successfully connected to server")
-                                self.connected = True
-                                self._disconnect_event_sent_for_current_session = False
-                            else:
-                                logger.warning(
-                                    "Failed to connect, will retry in next iteration"
-                                )
-                                # Exponential backoff for reconnects
-                                await asyncio.sleep(self.reconnect_delay)
-                                self.reconnect_delay = min(self.reconnect_delay * 2, self.config.reconnect_max_delay)
+                        # _connect_socket will set ConnectionState.CONNECTING
+                        if await self._connect_socket():
+                            self.logger.info("Network_loop: Successfully connected via _connect_socket.")
+                            # self.connected is set by _connect_socket
+                            self._disconnect_event_sent_for_current_session = False
                         else:
-                            logger.debug("No connection parameters available, waiting...")
-                            await asyncio.sleep(0.1)
-                        continue
+                            self.logger.warning(
+                                "Network_loop: _connect_socket failed. Will retry after delay."
+                            )
+                            await self._reset_connection_state() # Ensure state is clean before sleep
+                            await asyncio.sleep(self.reconnect_delay)
+                            self.reconnect_delay = min(self.reconnect_delay * 2, self.config.reconnect_max_delay if self.config else 60)
+                    else:
+                        self.logger.debug("Network_loop: No connection parameters available, waiting...")
+                        await asyncio.sleep(0.5) # Increased sleep
+                    continue
 
                     try:
                         data = await self._reader.read(4096)
@@ -574,8 +573,9 @@ class NetworkHandler:
             logger.critical(f"Critical error in network loop: {e}", exc_info=True)
         finally:
             self.connected = False
+            self.connected = False # Ensure connected is false before reset
             await self._reset_connection_state(dispatch_event=True)
-            self.logger.info("Network loop shutdown complete, releasing task start lock.")
+            self.logger.info("Network loop ended and cleaned up.") # Modified log
 
     async def _process_received_data(self, data: bytes) -> None:
         """Process received data from the network socket.

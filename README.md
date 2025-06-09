@@ -18,20 +18,40 @@
 
 PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It provides a feature-rich, lightweight, and user-friendly experience for IRC users who prefer the command line. With a focus on extreme modularity and stability, PyRC enables both traditional IRC usage and programmatic integration with AI agents or other automated systems.
 
+## Project Status
+
+**PyRC is a stable and mature IRC client** that has recently undergone a significant architectural refactor to an `asyncio`-based core. This migration enhances performance, stability, and maintainability. The client continues to evolve with regular updates and improvements. The current focus is on leveraging the benefits of asyncio, refining the user experience, and maintaining compatibility with modern IRC networks. We welcome contributions and feedback to help make PyRC even better.
+
+## Architecture Overview
+
+```mermaid
+graph TD
+    A[pyrc.py] --> B(asyncio.run(IRCClient_Logic.run_main_loop()));
+    B --> C{IRCClient_Logic.run_main_loop() (async)};
+    C -- Creates --> D[asyncio.Task: NetworkHandler.network_loop (async)];
+    C -- Creates --> E[asyncio.Task: InputHandler.async_input_reader (async)];
+    D -- Reads/Writes data --> F(Async Network I/O - StreamReader/Writer);
+    D -- Dispatches messages --> G(irc_protocol.handle_server_message (async));
+    E -- Reads blocking input --> H(asyncio.to_thread(getch));
+    E -- Puts input into --> I(asyncio.Queue);
+    E -- Gets input from queue --> J(InputHandler.handle_key_press (async));
+    J -- Processes commands --> K(CommandHandler.process_user_command (async));
+    K -- Sends data --> D;
+    G -- Dispatches events --> L(EventManager.dispatch_event (async));
+    L -- Calls handlers --> M{ScriptManager.dispatch_event (async)};
+    M -- If async handler --> N(asyncio.create_task(handler(event_data)));
+    M -- If sync handler --> O(loop.run_in_executor(None, handler, event_data));
+    C -- Triggers periodically --> P(IRCClient_Logic._update_ui (async));
+    P -- Refreshes UI --> Q(UIManager.refresh_all_windows);
+```
+
 ## Key Architectural Features
 
-- **Asynchronous Core (`asyncio`):** The entire client is built on Python's `asyncio` framework, providing high performance and efficiency for network I/O without the complexity of traditional multi-threading.
-- **Modular Core (`pyrc_core`):** All core logic is encapsulated within the `pyrc_core` package, separating it from scripts and configuration.
-- **Component-Based Design:** The client is broken down into distinct manager components (`StateManager`, `NetworkHandler`, `CommandHandler`, `UIManager`, `ScriptManager`, etc.), each with a single responsibility. `IRCClient_Logic` acts as a high-level orchestrator, initializing core components and coordinating their interactions, while delegating detailed operational logic (like connection management and UI rendering) to specialized sub-components.
-- **Connection Lifecycle Management:** The `ConnectionOrchestrator` component (in `pyrc_core/client/connection_orchestrator.py`) manages the entire lifecycle of server connections, including capability negotiation, authentication, registration, and reconnection logic. It coordinates between `CapNegotiator`, `SaslAuthenticator`, and `RegistrationHandler` to establish and maintain connections.
-- **Modular UI Architecture:** The UI system has been refactored into focused, single-responsibility components:
-  - `CursesManager`: Handles low-level Curses library interactions, initialization, and cleanup.
-  - `WindowLayoutManager`: Calculates dimensions and manages creation of all `curses.window` objects.
-  - `MessagePanelRenderer`: Renders message panels in both single and split view modes.
-  - `SidebarPanelRenderer`: Manages and renders the context list and user list.
-  - `StatusBarRenderer`: Handles the display of status information and notifications.
-  - `InputLineRenderer`: Manages the input prompt and user input display.
-  - `SafeCursesUtils`: Provides safe, reusable utilities for common Curses operations.
+### Asyncio-Based Core
+- **Complete Migration to asyncio:** The entire client has been refactored to use Python's `asyncio` framework, eliminating the previous threading-based approach for better performance and simplified concurrency management.
+- **Non-blocking I/O:** All network operations, user input handling, and UI updates are handled asynchronously, ensuring a responsive user experience even during heavy network traffic.
+- **Efficient Resource Usage:** The single-threaded event loop model reduces context switching overhead and simplifies synchronization.
+- **Modern Python Features:** Leverages Python 3.9+ features like `asyncio.to_thread` for running blocking operations without blocking the event loop.
 - **Centralized State Management with `StateManager`:**
   - The `StateManager` is the _exclusive_ source of truth for all connection, session, and client-specific runtime state.
   - It provides thread-safe, persistent session state that includes:
@@ -44,37 +64,42 @@ PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Pyt
 - **Dynamic Command System:** All core client commands are implemented in individual Python modules within a structured `commands/` directory. They are dynamically discovered using `pkgutil.walk_packages` and registered at startup, making the client easily extensible.
 - **Extensible Scripting System:** A powerful Python scripting system allows for deep customization. Scripts can register commands, subscribe to a wide range of events, and interact with the client through a rich `ScriptAPIHandler`.
 
+## File Structure
+
 ```
 PyRC/
-├── pyrc.py                     # Main application entry point.
-├── pyterm_irc_config.ini       # Main configuration file.
+├── pyrc.py                     # Main application entry point and asyncio event loop setup
+├── pyterm_irc_config.ini       # Main configuration file with server and client settings
 │
-├── pyrc_core/                  # Core application package.
-│   ├── __init__.py
-│   ├── app_config.py            # Centralized management of all application and server configurations.
-│   ├── context_manager.py       # Manages windows/contexts (channels, queries, status).
-│   ├── event_manager.py         # Dispatches events to the scripting system.
-│   ├── network_handler.py       # Handles raw socket connections and data transmission.
-│   └── state_manager.py         # Centralized, persistent, and validated state management.
+├── pyrc_core/                  # Core application package
+│   ├── __init__.py             # Package initialization
+│   ├── app_config.py           # Centralized configuration management using configparser
+│   ├── context_manager.py      # Manages chat contexts (channels, queries, server)
+│   ├── event_manager.py        # Asynchronous event dispatching system
+│   ├── network_handler.py      # Async IRC protocol handling using asyncio.StreamReader/Writer
+│   └── state_manager.py        # Thread-safe state management with persistence
 │
-│   ├── client/                 # Client-side logic and UI components.
+│   ├── client/                # Client implementation
 │   │   ├── __init__.py
-│   │   ├── connection_orchestrator.py # Manages server connection lifecycle and coordination
-│   │   ├── curses_manager.py         # Low-level Curses interaction and utilities.
-│   │   ├── curses_utils.py           # Safe Curses drawing utilities.
-│   │   ├── input_handler.py          # Processes keyboard input, command history, and tab completion.
-│   │   ├── input_line_renderer.py    # Renders the input line and handles input display.
-│   │   ├── irc_client_logic.py       # Main orchestrator class, initializes and coordinates all managers.
-│   │   ├── message_panel_renderer.py # Renders message panels and DCC transfer lists.
-│   │   ├── sidebar_panel_renderer.py # Renders the context list and user list in the sidebar.
-│   │   ├── state_change_ui_handler.py # Updates UI in response to state changes.
-│   │   ├── status_bar_renderer.py    # Renders the status bar content.
-│   │   ├── ui_manager.py             # Orchestrates UI components and coordinates drawing.
-│   │   └── window_layout_manager.py  # Manages Curses window layout and creation.
+│   │   ├── connection_orchestrator.py  # Coordinates connection lifecycle and authentication
+│   │   ├── irc_client_logic.py         # Main application logic and component coordination
+│   │   ├── input_handler.py            # Async input processing and command dispatching
+│   │   └── state_change_ui_handler.py  # Updates UI in response to state changes
 │   │
-│   ├── commands/               # All built-in command implementations, dynamically loaded.
+│   ├── ui/                     # Terminal UI components
 │   │   ├── __init__.py
-│   │   ├── command_handler.py  # Core command registration and dispatch logic.
+│   │   ├── curses_manager.py          # Low-level Curses initialization and teardown
+│   │   ├── curses_utils.py            # Safe Curses drawing utilities
+│   │   ├── input_line_renderer.py     # Input prompt and text entry
+│   │   ├── message_panel_renderer.py  # Chat message display
+│   │   ├── sidebar_panel_renderer.py  # Channel/user list
+│   │   ├── status_bar_renderer.py     # Status information display
+│   │   ├── ui_manager.py              # UI component coordination
+│   │   └── window_layout_manager.py   # Window layout calculations
+│   │
+│   ├── commands/              # Built-in command implementations
+│   │   ├── __init__.py
+│   │   ├── command_handler.py   # Command registration and dispatch
 │   │   │
 │   │   ├── channel/           # Commands for channel operations.
 │   │   │   ├── __init__.py
@@ -732,6 +757,132 @@ Contributions are welcome! Please:
 5.  Create a new Pull Request.
 
 For major changes, please open an issue first to discuss your ideas.
+
+## Quick Start
+
+### Installation
+
+```bash
+# Install from PyPI
+pip install pyterm-irc
+
+# Or install the latest development version
+pip install git+https://github.com/yourusername/pyrc.git
+```
+
+### Running PyRC
+
+Start the client with default settings:
+```bash
+pyrc
+```
+
+Connect to a server directly:
+```bash
+pyrc --connect irc.libera.chat
+```
+
+Run in headless mode (for testing/automation):
+```bash
+pyrc --headless --connect irc.libera.chat
+```
+
+## Configuration
+
+PyRC stores configuration in `~/.config/pyrc/` (or `%APPDATA%\pyrc\` on Windows):
+- `config.ini` - Main configuration file
+- `state.json` - Persistent state (channels, nicks, etc.)
+- `logs/` - Application logs
+- `scripts/` - User scripts directory
+
+### Example `config.ini`
+
+```ini
+[server]
+host = irc.libera.chat
+port = 6697
+ssl = true
+sasl = true
+
+[identity]
+nick = YourNick
+username = yourusername
+realname = Your Real Name
+
+[ui]
+theme = dark
+message_format = {timestamp} <{nick}> {message}
+
+[logging]
+level = INFO
+file = pyrc.log
+```
+
+## Core Features
+
+### Asynchronous Core
+- Single-threaded event loop for all I/O operations
+- Non-blocking UI updates and network operations
+- Efficient resource usage with Python's asyncio
+
+### Modern IRC Features
+- Full IRCv3 support with capability negotiation
+- SASL authentication
+- Message tags and metadata
+- DCC file transfers
+
+### Rich Terminal UI
+- Responsive layout that adapts to terminal size
+- Split view for multiple channels
+- Tab completion for nicks, commands, and channels
+- Customizable color schemes
+- Mouse support for scrolling and clicking
+
+### Extensibility
+- Python scripting API
+- Event-driven architecture
+- Custom command support
+- Plugin system
+
+### State Management
+- Persistent connection state
+- Automatic reconnection
+- Channel and user tracking
+- Message history and search
+
+## Scripting API
+
+PyRC provides a powerful Python API for automation and extension. Scripts can:
+- Listen for and respond to events
+- Register custom commands
+- Interact with the IRC server
+- Modify the UI
+- Access and modify application state
+
+### Example Script
+
+```python
+# ~/.config/pyrc/scripts/example.py
+
+async def on_connect(event_data):
+    """Automatically join channels after connecting."""
+    client = event_data['client']
+    await client.send('JOIN #python #linux')
+
+def on_message(event_data):
+    """Respond to messages containing 'hello'."""
+    if 'hello' in event_data['message'].lower():
+        target = event_data['target']
+        nick = event_data['nick']
+        return f'PRIVMSG {target} :Hello, {nick}!'
+
+# Register event handlers
+handlers = {
+    'CLIENT_CONNECTED': on_connect,
+    'CHANNEL_MESSAGE': on_message,
+    'PRIVATE_MESSAGE': on_message,
+}
+```
 
 ## License
 

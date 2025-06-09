@@ -165,6 +165,7 @@ class RegistrationHandler:
 
     async def on_connection_established(self):
         """Called when the connection to the server is established."""
+        logger.info("RegistrationHandler.on_connection_established: Entered.") # Added
         if not hasattr(self, 'cap_negotiator') or not self.cap_negotiator:
             logger.error("CapNegotiator not found on RegistrationHandler during on_connection_established.")
             if self.client_logic_ref:
@@ -173,7 +174,7 @@ class RegistrationHandler:
             return
 
         # Ensure network is actually connected before starting CAP
-        if not self.network_handler.connected:
+        if not self.network_handler.connected: # pragma: no cover
             logger.warning("NetworkHandler reports not connected despite on_connection_established call")
             await self._add_status_message("Connected but network not ready for CAP negotiation", "warning")
             return

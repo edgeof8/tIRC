@@ -79,11 +79,12 @@ class CursesManager:
             return 0, 0
 
     def resize_term(self, height: int, width: int):
-        try:
-            curses.resize_term(height, width)
-            self.stdscr.clearok(True)
-        except curses.error as e:
-            logger.error(f"Curses error resizing terminal to {height}x{width}: {e}")
+        # curses.resizeterm is not consistently available on all platforms (e.g., Windows)
+        # We rely on getmaxyx in UIManager to get updated dimensions and subsequent redraws.
+        # This method can be a no-op or perform other necessary internal adjustments if needed.
+        # For now, we'll just log if it's called.
+        logger.debug(f"resize_term called to {height}x{width}. Relying on UIManager for redraw.")
+        # self.stdscr.clearok(True) # This is typically handled by refresh_all_windows or specific window logic
 
     def update_screen(self):
         try:

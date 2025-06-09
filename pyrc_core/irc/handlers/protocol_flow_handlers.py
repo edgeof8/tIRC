@@ -119,3 +119,16 @@ async def handle_unknown_command(client: "IRCClient_Logic", parsed_msg: "IRCMess
         client.ui.colors["system"],
         context_name="Status",
     )
+
+async def handle_error_command(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+    """Handles ERROR command from the server, typically indicating a fatal disconnection."""
+    error_message = parsed_msg.trailing if parsed_msg.trailing else "Unknown server error."
+    logger.error(f"Received ERROR from server: {error_message}. Initiating disconnection.")
+    await client.add_message(
+        f"[ERROR] Disconnected by server: {error_message}",
+        client.ui.colors["error"],
+        context_name="Status",
+    )
+    # Explicitly disconnect the network handler to ensure a clean state
+    # Use disconnect_gracefully, which handles sending QUIT and state reset
+    await client.network_handler.disconnect_gracefully(quit_message=f"Server Error: {error_message}")

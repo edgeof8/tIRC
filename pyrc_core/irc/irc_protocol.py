@@ -10,7 +10,7 @@ from pyrc_core.irc.handlers.irc_numeric_handlers import _handle_numeric_command
 from pyrc_core.irc.handlers.message_handlers import handle_privmsg, handle_notice
 from pyrc_core.irc.handlers.membership_handlers import handle_membership_changes # Assuming this also calls process_trigger_event for relevant types
 from pyrc_core.irc.handlers.state_change_handlers import handle_nick_message, handle_mode_message, handle_topic_command_event, handle_chghost_command_event
-from pyrc_core.irc.handlers.protocol_flow_handlers import handle_cap_message, handle_ping_command, handle_authenticate_command, handle_unknown_command
+from pyrc_core.irc.handlers.protocol_flow_handlers import handle_cap_message, handle_ping_command, handle_authenticate_command, handle_unknown_command, handle_error_command
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
@@ -32,6 +32,7 @@ COMMAND_DISPATCH_TABLE = {
     "TOPIC": handle_topic_command_event,
     "NOTICE": handle_notice,
     "CHGHOST": handle_chghost_command_event,
+    "ERROR": handle_error_command,
     # Numeric commands are handled by _handle_numeric_command, which dispatches further
     # We will explicitly map common numerics that were previously in the if/elif chain
     # The _handle_numeric_command function already has its own dispatch table.

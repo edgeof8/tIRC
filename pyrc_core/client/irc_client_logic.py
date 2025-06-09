@@ -386,8 +386,7 @@ class IRCClient_Logic:
         if conn_info and conn_info.auto_connect and (not self.network_handler._network_task or self.network_handler._network_task.done()):
             if conn_info:
                 await self.connection_orchestrator.establish_connection(conn_info)
-                if self.cap_negotiator:
-                    await self.cap_negotiator.start_negotiation()
+                pass # CAP negotiation is handled by RegistrationHandler.on_connection_established
 
     async def _log_startup_status(self):
         await self.add_status_message("PyRC Client starting...")

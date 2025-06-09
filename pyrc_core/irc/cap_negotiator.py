@@ -105,48 +105,58 @@ class CapNegotiator:
 
     async def start_negotiation(self):
         stack = inspect.stack()
-        self.logger.info(f"CapNegotiator.start_negotiation called by {stack[1].filename}:{stack[1].lineno}, cap_negotiation_pending={self.cap_negotiation_pending} - {stack[1].function}")
-        try:
-            async with self._negotiation_lock:
-                self.logger.info(f"CapNegotiator.start_negotiation lock acquired, holding for full negotiation. cap_negotiation_pending={self.cap_negotiation_pending}")
-                try:
-                    if not self.loop:
-                        try:
-                            self.loop = asyncio.get_running_loop()
-                        except RuntimeError:
-                            self.logger.error("CapNegotiator.start_negotiation: No running asyncio event loop.")
-                            await self.add_status_message("Internal error: CAP negotiation cannot start (no event loop).", "error")
-                            return
+        self.logger.info(f"CapNegotiator.start_negotiation called by {stack[1].filename}:{stack[1].lineno} - {stack[1].function}. Current cap_negotiation_pending={self.cap_negotiation_pending}, network_connected={self.network_handler.connected if self.network_handler else 'N/A'}")
 
-                    if self.cap_negotiation_pending:
-                        self.logger.warning("CapNegotiator: start_negotiation called while already pending. Resetting.")
-                        await self.reset_negotiation_state()
+        async with self._negotiation_lock:
+            self.logger.info(f"CapNegotiator.start_negotiation: Lock acquired. cap_negotiation_pending was {self.cap_negotiation_pending}.")
+
+            if self.cap_negotiation_pending: # Re-entrancy check
+                self.logger.warning("CapNegotiator: start_negotiation called while already pending. Current negotiation will proceed or timeout. Exiting this redundant call.")
+                return # Just exit if already pending, let the original call complete.
+
+            # Set pending TRUE immediately after lock and re-entrancy check
+            self.cap_negotiation_pending = True
+            self.logger.info(f"CapNegotiator.start_negotiation: Set cap_negotiation_pending=True.")
+            # Reset other states for a fresh negotiation attempt
+            self.cap_negotiation_finished_event.clear()
+            self.initial_cap_flow_complete_event.clear()
+            self.enabled_caps.clear()
+            self.supported_caps.clear()
+            self.requested_caps.clear()
+
+            try:
+                if not self.loop:
+                    try:
+                        self.loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        self.logger.error("CapNegotiator.start_negotiation: No running asyncio event loop.")
+                        await self.add_status_message("Internal error: CAP negotiation cannot start (no event loop).", "error")
+                        self.cap_negotiation_pending = False # Clean up state on error
+                        self.cap_negotiation_finished_event.set()
+                        self.initial_cap_flow_complete_event.set()
                         return
 
-                    if self.network_handler.connected:
-                        self.cap_negotiation_pending = True
-                        self.cap_negotiation_finished_event.clear()
-                        self.initial_cap_flow_complete_event.clear()
-                        self.enabled_caps.clear()
-                        self.supported_caps.clear()
-                        self.requested_caps.clear()
+                if self.network_handler and self.network_handler.connected:
+                    await self.add_status_message("Negotiating capabilities with server (CAP)...", "system")
+                    await self.network_handler.send_cap_ls()
+                    self._start_negotiation_timeout_timer()
+                else:
+                    self.logger.warning("CapNegotiator.start_negotiation: Network not connected when expected. Cannot send CAP LS.")
+                    await self.add_status_message("Cannot initiate CAP: Network not connected as expected.", "error")
+                    self.cap_negotiation_pending = False # Clean up state
+                    self.initial_cap_flow_complete_event.set()
+                    self.cap_negotiation_finished_event.set()
+                    self._cancel_negotiation_timeout_timer() # Ensure timer is cancelled if we exit early
 
-                        await self.add_status_message("Negotiating capabilities with server (CAP)...", "system")
-                        await self.network_handler.send_cap_ls()
-                        self._start_negotiation_timeout_timer()
-                    else:
-                        self.logger.warning("CapNegotiator.start_negotiation called but not connected.")
-                        await self.add_status_message("Cannot initiate CAP: Not connected.", "error")
-                        self.initial_cap_flow_complete_event.set()
-                        self.cap_negotiation_finished_event.set()
-                except Exception as e:
-                    self.logger.error(f"Error during CAP negotiation: {e}", exc_info=True)
-                finally:
-                    self._cancel_negotiation_timeout_timer()
-                    self.cap_negotiation_pending = False
-                    self.logger.info("CapNegotiator: Negotiation finished or errored, releasing negotiation lock.")
-        except Exception as e:
-            self.logger.error(f"Error starting CAP negotiation: {e}", exc_info=True)
+            except Exception as e:
+                self.logger.error(f"Error during CAP negotiation setup: {e}", exc_info=True)
+                await self.add_status_message(f"Error starting CAP negotiation: {e}", "error")
+                self.cap_negotiation_pending = False # Clean up state on error
+                self.cap_negotiation_finished_event.set()
+                self.initial_cap_flow_complete_event.set()
+                self._cancel_negotiation_timeout_timer() # Ensure timer is cancelled on error
+            # The lock will be released automatically by 'async with'.
+            # cap_negotiation_pending is now managed by completion/timeout/reset methods.
 
     async def on_cap_ls_received(self, capabilities_str: str):
         self.logger.debug(f"on_cap_ls_received called, cap_negotiation_pending={self.cap_negotiation_pending}")
@@ -188,9 +198,19 @@ class CapNegotiator:
             await self._finalize_cap_negotiation_phase()
 
     async def _finalize_cap_negotiation_phase(self):
+        if not self.cap_negotiation_pending: # Add check to prevent multiple finalizations
+            self.logger.debug("CapNegotiator: _finalize_cap_negotiation_phase called but negotiation not pending. Ignoring.")
+            return
+
         self.logger.debug("CapNegotiator: Finalizing client-side CAP negotiation phase (sending CAP END).")
-        await self.network_handler.send_cap_end()
+        await self.network_handler.send_cap_end() # Ensure this doesn't error out and leave state hanging
         self.initial_cap_flow_complete_event.set()
+
+        self.cap_negotiation_pending = False # Mark as no longer pending
+        self._cancel_negotiation_timeout_timer() # Cancel any running timer
+        self.cap_negotiation_finished_event.set() # Signal overall completion
+        self.logger.info("CapNegotiator: CAP negotiation phase finalized. cap_negotiation_pending=False.")
+
         if self.registration_handler:
             await self.registration_handler.on_cap_negotiation_complete()
 
@@ -234,10 +254,13 @@ class CapNegotiator:
                     await self.add_status_message("SASL ACKed but unusable. Ending CAP negotiation.", "warning")
                     await self._finalize_cap_negotiation_phase()
 
-        elif not self.requested_caps:
+        elif not self.requested_caps: # If no more caps are pending a response
             if not (self.sasl_authenticator and self.sasl_authenticator.is_flow_active()):
+                # If SASL is not active (or not used), we can finalize.
                 await self.add_status_message("All requested capabilities processed. Ending CAP negotiation.", "system")
                 await self._finalize_cap_negotiation_phase()
+            else:
+                self.logger.info("All CAPs ACKed/NAKed, but SASL flow is active. CAP END deferred.")
 
     async def on_cap_nak_received(self, naked_caps_str: str):
         if not self.cap_negotiation_pending:
@@ -263,6 +286,8 @@ class CapNegotiator:
             if not (self.sasl_authenticator and self.sasl_authenticator.is_flow_active()):
                 await self.add_status_message("All requested capabilities processed (some NAKed). Ending CAP negotiation.", "system")
                 await self._finalize_cap_negotiation_phase()
+            else:
+                self.logger.info("All CAPs NAKed, but SASL flow is active. CAP END deferred.")
 
     async def on_cap_new_received(self, new_caps_str: str):
         new_caps = set(new_caps_str.split())
@@ -295,15 +320,16 @@ class CapNegotiator:
     async def on_sasl_flow_completed(self, success: bool):
         self.logger.info(f"SASL flow completed. Success: {success}. Current CAP pending: {self.cap_negotiation_pending}")
 
-        if self.cap_negotiation_pending:
+        if self.cap_negotiation_pending: # Check if CAP layer still thinks it's pending
             if not self.requested_caps:
-                self.logger.info(f"SASL flow completed (success: {success}). Finalizing CAP negotiation by sending CAP END.")
+                self.logger.info(f"SASL flow completed (success: {success}). All other CAPs processed. Finalizing CAP negotiation.")
                 await self.add_status_message(f"SASL flow completed. Finalizing CAP negotiation.", "system")
-                await self._finalize_cap_negotiation_phase()
+                await self._finalize_cap_negotiation_phase() # This will set cap_negotiation_pending = False
             else:
                 self.logger.info(f"SASL flow completed, but other caps {self.requested_caps} still pending. CAP END deferred.")
-        else:
-            self.logger.info("SASL flow completed. CAP negotiation was not actively pending on it.")
+        else: # SASL completed but CAP layer already thought it was done
+            self.logger.info("SASL flow completed. CAP negotiation was not actively pending on it (already finalized or timed out).")
+            # Ensure events are set if they weren't
             self.initial_cap_flow_complete_event.set()
             self.cap_negotiation_finished_event.set()
             self._cancel_negotiation_timeout_timer()
