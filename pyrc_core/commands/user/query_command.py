@@ -15,17 +15,18 @@ COMMAND_DEFINITIONS = [
             "usage": "/query <nick> [message]",
             "description": "Opens a query window with <nick> and optionally sends an initial message.",
             "aliases": []
-        }
+        },
+        "is_async": True
     }
 ]
 
-def handle_query_command(client: "IRCClient_Logic", args_str: str):
+async def handle_query_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /query command"""
     help_data = client.script_manager.get_help_text_for_command("query")
     usage_msg = (
         help_data["help_text"] if help_data else "Usage: /query <nick> [message]"
     )
-    parts = client.command_handler._ensure_args(args_str, usage_msg, num_expected_parts=1)
+    parts = await client.command_handler._ensure_args(args_str, usage_msg, num_expected_parts=1)
     if not parts:
         return
 
@@ -37,4 +38,4 @@ def handle_query_command(client: "IRCClient_Logic", args_str: str):
     client.context_manager.set_active_context(target_nick) # Switch to the new query window
 
     if message:
-        client.network_handler.send_raw(f"PRIVMSG {target_nick} :{message}")
+        await client.network_handler.send_raw(f"PRIVMSG {target_nick} :{message}")

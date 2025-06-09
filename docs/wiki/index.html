@@ -102,6 +102,9 @@
                 <li class="nav-item">
                     <a class="nav-link" href="#contributing">Contributing</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#api-documentation">API Documentation</a>
+                </li>
             </ul>
         </nav>
     </aside>
@@ -127,57 +130,727 @@
 └── docs/                    # Documentation</code></pre>
         </section>
         
-        <section id="architecture">
+        <section id="architecture" class="mt-5">
             <h2>Architecture</h2>
-            <p>PyRC follows a modular architecture with these main components:</p>
-            <ul>
-                <li>Core: Business logic</li>
-                <li>UI: User interface components</li>
-                <li>Commands: Built-in commands</li>
-                <li>IRC: Protocol implementation</li>
-            </ul>
+            <p class="lead">PyRC is built with a modular, event-driven architecture designed for extensibility and maintainability.</p>
+            
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>Design Philosophy:</strong> PyRC follows the principle of separation of concerns, with clear boundaries between components.
+            </div>
+            
+            <h3 class="mt-4">High-Level Overview</h3>
+            <div class="text-center my-4">
+                <div class="mermaid">
+                    graph TD
+                    subgraph "PyRC Architecture"
+                        UI[UI Layer] <-->|Events| Core[Core Components]
+                        Core <-->|Events| IRC[IRC Protocol]
+                        Core <-->|State| DB[(Data Store)]
+                        Scripts[Scripts] <-->|API| Core
+                        Plugins[Plugins] <-->|API| Core
+                    end
+                </div>
+            </div>
+            
+            <h3 class="mt-4">Key Design Patterns</h3>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h4 class="h6 mb-0">1. Event-Driven Architecture</h4>
+                </div>
+                <div class="card-body">
+                    <p>PyRC uses an event-driven model where components communicate through a centralized event bus.</p>
+                    <ul>
+                        <li><strong>Publish-Subscribe</strong>: Components can subscribe to specific event types</li>
+                        <li><strong>Loose Coupling</strong>: Components don't need direct references to each other</li>
+                        <li><strong>Asynchronous</strong>: Non-blocking event processing</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h4 class="h6 mb-0">2. Plugin System</h4>
+                </div>
+                <div class="card-body">
+                    <p>Extensibility is achieved through a plugin architecture that allows adding new features without modifying the core.</p>
+                    <ul>
+                        <li><strong>Hot Loading</strong>: Plugins can be loaded/unloaded at runtime</li>
+                        <li><strong>Isolation</strong>: Plugins run in separate contexts</li>
+                        <li><strong>Lifecycle Hooks</strong>: Plugins can respond to application events</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <h3 class="mt-4">Component Interaction</h3>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Component</th>
+                                    <th>Responsibility</th>
+                                    <th>Key Classes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>UI Layer</strong></td>
+                                    <td>User interface rendering and input handling</td>
+                                    <td><code>UIManager</code>, <code>WindowManager</code></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Core</strong></td>
+                                    <td>Business logic and coordination</td>
+                                    <td><code>IRCClient</code>, <code>EventManager</code></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>IRC Protocol</strong></td>
+                                    <td>IRC protocol implementation</td>
+                                    <td><code>IRCMessage</code>, <code>IRCConnection</code></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Scripting</strong></td>
+                                    <td>Extension system</td>
+                                    <td><code>ScriptManager</code>, <code>ScriptAPI</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <h3 class="mt-4">Data Flow</h3>
+            <ol>
+                <li>User input is captured by the UI and converted into commands or messages</li>
+                <li>Commands are processed by the command handler</li>
+                <li>Messages are sent to the IRC server through the connection manager</li>
+                <li>Incoming messages are parsed and dispatched as events</li>
+                <li>UI components update in response to state changes</li>
+            </ol>
         </section>
         
-        <section id="development-setup">
+        <section id="development-setup" class="mt-5">
             <h2>Development Setup</h2>
-            <h3>Prerequisites</h3>
-            <ul>
-                <li>Python 3.9+</li>
-                <li>pip</li>
-                <li>git</li>
-            </ul>
+            <p class="lead">Get started with PyRC development with this comprehensive setup guide.</p>
             
-            <h3>Installation</h3>
-            <pre><code class="language-bash"># Clone the repository
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Note:</strong> These instructions assume you're familiar with basic command-line usage and Python development.
+            </div>
+            
+            <h3 class="mt-4">Prerequisites</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h4 class="h6 mb-0">Required Software</h4>
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li><strong>Python 3.9+</strong> - The core programming language</li>
+                                <li><strong>Git</strong> - Version control system</li>
+                                <li><strong>pip</strong> - Python package manager</li>
+                                <li><strong>Virtual Environment</strong> - For dependency isolation</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h4 class="h6 mb-0">Recommended Tools</h4>
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li><strong>Visual Studio Code</strong> or <strong>PyCharm</strong> - Code editor with Python support</li>
+                                <li><strong>Poetry</strong> - Alternative dependency management</li>
+                                <li><strong>Docker</strong> - For containerized development</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <h3 class="mt-4">Installation Steps</h3>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h4 class="h6 mb-0">1. Clone the Repository</h4>
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Clone the repository
 git clone https://github.com/edgeof8/PyRC.git
 cd PyRC
 
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# (Optional) Create a new branch for your changes
+git checkout -b feature/your-feature-name</code></pre>
+                </div>
+            </div>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h4 class="h6 mb-0">2. Set Up Python Environment</h4>
+                </div>
+                <div class="card-body">
+                    <h5>Using venv (Recommended)</h5>
+                    <pre><code class="language-bash"># Create a virtual environment
+python -m venv .venv
+
+# Activate the virtual environment
+# On Windows:
+.venv\Scripts\activate
+# On macOS/Linux:
+source .venv/bin/activate
 
 # Install development dependencies
-pip install -e ".[dev]"
+pip install -e ".[dev]"</code></pre>
+                    
+                    <h5 class="mt-3">Using Poetry (Alternative)</h5>
+                    <pre><code class="language-bash"># Install Poetry if you don't have it
+pip install poetry
 
-# Run tests
-pytest</code></pre>
+# Install dependencies
+poetry install</code></pre>
+                </div>
+            </div>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h4 class="h6 mb-0">3. Configure Your Environment</h4>
+                </div>
+                <div class="card-body">
+                    <p>Create a <code>.env</code> file in the project root with your preferred settings:</p>
+                    <pre><code class="language-ini"># Example .env file
+PYRC_CONFIG_DIR=~/.config/pyrc
+PYRC_LOG_LEVEL=INFO
+PYRC_DEVELOPMENT_MODE=1</code></pre>
+                </div>
+            </div>
+            
+            <h3 class="mt-4">Running the Application</h3>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5>Development Mode</h5>
+                    <pre><code class="language-bash"># Run in development mode with auto-reload
+python -m pyrc --dev
+
+# Or using the entry point
+pyrc --dev</code></pre>
+                    
+                    <h5 class="mt-3">Running Tests</h5>
+                    <pre><code class="language-bash"># Run all tests
+pytest
+
+# Run a specific test file
+pytest tests/test_core.py
+
+# Run with coverage report
+pytest --cov=pyrc_core</code></pre>
+                </div>
+            </div>
+            
+            <h3 class="mt-4">Development Workflow</h3>
+            <ol>
+                <li>Create a new branch for your changes</li>
+                <li>Make your changes following the <a href="#code-style">code style guidelines</a></li>
+                <li>Write tests for new functionality</li>
+                <li>Run tests and ensure they pass</li>
+                <li>Commit your changes with a descriptive message</li>
+                <li>Push to your fork and create a pull request</li>
+            </ol>
+            
+            <div class="alert alert-info mt-4">
+                <i class="bi bi-lightbulb me-2"></i>
+                <strong>Tip:</strong> Use <code>pre-commit install</code> to set up Git hooks that will automatically run linters and formatters before each commit.
+            </div>
         </section>
         
         <section id="core-components">
             <h2>Core Components</h2>
-            <h3>Event System</h3>
-            <p>Handles communication between components.</p>
+            <p class="lead">PyRC is built on a modular architecture with several key components that work together to provide a robust IRC client experience.</p>
             
-            <h3>State Management</h3>
-            <p>Manages application state in a thread-safe way.</p>
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3 class="h5 mb-0">1. Event System</h3>
+                </div>
+                <div class="card-body">
+                    <p>The event system is the backbone of PyRC's architecture, enabling loose coupling between components through a publish-subscribe pattern.</p>
+                    
+                    <h4>Key Features:</h4>
+                    <ul>
+                        <li><strong>Event Types</strong>: IRC protocol events, UI events, system events</li>
+                        <li><strong>Subscription Model</strong>: Components can subscribe to specific event types</li>
+                        <li><strong>Async Support</strong>: Fully asynchronous event handling</li>
+                        <li><strong>Priority System</strong>: Control over event handling order</li>
+                    </ul>
+                    
+                    <h5>Example Usage:</h5>
+                    <pre><code class="language-python"># Subscribe to an event
+self.event_system.subscribe('irc.message', self.handle_message)
+
+# Publish an event
+await self.event_system.publish('ui.update', data=update_data)</code></pre>
+                    
+                    <h5>Common Event Types:</h5>
+                    <ul>
+                        <li><code>irc.message</code>: Incoming IRC messages</li>
+                        <li><code>ui.update</code>: UI refresh requests</li>
+                        <li><code>connection.state_change</code>: Connection state changes</li>
+                        <li><code>command.executed</code>: Command execution events</li>
+                    </ul>
+                </div>
+            </div>
             
-            <h3>Connection Management</h3>
-            <p>Handles IRC server connections and reconnection logic.</p>
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3 class="h5 mb-0">2. State Management</h3>
+                </div>
+                <div class="card-body">
+                    <p>Thread-safe state management with change notifications and persistence.</p>
+                    
+                    <h4>Key Features:</h4>
+                    <ul>
+                        <li><strong>Thread Safety</strong>: Safe concurrent access from multiple threads</li>
+                        <li><strong>Change Notifications</strong>: Get notified when state changes</li>
+                        <li><strong>Persistence</strong>: Automatic saving/loading of application state</li>
+                        <li><strong>Namespacing</strong>: Isolated state for different components</li>
+                    </ul>
+                    
+                    <h5>Example Usage:</h5>
+                    <pre><code class="language-python"># Get state value
+value = await self.state.get('namespace.key', default_value)
+
+# Set state value
+await self.state.set('namespace.key', new_value)
+
+# Watch for changes
+self.state.watch('namespace.key', self.handle_state_change)</code></pre>
+                </div>
+            </div>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3 class="h5 mb-0">3. Connection Management</h3>
+                </div>
+                <div class="card-body">
+                    <p>Robust handling of IRC server connections with automatic reconnection and SSL/TLS support.</p>
+                    
+                    <h4>Key Features:</h4>
+                    <ul>
+                        <li><strong>Automatic Reconnection</strong>: Handles network issues gracefully</li>
+                        <li><strong>SSL/TLS Support</strong>: Secure connections with certificate validation</li>
+                        <li><strong>Connection Pooling</strong>: Multiple simultaneous connections</li>
+                        <li><strong>Rate Limiting</strong>: Prevents flooding the server</li>
+                    </ul>
+                    
+                    <h5>Example Usage:</h5>
+                    <pre><code class="language-python"># Connect to server
+await self.connection_manager.connect(
+    host='irc.example.com',
+    port=6697,
+    ssl=True,
+    nickname='pyrc_user',
+    username='pyrc',
+    realname='PyRC User'
+)
+
+# Send raw IRC command
+await self.connection_manager.send('JOIN #python')
+
+# Handle incoming messages
+async def on_message(self, message):
+    print(f"Received: {message}")
+    
+self.connection_manager.on('message', self.on_message)</code></pre>
+                </div>
+            </div>
         </section>
         
-        <section id="contributing">
-            <h2>Contributing</h2>
-            <p>We welcome contributions! Please see our Contribution Guidelines for more information.</p>
+        <section id="contributing" class="mt-5">
+            <h2>Contributing to PyRC</h2>
+            <p class="lead">We welcome and appreciate contributions from the community. Here's how you can help make PyRC better.</p>
+            
+            <div class="alert alert-success">
+                <i class="bi bi-heart-fill me-2"></i>
+                <strong>First time contributing?</strong> Check out our <a href="#good-first-issues">good first issues</a> to get started!
+            </div>
+            
+            <h3 class="mt-4">Ways to Contribute</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h4 class="h6 mb-0">Code Contributions</h4>
+                        </div>
+                        <div class="card-body">
+                            <ul>
+                                <li>Fix bugs or add new features</li>
+                                <li>Improve documentation</li>
+                                <li>Optimize performance</li>
+                                <li>Add tests</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h4 class="h6 mb-0">Other Ways to Help</h4>
+                        </div>
+                        <div class="card-body">
+                            <ul>
+                                <li>Report bugs</li>
+                                <li>Suggest new features</li>
+                                <li>Help other users</li>
+                                <li>Improve translations</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <h3 class="mt-4" id="code-style">Code Style Guidelines</h3>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <p>To maintain code consistency, please follow these guidelines:</p>
+                    
+                    <h5>Python Style</h5>
+                    <ul>
+                        <li>Follow <a href="https://www.python.org/dev/peps/pep-0008/" target="_blank">PEP 8</a> style guide</li>
+                        <li>Use <code>snake_case</code> for variables and functions</li>
+                        <li>Use <code>CamelCase</code> for class names</li>
+                        <li>Keep lines under 100 characters</li>
+                    </ul>
+                    
+                    <h5>Type Hints</h5>
+                    <p>Use type hints for all function signatures and important variables:</p>
+                    <pre><code class="language-python">def greet(name: str, times: int = 1) -> str:
+    """Return a greeting message."""
+    return "\n".join([f"Hello, {name}!"] * times)</code></pre>
+                    
+                    <h5>Docstrings</h5>
+                    <p>Follow Google-style docstrings:</p>
+                    <pre><code class="language-python">def calculate_total(price: float, tax_rate: float) -> float:
+    """Calculate the total price including tax.
+    
+    Args:
+        price: The base price before tax
+        tax_rate: The tax rate as a decimal (e.g., 0.1 for 10%)
+        
+    Returns:
+        The total price including tax
+        
+    Raises:
+        ValueError: If price is negative
+    """
+    if price < 0:
+        raise ValueError("Price cannot be negative")
+    return price * (1 + tax_rate)</code></pre>
+                </div>
+            </div>
+            
+            <h3 class="mt-4" id="pull-requests">Pull Request Process</h3>
+            <ol>
+                <li>Fork the repository and create your branch from <code>main</code></li>
+                <li>Make your changes following the code style guidelines</li>
+                <li>Add tests for new functionality</li>
+                <li>Run the test suite and ensure all tests pass</li>
+                <li>Update the documentation if needed</li>
+                <li>Submit a pull request with a clear description of changes</li>
+            </ol>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h4 class="h6 mb-0">Commit Message Format</h4>
+                </div>
+                <div class="card-body">
+                    <p>Use the following format for commit messages:</p>
+                    <pre><code class="language-plaintext">&lt;type&gt;: &lt;description&gt;
+
+[optional body]
+
+[optional footer]</code></pre>
+                    
+                    <p>Common types include:</p>
+                    <ul>
+                        <li><code>feat</code>: A new feature</li>
+                        <li><code>fix</code>: A bug fix</li>
+                        <li><code>docs</code>: Documentation changes</li>
+                        <li><code>style</code>: Code style changes</li>
+                        <li><code>refactor</code>: Code changes that neither fix bugs nor add features</li>
+                        <li><code>test</code>: Adding or modifying tests</li>
+                        <li><code>chore</code>: Changes to the build process or auxiliary tools</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <h3 class="mt-4" id="good-first-issues">Good First Issues</h3>
+            <p>Looking for a place to start? Check out these issues that are great for first-time contributors:</p>
+            <div class="list-group mb-4">
+                <a href="#" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">Add more test coverage for event system</h6>
+                        <small class="text-muted">#123</small>
+                    </div>
+                    <p class="mb-1">Add unit tests for the event subscription and publishing functionality.</p>
+                    <small class="text-muted">Difficulty: Easy • Needs: Tests</small>
+                </a>
+                <a href="#" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">Improve error messages in connection handling</h6>
+                        <small class="text-muted">#124</small>
+                    </div>
+                    <p class="mb-1">Make error messages more descriptive for common connection issues.</p>
+                    <small class="text-muted">Difficulty: Easy • Needs: Code</small>
+                </a>
+                <a href="#" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">Document the plugin API</h6>
+                        <small class="text-muted">#125</small>
+                    </div>
+                    <p class="mb-1">Add comprehensive documentation for the plugin development API.</p>
+                    <small class="text-muted">Difficulty: Medium • Needs: Documentation</small>
+                </a>
+            </div>
+            
+            <div class="alert alert-info">
+                <i class="bi bi-github me-2"></i>
+                <strong>Need Help?</strong> Join our <a href="https://github.com/edgeof8/PyRC/discussions" target="_blank">GitHub Discussions</a> to ask questions and discuss ideas with the community.
+            </div>
+        </section>
+
+        <section id="dcc" class="mt-5">
+            <h2>Direct Client-to-Client (DCC)</h2>
+            <p class="lead">PyRC implements the DCC protocol for secure file transfers and direct communication between IRC clients.</p>
+            
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>DCC Overview:</strong> DCC allows users to transfer files directly between clients without going through the IRC server, providing better speed and reliability for large transfers.
+            </div>
+            
+            <h3 class="mt-4">DCC Features</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h4 class="h6 mb-0">Transfer Types</h4>
+                        </div>
+                        <div class="card-body">
+                            <ul>
+                                <li><strong>SEND</strong>: Send files to another user</li>
+                                <li><strong>RECEIVE</strong>: Receive files from another user</li>
+                                <li><strong>CHAT</strong>: Direct chat between clients</li>
+                                <li><strong>RESUME</strong>: Resume interrupted transfers</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h4 class="h6 mb-0">Transfer Modes</h4>
+                        </div>
+                        <div class="card-body">
+                            <ul>
+                                <li><strong>Active Mode</strong>: Direct connection between clients</li>
+                                <li><strong>Passive Mode</strong>: Uses server-assisted connection setup</li>
+                                <li><strong>Reverse DCC</strong>: For clients behind NAT/firewall</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <h3 class="mt-4">Using DCC in PyRC</h3>
+            
+            <h4>Initiating a File Transfer</h4>
+            <p>To send a file to another user:</p>
+            <pre><code class="language-python"># Send a file to a user
+await client.dcc.send_file(
+    target_nick="friend",
+    file_path="/path/to/file.txt",
+    description="Check this out!"
+)</code></pre>
+            
+            <h4>Handling Incoming Transfers</h4>
+            <p>When a file transfer is initiated, you'll receive an event:</p>
+            <pre><code class="language-python">@client.event_handler("dcc_offer")
+async def handle_dcc_offer(event):
+    transfer = event["transfer"]
+    print(f"Incoming {transfer.type} from {transfer.peer_nick}")
+    print(f"File: {transfer.filename} ({transfer.file_size} bytes)")
+    
+    # Accept the transfer
+    if transfer.type == "SEND":
+        await client.dcc.accept_transfer(
+            transfer_id=transfer.id,
+            save_dir="~/Downloads"
+        )
+    # Or reject it
+    # await client.dcc.reject_transfer(transfer.id, "No thanks")
+</code></pre>
+            
+            <h4>Monitoring Transfer Progress</h4>
+            <p>Track transfer progress with events:</p>
+            <pre><code class="language-python">@client.event_handler("dcc_progress")
+async def handle_dcc_progress(event):
+    transfer = event["transfer"]
+    print(f"{transfer.bytes_transferred}/{transfer.file_size} "
+          f"({transfer.progress:.1%}) - {transfer.speed_kbps:.1f} KB/s")
+
+@client.event_handler("dcc_complete")
+async def handle_dcc_complete(event):
+    transfer = event["transfer"]
+    print(f"Transfer complete! Saved to: {transfer.local_filepath}")
+</code></pre>
+            
+            <h3 class="mt-4">Security Considerations</h3>
+            <div class="alert alert-warning">
+                <i class="bi bi-shield-exclamation me-2"></i>
+                <strong>Important:</strong> Always be cautious when accepting files via DCC. Only accept files from trusted sources.
+            </div>
+            
+            <ul>
+                <li>Verify file hashes when available</li>
+                <li>Be cautious of executable files</li>
+                <li>Use virus scanning for downloaded files</li>
+                <li>Configure firewall rules appropriately</li>
+            </ul>
+            
+            <h3 class="mt-4">Troubleshooting</h3>
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="h6 mb-0">Common Issues</h4>
+                </div>
+                <div class="card-body">
+                    <dl class="row">
+                        <dt class="col-sm-3">Connection Timeouts</dt>
+                        <dd class="col-sm-9">Check firewall settings and ensure port forwarding is configured if behind NAT.</dd>
+                        
+                        <dt class="col-sm-3">Slow Transfers</dt>
+                        <dd class="col-sm-9">Try using passive mode if active mode is slow. Check network conditions.</dd>
+                        
+                        <dt class="col-sm-3">Transfer Fails</dt>
+                        <dd class="col-sm-9">Verify file permissions and available disk space. Check logs for specific error messages.</dd>
+                    </dl>
+                </div>
+            </div>
+        </section>
+
+        <section id="api-documentation" class="mt-5">
+            <h2>API Documentation</h2>
+            <p class="lead">The PyRC API provides comprehensive interfaces for extending and customizing the IRC client's functionality.</p>
+            
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>Note:</strong> This is a high-level overview. For detailed API reference, see the <a href="api/">full API documentation</a>.
+            </div>
+            
+            <h3 class="mt-4">Core APIs</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Scripting API</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Extend PyRC with custom Python scripts that can add commands, handle events, and interact with the IRC client's state.</p>
+                            <ul>
+                                <li>Create custom commands with <code>/</code> prefix</li>
+                                <li>Subscribe to IRC and client events</li>
+                                <li>Access and modify client state</li>
+                                <li>Persist data between sessions</li>
+                            </ul>
+                            <a href="api/#scripting-api" class="btn btn-sm btn-outline-primary">Learn More</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Event API</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>React to IRC protocol events and client state changes with a powerful event system.</p>
+                            <ul>
+                                <li>Subscribe to IRC protocol events</li>
+                                <li>Listen for client state changes</li>
+                                <li>Create custom event handlers</li>
+                                <li>Async/await support</li>
+                            </ul>
+                            <a href="api/#event-api" class="btn btn-sm btn-outline-primary">Learn More</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">UI API</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Customize and extend the PyRC user interface with the UI API.</p>
+                            <ul>
+                                <li>Create custom UI components</li>
+                                <li>Modify the interface layout</li>
+                                <li>Add interactive elements</li>
+                                <li>Theme and style customization</li>
+                            </ul>
+                            <a href="api/#ui-api" class="btn btn-sm btn-outline-primary">Learn More</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Network API</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Low-level access to network operations and IRC protocol handling.</p>
+                            <ul>
+                                <li>Manage IRC connections</li>
+                                <li>Send and receive raw IRC messages</li>
+                                <li>Handle connection state</li>
+                                <li>SSL/TLS configuration</li>
+                            </ul>
+                            <a href="api/#network-api" class="btn btn-sm btn-outline-primary">Learn More</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <h3 class="mt-4">Getting Started with Scripting</h3>
+            <p>To create a new script, create a Python file in the <code>scripts/</code> directory that inherits from <code>ScriptBase</code>:</p>
+            
+            <pre><code class="language-python">from pyrc_core.scripting.script_base import ScriptBase
+
+def create_script(api):
+    return MyScript(api)
+
+class MyScript(ScriptBase):
+    def load(self):
+        # Register commands and event handlers here
+        self.api.register_command(
+            name="hello",
+            handler=self.handle_hello,
+            help={"usage": "/hello", "description": "Say hello"}
+        )
+    
+    async def handle_hello(self, args):
+        await self.api.send_message(
+            target=self.api.get_current_context_name(),
+            message="Hello from my script!"
+        )</code></pre>
+            
+            <div class="alert alert-warning mt-4">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Note:</strong> Scripts run with the same permissions as the PyRC client. Be cautious when loading scripts from untrusted sources.
+            </div>
         </section>
     </main>
 
@@ -211,6 +884,28 @@ pytest</code></pre>
                 });
             });
         });
+        
+        // Scroll to top button
+        window.onscroll = function() {
+            const btn = document.getElementById('backToTop');
+            if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
+                btn.style.display = 'block';
+            } else {
+                btn.style.display = 'none';
+            }
+        };
+        
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
     </script>
+    
+    <!-- Back to top button -->
+    <button onclick="scrollToTop()" id="backToTop" title="Go to top" class="btn btn-primary rounded-circle" style="position: fixed; bottom: 20px; right: 20px; display: none; width: 50px; height: 50px; font-size: 24px; line-height: 1; padding: 0;">
+        ↑
+    </button>
 </body>
 </html>

@@ -18,7 +18,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_mode_command(client: "IRCClient_Logic", args_str: str):
+async def handle_mode_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /mode command"""
     parts = args_str.split(" ", 1)
     target = ""
@@ -26,8 +26,9 @@ def handle_mode_command(client: "IRCClient_Logic", args_str: str):
     # Default feedback to status window, but will be updated if target is a channel
     target_context_for_feedback = client.context_manager.active_context_name or "Status"
 
-
     active_ctx = client.context_manager.get_active_context()
+    error_color_attr = client.ui.colors.get("error", 0)
+    system_color_attr = client.ui.colors.get("system", 0)
 
     if not args_str.strip(): # No arguments provided
         help_data = client.script_manager.get_help_text_for_command("mode")
@@ -36,9 +37,9 @@ def handle_mode_command(client: "IRCClient_Logic", args_str: str):
             if help_data
             else "Usage: /mode [<target>] <modes_and_params>"
         )
-        client.add_message(
+        await client.add_message(
             usage_msg,
-            "error",
+            error_color_attr,
             context_name="Status",
         )
         return
@@ -66,19 +67,19 @@ def handle_mode_command(client: "IRCClient_Logic", args_str: str):
                 if help_data
                 else "Usage: /mode [<target>] <modes_and_params>"
             )
-            client.add_message(
+            await client.add_message(
                 "Cannot set mode: No active channel context and target not specified clearly.",
-                "error",
+                error_color_attr,
                 context_name="Status",
             )
-            client.add_message(usage_msg, "error", context_name="Status")
+            await client.add_message(usage_msg, error_color_attr, context_name="Status")
             return
 
     # If modes_and_params is empty AND target is not a channel (e.g. /mode nick), it's ambiguous
     # or typically a server request for user modes which often doesn't need explicit modes from client.
     # If target is empty (e.g. /mode +i), it's also an issue if not in a channel.
     if not target: # Should have been caught by "No active channel context..."
-        client.add_message("Error: Target for mode command is missing.", "error", context_name="Status")
+        await client.add_message("Error: Target for mode command is missing.", error_color_attr, context_name="Status")
         return
 
 
@@ -88,19 +89,18 @@ def handle_mode_command(client: "IRCClient_Logic", args_str: str):
         target_context_for_feedback = active_ctx.name
     # else, it remains the initial active_context_name or "Status"
 
-    send_command = f"MODE {target} {modes_and_params}".strip()
-    client.network_handler.send_raw(send_command)
+    await client.network_handler.send_raw(f"MODE {target} {modes_and_params}".strip())
 
     # Provide feedback
     if modes_and_params:
-        client.add_message(
+        await client.add_message(
             f"Attempting to set mode '{modes_and_params}' on {target}...",
-            "system",
+            system_color_attr,
             context_name=target_context_for_feedback,
         )
     else: # Likely a request to view modes
-        client.add_message(
+        await client.add_message(
             f"Requesting modes for {target}...",
-            "system",
+            system_color_attr,
             context_name=target_context_for_feedback,
         )

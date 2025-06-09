@@ -1,0 +1,1996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Reference - PyRC Development Wiki</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+    <style>
+        :root {
+            --sidebar-width: 250px;
+            --header-height: 60px;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding-top: var(--header-height);
+        }
+        
+        .sidebar {
+            width: var(--sidebar-width);
+            height: calc(100vh - var(--header-height));
+            position: fixed;
+            left: 0;
+            top: var(--header-height);
+            overflow-y: auto;
+            padding: 1rem;
+            border-right: 1px solid #dee2e6;
+            background-color: #f8f9fa;
+        }
+        
+        .main-content {
+            margin-left: var(--sidebar-width);
+            padding: 2rem;
+        }
+        
+        .nav-link {
+            color: #333;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        .nav-link:hover, .nav-link.active {
+            background-color: #e9ecef;
+            color: #0d6efd;
+        }
+        
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--header-height);
+            background-color: #212529;
+            color: white;
+            padding: 0 1rem;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+        }
+        
+        pre {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            overflow-x: auto;
+        }
+        
+        code {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.9em;
+        }
+        
+        h1, h2, h3, h4, h5, h6 {
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .section {
+            scroll-margin-top: 80px;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>PyRC Development Wiki - API Reference</h1>
+    </header>
+    
+    <div class="container-fluid">
+        <div class="row">
+            <aside class="sidebar">
+                <div class="mb-3">
+                    <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="Search...">
+                </div>
+                <nav>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#overview">Overview</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#core-api">Core API</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#event-api">Event API</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#state-api">State API</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#network-api">Network API</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#ui-api">UI API</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#scripting-api">Scripting API</a>
+                        </li>
+                        <li class="nav-item mt-3">
+                            <a href="/docs/wiki/" class="btn btn-sm btn-outline-secondary">← Back to Wiki</a>
+                        </li>
+                    </ul>
+                </nav>
+            </aside>
+
+            <main class="main-content">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+                    <h1>PyRC API Reference</h1>
+                </div>
+
+                <section id="overview" class="section">
+                    <h2>API Overview</h2>
+                    <p>PyRC provides a comprehensive API for extending and customizing the IRC client. This reference documents the public interfaces available to developers.</p>
+                    
+                    <div class="alert alert-info">
+                        <strong>Note:</strong> All API methods that perform I/O are asynchronous and should be awaited.
+                    </div>
+                </section>
+
+                <section id="core-api" class="section mt-5">
+                    <h2>Core API</h2>
+                    <p>The Core API provides access to the main application functionality and core components.</p>
+                    
+                    <h4 class="mt-4">IRCClient_Logic</h4>
+                    <p>The main application class that orchestrates all components of the IRC client.</p>
+                    
+                    <div class="alert alert-info">
+                        <strong>Note:</strong> All methods are asynchronous and should be awaited.
+                    </div>
+                    
+                    <h5 class="mt-3">Properties</h5>
+                    <pre><code class="language-python">class IRCClient_Logic:
+    """Main application class for PyRC IRC client.
+    
+    This class serves as the central coordinator for all IRC client functionality,
+    including network communication, user interface, and script management.
+    """
+    
+    @property
+    def is_headless(self) -> bool:
+        """Check if the client is running in headless mode (without UI)."""
+        pass
+        
+    @property
+    def config(self) -> AppConfig:
+        """Get the application configuration."""
+        pass
+        
+    @property
+    def state_manager(self) -> StateManager:
+        """Get the state manager instance."""
+        pass
+        
+    @property
+    def event_manager(self) -> EventManager:
+        """Get the event manager instance."""
+        pass
+        
+    @property
+    def script_manager(self) -> ScriptManager:
+        """Get the script manager instance."""
+        pass</code></pre>
+                    
+                    <h5 class="mt-4">Methods</h5>
+                    <pre><code class="language-python">    async def run_main_loop(self) -> None:
+        """
+        Main asyncio loop to handle user input and update the UI.
+        
+        This method initializes the client, starts necessary background tasks,
+        and runs the main event loop until shutdown is requested.
+        """
+        pass
+        
+    async def connect(
+        self,
+        server: str,
+        port: int,
+        use_ssl: bool = True,
+        nick: Optional[str] = None,
+        username: Optional[str] = None,
+        realname: Optional[str] = None
+    ) -> None:
+        """
+        Connect to an IRC server.
+        
+        Args:
+            server: Server hostname or IP address
+            port: Server port number
+            use_ssl: Whether to use SSL/TLS for the connection
+            nick: Nickname to use (uses config if None)
+            username: Username to use (uses nick if None)
+            realname: Real name to use (uses nick if None)
+        """
+        pass
+        
+    async def disconnect(self, quit_message: str = "Client quitting") -> None:
+        """
+        Disconnect from the current IRC server.
+        
+        Args:
+            quit_message: Quit message to send to the server
+        """
+        pass
+        
+    async def join_channel(self, channel: str, key: Optional[str] = None) -> None:
+        """
+        Join an IRC channel.
+        
+        Args:
+            channel: Channel name (including # or & prefix)
+            key: Optional channel key/password
+        """
+        pass
+        
+    async def part_channel(self, channel: str, reason: str = "") -> None:
+        """
+        Leave an IRC channel.
+        
+        Args:
+            channel: Channel name to leave
+            reason: Optional part message
+        """
+        pass
+        
+    async def send_message(self, target: str, message: str) -> None:
+        """
+        Send a PRIVMSG to a channel or user.
+        
+        Args:
+            target: Channel or nickname to send to
+            message: Message text to send
+        """
+        pass
+        
+    async def send_notice(self, target: str, message: str) -> None:
+        """
+        Send a NOTICE to a channel or user.
+        
+        Args:
+            target: Channel or nickname to send to
+            message: Notice text to send
+        """
+        pass
+        
+    async def set_nick(self, new_nick: str) -> bool:
+        """
+        Change the client's nickname.
+        
+        Args:
+            new_nick: New nickname to use
+            
+        Returns:
+            bool: True if the nick change was initiated, False otherwise
+        """
+        pass
+        
+    def get_channel_users(self, channel: str) -> List[Dict[str, Any]]:
+        """
+        Get a list of users in a channel.
+        
+        Args:
+            channel: Channel name
+            
+        Returns:
+            List of user dictionaries with nick, modes, etc.
+        """
+        pass
+        
+    def get_channel_modes(self, channel: str) -> Dict[str, Any]:
+        """
+        Get the current modes for a channel.
+        
+        Args:
+            channel: Channel name
+            
+        Returns:
+            Dictionary of channel modes and their parameters
+        """
+        pass</code></pre>
+                </section>
+
+                <section id="event-api" class="section mt-5">
+                    <h2>Event API</h2>
+                    <p>The Event API provides a powerful system for handling IRC events and client state changes. It allows scripts and components to subscribe to specific events and react accordingly.</p>
+                    
+                    <h4 class="mt-4">EventManager</h4>
+                    <p>Central class for managing event dispatching and handling throughout the application.</p>
+                    
+                    <pre><code class="language-python">class EventManager:
+    """Manages event dispatching and handling for the IRC client.
+    
+    This class provides methods to dispatch events and allows components to subscribe to
+    specific events they're interested in. All event handlers are asynchronous.
+    """
+    
+    def __init__(self, client_logic_ref: "IRCClient_Logic", script_manager_ref: "ScriptManager"):
+        """Initialize the EventManager with references to client logic and script manager."""
+        self.client_logic = client_logic_ref
+        self.script_manager = script_manager_ref
+    
+    def _prepare_base_event_data(self, raw_line: str = "") -> Dict[str, Any]:
+        """
+        Prepare a base dictionary with common event data.
+        
+        Args:
+            raw_line: Raw IRC line that triggered the event (if applicable)
+            
+        Returns:
+            Dictionary containing base event data including timestamp and client info
+        """
+        pass
+    
+    async def dispatch_event(self, event_name: str, specific_event_data: Dict[str, Any], raw_line: str = "") -> None:
+        """
+        Dispatch an event to all registered handlers.
+        
+        Args:
+            event_name: Name of the event to dispatch (e.g., "PRIVMSG", "JOIN")
+            specific_event_data: Dictionary containing event-specific data
+            raw_line: Optional raw IRC line that triggered the event
+        """
+        pass
+    
+    # Client Lifecycle Events
+    async def dispatch_client_connected(self, server: str, port: int, nick: str, ssl: bool, raw_line: str = "") -> None:
+        """Dispatch when the client connects to an IRC server."""
+        pass
+        
+    async def dispatch_client_disconnected(self, server: str, port: int, raw_line: str = "") -> None:
+        """Dispatch when the client disconnects from an IRC server."""
+        pass
+        
+    async def dispatch_client_registered(self, nick: str, server_message: str, raw_line: str = "") -> None:
+        """Dispatch when the client successfully registers with the IRC server."""
+        pass
+        
+    async def dispatch_client_ready(self, nick: str, raw_line: str = "") -> None:
+        """Dispatch when the client is fully initialized and ready."""
+        pass
+        
+    # IRC Message Events
+    async def dispatch_privmsg(
+        self, 
+        nick: str, 
+        userhost: str, 
+        target: str, 
+        message: str, 
+        is_channel_msg: bool, 
+        tags: Dict[str, Any], 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when a PRIVMSG (private message) is received."""
+        pass
+        
+    async def dispatch_notice(
+        self, 
+        nick: Optional[str], 
+        userhost: Optional[str], 
+        target: str, 
+        message: str, 
+        is_channel_notice: bool, 
+        tags: Dict[str, Any], 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when a NOTICE is received."""
+        pass
+        
+    # Channel Events
+    async def dispatch_join(
+        self, 
+        nick: str, 
+        userhost: Optional[str], 
+        channel: str, 
+        account: Optional[str], 
+        real_name: Optional[str], 
+        is_self: bool, 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when a user (or self) joins a channel."""
+        pass
+        
+    async def dispatch_channel_fully_joined(self, channel_name: str, raw_line: str = "") -> None:
+        """Dispatch when the client has fully joined a channel (after receiving user list)."""
+        pass
+        
+    async def dispatch_part(
+        self, 
+        nick: str, 
+        userhost: str, 
+        channel: str, 
+        reason: str, 
+        is_self: bool, 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when a user (or self) parts a channel."""
+        pass
+        
+    # User Events
+    async def dispatch_quit(
+        self, 
+        nick: str, 
+        userhost: str, 
+        reason: str, 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when a user quits the IRC network."""
+        pass
+        
+    async def dispatch_nick(
+        self, 
+        old_nick: str, 
+        new_nick: str, 
+        userhost: str, 
+        is_self: bool, 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when a user (or self) changes their nickname."""
+        pass
+        
+    # Channel Mode Events
+    async def dispatch_mode(
+        self, 
+        target_name: str, 
+        setter_nick: Optional[str], 
+        setter_userhost: Optional[str], 
+        mode_string: str, 
+        mode_params: List[str], 
+        parsed_modes: List[Dict[str, Any]], 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when channel or user modes are changed."""
+        pass
+        
+    async def dispatch_channel_mode_applied(
+        self, 
+        channel: str, 
+        setter_nick: Optional[str], 
+        setter_userhost: Optional[str], 
+        mode_changes: List[Dict[str, Any]], 
+        current_channel_modes: List[str], 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when channel modes are applied to a specific channel."""
+        pass
+        
+    # DCC (Direct Client-to-Client) Events
+    async def dispatch_dcc_transfer_status_change(
+        self, 
+        transfer: 'DCCTransfer', 
+        raw_line: str = ""
+    ) -> None:
+        """Dispatch when a DCC transfer's status changes."""
+        pass</code></pre>
+                    
+                    <h4 class="mt-4">Common Event Types</h4>
+                    <p>Here are some of the most commonly used events in the PyRC client:</p>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Event Name</th>
+                                    <th>Description</th>
+                                    <th>Data Structure</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>CLIENT_CONNECTED</code></td>
+                                    <td>Dispatched when connecting to an IRC server</td>
+                                    <td><code>{"server": str, "port": int, "nick": str, "ssl": bool}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>CLIENT_DISCONNECTED</code></td>
+                                    <td>Dispatched when disconnecting from an IRC server</td>
+                                    <td><code>{"server": str, "port": int}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>CLIENT_READY</code></td>
+                                    <td>Dispatched when client is fully initialized</td>
+                                    <td><code>{"nick": str, "client_logic_ref": IRCClient_Logic}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>PRIVMSG</code></td>
+                                    <td>Received a private message (channel or query)</td>
+                                    <td><code>{"nick": str, "userhost": str, "target": str, "message": str, "is_channel_msg": bool, "tags": dict}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>NOTICE</code></td>
+                                    <td>Received a notice (channel or user)</td>
+                                    <td><code>{"nick": str, "userhost": str, "target": str, "message": str, "is_channel_notice": bool, "tags": dict}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>JOIN</code></td>
+                                    <td>A user joined a channel</td>
+                                    <td><code>{"nick": str, "userhost": str, "channel": str, "account": str, "real_name": str, "is_self": bool}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>PART</code></td>
+                                    <td>A user left a channel</td>
+                                    <td><code>{"nick": str, "userhost": str, "channel": str, "reason": str, "is_self": bool}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>QUIT</code></td>
+                                    <td>A user disconnected from the network</td>
+                                    <td><code>{"nick": str, "userhost": str, "reason": str}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>NICK</code></td>
+                                    <td>A user changed their nickname</td>
+                                    <td><code>{"old_nick": str, "new_nick": str, "userhost": str, "is_self": bool}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>MODE</code></td>
+                                    <td>Channel or user modes were changed</td>
+                                    <td><code>{"target": str, "setter": str, "setter_userhost": str, "mode_string": str, "mode_params": List[str], "parsed_modes": List[dict]}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>DCC_TRANSFER_STATUS_CHANGE</code></td>
+                                    <td>Status of a DCC transfer changed</td>
+                                    <td><code>{"transfer_id": str, "transfer_type": str, "peer_nick": str, "filename": str, "status": str, ...}</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <h4 class="mt-4">Example: Subscribing to Events</h4>
+                    <p>Here's how you can subscribe to events in your script:</p>
+                    
+                    <pre><code class="language-python">from typing import Dict, Any
+import asyncio
+
+class MyScript:
+    def __init__(self, client):
+        self.client = client
+        self.script_name = "MyScript"
+        
+    async def on_privmsg(self, event_data: Dict[str, Any]) -> None:
+        """Handle PRIVMSG events."""
+        if event_data["is_channel_msg"]:
+            print(f"Message in {event_data['target']} from {event_data['nick']}: {event_data['message']}")
+        else:
+            print(f"Private message from {event_data['nick']}: {event_data['message']}")
+    
+    async def on_join(self, event_data: Dict[str, Any]) -> None:
+        """Handle JOIN events."""
+        if event_data["is_self"]:
+            print(f"I joined channel: {event_data['channel']}")
+        else:
+            print(f"{event_data['nick']} joined {event_data['channel']}")
+    
+    def register(self):
+        """Register event handlers."""
+        self.client.event_manager.subscribe("PRIVMSG", self.on_privmsg)
+        self.client.event_manager.subscribe("JOIN", self.on_join)
+
+# In your script's initialization:
+# script = MyScript(client)
+# script.register()</code></pre>
+                </section>
+
+                <section id="state-api" class="section mt-5">
+                    <h2>State API</h2>
+                    <p>The State API provides a robust system for managing application state with persistence, validation, and change notification. It's designed to be thread-safe and supports automatic persistence to disk.</p>
+                    
+                    <h4 class="mt-4">StateManager</h4>
+                    <p>Central class for managing application state with persistence and validation.</p>
+                    
+                    <pre><code class="language-python">class StateManager:
+    """Manages application state with persistence and validation.
+    
+    The StateManager provides a thread-safe way to store, retrieve, and observe changes
+    to application state. It supports automatic persistence to disk and validation of state values.
+    """
+    
+    def __init__(
+        self,
+        state_file: str = "state.json",
+        auto_save: bool = True,
+        save_interval: int = 60,  # seconds
+        validate_on_change: bool = True,
+    ):
+        """Initialize the StateManager.
+        
+        Args:
+            state_file: Path to the file where state will be persisted
+            auto_save: If True, automatically save state to disk on changes
+            save_interval: How often to auto-save (in seconds) if auto_save is True
+            validate_on_change: If True, validate state values when they change
+        """
+        pass
+
+    # Core State Management
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Get a state value.
+        
+        Args:
+            key: The state key to retrieve
+            default: Default value if key doesn't exist
+            
+        Returns:
+            The state value or default if not found
+        """
+        pass
+    
+    def set(self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Set a state value with optional validation.
+        
+        Args:
+            key: The state key to set
+            value: The value to set
+            metadata: Optional metadata about the change
+            
+        Returns:
+            bool: True if the state was set successfully, False if validation failed
+            
+        Raises:
+            ValueError: If validation is enabled and the value is invalid
+        """
+        pass
+    
+    def delete(self, key: str) -> bool:
+        """
+        Delete a state value.
+        
+        Args:
+            key: The state key to delete
+            
+        Returns:
+            bool: True if the key existed and was deleted, False otherwise
+        """
+        pass
+    
+    def clear(self) -> None:
+        """Clear all state."""
+        pass
+    
+    def get_all(self) -> Dict[str, Any]:
+        """
+        Get a copy of all state values.
+        
+        Returns:
+            Dict containing all state key-value pairs
+        """
+        pass
+        
+    # Connection State Management
+    def set_connection_state(
+        self,
+        state: "ConnectionState",
+        error: Optional[str] = None,
+        config_errors: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Update the connection state and optionally set an error message.
+        
+        Args:
+            state: The new connection state
+            error: Optional error message if the state is ERROR
+            config_errors: List of configuration errors if any
+        """
+        pass
+        
+    def get_connection_state(self) -> "ConnectionState":
+        """
+        Get the current connection state.
+        
+        Returns:
+            The current ConnectionState enum value
+        """
+        pass
+        
+    def get_connection_info(self) -> Optional["ConnectionInfo"]:
+        """
+        Get the current connection information.
+        
+        Returns:
+            ConnectionInfo object or None if not connected
+        """
+        pass
+        
+    def update_connection_attempt(
+        self,
+        success: bool,
+        error: Optional[str] = None,
+        config_errors: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Update connection attempt statistics.
+        
+        Args:
+            success: Whether the connection attempt was successful
+            error: Optional error message if the attempt failed
+            config_errors: List of configuration errors if any
+        """
+        pass
+        
+    # Validation
+    def register_validator(self, key: str, validator: "StateValidator") -> None:
+        """
+        Register a validator for a state key.
+        
+        Args:
+            key: The state key to validate
+            validator: A StateValidator instance to use for validation
+        """
+        pass
+        
+    def unregister_validator(self, key: str) -> None:
+        """
+        Unregister a validator for a state key.
+        
+        Args:
+            key: The state key to remove validation for
+        """
+        pass
+        
+    def validate_all(self) -> bool:
+        """
+        Validate all state values with registered validators.
+        
+        Returns:
+            bool: True if all validations passed, False otherwise
+        """
+        pass
+        
+    # Change Handlers
+    def register_change_handler(
+        self, 
+        key: str, 
+        handler: Callable[["StateChange"], Any]
+    ) -> None:
+        """
+        Register a handler for state changes on a specific key.
+        
+        Args:
+            key: The state key to monitor
+            handler: Callback function that takes a StateChange parameter
+        """
+        pass
+        
+    def register_global_handler(
+        self, 
+        handler: Callable[["StateChange"], Any]
+    ) -> None:
+        """
+        Register a handler for all state changes.
+        
+        Args:
+            handler: Callback function that takes a StateChange parameter
+        """
+        pass
+        
+    def unregister_change_handler(
+        self, 
+        key: str, 
+        handler: Callable[["StateChange"], Any]
+    ) -> None:
+        """
+        Unregister a handler for state changes on a specific key.
+        
+        Args:
+            key: The state key being monitored
+            handler: The handler function to remove
+        """
+        pass
+        
+    def unregister_global_handler(
+        self, 
+        handler: Callable[["StateChange"], Any]
+    ) -> None:
+        """
+        Unregister a global state change handler.
+        
+        Args:
+            handler: The handler function to remove
+        """
+        pass</code></pre>
+                    
+                    <h4 class="mt-4">StateChange</h4>
+                    <p>Represents a state change event, dispatched by the StateManager.</p>
+                    
+                    <pre><code class="language-python">@dataclass
+class StateChange(Generic[T]):
+    """Represents a state change event.
+    
+    Attributes:
+        key: The key of the state that changed
+        old_value: The value before the change (None for new keys)
+        new_value: The new value (None for deleted keys)
+        change_type: A StateChangeType enum value
+        timestamp: When the change occurred
+        metadata: Additional context about the change
+    """
+    key: str
+    old_value: Optional[T]
+    new_value: Optional[T]
+    change_type: "StateChangeType"
+    timestamp: datetime = field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class StateChangeType(Enum):
+    """Types of state changes that can occur."""
+    CREATED = auto()  # A new key was created
+    UPDATED = auto()  # An existing key's value was updated
+    DELETED = auto()  # A key was deleted
+    VALIDATED = auto()  # A key's value was validated
+    INVALIDATED = auto()  # A key's value failed validation</code></pre>
+                    
+                    <h4 class="mt-4">ConnectionState</h4>
+                    <p>Represents the possible connection states of the IRC client.</p>
+                    
+                    <pre><code class="language-python">class ConnectionState(Enum):
+    """Possible connection states for the IRC client."""
+    DISCONNECTED = auto()  # Not connected to any server
+    CONNECTING = auto()   # Attempting to connect to a server
+    CONNECTED = auto()    # TCP connection established, but not registered yet
+    REGISTERED = auto()   # Successfully registered with the IRC server
+    READY = auto()        # Fully connected and ready for use
+    ERROR = auto()        # An error occurred during connection
+    CONFIG_ERROR = auto() # Configuration error preventing connection</code></pre>
+                    
+                    <h4 class="mt-4">Example: Using StateManager</h4>
+                    <p>Here's how you can use the StateManager in your code:</p>
+                    
+                    <pre><code class="language-python">from pyrc_core.state_manager import StateManager, StateChange
+from enum import Enum
+from typing import Dict, Any, Optional
+import asyncio
+
+# Define custom state keys
+class AppState:
+    USER_PREFERENCES = "user_prefs"
+    CONNECTION = "connection"
+    LAST_UPDATED = "last_updated"
+
+# Initialize state manager
+state_manager = StateManager("my_app_state.json", auto_save=True)
+
+# Set some initial state
+state_manager.set(AppState.USER_PREFERENCES, {
+    "theme": "dark",
+    "notifications": True,
+    "font_size": 14
+})
+
+# Register a handler for specific state changes
+def on_theme_changed(change: StateChange) -> None:
+    if change.key == AppState.USER_PREFERENCES and \
+       change.old_value and change.new_value and \
+       change.old_value.get("theme") != change.new_value.get("theme"):
+        print(f"Theme changed to: {change.new_value['theme']}")
+
+state_manager.register_change_handler(AppState.USER_PREFERENCES, on_theme_changed)
+
+# Update theme - this will trigger our handler
+state_manager.set(AppState.USER_PREFERENCES, {
+    **state_manager.get(AppState.USER_PREFERENCES, {}),
+    "theme": "light"
+})
+
+# Monitor connection state changes
+async def on_connection_change(change: StateChange) -> None:
+    if change.key == "connection_state":
+        print(f"Connection state changed to: {change.new_value}")
+        if change.new_value == ConnectionState.ERROR:
+            error = state_manager.get("last_error")
+            if error:
+                print(f"Error: {error}")
+
+state_manager.register_change_handler("connection_state", on_connection_change)
+
+# Simulate a connection state change
+state_manager.set_connection_state(ConnectionState.CONNECTING)
+# Later...
+state_manager.set_connection_state(ConnectionState.REGISTERED)
+
+# Clean up when done
+state_manager.shutdown()</code></pre>
+                    
+                    <h4 class="mt-4">State Validation</h4>
+                    <p>You can create custom validators to ensure state values meet specific criteria:</p>
+                    
+                    <pre><code class="language-python">from pyrc_core.state_manager import StateValidator
+from typing import Any, Dict
+
+class UserPrefsValidator(StateValidator[Dict[str, Any]]):
+    """Validates user preferences."""
+    
+    def validate(self, value: Dict[str, Any]) -> bool:
+        if not isinstance(value, dict):
+            return False
+            
+        # Validate theme
+        if "theme" in value and value["theme"] not in ["light", "dark", "system"]:
+            return False
+            
+        # Validate font size
+        if "font_size" in value and not (8 <= value["font_size"] <= 24):
+            return False
+            
+        return True
+    
+    def get_error_message(self, value: Dict[str, Any]) -> Optional[str]:
+        if not isinstance(value, dict):
+            return "Preferences must be a dictionary"
+            
+        if "theme" in value and value["theme"] not in ["light", "dark", "system"]:
+            return f"Invalid theme: {value['theme']}. Must be 'light', 'dark', or 'system'"
+            
+        if "font_size" in value and not (8 <= value["font_size"] <= 24):
+            return f"Font size {value['font_size']} is out of range (8-24)"
+            
+        return None
+
+# Register the validator
+state_manager.register_validator(AppState.USER_PREFERENCES, UserPrefsValidator())
+
+# This will fail validation
+state_manager.set(AppState.USER_PREFERENCES, {"theme": "ocean", "font_size": 6})
+# Error: Invalid theme: ocean. Must be 'light', 'dark', or 'system'</code></pre>
+                    
+                    <h4 class="mt-4">Example: Subscribing to Events</h4>
+                    <p>Here's how you can subscribe to events in your script:</p>
+                    
+                    <pre><code class="language-python">from typing import Dict, Any
+import asyncio
+
+class MyScript:
+    def __init__(self, client):
+        self.client = client
+        self.script_name = "MyScript"
+        
+    async def on_privmsg(self, event_data: Dict[str, Any]) -> None:
+        """Handle PRIVMSG events."""
+        if event_data["is_channel_msg"]:
+            print(f"Message in {event_data['target']} from {event_data['nick']}: {event_data['message']}")
+        else:
+            print(f"Private message from {event_data['nick']}: {event_data['message']}")
+    
+    async def on_join(self, event_data: Dict[str, Any]) -> None:
+        """Handle JOIN events."""
+        if event_data["is_self"]:
+            print(f"I joined channel: {event_data['channel']}")
+        else:
+            print(f"{event_data['nick']} joined {event_data['channel']}")
+    
+    def register(self):
+        """Register event handlers."""
+        self.client.event_manager.subscribe("PRIVMSG", self.on_privmsg)
+        self.client.event_manager.subscribe("JOIN", self.on_join)
+
+# In your script's initialization:
+# script = MyScript(client)
+# script.register()</code></pre>
+                </section>
+
+                <section id="network-api" class="section mt-5">
+                    <h2>Network API</h2>
+                    <p>The Network API provides the core networking functionality for the PyRC IRC client, handling connections, message sending/receiving, and network state management.</p>
+                    
+                    <h4 class="mt-4">NetworkHandler</h4>
+                    <p>Manages network connections, message transmission, and connection state for the IRC client.</p>
+                    
+                    <pre><code class="language-python">class NetworkHandler:
+    """Handles all network operations for the IRC client including connection management,
+    message sending/receiving, and network state tracking.
+    """
+    
+    def __init__(self, client_logic_ref: "IRCClient_Logic"):
+        """Initialize the NetworkHandler with a reference to the client logic.
+        
+        Args:
+            client_logic_ref: Reference to the main IRC client logic instance
+        """
+        self.client_logic_ref = client_logic_ref
+        self.connected = False
+        self.buffer = b""
+        # ... other initialization ...
+    
+    async def start(self) -> bool:
+        """Start the network handler and its asyncio task.
+        
+        Returns:
+            bool: True if the network handler started successfully, False otherwise
+        """
+        pass
+    
+    async def stop(self) -> bool:
+        """Stop the network handler and wait for task completion.
+        
+        Returns:
+            bool: True if stopped successfully, False otherwise
+        """
+        pass
+    
+    async def disconnect_gracefully(self, quit_message: Optional[str] = None) -> None:
+        """Disconnect from the server gracefully.
+        
+        Args:
+            quit_message: Optional quit message to send to the server
+        """
+        pass
+    
+    async def update_connection_params(
+        self,
+        server: str,
+        port: int,
+        use_ssl: bool,
+        channels_to_join: Optional[List[str]] = None
+    ) -> None:
+        """Update connection parameters and reconnect if needed.
+        
+        Args:
+            server: Server hostname or IP address
+            port: Server port number
+            use_ssl: Whether to use SSL/TLS for the connection
+            channels_to_join: Optional list of channels to join after connecting
+        """
+        pass
+    
+    async def send_raw(self, data: str) -> None:
+        """Send raw data to the IRC server.
+        
+        Args:
+            data: Raw IRC protocol data to send
+            
+        Raises:
+            ConnectionError: If not connected or connection is closing
+        """
+        pass
+    
+    async def _process_received_data(self, data: bytes) -> None:
+        """Process received data from the network socket.
+        
+        Args:
+            data: Raw bytes received from the socket
+        """
+        pass</code></pre>
+                    
+                    <h5 class="mt-4">Key Methods</h5>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>start()</code></td>
+                                <td>Initialize and start the network handler's background task</td>
+                            </tr>
+                            <tr>
+                                <td><code>stop()</code></td>
+                                <td>Stop the network handler and clean up resources</td>
+                            </tr>
+                            <tr>
+                                <td><code>disconnect_gracefully()</code></td>
+                                <td>Disconnect from the server with an optional quit message</td>
+                            </tr>
+                            <tr>
+                                <td><code>update_connection_params()</code></td>
+                                <td>Update server connection parameters and reconnect</td>
+                            </tr>
+                            <tr>
+                                <td><code>send_raw()</code></td>
+                                <td>Send raw IRC protocol data to the server</td>
+                            </tr>
+                            <tr>
+                                <td><code>send_cap_ls()</code></td>
+                                <td>Send CAP LS command to the server</td>
+                            </tr>
+                            <tr>
+                                <td><code>send_cap_req()</code></td>
+                                <td>Send CAP REQ command with specified capabilities</td>
+                            </tr>
+                            <tr>
+                                <td><code>send_authenticate()</code></td>
+                                <td>Send AUTHENTICATE command for SASL authentication</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h5 class="mt-4">Usage Example</h5>
+                    <pre><code class="language-python"># Example of using the Network API
+
+# Initialize and start the network handler
+network_handler = NetworkHandler(client_logic_ref)
+await network_handler.start()
+
+# Update connection parameters and connect
+await network_handler.update_connection_params(
+    server="irc.example.com",
+    port=6697,
+    use_ssl=True,
+    channels_to_join=["#test", "#python"]
+)
+
+# Send raw IRC commands
+await network_handler.send_raw("PRIVMSG #test :Hello, world!")
+
+# Handle disconnection
+try:
+    # ... do work ...
+finally:
+    # Clean up
+    await network_handler.disconnect_gracefully("Goodbye!")
+    await network_handler.stop()</code></pre>
+                    
+                    <div class="alert alert-info mt-4">
+                        <h5>Network Connection States</h5>
+                        <p>The network handler maintains the following connection states:</p>
+                        <ul>
+                            <li><strong>Disconnected</strong>: Not connected to any server</li>
+                            <li><strong>Connecting</strong>: Attempting to establish a connection</li>
+                            <li><strong>Connected</strong>: Successfully connected and authenticated</li>
+                            <li><strong>Disconnecting</strong>: Gracefully closing the connection</li>
+                        </ul>
+                        <p>State changes are automatically handled and can be monitored through the State API.</p>
+                    </div>
+                </section>
+
+                <section id="ui-api" class="section mt-5">
+                    <h2>UI API</h2>
+                    <p>The UI API provides comprehensive control over the user interface, including message display, window management, and user interaction.</p>
+                    
+                    <h4 class="mt-4">UIManager</h4>
+                    <p>Central class for managing all UI components and user interactions.</p>
+                    
+                    <pre><code class="language-python">class UIManager:
+    """Manages all UI components including message display, input handling, and window layouts.
+    
+    The UIManager handles the curses-based interface, including:
+    - Message display in channels/queries
+    - User input handling
+    - Window layout and rendering
+    - Status updates
+    - Context switching
+    """
+    
+    def __init__(self, stdscr: 'curses.window', client_ref: 'IRCClient_Logic'):
+        """Initialize the UI manager.
+        
+        Args:
+            stdscr: The main curses window
+            client_ref: Reference to the main client logic
+        """
+        self.stdscr = stdscr
+        self.client = client_ref
+        self.colors = {}
+        self.split_mode_active = False
+        self.active_split_pane = "top"
+        self.top_pane_context_name = ""
+        self.bottom_pane_context_name = ""
+        self.msg_win_width = 80
+        self.msg_win_height = 24
+    
+    async def add_message_to_context(
+        self, 
+        text: str, 
+        color_attr: int, 
+        prefix_time: bool, 
+        context_name: str
+    ) -> None:
+        """Add a message to the specified context's message history.
+        
+        Args:
+            text: The message text to display
+            color_attr: Color attribute for the message
+            prefix_time: Whether to prefix the message with a timestamp
+            context_name: Name of the context (channel, query, etc.)
+        """
+        pass
+    
+    async def refresh_all_windows(self) -> None:
+        """Refresh all windows in the UI."""
+        pass
+    
+    async def scroll_messages(self, direction: str, lines: int = 1) -> None:
+        """Scroll the message view in the active window.
+        
+        Args:
+            direction: Scroll direction ('up', 'down', 'page_up', 'page_down', 'home', 'end')
+            lines: Number of lines to scroll (for 'up'/'down' directions)
+        """
+        pass
+    
+    async def scroll_user_list(self, direction: str, lines_arg: Optional[int] = None) -> None:
+        """Scroll the user list in the sidebar.
+        
+        Args:
+            direction: Scroll direction ('up', 'down', 'page_up', 'page_down', 'top', 'bottom')
+            lines_arg: Optional number of lines to scroll
+        """
+        pass
+    
+    async def switch_context(self, context_name: str) -> None:
+        """Switch to a different context (channel, query, etc.).
+        
+        Args:
+            context_name: Name of the context to switch to
+        """
+        pass
+    
+    def get_input_char(self) -> int:
+        """Get a single character of input from the user.
+        
+        Returns:
+            int: The character code, or curses.ERR if no input is available
+        """
+        pass
+    
+    def shutdown(self) -> None:
+        """Clean up curses resources and shut down the UI."""
+        pass</code></pre>
+                    
+                    <h5 class="mt-4">Key Methods</h5>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>add_message_to_context()</code></td>
+                                <td>Add a message to a specific context's message history</td>
+                            </tr>
+                            <tr>
+                                <td><code>refresh_all_windows()</code></td>
+                                <td>Refresh all UI windows and redraw content</td>
+                            </tr>
+                            <tr>
+                                <td><code>scroll_messages()</code></td>
+                                <td>Scroll the message view in the active window</td>
+                            </tr>
+                            <tr>
+                                <td><code>scroll_user_list()</code></td>
+                                <td>Scroll the user list in the sidebar</td>
+                            </tr>
+                            <tr>
+                                <td><code>switch_context()</code></td>
+                                <td>Switch between different chat contexts</td>
+                            </tr>
+                            <tr>
+                                <td><code>get_input_char()</code></td>
+                                <td>Get user input character by character</td>
+                            </tr>
+                            <tr>
+                                <td><code>shutdown()</code></td>
+                                <td>Clean up resources when shutting down</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h5 class="mt-4">UI Components</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">Message Window</div>
+                                <div class="card-body">
+                                    <p>Displays messages for the current context with features like:</p>
+                                    <ul>
+                                        <li>Scrolling through message history</li>
+                                        <li>Split view for multiple contexts</li>
+                                        <li>Color-coded message types</li>
+                                        <li>Timestamps and message formatting</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">Sidebar</div>
+                                <div class="card-body">
+                                    <p>Shows available channels and users with:</p>
+                                    <ul>
+                                        <li>Scrollable user lists</li>
+                                        <li>User status indicators</li>
+                                        <li>Channel/user search</li>
+                                        <li>Context switching</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 class="mt-4">Usage Example</h5>
+                    <pre><code class="language-python"># Example of using the UI API
+
+# Initialize the UI manager
+ui = UIManager(stdscr, client_ref)
+
+# Add a message to a channel
+await ui.add_message_to_context(
+    text="Hello, world!",
+    color_attr=ui.colors["default"],
+    prefix_time=True,
+    context_name="#python"
+)
+
+# Switch to a different context
+await ui.switch_context("#python")
+
+
+# Scroll the message view
+ui.scroll_messages("page_up")
+
+
+# Handle user input
+while True:
+    char = ui.get_input_char()
+    if char != curses.ERR:
+        # Process input
+        pass
+
+# Clean up when done
+ui.shutdown()</code></pre>
+                    
+                    <div class="alert alert-info mt-4">
+                        <h5>UI Architecture</h5>
+                        <p>The UI is built using the following components:</p>
+                        <ul>
+                            <li><strong>Message Panel</strong>: Displays chat messages with formatting and colors</li>
+                            <li><strong>Sidebar</strong>: Shows channel list and user information</li>
+                            <li><strong>Status Bar</strong>: Displays connection status and notifications</li>
+                            <li><strong>Input Line</strong>: Handles user input and commands</li>
+                        </ul>
+                        <p>The UI is designed to be responsive and adapt to different terminal sizes.</p>
+                    </div>
+                <section id="command-api" class="mt-5">
+                    <h2>Command System API</h2>
+                    <p>The Command System API provides a flexible way to extend PyRC's functionality through custom commands. Commands can be added by creating Python modules in the appropriate command category directory.</p>
+                    
+                    <h4 class="mt-4">Command Structure</h4>
+                    <p>Commands are defined in Python modules within the <code>pyrc_core/commands/</code> directory. Each command module should define a <code>COMMAND_DEFINITIONS</code> list containing one or more command definitions.</p>
+                    
+                    <h5>Example Command Definition</h5>
+                    <pre><code class="language-python"># Example: help_command.py
+
+COMMAND_DEFINITIONS = [
+    {
+        "name": "help",
+        "handler": "handle_help_command",
+        "help": {
+            "usage": "/help [command_name|category|script &lt;script_name&gt;]",
+            "description": "Displays general help, help for a specific command, category, or script.",
+            "aliases": ["h"],
+        },
+    }
+]
+
+async def handle_help_command(client: "IRCClient_Logic", args_str: str):
+    """Handle the help command.
+    
+    Args:
+        client: Reference to the IRC client instance
+        args_str: Arguments passed to the command
+    """
+    # Command implementation here
+    pass</code></pre>
+                    
+                    <h5 class="mt-4">Command Definition Fields</h5>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                                <th>Required</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>name</code></td>
+                                <td>str</td>
+                                <td>Primary name of the command (without the leading '/')</td>
+                                <td>Yes</td>
+                            </tr>
+                            <tr>
+                                <td><code>handler</code></td>
+                                <td>str</td>
+                                <td>Name of the function that handles this command</td>
+                                <td>Yes</td>
+                            </tr>
+                            <tr>
+                                <td><code>help</code></td>
+                                <td>dict</td>
+                                <td>Help information for the command (see below)</td>
+                                <td>No</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h5 class="mt-4">Help Dictionary Fields</h5>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                                <th>Required</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>usage</code></td>
+                                <td>str</td>
+                                <td>Example usage of the command</td>
+                                <td>Yes</td>
+                            </tr>
+                            <tr>
+                                <td><code>description</code></td>
+                                <td>str</td>
+                                <td>Detailed description of what the command does</td>
+                                <td>Yes</td>
+                            </tr>
+                            <tr>
+                                <td><code>aliases</code></td>
+                                <td>List[str]</td>
+                                <td>List of alternative command names</td>
+                                <td>No</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h4 class="mt-4">Command Categories</h4>
+                    <p>Commands are organized into categories based on their functionality. Each category has its own subdirectory in the <code>commands</code> directory.</p>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">Core Commands</div>
+                                <div class="card-body">
+                                    <p>Essential commands for basic client operation.</p>
+                                    <ul>
+                                        <li><code>/help</code> - Show help information</li>
+                                        <li><code>/quit</code> - Disconnect and exit the client</li>
+                                        <li><code>/connect</code> - Connect to an IRC server</li>
+                                        <li><code>/disconnect</code> - Disconnect from the current server</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">Channel Commands</div>
+                                <div class="card-body">
+                                    <p>Commands for managing IRC channels.</p>
+                                    <ul>
+                                        <li><code>/join</code> - Join a channel</li>
+                                        <li><code>/part</code> - Leave a channel</li>
+                                        <li><code>/kick</code> - Remove a user from a channel</li>
+                                        <li><code>/ban</code> - Ban a user from a channel</li>
+                                        <li><code>/topic</code> - View or set the channel topic</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">User Commands</div>
+                                <div class="card-body">
+                                    <p>Commands for interacting with other users.</p>
+                                    <ul>
+                                        <li><code>/msg</code> - Send a private message</li>
+                                        <li><code>/me</code> - Send an action message</li>
+                                        <li><code>/notice</code> - Send a notice</li>
+                                        <li><code>/whois</code> - Get user information</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">DCC Commands</div>
+                                <div class="card-body">
+                                    <p>Commands for file transfers and chat.</p>
+                                    <ul>
+                                        <li><code>/dcc send</code> - Send a file</li>
+                                        <li><code>/dcc get</code> - Accept a file transfer</li>
+                                        <li><code>/dcc chat</code> - Start a DCC chat session</li>
+                                        <li><code>/dcc list</code> - List active DCC transfers</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h4 class="mt-4">Creating Custom Commands</h4>
+                    <p>To create a new command:</p>
+                    <ol>
+                        <li>Create a new Python file in the appropriate category directory</li>
+                        <li>Define your command using the <code>COMMAND_DEFINITIONS</code> list</li>
+                        <li>Implement the handler function with the signature: <code>async def handle_command(client: "IRCClient_Logic", args_str: str)</code></li>
+                        <li>Restart PyRC or use <code>/rehash</code> to load the new command</li>
+                    </ol>
+                    
+                    <div class="alert alert-info mt-4">
+                        <h5>Command Handler Tips</h5>
+                        <ul>
+                            <li>Commands are executed asynchronously - use <code>async/await</code> for any I/O operations</li>
+                            <li>Use <code>client.add_message()</code> to send output to the user</li>
+                            <li>Access the current context with <code>client.context_manager.active_context</code></li>
+                            <li>Check <code>client.state_manager.state</code> for connection state</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="scripting-api" class="section mt-5">
+                    <h2>Scripting API</h2>
+                    <p class="lead">Extend PyRC's functionality with custom Python scripts that can add commands, handle events, and interact with the IRC client's state.</p>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Note:</strong> Scripts must be placed in the <code>scripts/</code> directory and must include a <code>create_script(api)</code> function that returns an instance of your script class.
+                    </div>
+                    
+                    <h3 id="script-structure" class="mt-4">Script Structure</h3>
+                    <p>Here's the basic structure of a PyRC script:</p>
+                    
+                    <pre><code class="language-python">from pyrc_core.scripting.script_base import ScriptBase
+from typing import Dict, Any
+import json
+import os
+
+class MyScript(ScriptBase):
+    """My custom script documentation."""
+    
+    def __init__(self, api):
+        super().__init__(api)
+        self.my_data = []
+    
+    def load(self):
+        """Called when the script is loaded."""
+        # Register commands and event handlers
+        self.api.register_command(
+            name="mycommand",
+            handler=self.handle_my_command,
+            help={
+                "usage": "/mycommand [args]",
+                "description": "Description of what this command does",
+                "aliases": ["mc"]
+            }
+        )
+        
+        # Subscribe to events
+        self.api.subscribe_to_event("on_privmsg", self.handle_private_message)
+        
+        # Load data
+        data_file = os.path.join(self.get_script_data_dir(), "data.json")
+        if os.path.exists(data_file):
+            with open(data_file, 'r') as f:
+                self.my_data = json.load(f)
+    
+    def unload(self):
+        """Called when the script is unloaded."""
+        # Save data and clean up
+        data_file = os.path.join(self.get_script_data_dir(), "data.json")
+        with open(data_file, 'w') as f:
+            json.dump(self.my_data, f)
+    
+    async def handle_my_command(self, args_str: str) -> None:
+        """Handle the /mycommand command."""
+        await self.api.send_message(
+            target=self.api.get_current_context_name() or "Status",
+            message=f"You ran mycommand with args: {args_str}"
+        )
+    
+    async def handle_private_message(self, event_data: Dict[str, Any]) -> None:
+        """Handle private messages."""
+        if "hello" in event_data["message"].lower():
+            await self.api.send_message(
+                target=event_data["nick"],
+                message=f"Hello, {event_data['nick']}!"
+            )
+
+# Required function to create an instance of the script
+def create_script(api):
+    return MyScript(api)</code></pre>
+                    
+                    <h3 id="script-metadata" class="mt-4">Script Metadata</h3>
+                    <p>Create a <code>script_metadata.json</code> file in your script's directory to provide information about your script:</p>
+                    
+                    <pre><code class="language-json">{
+    "name": "My Script",
+    "version": "1.0.0",
+    "description": "A useful script that does something cool",
+    "author": "Your Name",
+    "dependencies": ["requests"],
+    "min_pyrc_version": "1.0.0",
+    "created_at": "2023-01-01T00:00:00",
+    "updated_at": "2023-01-01T00:00:00",
+    "tags": ["utility", "fun"],
+    "is_enabled": true
+}</code></pre>
+                    
+                    <h3 class="mt-4">Core Components</h3>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5 class="mb-0">ScriptBase Class</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p>Base class that all scripts must inherit from. Provides common functionality and lifecycle methods.</p>
+                                    <ul class="list-unstyled">
+                                        <li><code>load()</code> - Called when the script is loaded</li>
+                                        <li><code>unload()</code> - Called when the script is unloaded</li>
+                                        <li><code>get_script_data_dir()</code> - Get directory for script data</li>
+                                        <li><code>get_script_dir()</code> - Get script's directory</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5 class="mb-0">ScriptAPIHandler</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p>Provides access to PyRC's functionality. Available as <code>self.api</code> in scripts.</p>
+                                    <ul class="list-unstyled">
+                                        <li><code>register_command()</code> - Add new commands</li>
+                                        <li><code>subscribe_to_event()</code> - Listen for events</li>
+                                        <li><code>send_message()</code> - Send messages</li>
+                                        <li><code>get_client_state()</code> - Access client state</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h3 class="mt-4">API Reference</h3>
+                    
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>load()</code></td>
+                                <td>Called when the script is loaded. Register commands and event handlers here.</td>
+                            </tr>
+                            <tr>
+                                <td><code>unload()</code></td>
+                                <td>Called when the script is unloaded. Clean up resources here.</td>
+                            </tr>
+                            <tr>
+                                <td><code>get_script_data_dir()</code></td>
+                                <td>Returns the path to this script's data directory.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h4 id="scripting-commands">Command Registration</h4>
+                    <p>Register new commands that users can execute in PyRC:</p>
+                    
+                    <pre><code class="language-python">def load(self):
+    self.api.register_command(
+        name="greet",
+        handler=self.handle_greet,
+        help={
+            "usage": "/greet [name]",
+            "description": "Sends a greeting to the specified user or channel",
+            "aliases": ["hello", "hi"]
+        }
+    )
+
+async def handle_greet(self, args_str: str) -> None:
+    args = args_str.split()
+    target = args[0] if args else self.api.get_current_context_name()
+    await self.api.send_message(
+        target=target,
+        message=f"Hello, {args[0] if args else 'everyone'}!"
+    )</code></pre>
+                    
+                    <h4 class="mt-4">Event Handling</h4>
+                    <p>Subscribe to and handle IRC events:</p>
+                    
+                    <pre><code class="language-python">def load(self):
+    # Subscribe to message events
+    self.api.subscribe_to_event("on_privmsg", self.handle_message)
+    self.api.subscribe_to_event("on_join", self.handle_join)
+
+async def handle_message(self, event_data: dict) -> None:
+    """Handle incoming messages."""
+    if "hello" in event_data["message"].lower():
+        await self.api.send_message(
+            target=event_data["nick"],
+            message=f"Hello, {event_data['nick']}! How can I help you?"
+        )
+
+async def handle_join(self, event_data: dict) -> None:
+    """Handle when a user joins a channel."""
+    if event_data["nick"] != self.api.get_client_nick():
+        await self.api.send_message(
+            target=event_data["channel"],
+            message=f"Welcome to {event_data['channel']}, {event_data['nick']}!"
+        )</code></pre>
+                    
+                    <h4 class="mt-4">Data Persistence</h4>
+                    <p>Store and retrieve persistent data for your script:</p>
+                    
+                    <pre><code class="language-python">def load(self):
+    # Load data when script starts
+    data_file = os.path.join(self.get_script_data_dir(), "data.json")
+    try:
+        if os.path.exists(data_file):
+            with open(data_file, 'r') as f:
+                self.data = json.load(f)
+    except Exception as e:
+        self.api.log_error(f"Error loading data: {e}")
+        self.data = {}
+
+def unload(self):
+    # Save data when script unloads
+    data_file = os.path.join(self.get_script_data_dir(), "data.json")
+    try:
+        os.makedirs(os.path.dirname(data_file), exist_ok=True)
+        with open(data_file, 'w') as f:
+            json.dump(self.data, f)
+    except Exception as e:
+        self.api.log_error(f"Error saving data: {e}")</code></pre>
+                    
+                    <h4 class="mt-4">ScriptAPIHandler Reference</h4>
+                    <p>Complete reference of available methods:</p>
+                    
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>send_message(target, message)</code></td>
+                                <td>Send a message to a channel or user.</td>
+                            </tr>
+                            <tr>
+                                <td><code>send_action(target, action_text)</code></td>
+                                <td>Send a /me action message.</td>
+                            </tr>
+                            <tr>
+                                <td><code>join_channel(channel_name, key=None)</code></td>
+                                <td>Join a channel.</td>
+                            </tr>
+                            <tr>
+                                <td><code>part_channel(channel_name, reason=None)</code></td>
+                                <td>Leave a channel.</td>
+                            </tr>
+                            <tr>
+                                <td><code>register_command(name, handler, help=None, aliases=None)</code></td>
+                                <td>Register a new command.</td>
+                            </tr>
+                            <tr>
+                                <td><code>subscribe_to_event(event_name, handler)</code></td>
+                                <td>Subscribe to an event.</td>
+                            </tr>
+                            <tr>
+                                <td><code>get_current_context_name()</code></td>
+                                <td>Get the name of the current context.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h3 class="mt-5" id="scripting-events">Available Events</h3>
+                    <p>Scripts can subscribe to various IRC and client events. Here are the most commonly used ones:</p>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-lightbulb me-2"></i>
+                        <strong>Tip:</strong> Use <code>self.api.subscribe_to_event("event_name", self.handler_method)</code> to listen for these events in your script.
+                    </div>
+                    
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Event</th>
+                                <th>Description</th>
+                                <th>Event Data</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>on_connect</code></td>
+                                <td>When connecting to a server</td>
+                                <td><code>{"server", "port", "nick", "ssl"}</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>on_disconnect</code></td>
+                                <td>When disconnecting from a server</td>
+                                <td><code>{"server", "port", "reason"}</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>on_privmsg</code></td>
+                                <td>When receiving a private message</td>
+                                <td><code>{"target", "nick", "hostmask", "message"}</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>on_join</code></td>
+                                <td>When a user joins a channel</td>
+                                <td><code>{"channel", "nick", "hostmask"}</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>on_part</code></td>
+                                <td>When a user leaves a channel</td>
+                                <td><code>{"channel", "nick", "hostmask", "reason"}</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h3 class="mt-5" id="scripting-best-practices">Best Practices</h3>
+                    <p>Follow these guidelines to write high-quality PyRC scripts:</p>
+                    
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Script Organization</h5>
+                        </div>
+                        <div class="card-body">
+                            <ul>
+                                <li>Keep your script focused on a single purpose</li>
+                                <li>Use separate files for large scripts or related functionality</li>
+                                <li>Include comprehensive docstrings and comments</li>
+                                <li>Follow Python naming conventions (PEP 8)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Error Handling</h5>
+                        </div>
+                        <div class="card-body">
+                            <ul>
+                                <li>Always use try/except blocks for I/O operations</li>
+                                <li>Validate user input in command handlers</li>
+                                <li>Use <code>self.api.log_error()</code> to log errors</li>
+                                <li>Provide helpful error messages to users</li>
+                            </ul>
+                            <pre><code class="language-python">try:
+    # Potentially dangerous operation
+    result = some_operation()
+except Exception as e:
+    self.api.log_error(f"Error in operation: {e}")
+    await self.api.send_message(
+        target=self.api.get_current_context_name(),
+        message="An error occurred. Please try again later."
+    )</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Performance Considerations</h5>
+                        </div>
+                        <div class="card-body">
+                            <ul>
+                                <li>Use async/await for I/O operations</li>
+                                <li>Cache frequently accessed data</li>
+                                <li>Be mindful of rate limits when sending messages</li>
+                                <li>Clean up resources in the <code>unload()</code> method</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <h3 class="mt-5" id="scripting-example">Complete Example: Welcome Bot</h3>
+                    <p>This example demonstrates a complete script that welcomes users when they join a channel and remembers who it has already welcomed:</p>
+                    
+                    <pre><code class="language-python">from pyrc_core.scripting.script_base import ScriptBase
+from typing import Dict, Any
+import json
+import os
+
+class WelcomeScript(ScriptBase):
+    """A simple script that welcomes users when they join a channel."""
+    
+    def __init__(self, api):
+        super().__init__(api)
+        self.welcomed_users = set()
+    
+    def load(self):
+        # Subscribe to join events
+        self.api.subscribe_to_event("on_join", self.handle_join)
+        
+        # Load previously welcomed users
+        data_file = os.path.join(self.get_script_data_dir(), "welcomed.json")
+        if os.path.exists(data_file):
+            try:
+                with open(data_file, 'r') as f:
+                    self.welcomed_users = set(json.load(f))
+            except Exception as e:
+                self.api.log_error(f"Error loading welcomed users: {e}")
+    
+    def unload(self):
+        # Save welcomed users
+        data_file = os.path.join(self.get_script_data_dir(), "welcomed.json")
+        try:
+            with open(data_file, 'w') as f:
+                json.dump(list(self.welcomed_users), f)
+        except Exception as e:
+            self.api.log_error(f"Error saving welcomed users: {e}")
+    
+    async def handle_join(self, event_data: Dict[str, Any]) -> None:
+        """Handle join events and welcome new users."""
+        channel = event_data.get("channel", "")
+        nick = event_data.get("nick", "")
+        
+        # Skip our own joins
+        if nick == self.api.get_client_nick():
+            return
+            
+        # Skip if we've already welcomed this user
+        user_key = f"{channel}:{nick}"
+        if user_key in self.welcomed_users:
+            return
+            
+        # Send welcome message
+        await self.api.send_message(
+            target=channel,
+            message=f"Welcome to {channel}, {nick}! Type /help for help."
+        )
+        
+        # Remember we've welcomed them
+        self.welcomed_users.add(user_key)
+
+# Required function to create an instance of the script
+def create_script(api):
+    return WelcomeScript(api)</code></pre>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <a href="#" class="back-to-top" id="backToTop">↑</a>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <script>
+        // Initialize syntax highlighting
+        document.addEventListener('DOMContentLoaded', function() {
+            // Highlight all code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Back to top button
+            const backToTop = document.getElementById('backToTop');
+            window.addEventListener('scroll', function() {
+                if (window.pageYOffset > 300) {
+                    backToTop.style.display = 'flex';
+                } else {
+                    backToTop.style.display = 'none';
+                }
+            });
+            
+            backToTop.addEventListener('click', function(e) {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        });
+    </script>
+</body>
+</html>

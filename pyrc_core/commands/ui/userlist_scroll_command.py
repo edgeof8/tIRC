@@ -15,20 +15,21 @@ COMMAND_DEFINITIONS = [
             "usage": "/userlistscroll [up|down|pageup|pagedown|top|bottom|offset]",
             "description": "Scrolls the user list in the current channel window.",
             "aliases": ["u"]
-        }
+        },
+        "is_async": True
     }
 ]
 
-def handle_userlist_scroll_command(client: "IRCClient_Logic", args_str: str):
+async def handle_userlist_scroll_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /userlistscroll or /u command"""
     active_ctx = client.context_manager.get_active_context()
     active_context_name = client.context_manager.active_context_name or "Status"
-    error_color_key = "error"
+    error_color_attr = client.ui.colors.get("error", 0)
 
     if not active_ctx or active_ctx.type != "channel":
-        client.add_message(
+        await client.add_message(
             "User list scroll is only available in channel windows.",
-            error_color_key,
+            error_color_attr,
             context_name=active_context_name,
         )
         return
@@ -48,9 +49,9 @@ def handle_userlist_scroll_command(client: "IRCClient_Logic", args_str: str):
                     client.ui.scroll_user_list("up", lines_arg=abs(offset))
                 # If offset is 0, do nothing or treat as error? Current scroll_user_list might handle it.
         except ValueError:
-            client.add_message(
+            await client.add_message(
                 f"Invalid argument for userlistscroll: '{args_str}'. Use up, down, pageup, pagedown, top, bottom, or a number.",
-                error_color_key,
+                error_color_attr,
                 context_name=active_ctx.name,
             )
     client.ui_needs_update.set()

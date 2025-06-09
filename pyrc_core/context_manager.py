@@ -100,6 +100,11 @@ class ContextManager:
         logger.info(
             f"ContextManager initialized with max_history={max_history_per_context}"
         )
+        logger.debug(f"Contexts before Status creation: {list(self.contexts.keys())}")
+        # Ensure the default 'Status' context is always created upon initialization
+        self.create_context("Status", context_type="status")
+        logger.debug(f"Contexts after Status creation attempt: {list(self.contexts.keys())}")
+
 
     def _normalize_context_name(self, name: str) -> str:
         if not name:
@@ -117,6 +122,7 @@ class ContextManager:
     ) -> bool:
         original_passed_name = context_name
         normalized_name = self._normalize_context_name(context_name)
+        logger.debug(f"create_context entered for '{original_passed_name}' (normalized: '{normalized_name}'). Current contexts: {list(self.contexts.keys())}")
 
         if not normalized_name:
             logger.warning(
@@ -152,11 +158,11 @@ class ContextManager:
                 else "N/A"
             )
             logger.debug(
-                f"Created context: '{normalized_name}' (original: '{original_passed_name}') of type {context_type} with join_status: {join_status_name}"
+                f"Successfully created context: '{normalized_name}' (original: '{original_passed_name}') of type {context_type} with join_status: {join_status_name}. All contexts now: {list(self.contexts.keys())}"
             )
             return True
         logger.debug(
-            f"Context '{normalized_name}' (original: '{original_passed_name}') already exists."
+            f"Context '{normalized_name}' (original: '{original_passed_name}') already exists. No new context created."
         )
         return False
 
@@ -239,6 +245,7 @@ class ContextManager:
         color_attr: Any,
         num_lines_added: int = 1,
     ):
+        logger.debug(f"add_message_to_context called for '{context_name}'. Current contexts: {list(self.contexts.keys())}")
         original_passed_name = context_name
         normalized_name = self._normalize_context_name(context_name)
         context = self.contexts.get(normalized_name)

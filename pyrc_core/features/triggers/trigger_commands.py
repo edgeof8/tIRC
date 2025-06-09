@@ -82,19 +82,30 @@ class TriggerCommands:
         }
 
 
-    def handle_on_command(self, args_str: str):
+    async def handle_on_command(self, args_str: str):
         if not self.client.trigger_manager:
-            self.client.add_message("Trigger system is not enabled or available.", "error")
+            active_ctx = self.client.context_manager.active_context_name or "Status"
+            await self.client.add_message("Trigger system is not enabled or available.",
+                self.client.ui.colors.get("error", 0),
+                context_name=active_ctx)
             return
 
         parsed_args = self._parse_on_args(args_str)
         active_ctx = self.client.context_manager.active_context_name or "Status"
 
         if parsed_args is None:
-            self.client.add_message("Usage: /on <LIST|ADD|DEL|ENABLE|DISABLE|INFO> [params...]", "error", context_name=active_ctx)
-            self.client.add_message("  /on ADD <EVENT> <pattern> <CMD|PY> <action_content/code>", "error", context_name=active_ctx)
-            self.client.add_message("  Example: /on TEXT \"hello world\" CMD /say Hello back!", "error", context_name=active_ctx)
-            self.client.add_message("  Example: /on RAW \"PRIVMSG #chan :hi\" PY print(event_data['nick'] + ' said hi')", "error", context_name=active_ctx)
+            await self.client.add_message("Usage: /on <LIST|ADD|DEL|ENABLE|DISABLE|INFO> [params...]",
+                self.client.ui.colors.get("error", 0),
+                context_name=active_ctx)
+            await self.client.add_message("  /on ADD <EVENT> <pattern> <CMD|PY> <action_content/code>",
+                self.client.ui.colors.get("error", 0),
+                context_name=active_ctx)
+            await self.client.add_message("  Example: /on TEXT \"hello world\" CMD /say Hello back!",
+                self.client.ui.colors.get("error", 0),
+                context_name=active_ctx)
+            await self.client.add_message("  Example: /on RAW \"PRIVMSG #chan :hi\" PY print(event_data['nick'] + ' said hi')",
+                self.client.ui.colors.get("error", 0),
+                context_name=active_ctx)
             return
 
         sub_command = parsed_args.get("sub_command")
@@ -107,55 +118,110 @@ class TriggerCommands:
                 action_content=parsed_args["action_content"]
             )
             if trigger_id is not None:
-                self.client.add_message(f"Trigger added with ID: {trigger_id}", "system", context_name=active_ctx)
+                await self.client.add_message(
+                    f"Trigger added with ID: {trigger_id}",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
             else:
-                self.client.add_message("Failed to add trigger. Check pattern or action type.", "error", context_name=active_ctx)
+                await self.client.add_message(
+                    "Failed to add trigger. Check pattern or action type.",
+                    self.client.ui.colors.get("error", 0),
+                    context_name=active_ctx)
 
         elif sub_command == "list":
             event_filter = parsed_args.get("event_filter")
             triggers = self.client.trigger_manager.list_triggers(event_type=event_filter)
             if triggers:
-                self.client.add_message(f"--- Configured Triggers ({event_filter or 'All'}) ---", "system", context_name=active_ctx)
+                await self.client.add_message(
+                    f"--- Configured Triggers ({event_filter or 'All'}) ---",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
                 for t in triggers:
                     enabled_str = "Enabled" if t['is_enabled'] else "Disabled"
                     action_preview = t['action_content'][:50] + "..." if len(t['action_content']) > 50 else t['action_content']
-                    self.client.add_message(
+                    await self.client.add_message(
                         f"ID: {t['id']}, Event: {t['event_type']}, Pattern: '{t['pattern']}', Action: {t['action_type']} '{action_preview}', Status: {enabled_str}",
-                        "system", context_name=active_ctx
+                        self.client.ui.colors.get("system", 0),
+                        context_name=active_ctx
                     )
             else:
-                self.client.add_message(f"No triggers configured{(' for event ' + event_filter) if event_filter else ''}.", "system", context_name=active_ctx)
+                await self.client.add_message(
+                    f"No triggers configured{(' for event ' + event_filter) if event_filter else ''}.",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
 
         elif sub_command == "delete":
             trigger_id = parsed_args["trigger_id"]
             if self.client.trigger_manager.remove_trigger(trigger_id):
-                self.client.add_message(f"Trigger {trigger_id} removed.", "system", context_name=active_ctx)
+                await self.client.add_message(
+                    f"Trigger {trigger_id} removed.",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
             else:
-                self.client.add_message(f"Failed to remove trigger {trigger_id}. Not found?", "error", context_name=active_ctx)
+                await self.client.add_message(
+                    f"Failed to remove trigger {trigger_id}. Not found?",
+                    self.client.ui.colors.get("error", 0),
+                    context_name=active_ctx)
 
         elif sub_command == "enable" or sub_command == "disable":
             trigger_id = parsed_args["trigger_id"]
             should_enable = sub_command == "enable"
             if self.client.trigger_manager.set_trigger_enabled(trigger_id, should_enable):
-                self.client.add_message(f"Trigger {trigger_id} {'enabled' if should_enable else 'disabled'}.", "system", context_name=active_ctx)
+                await self.client.add_message(
+                    f"Trigger {trigger_id} {'enabled' if should_enable else 'disabled'}.",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
             else:
-                self.client.add_message(f"Failed to update trigger {trigger_id}. Not found?", "error", context_name=active_ctx)
+                await self.client.add_message(
+                    f"Failed to update trigger {trigger_id}. Not found?",
+                    self.client.ui.colors.get("error", 0),
+                    context_name=active_ctx)
 
         elif sub_command == "info":
             trigger_id = parsed_args["trigger_id"]
             trigger = self.client.trigger_manager.get_trigger(trigger_id)
             if trigger:
-                self.client.add_message(f"--- Trigger Info (ID: {trigger.id}) ---", "system", context_name=active_ctx)
-                self.client.add_message(f"  Event Type: {trigger.event_type}", "system", context_name=active_ctx)
-                self.client.add_message(f"  Pattern: '{trigger.pattern}' (Regex: {trigger.is_regex}, IgnoreCase: {trigger.ignore_case})", "system", context_name=active_ctx)
-                self.client.add_message(f"  Action Type: {trigger.action_type.name}", "system", context_name=active_ctx)
-                self.client.add_message(f"  Action Content: {trigger.action_content}", "system", context_name=active_ctx)
-                self.client.add_message(f"  Status: {'Enabled' if trigger.is_enabled else 'Disabled'}", "system", context_name=active_ctx)
-                self.client.add_message(f"  Created by: {trigger.created_by} at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(trigger.created_at)) if trigger.created_at else 'N/A'}", "system", context_name=active_ctx)
-                self.client.add_message(f"  Description: {trigger.description or 'N/A'}", "system", context_name=active_ctx)
+                await self.client.add_message(
+                    f"--- Trigger Info (ID: {trigger.id}) ---",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
+                await self.client.add_message(
+                    f"  Event Type: {trigger.event_type}",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
+                await self.client.add_message(
+                    f"  Pattern: '{trigger.pattern}' (Regex: {trigger.is_regex}, IgnoreCase: {trigger.ignore_case})",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
+                await self.client.add_message(
+                    f"  Action Type: {trigger.action_type.name}",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
+                await self.client.add_message(
+                    f"  Action Content: {trigger.action_content}",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
+                await self.client.add_message(
+                    f"  Status: {'Enabled' if trigger.is_enabled else 'Disabled'}",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
+                await self.client.add_message(
+                    f"  Created by: {trigger.created_by} at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(trigger.created_at)) if trigger.created_at else 'N/A'}",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
+                await self.client.add_message(
+                    f"  Description: {trigger.description or 'N/A'}",
+                    self.client.ui.colors.get("system", 0),
+                    context_name=active_ctx)
             else:
-                self.client.add_message(f"Trigger ID {trigger_id} not found.", "error", context_name=active_ctx)
+                await self.client.add_message(
+                    f"Trigger ID {trigger_id} not found.",
+                    self.client.ui.colors.get("error", 0),
+                    context_name=active_ctx)
 
         elif sub_command == "show_usage":
-             self.client.add_message("Usage: /on <LIST|ADD|DEL|ENABLE|DISABLE|INFO> [params...]", "error", context_name=active_ctx)
+             await self.client.add_message(
+                 "Usage: /on <LIST|ADD|DEL|ENABLE|DISABLE|INFO> [params...]",
+                 self.client.ui.colors.get("error", 0),
+                 context_name=active_ctx)
 # END OF MODIFIED FILE: features/triggers/trigger_commands.py

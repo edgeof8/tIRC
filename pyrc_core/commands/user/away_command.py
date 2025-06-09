@@ -19,9 +19,9 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_away_command(client: "IRCClient_Logic", args_str: str):
+async def handle_away_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /away command"""
     if not args_str:
-        client.network_handler.send_raw("AWAY")
+        await client.network_handler.send_raw("AWAY")
     else:
-        client.network_handler.send_raw(f"AWAY :{args_str}")
+        await client.network_handler.send_raw(f"AWAY :{args_str}")

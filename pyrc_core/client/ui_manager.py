@@ -204,114 +204,194 @@ class UIManager:
         """Refresh all windows in the UI"""
         try:
             new_height, new_width = self.curses_manager.get_dimensions()
-        except Exception as e:
-            logger.error(
-                f"Error getting stdscr dimensions in refresh_all_windows: {e}. UI update aborted."
-            )
+        except curses.error as e:
+            logger.error(f"Curses error getting stdscr.getmaxyx() in refresh_all_windows: {e}. UI update aborted.")
+            # Potentially can't even clear or show an error if stdscr is fundamentally broken.
             return
 
-        resize_occurred = new_height != self.height or new_width != self.width
+        resize_occurred = (new_height != self.height or new_width != self.width)
 
         if resize_occurred:
-            logger.info(
-                f"Terminal resized from {self.width}x{self.height} to {new_width}x{new_height}."
-            )
-
+            logger.info(f"Terminal resized from {self.width}x{self.height} to {new_width}x{new_height}.")
             self.height, self.width = new_height, new_width
-
-            if self.height <= 2 or self.width <= 10:
-                self.ui_is_too_small = True
-                logger.warning("Terminal too small after resize. UI drawing will be skipped.")
-            else:
-                self.ui_is_too_small = False
+            self.ui_is_too_small = False # Reset flag before attempting layout
 
             try:
-                self.window_layout_manager.delete_windows()
-
-                self.msg_win = self.msg_win_top = self.msg_win_bottom = (
-                    self.sidebar_win
-                ) = self.status_win = self.input_win = None
-
-                if not self.ui_is_too_small:
+                # It's crucial that resizeterm is called if dimensions change.
+                # It can fail if the new dimensions are too small (e.g., 0x0).
+                if self.height > 0 and self.width > 0:
                     self.curses_manager.resize_term(self.height, self.width)
-                    self.curses_manager.erase_stdscr()
-                    self.curses_manager.clear_stdscr()
-                    self.curses_manager.refresh_stdscr()
+                    self.curses_manager.clearok(self.stdscr, True) # Force clear on next refresh after resize
+                else:
+                    # If terminal is 0x0, resizeterm might error or behave unpredictably.
+                    # We'll likely hit the "Terminal too small" in setup_layout.
+                    logger.warning(f"Terminal dimensions are non-positive ({self.height}x{self.width}). Skipping resizeterm.")
 
-                    self.setup_layout()
+                self.curses_manager.erase_stdscr() # Add erase for more aggressive clearing
+                self.curses_manager.clear_stdscr()
+                self.curses_manager.refresh_stdscr() # Refresh stdscr itself after clear before creating subwindows
+                self.setup_layout() # This might raise "Terminal too small..."
 
-                    newly_created_windows = [
-                        self.stdscr, self.msg_win, self.msg_win_top, self.msg_win_bottom,
-                        self.sidebar_win, self.status_win, self.input_win,
-                    ]
-                    for win in newly_created_windows:
-                        if win:
-                            self.curses_manager.touchwin(win)
-                            self.curses_manager.clearok(win, True)
+                # Touch all windows and set clearok to mark them for full redraw after successful layout
+                try:
+                    self.curses_manager.touchwin(self.stdscr)
+                    self.curses_manager.clearok(self.stdscr, True) # Ensure stdscr is also cleared properly on next refresh cycle
+                    if self.msg_win:
+                        self.curses_manager.touchwin(self.msg_win)
+                        self.curses_manager.clearok(self.msg_win, True)
+                    if self.msg_win_top:
+                        self.curses_manager.touchwin(self.msg_win_top)
+                        self.curses_manager.clearok(self.msg_win_top, True)
+                    if self.msg_win_bottom:
+                        self.curses_manager.touchwin(self.msg_win_bottom)
+                        self.curses_manager.clearok(self.msg_win_bottom, True)
+                    if self.sidebar_win:
+                        self.curses_manager.touchwin(self.sidebar_win)
+                        self.curses_manager.clearok(self.sidebar_win, True)
+                    if self.status_win:
+                        self.curses_manager.touchwin(self.status_win)
+                        self.curses_manager.clearok(self.status_win, True)
+                    if self.input_win:
+                        self.curses_manager.touchwin(self.input_win)
+                        self.curses_manager.clearok(self.input_win, True)
+                except curses.error as te:
+                    logger.warning(f"Curses error during touchwin/clearok operations: {te}")
+                except Exception as tex:
+                    logger.error(f"Unexpected error during touchwin/clearok operations: {tex}", exc_info=True)
 
-                    all_context_names = self.client.context_manager.get_all_context_names()
-                    for ctx_name in all_context_names:
-                        ctx = self.client.context_manager.get_context(ctx_name)
-                        if ctx and hasattr(ctx, 'scrollback_offset'):
-                            ctx.scrollback_offset = 0
+                # Scroll to end of messages on resize to show latest messages
+                try:
+                    self.scroll_messages("end")
+                    logger.debug(f"Called scroll_messages('end') after resize.")
+                except Exception as e_scroll_end:
+                    logger.error(f"Error calling scroll_messages('end') after resize: {e_scroll_end}", exc_info=True)
 
-            except Exception as e:
-                logger.error(f"Error during resize handling: {e}", exc_info=True)
-                self.ui_is_too_small = True
 
+            except Exception as e: # Catches exceptions from resizeterm or setup_layout
+                logger.error(f"Error during resize handling sequence: {e}", exc_info=True)
+                if "Terminal too small" in str(e) or self.height <=0 or self.width <=0 :
+                    self.ui_is_too_small = True
+                    try:
+                        self.curses_manager.erase_stdscr()
+                        msg = "Terminal too small. Please resize."
+                        # Ensure msg_y and msg_x are valid before trying to draw
+                        if self.height > 0 and self.width > 0:
+                            msg_y = self.height // 2
+                            msg_x = max(0, (self.width - len(msg)) // 2)
+                            if msg_x + len(msg) <= self.width: # Check if message can fit
+                                error_attr = self.curses_manager.get_color("error") | curses.A_BOLD
+                                self.curses_manager.addstr_stdscr(msg_y, msg_x, msg, error_attr)
+                        # else: message won't fit, stdscr will be blank
+                        self.curses_manager.refresh_stdscr()
+                    except curses.error as ce_small_msg:
+                        logger.error(f"Curses error displaying 'Terminal too small' message: {ce_small_msg}")
+                    except Exception as ex_small_msg:
+                        logger.error(f"Unexpected error displaying 'Terminal too small' message: {ex_small_msg}", exc_info=True)
+                    return # Do not proceed to draw other windows
+                else:
+                    # Handle other critical resize errors
+                    try:
+                        self.curses_manager.erase_stdscr()
+                        generic_error_msg = "Resize Error!"
+                        if self.height > 0 and self.width > 0:
+                            err_y = self.height // 2
+                            err_x = max(0, (self.width - len(generic_error_msg)) // 2)
+                            if err_x + len(generic_error_msg) <= self.width:
+                                self.curses_manager.addstr_stdscr(err_y, err_x, generic_error_msg, self.curses_manager.get_color("error"))
+                        self.curses_manager.refresh_stdscr()
+                    except curses.error as ce_resize_err:
+                        logger.error(f"Curses error displaying 'Resize Error!' message: {ce_resize_err}")
+                    except Exception as ex_resize_err:
+                        logger.error(f"Unexpected error displaying 'Resize Error!' message: {ex_resize_err}", exc_info=True)
+                    return # Do not proceed
+
+        # If UI is marked as too small (either from this resize or a previous one)
         if self.ui_is_too_small:
+            # Attempt to re-display the "too small" message if resize didn't just happen,
+            # or ensure stdscr is refreshed if it was already set up by the resize block.
+            # This covers cases where a refresh is called without a resize but the UI is still too small.
+            if not resize_occurred: # If no resize, the message might not have been redrawn
+                try:
+                    self.curses_manager.erase_stdscr() # Ensure clean slate
+                    msg = "Terminal too small. Please resize."
+                    if self.height > 0 and self.width > 0:
+                        msg_y = self.height // 2
+                        msg_x = max(0, (self.width - len(msg)) // 2)
+                        if msg_x + len(msg) <= self.width: # Check if message can fit
+                            error_attr = self.curses_manager.get_color("error") | curses.A_BOLD
+                            self.curses_manager.addstr_stdscr(msg_y, msg_x, msg, error_attr)
+                    self.curses_manager.refresh_stdscr()
+                except curses.error as ce_small_msg_repeat:
+                    logger.error(f"Curses error re-displaying 'Terminal too small' message: {ce_small_msg_repeat}")
+                except Exception as ex_small_msg_repeat:
+                    logger.error(f"Unexpected error re-displaying 'Terminal too small' message: {ex_small_msg_repeat}", exc_info=True)
+
             try:
-                self.curses_manager.erase_stdscr()
-                msg = "Terminal too small. Please resize."
-                if self.height > 0 and self.width > len(msg) + 1 :
-                    msg_y = self.height // 2
-                    msg_x = max(0, (self.width - len(msg)) // 2)
-                    error_attr = self.curses_manager.get_color("error") | curses.A_BOLD
-                    self.curses_manager.addstr_stdscr(msg_y, msg_x, msg, error_attr)
+                # If stdscr was touched, doupdate might be needed, or refresh if only stdscr.
+                # For simplicity, a refresh on stdscr should be safe.
                 self.curses_manager.refresh_stdscr()
-            except Exception as e:
-                logger.error(f"Error displaying 'Terminal too small' message: {e}")
+            except curses.error as e_doupdate_small:
+                 logger.warning(f"Curses error during doupdate/refresh when UI is too small: {e_doupdate_small}")
+            except Exception as ex_doupdate_small:
+                logger.error(f"Unexpected error during doupdate/refresh when UI is too small: {ex_doupdate_small}", exc_info=True)
             return
 
+        # --- Proceed with drawing individual windows only if UI is not too small ---
         active_ctx_name_snapshot = self.client.context_manager.active_context_name
-        active_ctx_obj_snapshot = (
-            self.client.context_manager.get_context(active_ctx_name_snapshot)
-            if active_ctx_name_snapshot
-            else None
-        )
+        active_ctx_obj_snapshot = self.client.context_manager.get_context(active_ctx_name_snapshot) if active_ctx_name_snapshot else None
 
-        self.curses_manager.noutrefresh_stdscr()
-
-        self.draw_messages(active_ctx_obj_snapshot, active_ctx_name_snapshot)
-        self.draw_sidebar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
-        self.draw_status_bar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
-        self.draw_input_line()
-
-        windows_to_refresh = [
-            self.msg_win_top if self.split_mode_active else self.msg_win,
-            self.msg_win_bottom if self.split_mode_active else None,
-            self.sidebar_win,
-            self.status_win,
-            self.input_win
-        ]
-        for win in windows_to_refresh:
-            if win:
-                try:
-                    win.noutrefresh()
-                except curses.error as e:
-                    logger.warning(f"Error noutrefreshing window {win!r}: {e}")
-
-        self.curses_manager.update_screen()
+        try:
+            self.curses_manager.noutrefresh_stdscr() # Prepare stdscr for batched update
+            self.draw_messages(active_ctx_obj_snapshot, active_ctx_name_snapshot)
+            self.draw_sidebar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
+            self.draw_status_bar(active_ctx_obj_snapshot, active_ctx_name_snapshot)
+            self.draw_input_line()
+            self.curses_manager.update_screen() # Perform batched update
+        except curses.error as e_draw:
+            logger.error(f"Curses error during main window drawing phase: {e_draw}", exc_info=True)
+            # Attempt to display a generic UI draw error on stdscr
+            try:
+                self.curses_manager.erase_stdscr()
+                draw_error_msg = "UI Draw Error!"
+                if self.height > 0 and self.width > 0 :
+                    err_y = self.height // 2
+                    err_x = max(0, (self.width - len(draw_error_msg)) // 2)
+                    if err_x + len(draw_error_msg) <= self.width:
+                        self.curses_manager.addstr_stdscr(err_y, err_x, draw_error_msg, self.curses_manager.get_color("error"))
+                self.curses_manager.refresh_stdscr()
+            except curses.error as ce_draw_err_msg:
+                logger.error(f"Curses error displaying 'UI Draw Error!' message: {ce_draw_err_msg}")
+            except Exception as ex_draw_err_msg:
+                logger.error(f"Unexpected error displaying 'UI Draw Error!' message: {ex_draw_err_msg}", exc_info=True)
+            # No return here, let it fall through if displaying the error fails.
+            # The UI might be stuck, but we've logged the core issue.
+        except Exception as e_critical_draw:
+            logger.critical(f"Unexpected critical error during refresh_all_windows draw phase: {e_critical_draw}", exc_info=True)
+            try:
+                self.curses_manager.erase_stdscr()
+                critical_error_msg = "Critical UI Error!"
+                if self.height > 0 and self.width > 0:
+                    err_y = self.height // 2
+                    err_x = max(0, (self.width - len(critical_error_msg)) // 2)
+                    if err_x + len(critical_error_msg) <= self.width:
+                        self.curses_manager.addstr_stdscr(err_y, err_x, critical_error_msg, self.curses_manager.get_color("error"))
+                self.curses_manager.refresh_stdscr()
+            except curses.error as ce_crit_err_msg:
+                logger.error(f"Curses error displaying 'Critical UI Error!' message: {ce_crit_err_msg}")
+            except Exception as ex_crit_err_msg:
+                logger.error(f"Unexpected error displaying 'Critical UI Error!' message: {ex_crit_err_msg}", exc_info=True)
 
     async def add_message_to_context(
         self, text: str, color_attr: int, prefix_time: bool, context_name: str
     ):
         """Adds a message to the specified context's message history."""
-        # This method is called from IRCClient_Logic.add_message,
-        # which handles getting the correct context.
-        # Here, we just pass it on to the message panel renderer.
-        self.message_panel_renderer.add_message_to_context(
-            text, color_attr, prefix_time, context_name
+        final_text = text
+        if prefix_time:
+            timestamp = time.strftime("%H:%M:%S")
+            final_text = f"[{timestamp}] {text}"
+
+        self.client.context_manager.add_message_to_context(
+            context_name=context_name, text_line=final_text, color_attr=color_attr
         )
 
     def get_input_char(self):

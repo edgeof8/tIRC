@@ -421,7 +421,7 @@ class StateManager:
             if handler in self._global_handlers:
                 self._global_handlers.remove(handler)
 
-    def _notify_handlers(self, change: StateChange) -> None:
+    async def _notify_handlers(self, change: StateChange) -> None:
         """Notify all relevant handlers of a state change."""
         # Notify key-specific handlers
         if change.key in self._change_handlers:
@@ -430,9 +430,10 @@ class StateManager:
                     result = handler(change)
                     if asyncio.iscoroutine(result):
                         if self.loop.is_running():
-                            asyncio.create_task(result) # Schedule coroutine
+                            await result # Await the coroutine directly
                         else:
-                            self.logger.warning(f"Async handler for key '{change.key}' called when no loop is running: {handler.__name__}")
+                            self.logger.warning(f"Async handler for key '{change.key}' called when no loop is running: {handler.__name__}. Not awaiting.")
+                    # If it's not a coroutine, just execute it (it's synchronous)
                 except Exception as e:
                     self.logger.error(f"Error in change handler for key '{change.key}': {e}", exc_info=True)
 
@@ -442,75 +443,76 @@ class StateManager:
                 result = handler(change)
                 if asyncio.iscoroutine(result):
                     if self.loop.is_running():
-                        asyncio.create_task(result) # Schedule coroutine
+                        await result # Await the coroutine directly
                     else:
-                        self.logger.warning(f"Async global handler called when no loop is running: {handler.__name__}")
+                        self.logger.warning(f"Async global handler called when no loop is running: {handler.__name__}. Not awaiting.")
+                # If it's not a coroutine, just execute it (it's synchronous)
             except Exception as e:
                 self.logger.error(f"Error in global handler: {e}", exc_info=True)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a state value."""
         with self._lock:
-            return self._state.get(key, default)
+            async def set(
+                self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None
+            ) -> bool:
+                """Set a state value with validation."""
+                with self._lock:
+                    old_value = self._state.get(key)
 
-    def set(
-        self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """Set a state value with validation."""
-        with self._lock:
-            old_value = self._state.get(key)
+                    # Validate if enabled and validator exists
+                    if self.validate_on_change and key in self._validators:
+                        validator = self._validators[key]
+                        if not validator.validate(value):
+                            error_msg = validator.get_error_message(value)
+                            self.logger.error(f"State validation failed for {key}: {error_msg}")
+                            return False
 
-            # Validate if enabled and validator exists
-            if self.validate_on_change and key in self._validators:
-                validator = self._validators[key]
-                if not validator.validate(value):
-                    error_msg = validator.get_error_message(value)
-                    self.logger.error(f"State validation failed for {key}: {error_msg}")
+                    # Update state
+                    self._state[key] = value
+
+                    # Create and notify of change
+                    change = StateChange(
+                        key=key,
+                        old_value=old_value,
+                        new_value=value,
+                        change_type=(
+                            StateChangeType.CREATED
+                            if old_value is None
+                            else StateChangeType.UPDATED
+                        ),
+                        metadata=metadata or {},
+                    )
+                    await self._notify_handlers(change) # Await here
+
+                    # Auto-save if enabled
+                    if self.auto_save:
+                        self._save_state()
+
+                    return True
+
+            async def delete(self, key: str) -> bool:
+                """Delete a state value."""
+                with self._lock:
+                    if key in self._state:
+                        old_value = self._state[key]
+                        del self._state[key]
+
+                        # Create and notify of change
+                        change = StateChange(
+                            key=key,
+                            old_value=old_value,
+                            new_value=None,
+                            change_type=StateChangeType.DELETED,
+                        )
+                        await self._notify_handlers(change) # Await here
+
+                        # Auto-save if enabled
+                        if self.auto_save:
+                            self._save_state()
+
+                        return True
                     return False
-
-            # Update state
-            self._state[key] = value
-
-            # Create and notify of change
-            change = StateChange(
-                key=key,
-                old_value=old_value,
-                new_value=value,
-                change_type=(
-                    StateChangeType.CREATED
-                    if old_value is None
-                    else StateChangeType.UPDATED
-                ),
-                metadata=metadata or {},
-            )
-            self._notify_handlers(change)
-
-            # Auto-save if enabled
-            if self.auto_save:
-                self._save_state()
-
-            return True
-
-    def delete(self, key: str) -> bool:
-        """Delete a state value."""
-        with self._lock:
-            if key in self._state:
-                old_value = self._state[key]
-                del self._state[key]
-
-                # Create and notify of change
-                change = StateChange(
-                    key=key,
-                    old_value=old_value,
-                    new_value=None,
-                    change_type=StateChangeType.DELETED,
-                )
-                self._notify_handlers(change)
-
-                # Auto-save if enabled
-                if self.auto_save:
-                    self._save_state()
-
                 return True
             return False
 

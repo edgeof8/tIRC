@@ -164,8 +164,16 @@ class CommandHandler:
 
         try:
             if not line.startswith("/"):
-                if self.client.context_manager.active_context_name:
-                    await self.client.handle_text_input(line)
+                active_context_name = self.client.context_manager.active_context_name
+                if active_context_name:
+                    # Send message to the active context (channel or query)
+                    await self.client.network_handler.send_raw(f"PRIVMSG {active_context_name} :{line}")
+                    # Also add the message to the local UI for display
+                    await self.client.add_message(
+                        line,
+                        self.client.ui.colors.get("my_message", 0), # Use my_message color for sent messages
+                        context_name=active_context_name
+                    )
                     return True
                 else:
                     await self.client.add_message(

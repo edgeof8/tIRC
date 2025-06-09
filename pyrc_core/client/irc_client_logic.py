@@ -141,6 +141,24 @@ class IRCClient_Logic:
         else:
             logger.debug(f"Trigger system not enabled, skipping event: {event_type}")
 
+    async def _process_input_queue_loop(self):
+        """Continuously pulls key codes from the input queue and dispatches them."""
+        if not self.input_handler:
+            logger.error("InputHandler is not initialized. Cannot process input queue.")
+            return
+
+        while True:
+            try:
+                key_code = await self.input_handler._input_queue.get()
+                await self.input_handler.handle_key_press(key_code)
+                self.input_handler._input_queue.task_done()
+            except asyncio.CancelledError:
+                logger.info("Input queue processing task cancelled.")
+                break
+            except Exception as e:
+                logger.error(f"Error in _process_input_queue_loop: {e}", exc_info=True)
+                await asyncio.sleep(0.1) # Prevent tight loop on continuous errors
+
     async def run_main_loop(self):
         """Main asyncio loop to handle user input and update the UI."""
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
@@ -148,7 +166,8 @@ class IRCClient_Logic:
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
         network_task = None
-        input_task = None
+        input_reader_task = None
+        input_processor_task = None # New task for processing input queue
         tasks_to_await_on_shutdown = set()  # To hold tasks that need graceful shutdown
 
         try:
@@ -168,8 +187,12 @@ class IRCClient_Logic:
             tasks_to_await_on_shutdown.add(network_task)
 
             if not self.is_headless and self.input_handler:
-                input_task = asyncio.create_task(self.input_handler.async_input_reader(self._executor))
-                tasks_to_await_on_shutdown.add(input_task)
+                input_reader_task = asyncio.create_task(self.input_handler.async_input_reader(self._executor))
+                tasks_to_await_on_shutdown.add(input_reader_task)
+
+                # Start the new input processing task
+                input_processor_task = asyncio.create_task(self._process_input_queue_loop())
+                tasks_to_await_on_shutdown.add(input_processor_task)
 
             while not self.should_quit.is_set():
                 try:
@@ -206,7 +229,7 @@ class IRCClient_Logic:
             # Cancel and await remaining tasks to ensure they clean up
             async def cancel_and_wait(task: asyncio.Task, name: str):
                 try:
-                    if not task.done():
+                    if task and not task.done(): # Check if task exists and is not already done
                         logger.info(f"Cancelling task: {name}")
                         task.cancel()
                         await task
@@ -217,8 +240,10 @@ class IRCClient_Logic:
 
             if network_task:
                 await cancel_and_wait(network_task, "network_task")
-            if input_task:
-                await cancel_and_wait(input_task, "input_task")
+            if input_reader_task:
+                await cancel_and_wait(input_reader_task, "input_reader_task")
+            if input_processor_task: # Cancel the new input processor task
+                await cancel_and_wait(input_processor_task, "input_processor_task")
 
             # Shutdown UI if active
             if not self.is_headless and self.ui and hasattr(self.ui, 'shutdown') and callable(self.ui.shutdown):

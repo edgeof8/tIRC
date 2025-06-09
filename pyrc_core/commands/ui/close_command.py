@@ -21,7 +21,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def _close_channel_context(client: "IRCClient_Logic", channel_context: "CTX_Type"):
+async def _close_channel_context(client: "IRCClient_Logic", channel_context: "CTX_Type"):
     from pyrc_core.context_manager import ChannelJoinStatus # Local import for enum
     if hasattr(channel_context, "join_status"):
         channel_context.join_status = ChannelJoinStatus.PARTING
@@ -33,16 +33,16 @@ def _close_channel_context(client: "IRCClient_Logic", channel_context: "CTX_Type
     if not part_message:
         part_message = "Leaving"
 
-    client.network_handler.send_raw(
+    await client.network_handler.send_raw(
         f"PART {channel_context.name} :{part_message}"
     )
-    client.add_message(
+    await client.add_message(
         f"Parting {channel_context.name}...",
-        "system",
+        client.ui.colors.get("system", 0),
         context_name=channel_context.name,
     )
 
-def _close_query_or_generic_context(client: "IRCClient_Logic", context_obj: "CTX_Type"):
+async def _close_query_or_generic_context(client: "IRCClient_Logic", context_obj: "CTX_Type"):
     context_name_to_close = context_obj.name
     # Determine next context to switch to BEFORE removing the current one
     all_contexts = client.context_manager.get_all_context_names()
@@ -65,24 +65,24 @@ def _close_query_or_generic_context(client: "IRCClient_Logic", context_obj: "CTX
             pass
 
     client.context_manager.remove_context(context_name_to_close)
-    client.add_message(
+    await client.add_message(
         f"Closed window: {context_name_to_close}",
-        "system",
+        client.ui.colors.get("system", 0),
         context_name="Status", # Feedback always to status for closed query/generic
     )
     if client.context_manager.active_context_name == context_name_to_close or not client.context_manager.active_context_name:
-        client.switch_active_context(next_active_context)
+        await client.switch_active_context(next_active_context)
 
 
-def handle_close_command(client: "IRCClient_Logic", args_str: str):
+async def handle_close_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /close, /wc, /partchannel command."""
     context_to_close_name = args_str.strip()
 
     if not context_to_close_name: # No argument, close current
         active_ctx_name = client.context_manager.active_context_name
         if not active_ctx_name:
-            client.add_message(
-                "No active window to close.", "error", context_name="Status"
+            await client.add_message(
+                "No active window to close.", client.ui.colors.get("error", 0), context_name="Status"
             )
             return
         context_to_close_name = active_ctx_name
@@ -99,20 +99,20 @@ def handle_close_command(client: "IRCClient_Logic", args_str: str):
     context_to_close = client.context_manager.get_context(context_to_close_name)
 
     if not context_to_close:
-        client.add_message(
-            f"Window '{context_to_close_name}' not found.", "error", context_name="Status"
+        await client.add_message(
+            f"Window '{context_to_close_name}' not found.", client.ui.colors.get("error", 0), context_name="Status"
         )
         return
 
     if context_to_close.type == "channel":
-        _close_channel_context(client, context_to_close)
+        await _close_channel_context(client, context_to_close)
     elif (
         context_to_close.type == "query"
         or context_to_close.type == "generic"
         or context_to_close.type == "list_results"
     ):
-        _close_query_or_generic_context(client, context_to_close)
+        await _close_query_or_generic_context(client, context_to_close)
     elif context_to_close.type == "status":
-        client.add_message(
-            "Cannot close the Status window.", "error", context_name="Status"
+        await client.add_message(
+            "Cannot close the Status window.", client.ui.colors.get("error", 0), context_name="Status"
         )
