@@ -504,7 +504,8 @@ class NetworkHandler:
         """Main network handling loop."""
         try:
             self.logger.info("Network loop initiated.")
-            while not self._stop_event.is_set():
+            while not self._stop_event.is_set(): # Check _stop_event state
+                self.logger.debug(f"Network loop: Checking _stop_event.is_set() - currently {self._stop_event.is_set()}") # Added debug log
                 if not self.connected or not self._reader or not self._writer: # Added _writer check
                     current_sm_state = self.client_logic_ref.state_manager.get_connection_state() if self.client_logic_ref else ConnectionState.DISCONNECTED
 
@@ -553,9 +554,14 @@ class NetworkHandler:
                         await self._reset_connection_state()
                         continue
                     except ssl.SSLError as e:
-                        logger.error(f"SSL error in network loop: {e}", exc_info=True)
-                        if self.client_logic_ref:
-                            await self.client_logic_ref.add_status_message(f"SSL Error: {e}", "error")
+                        self.logger.error(f"SSL error in network loop: {e}", exc_info=True)
+                        if "APPLICATION_DATA_AFTER_CLOSE_NOTIFY" in str(e):
+                            self.logger.warning("Network loop: Detected APPLICATION_DATA_AFTER_CLOSE_NOTIFY. This often means the server closed the SSL session first.")
+                            if self.client_logic_ref:
+                                await self.client_logic_ref.add_status_message("SSL Error: Server closed connection unexpectedly.", "error")
+                        else:
+                            if self.client_logic_ref:
+                                await self.client_logic_ref.add_status_message(f"SSL Error: {e}", "error")
                         await self._reset_connection_state()
                         continue
                     except Exception as e:

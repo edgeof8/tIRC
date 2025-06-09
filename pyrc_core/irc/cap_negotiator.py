@@ -138,14 +138,16 @@ class CapNegotiator:
 
                 if self.network_handler and self.network_handler.connected:
                     await self.add_status_message("Negotiating capabilities with server (CAP)...", "system")
+                    self.logger.info("CapNegotiator: ABOUT TO SEND CAP LS.")
                     await self.network_handler.send_cap_ls()
+                    self.logger.info("CapNegotiator: CAP LS SENT SUCCESSFULLY.")
                     self._start_negotiation_timeout_timer()
                 else:
                     self.logger.warning("CapNegotiator.start_negotiation: Network not connected when expected. Cannot send CAP LS.")
                     await self.add_status_message("Cannot initiate CAP: Network not connected as expected.", "error")
-                    self.cap_negotiation_pending = False # Clean up state
-                    self.initial_cap_flow_complete_event.set()
-                    self.cap_negotiation_finished_event.set()
+                    self.cap_negotiation_pending = False # Ensure this
+                    self.initial_cap_flow_complete_event.set() # Ensure this
+                    self.cap_negotiation_finished_event.set() # Ensure this
                     self._cancel_negotiation_timeout_timer() # Ensure timer is cancelled if we exit early
 
             except Exception as e:
@@ -159,7 +161,7 @@ class CapNegotiator:
             # cap_negotiation_pending is now managed by completion/timeout/reset methods.
 
     async def on_cap_ls_received(self, capabilities_str: str):
-        self.logger.debug(f"on_cap_ls_received called, cap_negotiation_pending={self.cap_negotiation_pending}")
+        self.logger.info(f"CapNegotiator: Processing CAP LS response: {capabilities_str.strip()}")
         self.logger.debug(f"on_cap_ls_received called, cap_negotiation_pending={self.cap_negotiation_pending}")
         if not self.cap_negotiation_pending:
             self.logger.warning(f"Received CAP LS but negotiation is not pending. Ignoring. cap_negotiation_pending={self.cap_negotiation_pending}")
@@ -215,6 +217,7 @@ class CapNegotiator:
             await self.registration_handler.on_cap_negotiation_complete()
 
     async def on_cap_ack_received(self, acked_caps_str: str):
+        self.logger.info(f"CapNegotiator: Processing CAP ACK response: {acked_caps_str.strip()}")
         if not hasattr(self, 'cap_negotiation_pending') or not self.cap_negotiation_pending:
             self.logger.warning(f"Received CAP ACK but negotiation is not pending. Ignoring. cap_negotiation_pending={getattr(self, 'cap_negotiation_pending', 'N/A')}")
             return
@@ -261,8 +264,8 @@ class CapNegotiator:
                 await self._finalize_cap_negotiation_phase()
             else:
                 self.logger.info("All CAPs ACKed/NAKed, but SASL flow is active. CAP END deferred.")
-
     async def on_cap_nak_received(self, naked_caps_str: str):
+        self.logger.info(f"CapNegotiator: Processing CAP NAK response: {naked_caps_str.strip()}")
         if not self.cap_negotiation_pending:
             self.logger.warning("Received CAP NAK but negotiation is not pending. Ignoring.")
             return
