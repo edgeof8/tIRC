@@ -223,25 +223,21 @@ class NetworkHandler:
         )
 
         was_connected = self.connected # Capture state before changing
-        self.connected = False # <<< SET FALSE EARLIER
+        self.connected = False # Set connected to False at the very beginning
         self.is_handling_nick_collision = False
 
-        if self._writer:
+        self._reader = None # Set reader to None immediately
+        writer_to_close = self._writer # Store writer in local variable
+        self._writer = None # Set writer to None immediately
+
+        if writer_to_close: # Operate on the local variable
             try:
-                if not self._writer.is_closing(): # Only close if not already closing
-                    self._writer.close()
-                await self._writer.wait_closed() # Wait for actual close
+                if not writer_to_close.is_closing(): # Only close if not already closing
+                    writer_to_close.close()
+                await writer_to_close.wait_closed() # Wait for actual close
                 self.logger.debug("Writer closed by _reset_connection_state.")
             except Exception as e:
                 self.logger.error(f"Error closing writer in reset: {e}") # SSL error might happen here
-            finally:
-                self._writer = None # Ensure it's None after attempt
-
-        if self._reader: # pragma: no cover
-            # StreamReader doesn't have a close method. It's tied to the transport.
-            # Setting to None is sufficient to indicate it's no longer usable.
-            self._reader = None
-            self.logger.debug("Reader reference cleared by _reset_connection_state.")
 
         # Update StateManager state only if it was previously in a connected-like state
         if self.client_logic_ref: # Ensure client_logic_ref exists
@@ -524,14 +520,14 @@ class NetworkHandler:
                         )
                         # _connect_socket will set ConnectionState.CONNECTING
                         if await self._connect_socket():
-                            self.logger.info("Network_loop: Successfully connected via _connect_socket.")
-                            # self.connected is set by _connect_socket
+                            self.logger.info(f"Network_loop: Successfully connected via _connect_socket. self.connected: {self.connected}, StateManager: {self.client_logic_ref.state_manager.get_connection_state().name}")
                             self._disconnect_event_sent_for_current_session = False
                         else:
                             self.logger.warning(
-                                "Network_loop: _connect_socket failed. Will retry after delay."
+                                f"Network_loop: _connect_socket failed. self.connected: {self.connected}. Will retry after delay."
                             )
-                            await self._reset_connection_state() # Ensure state is clean before sleep
+                            self.connected = False # Ensure this is explicitly set to False if _connect_socket fails
+                            await self._reset_connection_state()
                             await asyncio.sleep(self.reconnect_delay)
                             self.reconnect_delay = min(self.reconnect_delay * 2, self.config.reconnect_max_delay if self.config else 60)
                     else:
