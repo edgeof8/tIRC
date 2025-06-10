@@ -65,6 +65,12 @@ class SidebarPanelRenderer:
                     window, line_num, max_y, max_x, active_context_obj
                 )
 
+        if window:
+            try:
+                window.noutrefresh()
+            except curses.error as e:
+                logger.warning(f"curses.error on noutrefresh in draw (SidebarPanelRenderer): {e}")
+
     def _draw_sidebar_context_list(
         self, window: Any, max_y: int, max_x: int, current_active_ctx_name_str: str, all_contexts_names: List[str]
     ) -> int: # Renamed all_contexts_data to all_contexts_names

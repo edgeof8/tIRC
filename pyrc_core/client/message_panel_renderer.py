@@ -31,8 +31,9 @@ class MessagePanelRenderer:
             messages_to_draw: List[Tuple[str, Any]] = [] # Use List for the local copy
             if hasattr(context_obj, 'messages') and isinstance(context_obj.messages, Deque):
                 messages_to_draw = list(context_obj.messages) # Convert Deque to List for slicing
-
+            logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}' has {len(messages_to_draw)} messages. Messages: {[msg[0][:30] for msg in messages_to_draw]}")
             if not messages_to_draw:
+                logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}' has no messages, skipping draw.")
                 return
 
             total_messages = len(messages_to_draw)
@@ -45,18 +46,21 @@ class MessagePanelRenderer:
 
             start_idx = max(0, total_messages - visible_lines - scrollback_offset)
             end_idx = min(total_messages, start_idx + visible_lines)
-
+            logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': total_messages={total_messages}, visible_lines={visible_lines}, scrollback_offset={scrollback_offset}, start_idx={start_idx}, end_idx={end_idx}")
             if start_idx >= end_idx:
                 return
 
             line_render_idx = 0
+            logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': Drawing messages from index {start_idx} to {end_idx}")
             for text, color_attr in messages_to_draw[start_idx:end_idx]: # Iterate over the list slice
                 if line_render_idx >= max_y:
+                    logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': line_render_idx={line_render_idx} >= max_y={max_y}, breaking loop.")
                     break
                 SafeCursesUtils._safe_addstr(
                     window, line_render_idx, 0, text[: max_x], color_attr, "message"
                 )
                 line_render_idx += 1
+            logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': Drew {line_render_idx} messages.")
 
         except (TypeError, IndexError) as e:
             logger.error(f"Error indexing messages in window for context '{getattr(context_obj, 'name', 'Unknown')}': {e}", exc_info=True)
@@ -71,6 +75,11 @@ class MessagePanelRenderer:
     def draw(self, window: Any, context_obj: Any):
         """Draws messages for a single context. Main entry point for non-split view."""
         self._draw_messages_in_window(window, context_obj)
+        if window:
+            try:
+                window.noutrefresh()
+            except curses.error as e:
+                logger.warning(f"curses.error on noutrefresh in draw (MessagePanelRenderer): {e}")
 
     def draw_split(
         self,
@@ -83,9 +92,17 @@ class MessagePanelRenderer:
         """Draws messages for split view panes."""
         if top_window:
             self._draw_messages_in_window(top_window, top_context)
+            try:
+                top_window.noutrefresh()
+            except curses.error as e:
+                logger.warning(f"curses.error on noutrefresh for top_window in draw_split: {e}")
 
         if bottom_window:
             self._draw_messages_in_window(bottom_window, bottom_context)
+            try:
+                bottom_window.noutrefresh()
+            except curses.error as e:
+                logger.warning(f"curses.error on noutrefresh for bottom_window in draw_split: {e}")
 
 
     def _draw_dcc_transfer_list(self, window: Any, context_obj: Any):

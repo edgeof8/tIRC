@@ -63,3 +63,9 @@ class StatusBarRenderer:
             logger.warning(f"Error drawing status bar: {e}")
         except Exception as ex:
             logger.error(f"Unexpected error drawing status bar: {ex}", exc_info=True)
+
+        if window:
+            try:
+                window.noutrefresh()
+            except curses.error as e:
+                logger.warning(f"curses.error on noutrefresh in draw (StatusBarRenderer): {e}")
