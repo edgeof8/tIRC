@@ -161,7 +161,7 @@ graph TD
 ```
 PyRC/
 ├── pyrc.py                     # Main application entry point and asyncio event loop setup
-├── pyterm_irc_config.ini       # Main configuration file with server and client settings
+├── config/pyterm_irc_config.ini       # Main configuration file with server and client settings
 │
 ├── pyrc_core/                  # Core application package
 │   ├── __init__.py             # Package initialization
@@ -328,7 +328,7 @@ PyRC/
 │   └── default_help/
 │       └── command_help.ini  # Fallback help texts for core commands.
 │
-└── pyterm_irc_config.ini.example  # Example configuration file. Copy to create config.
+├── config/pyterm_irc_config.ini.example  # Example configuration file. Copy to create config.
 
 # Logs are stored in the following locations (auto-created when needed):
 # - Main application log: logs/pyrc_core.log
@@ -371,7 +371,7 @@ This section highlights the significant architectural changes and robustness imp
 - **Centralized Configuration (`AppConfig`):**
 
   - All application and server settings are now loaded and managed centrally by the `AppConfig` class. This ensures a single, consistent source of truth for configuration values across the client.
-  - Configuration is automatically loaded from `pyterm_irc_config.ini` and can be dynamically updated and saved in-client.
+  - Configuration is automatically loaded from `config/pyterm_irc_config.ini` and can be dynamically updated and saved in-client.
 
 - **Exclusive State Management (`StateManager`):**
 
@@ -405,7 +405,7 @@ These architectural improvements significantly enhance PyRC's stability, maintai
 - **Text-based UI:** Clean and navigable interface using the Python `curses` library (optional for headless operation).
 - **Split-Screen Support:** Horizontal split-screen mode with independent scrolling and context management for each pane.
 - **Multi-Server Configuration & Switching:**
-  - Define multiple server connection profiles in `pyterm_irc_config.ini`.
+  - Define multiple server connection profiles in `config/pyterm_irc_config.ini`.
   - Switch between configured servers using the `/server <config_name>` command (now with event-driven disconnect handling).
 - **Channel and Query Windows:** Separate, consistently managed contexts for channels (case-insensitive handling) and private messages.
 - **Intuitive UI Flow:** The client starts in the "Status" window and reliably switches to the first auto-joined channel upon successful connection and join, providing a smooth and predictable startup experience.
@@ -416,7 +416,7 @@ These architectural improvements significantly enhance PyRC's stability, maintai
 - **Highly Modular Command System:** _All_ core client commands are implemented in individual Python modules within a structured `commands/` directory. These are dynamically discovered and registered at startup. Each command module defines its handler(s), help text (usage, description, supporting dictionary format for richer help), and aliases.
 - **Dynamic & Categorized Help System:** The `/help` system is fully dynamic, sourcing information from core command modules and script registrations. It now displays categories first, allowing users to drill down via `/help <category>` or `/help script <script_name>`. Specific command help (`/help <command>`) provides detailed usage, description, and aliases.
 - **Comprehensive Command Set:** Supports a wide array of standard IRC commands and client-specific utility commands (see "Basic Commands" section).
-- **Dynamic Configuration:** View and modify client settings on-the-fly using `/set`. Changes are saved to `pyterm_irc_config.ini`. Reload with `/rehash`.
+- **Dynamic Configuration:** View and modify client settings on-the-fly using `/set`. Changes are saved to `config/pyterm_irc_config.ini`. Reload with `/rehash`.
 - **Ignore System:** Powerful ignore list for users/hostmasks with wildcard support, managed via `/ignore`, `/unignore`, `/listignores`.
 - **Extensible Scripting System (Python):**
   - Load custom Python scripts from a `scripts/` directory.
@@ -506,10 +506,10 @@ Download the latest release from the [Releases](https://github.com/edgeof8/PyRC/
 
 ## Configuration
 
-PyRC uses `pyterm_irc_config.ini` for configuration. To get started:
+PyRC uses `config/pyterm_irc_config.ini` for configuration. To get started:
 
 ```bash
-cp pyterm_irc_config.ini.example pyterm_irc_config.ini
+cp config/pyterm_irc_config.ini.example config/pyterm_irc_config.ini
 ```
 
 ### Key Configuration Sections
@@ -699,13 +699,13 @@ PyRC is licensed under the [MIT License](LICENSE).
   <a href="https://github.com/edgeof8/PyRC/pulls">Pull Requests</a>
 </p>
 
-PyRC uses `pyterm_irc_config.ini` in its root directory. To get started:
+PyRC uses `config/pyterm_irc_config.ini` in its root directory. To get started:
 
 1. Copy the example configuration file:
    ```bash
-   cp pyterm_irc_config.ini.example pyterm_irc_config.ini
+   cp config/pyterm_irc_config.ini.example config/pyterm_irc_config.ini
    ```
-2. Edit `pyterm_irc_config.ini` to customize your settings.
+2. Edit `config/pyterm_irc_config.ini` to customize your settings.
 
 **Key Config Sections & Settings (Managed by `AppConfig`):**
 
@@ -1077,7 +1077,7 @@ pyrc --headless --connect irc.libera.chat
 
 ## Configuration
 
-PyRC uses `pyterm_irc_config.ini` in its root directory as the main configuration file.
+PyRC uses `config/pyterm_irc_config.ini` in its root directory as the main configuration file.
 The `state.json` (persistent state) and `logs/` (application logs) directories are created in the current working directory.
 
 ### Example `config.ini`

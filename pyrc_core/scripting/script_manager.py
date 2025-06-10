@@ -20,6 +20,7 @@ logger = logging.getLogger("pyrc.script_manager")
 
 SCRIPTS_DIR_NAME = "scripts"
 HELP_INI_FILENAME = "command_help.ini"
+# HELP_INI_PATH is now relative to pyrc_core
 HELP_INI_PATH = os.path.join("data", "default_help", HELP_INI_FILENAME)
 
 
@@ -47,7 +48,8 @@ class ScriptManager:
         self._load_help_texts()
 
     def _load_help_texts(self):
-        help_ini_full_path = os.path.join(self.base_dir, HELP_INI_PATH)  # Use base_dir
+        # Construct path from pyrc_core's directory (self.base_dir is pyrc_core)
+        help_ini_full_path = os.path.join(self.base_dir, HELP_INI_PATH)
         if not os.path.exists(help_ini_full_path):
             self.logger.warning(
                 f"Help file '{help_ini_full_path}' not found. No INI help texts will be loaded."
@@ -75,10 +77,19 @@ class ScriptManager:
         self, script_name: str, data_filename: str
     ) -> str:
         # script_name is module name like "ai_api_test_script"
-        # Corrected path to look inside the 'scripts' directory
+        # Path should be <project_root>/data/scripts/<script_name>/
+        # self.base_dir here refers to the project's root directory,
+        # as ScriptManager is initialized with client_logic_ref.BASE_DIR
+        # which is os.path.dirname(os.path.dirname(os.path.abspath(__file__))) of app_config.py
+        # This means self.base_dir is the PyRC project root.
+
+        # The client_logic_ref.BASE_DIR is actually the pyrc_core directory.
+        # We need to go one level up to get the project root.
+        project_root_dir = os.path.dirname(self.base_dir)
+
         data_dir = os.path.join(
-            self.scripts_dir, "data", script_name
-        )  # Store data in <project_root>/scripts/data/<script_name>/
+            project_root_dir, "data", "scripts", script_name
+        )
         if not os.path.exists(data_dir):
             try:
                 os.makedirs(data_dir, exist_ok=True)

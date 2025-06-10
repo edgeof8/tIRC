@@ -11,7 +11,7 @@ __pycache__/
 logs/
 
 # Local development configs
-pyterm_irc_config.ini
+config/pyterm_irc_config.ini
 
 # Downloaded files
 downloads/
@@ -59,6 +59,4 @@ scripts/run_headless_tests.py
 scripts/test_dcc_features.py
 scripts/test_headless.py
 scripts/test_script.py
-pyterm_irc_config.ini
 asyncio_migration_plan.md
-pyterm_irc_config.ini

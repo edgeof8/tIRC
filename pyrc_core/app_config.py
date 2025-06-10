@@ -170,7 +170,9 @@ class AppConfig:
     def __init__(self, config_file_path: Optional[str] = None):
         self.BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.CONFIG_FILE_NAME = "pyterm_irc_config.ini"
-        self.CONFIG_FILE_PATH = config_file_path or os.path.join(self.BASE_DIR, self.CONFIG_FILE_NAME)
+        self.CONFIG_DIR = os.path.join(self.BASE_DIR, "config")
+        os.makedirs(self.CONFIG_DIR, exist_ok=True)
+        self.CONFIG_FILE_PATH = config_file_path or os.path.join(self.CONFIG_DIR, self.CONFIG_FILE_NAME)
         self._config_parser = configparser.ConfigParser()
         self.all_server_configs: Dict[str, ServerConfig] = {}
         self.default_server_config_name: Optional[str] = None
