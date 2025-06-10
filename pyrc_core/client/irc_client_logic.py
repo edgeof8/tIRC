@@ -149,6 +149,7 @@ class IRCClient_Logic:
         self.command_handler = CommandHandler(self)
         self.trigger_manager: Optional[TriggerManager] = TriggerManager(os.path.join(self.config.BASE_DIR, "config")) if self.config.enable_trigger_system else None
 
+        # Handlers are now initialized by ConnectionOrchestrator
         self.cap_negotiator: Optional[CapNegotiator] = None
         self.sasl_authenticator: Optional[SaslAuthenticator] = None
         self.registration_handler: Optional[RegistrationHandler] = None
@@ -198,15 +199,21 @@ class IRCClient_Logic:
 
         try:
             await self._create_initial_state()
+            # Initialize handlers via orchestrator
             self.connection_orchestrator.initialize_handlers()
             self.script_manager.load_scripts()
             await self._log_startup_status()
 
             conn_info = self.state_manager.get_connection_info()
             if conn_info and conn_info.auto_connect:
-                logger.info(f"Auto-connecting to {conn_info.server}:{conn_info.port}")
-                await self._start_connection_if_auto() # This starts network_handler if needed
-                logger.info("Auto-connection initiated.")
+                logger.info(f"Auto-connecting to {conn_info.server}:{conn_info.port} via ConnectionOrchestrator")
+                # Use orchestrator to establish connection
+                await self.connection_orchestrator.establish_connection(conn_info)
+                logger.info("Auto-connection initiated via ConnectionOrchestrator.")
+            # Ensure network handler is started if not already (establish_connection handles this)
+            # else:
+            #    logger.info("Auto-connect not enabled or no connection info.")
+
 
             if not self.network_handler._network_task or self.network_handler._network_task.done():
                 logger.info("Network task not running or is done, attempting to start it now in run_main_loop.")
@@ -614,12 +621,7 @@ class IRCClient_Logic:
             self.ui.refresh_all_windows()
             self.ui_needs_update.clear()
 
-    async def _start_connection_if_auto(self):
-        conn_info = self.state_manager.get_connection_info()
-        if conn_info and conn_info.auto_connect and (not self.network_handler._network_task or self.network_handler._network_task.done()):
-            if conn_info:
-                await self.connection_orchestrator.establish_connection(conn_info)
-                pass # CAP negotiation is handled by RegistrationHandler.on_connection_established
+    # _start_connection_if_auto is now handled by run_main_loop calling connection_orchestrator.establish_connection
 
     async def _log_startup_status(self):
         await self.add_status_message("PyRC Client starting...")

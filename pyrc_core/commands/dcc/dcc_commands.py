@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("pyrc.commands.dcc.router")
 
 # Dictionary to store DCC subcommand handlers
-# Key: subcommand name (str), Value: Dict with 'handler_function', 'help', 'aliases'
+# Key: subcommand name (str), Value: Dict with 'handler_class', 'help', 'aliases'
 _dcc_subcommand_handlers: Dict[str, Dict[str, Any]] = {}
 _dcc_subcommand_aliases: Dict[str, str] = {}
 
@@ -29,11 +29,19 @@ def _load_dcc_subcommands():
                 if hasattr(module, "get_dcc_command_handler") and callable(module.get_dcc_command_handler):
                     handler_info = cast(Dict[str, Any], module.get_dcc_command_handler())
                     sub_cmd_name = handler_info["name"].lower()
-                    _dcc_subcommand_handlers[sub_cmd_name] = handler_info
-                    logger.debug(f"Registered DCC subcommand '{sub_cmd_name}' from {module_name}")
-                    for alias in handler_info.get("aliases", []):
-                        _dcc_subcommand_aliases[alias.lower()] = sub_cmd_name
-                        logger.debug(f"Registered DCC subcommand alias '{alias.lower()}' -> '{sub_cmd_name}'")
+                    # Ensure 'handler_class' key exists, otherwise it's an old-style handler or error
+                    if "handler_class" in handler_info:
+                        _dcc_subcommand_handlers[sub_cmd_name] = handler_info
+                        logger.debug(f"Registered DCC subcommand '{sub_cmd_name}' (class-based) from {module_name}")
+                        for alias in handler_info.get("aliases", []):
+                            _dcc_subcommand_aliases[alias.lower()] = sub_cmd_name
+                            logger.debug(f"Registered DCC subcommand alias '{alias.lower()}' -> '{sub_cmd_name}'")
+                    elif "handler_function" in handler_info: # Legacy support or during transition
+                        _dcc_subcommand_handlers[sub_cmd_name] = handler_info
+                        logger.warning(f"Registered DCC subcommand '{sub_cmd_name}' (function-based - needs update) from {module_name}")
+                    else:
+                        logger.error(f"DCC subcommand module {module_name} is missing 'handler_class' or 'handler_function' in its get_dcc_command_handler output.")
+
             except Exception as e:
                 logger.error(f"Failed to load DCC subcommand module {module_name}: {e}", exc_info=True)
 
@@ -79,13 +87,25 @@ async def dcc_command_router(client_logic: 'IRCClient_Logic', args_str: str):
 
     if actual_subcommand_name in _dcc_subcommand_handlers:
         handler_info = _dcc_subcommand_handlers[actual_subcommand_name]
-        handler_function: Callable = handler_info["handler_function"]
-        try:
-            # Pass client_logic, command arguments, active_context_name, and dcc_context_name
-            await handler_function(client_logic, cmd_args, active_context_name, dcc_context_name)
-        except Exception as e:
-            logger.error(f"Error executing DCC subcommand '{actual_subcommand_name}': {e}", exc_info=True)
-            await client_logic.add_message(f"Error in /dcc {actual_subcommand_name}: {e}", client_logic.ui.colors["error"], context_name=dcc_context_name)
+
+        if "handler_class" in handler_info:
+            HandlerClass = handler_info["handler_class"]
+            try:
+                handler_instance = HandlerClass(client_logic)
+                await handler_instance.execute(cmd_args, active_context_name, dcc_context_name)
+            except Exception as e:
+                logger.error(f"Error executing DCC subcommand '{actual_subcommand_name}' (class-based): {e}", exc_info=True)
+                await client_logic.add_message(f"Error in /dcc {actual_subcommand_name}: {e}", client_logic.ui.colors["error"], context_name=dcc_context_name)
+        elif "handler_function" in handler_info: # Legacy support
+            handler_function: Callable = handler_info["handler_function"]
+            try:
+                await handler_function(client_logic, cmd_args, active_context_name, dcc_context_name)
+            except Exception as e:
+                logger.error(f"Error executing DCC subcommand '{actual_subcommand_name}' (function-based): {e}", exc_info=True)
+                await client_logic.add_message(f"Error in /dcc {actual_subcommand_name}: {e}", client_logic.ui.colors["error"], context_name=dcc_context_name)
+        else:
+            logger.error(f"Handler for DCC subcommand '{actual_subcommand_name}' is not properly configured (missing handler_class or handler_function).")
+            await client_logic.add_message(f"Configuration error for /dcc {actual_subcommand_name}.", client_logic.ui.colors["error"], context_name=active_context_name)
     else:
         await client_logic.add_message(f"Unknown DCC subcommand: {subcommand_name_input}. Try '/dcc' for a list.", client_logic.ui.colors["error"], context_name=active_context_name)
 
