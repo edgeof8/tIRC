@@ -160,40 +160,68 @@ graph TD
 
 ```
 PyRC/
-├── pyrc.py                     # Main application entry point and asyncio event loop setup
-├── config/pyterm_irc_config.ini       # Main configuration file with server and client settings
+├── .git/                       # Git version control data
+├── .gitignore                  # Specifies intentionally untracked files for Git
+├── build.py                    # Script for building the project
+├── image.png                   # Screenshot of PyRC
+├── pyproject.toml              # Build system requirements and project metadata (PEP 518)
+├── pyrc.py                     # Main application entry point
+├── README.md                   # This file
+├── requirements.txt            # Project dependencies
+├── script_manager.py           # (Likely an older/duplicate script manager, see pyrc_core/scripting)
+├── state.json                  # Persistent client state (auto-generated)
+├── test_build.py               # Script for testing the build process
+│
+├── config/                     # Configuration files
+│   ├── pyterm_irc_config.ini   # Main configuration file (user-edited)
+│   ├── pyterm_irc_config.ini.example # Example configuration file
+│   └── triggers.json           # Stores persistent user-defined triggers (auto-generated)
+│
+├── data/                       # General static data files (if any beyond pyrc_core/data)
+│
+├── docs/                       # Project documentation
+│   └── wiki/                   # Wiki documentation pages
+│
+├── downloads/                  # Default directory for DCC downloads
+│
+├── logs/                       # Log files (auto-generated)
+│   ├── pyrc_core.log           # Main application log
+│   └── pyrc_error.log          # Error log (if specific errors are logged separately)
+│   └── client_status_messages.log # Log for status window messages
+│   └── dcc.log                 # Log for DCC transfers
+│   └── (channel_name).log      # Per-channel logs if enabled
 │
 ├── pyrc_core/                  # Core application package
 │   ├── __init__.py             # Package initialization
-│   ├── app_config.py           # Centralized configuration management using configparser
+│   ├── app_config.py           # Centralized configuration management (configparser)
 │   ├── context_manager.py      # Manages chat contexts (channels, queries, server)
 │   ├── event_manager.py        # Asynchronous event dispatching system
-│   ├── network_handler.py      # Async IRC protocol handling using asyncio.StreamReader/Writer
-│   └── state_manager.py        # Thread-safe state management with persistence
-│
-│   ├── client/                # Client implementation
-│   │   ├── __init__.py
-│   │   ├── connection_orchestrator.py  # Coordinates connection lifecycle and authentication
-│   │   ├── irc_client_logic.py         # Main application logic and component coordination
-│   │   ├── input_handler.py            # Async input processing and command dispatching
-│   │   └── state_change_ui_handler.py  # Updates UI in response to state changes
+│   ├── network_handler.py      # Async IRC protocol I/O (asyncio.StreamReader/Writer)
+│   ├── state_manager.py        # Thread-safe state management with persistence
 │   │
-│   ├── ui/                     # Terminal UI components
+│   ├── client/                 # Client implementation, UI, and logic
 │   │   ├── __init__.py
-│   │   ├── curses_manager.py          # Low-level Curses initialization and teardown
-│   │   ├── curses_utils.py            # Safe Curses drawing utilities
-│   │   ├── input_line_renderer.py     # Input prompt and text entry
-│   │   ├── message_panel_renderer.py  # Chat message display
-│   │   ├── sidebar_panel_renderer.py  # Channel/user list
-│   │   ├── status_bar_renderer.py     # Status information display
-│   │   ├── ui_manager.py              # UI component coordination
-│   │   └── window_layout_manager.py   # Window layout calculations
+│   │   ├── client_shutdown_coordinator.py # Handles graceful shutdown
+│   │   ├── client_view_manager.py    # Manages different views/layouts
+│   │   ├── connection_orchestrator.py  # Coordinates connection lifecycle
+│   │   ├── curses_manager.py         # Low-level Curses initialization and teardown
+│   │   ├── curses_utils.py           # Safe Curses drawing utilities
+│   │   ├── dummy_ui.py               # Dummy UI for headless mode
+│   │   ├── input_handler.py          # Async input processing and command dispatching
+│   │   ├── input_line_renderer.py    # Renders the input line
+│   │   ├── irc_client_logic.py       # Main application logic
+│   │   ├── message_panel_renderer.py # Renders the message panel
+│   │   ├── sidebar_panel_renderer.py # Renders the sidebar (nicklist)
+│   │   ├── state_change_ui_handler.py # Updates UI based on state changes
+│   │   ├── status_bar_renderer.py    # Renders the status bar
+│   │   ├── ui_manager.py             # Orchestrates UI components
+│   │   └── window_layout_manager.py  # Manages window layout calculations
 │   │
-│   ├── commands/              # Built-in command implementations
+│   ├── commands/               # Built-in command implementations
 │   │   ├── __init__.py
-│   │   ├── command_handler.py   # Command registration and dispatch
+│   │   ├── command_handler.py    # Command registration and dispatch
 │   │   │
-│   │   ├── channel/           # Commands for channel operations.
+│   │   ├── channel/            # Commands for channel operations
 │   │   │   ├── __init__.py
 │   │   │   ├── ban_commands.py       # /ban, /unban, /kickban
 │   │   │   ├── cyclechannel_command.py # /cycle
@@ -205,135 +233,146 @@ PyRC/
 │   │   │   ├── simple_mode_commands.py # /op, /deop, /voice, etc.
 │   │   │   └── topic_command.py      # /topic
 │   │   │
-│   │   ├── core/            # Essential client commands.
+│   │   ├── core/             # Essential client commands
 │   │   │   ├── __init__.py
 │   │   │   └── help_command.py       # /help
 │   │   │
-│   │   ├── dcc/             # DCC file transfer and chat commands.
+│   │   ├── dcc/              # DCC file transfer and chat commands
 │   │   │   ├── __init__.py
-│   │   │   ├── dcc_accept_command.py  # /dcc accept
-│   │   │   ├── dcc_auto_command.py    # /dcc auto
-│   │   │   ├── dcc_browse_command.py  # /dcc browse
-│   │   │   ├── dcc_cancel_command.py  # /dcc cancel
-│   │   │   ├── dcc_commands.py        # Main DCC command handler
-│   │   │   ├── dcc_get_command.py     # /dcc get
-│   │   │   ├── dcc_list_command.py    # /dcc list
-│   │   │   ├── dcc_resume_command.py  # /dcc resume
-│   │   │   └── dcc_send_command.py    # /dcc send
+│   │   │   ├── dcc_accept_command.py # /dcc accept
+│   │   │   ├── dcc_auto_command.py   # /dcc auto
+│   │   │   ├── dcc_browse_command.py # /dcc browse
+│   │   │   ├── dcc_cancel_command.py # /dcc cancel
+│   │   │   ├── dcc_command_base.py   # Base class for DCC commands
+│   │   │   ├── dcc_commands.py       # Main DCC command handler
+│   │   │   ├── dcc_get_command.py    # /dcc get
+│   │   │   ├── dcc_list_command.py   # /dcc list
+│   │   │   ├── dcc_resume_command.py # /dcc resume
+│   │   │   └── dcc_send_command.py   # /dcc send
 │   │   │
-│   │   ├── information/     # Information retrieval commands.
+│   │   ├── information/      # Information retrieval commands
 │   │   │   ├── __init__.py
-│   │   │   ├── list_command.py        # /list
-│   │   │   ├── names_command.py       # /names
-│   │   │   ├── who_command.py         # /who
-│   │   │   └── whowas_command.py      # /whowas
+│   │   │   ├── list_command.py       # /list
+│   │   │   ├── names_command.py      # /names
+│   │   │   ├── who_command.py        # /who
+│   │   │   └── whowas_command.py     # /whowas
 │   │   │
-│   │   ├── server/          # Server connection and management.
+│   │   ├── server/           # Server connection and management
 │   │   │   ├── __init__.py
-│   │   │   ├── connect_command.py     # /connect
-│   │   │   ├── disconnect_command.py  # /disconnect
-│   │   │   ├── quit_command.py        # /quit
-│   │   │   ├── raw_command.py         # /raw
-│   │   │   ├── reconnect_command.py   # /reconnect
-│   │   │   └── server_command.py      # /server
+│   │   │   ├── connect_command.py    # /connect
+│   │   │   ├── disconnect_command.py # /disconnect
+│   │   │   ├── quit_command.py       # /quit
+│   │   │   ├── raw_command.py        # /raw
+│   │   │   ├── reconnect_command.py  # /reconnect
+│   │   │   └── server_command.py     # /server
 │   │   │
-│   │   ├── ui/              # User interface controls.
+│   │   ├── ui/               # User interface control commands
 │   │   │   ├── __init__.py
-│   │   │   ├── close_command.py       # /close
+│   │   │   ├── close_command.py      # /close
 │   │   │   ├── split_screen_commands.py # /split, /unsplit
-│   │   │   ├── status_command.py      # /status
+│   │   │   ├── status_command.py     # /status
 │   │   │   ├── userlist_scroll_command.py # /scrollusers
 │   │   │   └── window_navigation_commands.py # /window, /next, /prev
 │   │   │
-│   │   ├── user/            # User interaction commands.
+│   │   ├── user/             # User interaction commands
 │   │   │   ├── __init__.py
-│   │   │   ├── away_command.py        # /away
-│   │   │   ├── ignore_commands.py     # /ignore, /unignore, /listignores
-│   │   │   ├── me_command.py          # /me
-│   │   │   ├── msg_command.py         # /msg
-│   │   │   ├── nick_command.py        # /nick
-│   │   │   ├── notice_command.py      # /notice
-│   │   │   └── query_command.py       # /query
+│   │   │   ├── away_command.py       # /away
+│   │   │   ├── ignore_commands.py    # /ignore, /unignore, /listignores
+│   │   │   ├── me_command.py         # /me
+│   │   │   ├── msg_command.py        # /msg
+│   │   │   ├── nick_command.py       # /nick
+│   │   │   ├── notice_command.py     # /notice
+│   │   │   ├── query_command.py      # /query
+│   │   │   └── whois_command.py      # /whois
 │   │   │
-│   │   └── utility/         # Utility and configuration commands.
+│   │   └── utility/          # Utility and configuration commands
 │   │       ├── __init__.py
-│   │       ├── clear_command.py       # /clear
-│   │       ├── execute_command.py     # /exec
-│   │       ├── rehash_command.py      # /rehash
-│   │       ├── save_command.py        # /save
-│   │       ├── script_command.py      # /script
-│   │       ├── set_command.py         # /set
-│   │       ├── show_command.py        # /show
-│   │       └── trigger_command.py     # /trigger
+│   │       ├── clear_command.py      # /clear
+│   │       ├── lastlog_command.py    # /lastlog
+│   │       ├── rawlog_command.py     # /rawlog
+│   │       ├── rehash_command.py     # /rehash
+│   │       ├── save_command.py       # /save
+│   │       ├── script_command.py     # /script
+│   │       └── set_command.py        # /set
+│   │       /* Note: trigger_command.py might be in features/triggers now */
 │   │
-│   ├── dcc/                   # DCC (Direct Client-to-Client) feature implementation.
+│   ├── data/                   # Static data files for pyrc_core
+│   │   └── default_help/
+│   │       └── command_help.ini  # Fallback help texts for core commands
+│   │
+│   ├── dcc/                    # DCC (Direct Client-to-Client) feature implementation
 │   │   ├── __init__.py
-│   │   ├── dcc_ctcp_handler.py # Handles incoming DCC CTCP requests.
-│   │   ├── dcc_manager.py      # Main orchestrator for all DCC functionality.
-│   │   ├── dcc_passive_offer_manager.py # Manages passive (reverse) DCC offers.
-│   │   ├── dcc_protocol.py     # Parses and formats DCC CTCP messages.
-│   │   ├── dcc_receive_manager.py # Manages all incoming file transfers.
-│   │   ├── dcc_security.py     # Filename sanitization and path validation.
-│   │   ├── dcc_send_manager.py # Manages all outgoing file transfers.
-│   │   ├── dcc_transfer.py     # Base classes for DCC send/receive transfer logic.
-│   │   └── dcc_utils.py        # Shared utility functions (e.g., socket creation).
+│   │   ├── dcc_command_base.py   # Base class for DCC related logic (if distinct from commands/dcc)
+│   │   ├── dcc_ctcp_handler.py   # Handles incoming DCC CTCP requests
+│   │   ├── dcc_manager.py        # Main orchestrator for all DCC functionality
+│   │   ├── dcc_passive_offer_manager.py # Manages passive (reverse) DCC offers
+│   │   ├── dcc_protocol.py       # Parses and formats DCC CTCP messages
+│   │   ├── dcc_receive_manager.py# Manages all incoming file transfers
+│   │   ├── dcc_security.py       # Filename sanitization and path validation
+│   │   ├── dcc_send_manager.py   # Manages all outgoing file transfers
+│   │   ├── dcc_transfer.py       # Base classes for DCC send/receive transfer logic
+│   │   └── dcc_utils.py          # Shared utility functions (e.g., socket creation)
 │   │
-│   ├── features/              # Self-contained, optional features.
-│   │   └── triggers/          # Implementation of the /on command trigger system.
-│   │       ├── __init__.py
-│   │       ├── trigger_commands.py
-│   │       └── trigger_manager.py
-│   │
-│   ├── irc/                  # IRC protocol logic and message handling.
+│   ├── features/               # Self-contained, optional features
 │   │   ├── __init__.py
-│   │   ├── cap_negotiator.py   # Handles IRCv3 capability negotiation.
-│   │   ├── irc_message.py     # Parses raw IRC lines into structured message objects.
-│   │   ├── irc_protocol.py    # Main dispatcher for incoming server messages.
-│   │   ├── registration_handler.py  # Manages NICK/USER registration sequence.
-│   │   ├── sasl_authenticator.py    # Handles SASL PLAIN authentication.
-│   │   └── handlers/          # Specific handlers for different IRC commands/numerics.
+│   │   └── triggers/           # Implementation of the /on command trigger system
 │   │       ├── __init__.py
-│   │       ├── irc_numeric_handlers.py # Handlers for server numeric replies.
-│   │       ├── membership_handlers.py  # Handlers for JOIN, PART, QUIT, KICK.
-│   │       ├── message_handlers.py     # Handlers for PRIVMSG, NOTICE.
-│   │       ├── protocol_flow_handlers.py # Handlers for PING, CAP, etc.
-│   │       └── state_change_handlers.py # Handlers for NICK, MODE, etc.
+│   │       ├── trigger_commands.py # /on, /off, /listtriggers etc.
+│   │       └── trigger_manager.py  # Manages trigger logic
 │   │
-│   ├── logging/              # Logging-specific components.
-│   │   └── channel_logger.py  # Manages per-channel and status window log files.
+│   ├── irc/                    # IRC protocol logic and message handling
+│   │   ├── __init__.py
+│   │   ├── cap_negotiation_issues.md # Notes on CAP negotiation
+│   │   ├── cap_negotiator.py     # Handles IRCv3 capability negotiation
+│   │   ├── irc_message.py        # Parses raw IRC lines
+│   │   ├── irc_protocol.py       # Main dispatcher for incoming server messages
+│   │   ├── registration_handler.py # Manages NICK/USER registration
+│   │   ├── sasl_authenticator.py   # Handles SASL PLAIN authentication
+│   │   └── handlers/             # Specific handlers for IRC commands/numerics
+│   │       ├── __init__.py
+│   │       ├── irc_numeric_handlers.py # Handlers for server numeric replies
+│   │       ├── membership_handlers.py  # JOIN, PART, QUIT, KICK
+│   │       ├── message_handlers.py     # PRIVMSG, NOTICE
+│   │       ├── protocol_flow_handlers.py # PING, CAP, etc.
+│   │       └── state_change_handlers.py  # NICK, MODE, etc.
 │   │
-│   └── scripting/            # The Python scripting engine.
-│       ├── __init__.py
-│       ├── api_responder_agent.py # Example AI agent script.
-│       ├── python_trigger_api.py  # API for the /on <event> PY <code> trigger action.
-│       ├── script_api_handler.py  # Provides the `api` object for scripts.
-│       ├── script_base.py     # A base class for scripts to inherit from.
-│       └── script_manager.py  # Discovers, loads, and manages all user scripts.
+│   ├── logging/                # Logging-specific components
+│   │   └── channel_logger.py     # Manages per-channel and status window log files
+│   │
+│   ├── scripting/              # The Python scripting engine
+│   │   ├── __init__.py
+│   │   ├── python_trigger_api.py # API for the /on <event> PY <code> trigger action
+│   │   ├── script_api_handler.py # Provides the `api` object for scripts
+│   │   ├── script_base.py        # A base class for scripts to inherit from
+│   │   └── script_manager.py     # Discovers, loads, and manages user scripts
+│   │
+│   └── utils/                  # Utility functions
+│       └── __init__.py
 │
-├── scripts/                  # Directory for user-provided Python scripts and test utilities.
-│   ├── ai_api_test_script.py    # Test script for AI API integration.
-│   ├── default_exit_handler.py  # Default exit handler script.
-│   ├── default_fun_commands.py  # Example script with fun commands.
-│   ├── default_random_messages.py  # Random message generator for testing.
-│   ├── event_test_script.py     # Script for testing event handling.
-│   ├── run_headless_tests.py    # Entry point for running headless tests.
-│   ├── test_dcc_features.py     # Tests for DCC functionality.
-│   ├── test_headless.py         # Headless test runner.
-│   └── test_script.py          # General test script.
+├── scripts/                    # Directory for user-provided Python scripts
+│   ├── default_exit_handler.py   # Example: Handles client exit
+│   ├── default_fun_commands.py   # Example: Adds fun commands
+│   ├── default_random_messages.py# Example: Sends random messages for testing
+│   └── data/                     # Data files specific to scripts
+│       └── ...                   # (e.g., ai_api_test_script data, etc.)
 │
-├── config/                   # Directory for runtime-generated configuration files.
-│   └── triggers.json         # Stores persistent user-defined triggers.
-│
-├── data/                     # Directory for static data files.
-│   └── default_help/
-│       └── command_help.ini  # Fallback help texts for core commands.
-│
-├── config/pyterm_irc_config.ini.example  # Example configuration file. Copy to create config.
+├── test_configs/               # Configuration files for testing purposes
+│   └── ...
+```
 
 # Logs are stored in the following locations (auto-created when needed):
+
 # - Main application log: logs/pyrc_core.log
+
+# - Error log: logs/pyrc_error.log (if configured)
+
+# - Status window log: logs/client_status_messages.log
+
 # - DCC transfer log: logs/dcc.log
-```
+
+# - Per-channel logs (if enabled): logs/(channel_name).log
+
+````
 
 ## Project Status
 
@@ -463,7 +502,7 @@ These architectural improvements significantly enhance PyRC's stability, maintai
 
 ```bash
 pip install pyrc
-```
+````
 
 ### Option 2: Install from source
 
