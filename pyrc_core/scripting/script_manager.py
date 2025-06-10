@@ -180,17 +180,12 @@ class ScriptManager:
                             if script_instance:
                                 self.scripts[script_name] = script_instance
                                 if hasattr(script_instance, "load") and callable(script_instance.load):
-                                    load_method = script_instance.load
+                                    load_method = getattr(script_instance, "load")
                                     if asyncio.iscoroutinefunction(load_method):
-                                        # Schedule the async load method.
-                                        # Note: This runs it but doesn't wait for completion here,
-                                        # allowing other scripts to load. If load order or completion
-                                        # is critical before proceeding, this needs adjustment.
-                                        # For now, we assume script loads are independent enough.
                                         asyncio.create_task(load_method())
                                         self.logger.info(f"Scheduled async load for script: {script_name}")
                                     else:
-                                        load_method() # Call synchronous load
+                                        load_method()
                                 self.logger.info(f"Successfully loaded and initialized script (deps met): {script_name}")
                                 loaded_script_names.add(script_name)
                                 made_progress_in_iteration = True
@@ -499,12 +494,11 @@ class ScriptManager:
                     self.logger.debug(
                         f"Calling handler '{handler.__name__}' from script '{script_name}' for event '{event_name}'."
                     )
-                    result = handler(event_data)
-                    if asyncio.iscoroutine(result):
-                        if self.client_logic_ref.loop.is_running(): # Access the event loop from client_logic_ref
-                            await result
-                        else:
-                            self.logger.warning(f"Async handler '{handler.__name__}' for event '{event_name}' called when no loop is running.")
+                    if asyncio.iscoroutinefunction(handler):
+                        asyncio.create_task(handler(event_data))
+                        self.logger.debug(f"Scheduled async event handler '{handler.__name__}' for event '{event_name}' from script '{script_name}'.")
+                    else:
+                        handler(event_data) # Call synchronous handler
                 except Exception as e:
                     self.logger.error(
                         f"Error in event handler '{handler.__name__}' from script '{script_name}' for event '{event_name}': {e}",
@@ -648,12 +642,12 @@ class ScriptManager:
                         if hasattr(script_instance, "load") and callable(
                             script_instance.load
                         ):
-                            load_method = script_instance.load
+                            load_method = getattr(script_instance, "load")
                             if asyncio.iscoroutinefunction(load_method):
-                                asyncio.create_task(load_method()) # Schedule async load
+                                asyncio.create_task(load_method())
                                 self.logger.info(f"Scheduled async load for reloaded script: {script_name}")
                             else:
-                                load_method() # Call synchronous load
+                                load_method()
                         self.logger.info(f"Reloaded script: {script_name}")
                         return True
                 else:
