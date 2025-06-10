@@ -44,15 +44,34 @@ PyRC follows a modular architecture with these key components:
 
 ```mermaid
 graph TD
-    A[IRCClient_Logic] --> B[NetworkHandler]
-    A --> C[CommandSystem]
-    A --> D[UIManager]
-    A --> E[ScriptManager]
-    A --> F[StateManager]
-    B --> G[IRC Protocol]
-    C --> H[50+ Commands]
-    D --> I[UI Components]
-    E --> J[Python Scripts]
+    subgraph Core Logic
+        A[IRCClient_Logic]
+    end
+
+    subgraph Coordinators & Managers
+        B[ConnectionOrchestrator]
+        C[ClientShutdownCoordinator]
+        D[ClientViewManager]
+        E[UIManager]
+        F[CommandHandler]
+        G[StateManager]
+        H[EventManager]
+        I[ScriptManager]
+        J[NetworkHandler]
+    end
+
+    A -- Coordinates --> B
+    A -- Coordinates --> C
+    A -- Coordinates --> D
+    A -- Coordinates --> E
+    A -- Coordinates --> F
+    A -- Coordinates --> G
+    A -- Coordinates --> H
+    A -- Coordinates --> I
+    A -- Coordinates --> J
+
+    B -- Uses --> J
+    B -- Uses --> G
 ```
 
 ## Project Status
@@ -162,15 +181,13 @@ graph TD
 PyRC/
 ├── .git/                       # Git version control data
 ├── .gitignore                  # Specifies intentionally untracked files for Git
-├── build.py                    # Script for building the project
 ├── image.png                   # Screenshot of PyRC
 ├── pyproject.toml              # Build system requirements and project metadata (PEP 518)
 ├── pyrc.py                     # Main application entry point
 ├── README.md                   # This file
 ├── requirements.txt            # Project dependencies
-├── script_manager.py           # (Likely an older/duplicate script manager, see pyrc_core/scripting)
+├── script_manager.py           # Script manager
 ├── state.json                  # Persistent client state (auto-generated)
-├── test_build.py               # Script for testing the build process
 │
 ├── config/                     # Configuration files
 │   ├── pyterm_irc_config.ini   # Main configuration file (user-edited)
@@ -385,17 +402,25 @@ PyRC/
 This section highlights the significant architectural changes and robustness improvements implemented in recent development cycles.
 
 - **Asynchronous Core with `asyncio`**:
-
   - The entire client core has been migrated from a `threading`-based model to a modern `asyncio` architecture.
   - This change provides significant performance improvements for I/O-bound operations, reduces resource consumption, and simplifies concurrency management.
   - All network I/O is now non-blocking, and `async`/`await` syntax is used throughout the core logic for cleaner, more efficient code.
 
-- **Modular Connection Management (`ConnectionOrchestrator`):**
+- **`IRCClient_Logic` as High-Level Orchestrator**:
+  - Refined the role of `IRCClient_Logic` to be a more focused, high-level orchestrator. It now primarily coordinates the various manager and coordinator components (like `ConnectionOrchestrator`, `ClientShutdownCoordinator`, `ClientViewManager`, `UIManager`, `CommandHandler`, `StateManager`, `EventManager`, `ScriptManager`, and `NetworkHandler`), delegating specialized tasks to them. This enhances modularity and separation of concerns.
 
+- **Modular Connection Management (`ConnectionOrchestrator`)**:
   - Introduced the `ConnectionOrchestrator` component to centralize and manage the entire server connection lifecycle.
-  - Coordinates capability negotiation (`CapNegotiator`), authentication (`SaslAuthenticator`), and registration (`RegistrationHandler`).
-  - Simplifies `IRCClient_Logic` by delegating complex connection state management and sequencing, leading to more robust and maintainable connection handling.
-  - Implements comprehensive timeout mechanisms and error recovery for each connection phase.
+  - It meticulously coordinates the sequence of operations including TCP/SSL connection, capability negotiation (via `CapNegotiator`), SASL authentication (via `SaslAuthenticator`), and NICK/USER registration (via `RegistrationHandler`).
+  - This delegation simplifies `IRCClient_Logic` significantly by abstracting away the complexities of connection state transitions, error handling, and timeout management for each phase of establishing a connection.
+
+- **Decoupled Shutdown Logic (`ClientShutdownCoordinator`)**:
+  - The complex shutdown sequence, previously managed within `IRCClient_Logic`'s `finally` block and other areas, has been encapsulated into the `ClientShutdownCoordinator`.
+  - This dedicated class ensures a graceful and orderly shutdown of all client components, including network connections, asynchronous tasks, UI elements, and script anagers, improving reliability and preventing resource leaks during client exit.
+
+- **Isolated View Management (`ClientViewManager`)**:
+  - UI-specific logic related to managing different views (e.g., split-screen, single pane), active context switching (which window/channel is currently focused), and associated event handling (like `ACTIVE_CONTEXT_CHANGED`) has been moved from `UIManager` and `IRCClient_Logic` into the `ClientViewManager`.
+  - This decouples core application logic from specific view concerns, making the UI system more flexible and easier to maintain or extend with new view types or behaviors.
 
 - **Decomposed UI System (Modular Renderers & Managers):**
 

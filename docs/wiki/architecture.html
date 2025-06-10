@@ -10,23 +10,35 @@
                 <div class="diagram-container">
                     <div class="mermaid">
                     graph TD
-                        A[pyrc.py] --> B(asyncio.run(IRCClient_Logic.run_main_loop()));
-                        B --> C{IRCClient_Logic.run_main_loop() (async)};
-                        C -- Creates --> D[asyncio.Task: NetworkHandler.network_loop (async)];
-                        C -- Creates --> E[asyncio.Task: InputHandler.async_input_reader (async)];
-                        D -- Reads/Writes data --> F(Async Network I/O - StreamReader/Writer);
-                        D -- Dispatches messages --> G(irc_protocol.handle_server_message (async));
-                        E -- Reads blocking input --> H(asyncio.to_thread(getch));
-                        E -- Puts input into --> I(asyncio.Queue);
-                        E -- Gets input from queue --> J(InputHandler.handle_key_press (async));
-                        J -- Processes commands --> K(CommandHandler.process_user_command (async));
-                        K -- Sends data --> D;
-                        G -- Dispatches events --> L(EventManager.dispatch_event (async));
-                        L -- Calls handlers --> M{ScriptManager.dispatch_event (async)};
-                        M -- If async handler --> N(asyncio.create_task(handler(event_data)));
-                        M -- If sync handler --> O(loop.run_in_executor(None, handler, event_data));
-                        C -- Triggers periodically --> P(IRCClient_Logic._update_ui (async));
-                        P -- Refreshes UI --> Q(UIManager.refresh_all_windows);
+                        subgraph "Application Entry (pyrc.py)"
+                            A[main()] --> B(curses.wrapper)
+                            B --> C[asyncio.run()]
+                        end
+
+                        subgraph "Main Loop (IRCClient_Logic)"
+                            C --> D{run_main_loop}
+                            D -- creates & manages --> Task_Input[Input Task]
+                            D -- creates & manages --> Task_Network[Network Task]
+                            D -- on exit --> E[shutdown_coordinator.execute_shutdown()]
+                        end
+
+                        subgraph "Connection Lifecycle (ConnectionOrchestrator)"
+                            F[establish_connection]
+                            F --> G[initialize_handlers]
+                            F --> H[network_handler.start]
+                        end
+
+                        subgraph "UI & View (ClientViewManager & UIManager)"
+                            I[switch_active_context]
+                            J[UIManager]
+                            I --> J
+                        end
+
+                        D -- on /server, /connect --> F
+                        Task_Input --> I
+
+                        E -- stops --> Task_Input
+                        E -- stops --> Task_Network
                     </div>
                 </div>
 
@@ -92,10 +104,53 @@
                     <div class="feature-card">
                         <h4>Modular Connection Management (<code>ConnectionOrchestrator</code>)</h4>
                         <ul>
-                            <li>Introduced the <code>ConnectionOrchestrator</code> component to centralize and manage the entire server connection lifecycle.</li>
-                            <li>Coordinates capability negotiation (<code>CapNegotiator</code>), authentication (<code>SaslAuthenticator</code>), and registration (<code>RegistrationHandler</code>).</li>
-                            <li>Simplifies <code>IRCClient_Logic</code> by delegating complex connection state management and sequencing, leading to more robust and maintainable connection handling.</li>
-                            <li>Implements comprehensive timeout mechanisms and error recovery for each connection phase.</li>
+                            <li>The <code>ConnectionOrchestrator</code> is a critical component responsible for centralizing and meticulously managing the entire lifecycle of a server connection.</li>
+                            <li>It orchestrates the complex sequence of operations required to establish a connection, including:
+                                <ul>
+                                    <li>Establishing the initial TCP/SSL socket connection (via <code>NetworkHandler</code>).</li>
+                                    <li>Performing IRCv3 capability negotiation (coordinating with <code>CapNegotiator</code>) to agree on supported features with the server.</li>
+                                    <li>Handling SASL (Simple Authentication and Security Layer) authentication (coordinating with <code>SaslAuthenticator</code>) for secure logins.</li>
+                                    <li>Managing the NICK/USER registration process (coordinating with <code>RegistrationHandler</code>) to formally identify the client to the server.</li>
+                                </ul>
+                            </li>
+                            <li>By delegating these responsibilities, it significantly simplifies the <code>IRCClient_Logic</code>, abstracting away the intricate details of connection state transitions, error handling (e.g., connection refused, authentication failure), and timeout management for each phase.</li>
+                            <li>This leads to more robust, maintainable, and testable connection handling, as each part of the connection sequence is managed by a specialized handler under the orchestrator's control.</li>
+                            <li>It implements comprehensive timeout mechanisms for each step (e.g., CAP negotiation timeout, SASL authentication timeout) and can trigger appropriate error recovery or retry logic.</li>
+                        </ul>
+                    </div>
+
+                    <div class="feature-card">
+                        <h4>Decoupled Shutdown Logic (<code>ClientShutdownCoordinator</code>)</h4>
+                        <ul>
+                            <li>The <code>ClientShutdownCoordinator</code> was introduced to provide a dedicated and centralized mechanism for gracefully shutting down all parts of the PyRC client.</li>
+                            <li>Previously, shutdown logic was dispersed, notably within <code>IRCClient_Logic</code>'s main loop's `finally` block and other areas. This new coordinator encapsulates all shutdown responsibilities.</li>
+                            <li>Its primary role is to ensure an orderly and complete termination sequence, which includes:
+                                <ul>
+                                    <li>Signaling all active asynchronous tasks (like network loops and input handlers) to terminate.</li>
+                                    <li>Disconnecting from the IRC server cleanly, sending QUIT messages if appropriate.</li>
+                                    <li>Releasing resources held by UI components (e.g., properly closing curses).</li>
+                                    <li>Ensuring script managers unload scripts and release their resources.</li>
+                                    <li>Saving any final state via the <code>StateManager</code>.</li>
+                                </ul>
+                            </li>
+                            <li>This focused approach improves the reliability of the client's exit process, preventing resource leaks, zombie processes, or abrupt terminations that could lead to data loss or an inconsistent state.</li>
+                        </ul>
+                    </div>
+
+                    <div class="feature-card">
+                        <h4>Isolated View Management (<code>ClientViewManager</code>)</h4>
+                        <ul>
+                            <li>The <code>ClientViewManager</code> is a new component designed to isolate and manage UI-specific logic related to different views and context switching.</li>
+                            <li>Responsibilities previously handled by <code>UIManager</code> or directly within <code>IRCClient_Logic</code>, such as managing split-screen layouts, determining which chat window (context) is currently active, and handling events like <code>ACTIVE_CONTEXT_CHANGED</code>, are now delegated to this manager.</li>
+                            <li>Key functions include:
+                                <ul>
+                                    <li>Maintaining the state of available views (e.g., single pane, top/bottom split).</li>
+                                    <li>Tracking the currently focused context (e.g., a specific channel, a query window, or the status window).</li>
+                                    <li>Orchestrating UI updates when the active context changes (e.g., ensuring the correct message history and user list are displayed).</li>
+                                    <li>Handling user commands related to window navigation and view manipulation (e.g., <code>/next</code>, <code>/split</code>).</li>
+                                </ul>
+                            </li>
+                            <li>This separation decouples core application logic (like message processing or connection management) from the specifics of how views are presented and interacted with. It makes the UI system more flexible, allowing for easier modifications to existing views or the introduction of new view types without impacting other parts of the client.</li>
                         </ul>
                     </div>
 

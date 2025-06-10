@@ -63,7 +63,6 @@
                 <div class="code-container">
                     <pre><code>PyRC/
 ├── pyrc.py                     # Main application entry point and asyncio event loop setup
-├── pyterm_irc_config.ini       # Main configuration file with server and client settings
 │
 ├── pyrc_core/                  # Core application package
 │   ├── __init__.py             # Package initialization
@@ -75,9 +74,12 @@
 │
 │   ├── client/                # Client implementation
 │   │   ├── __init__.py
+│   │   ├── client_shutdown_coordinator.py # Handles graceful shutdown
+│   │   ├── client_view_manager.py    # Manages different views/layouts
 │   │   ├── connection_orchestrator.py  # Coordinates connection lifecycle and authentication
-│   │   ├── irc_client_logic.py         # Main application logic and component coordination
+│   │   ├── dummy_ui.py               # Dummy UI for headless mode
 │   │   ├── input_handler.py            # Async input processing and command dispatching
+│   │   ├── irc_client_logic.py         # Main application logic and component coordination
 │   │   └── state_change_ui_handler.py  # Updates UI in response to state changes
 │   │
 │   ├── ui/                     # Terminal UI components
@@ -168,6 +170,10 @@
 │   │       ├── show_command.py        # /show
 │   │       └── trigger_command.py     # /trigger
 │   │
+│   ├── data/                   # Static data files for pyrc_core
+│   │   └── default_help/
+│   │       └── command_help.ini  # Fallback help texts for core commands
+│   │
 │   ├── dcc/                   # DCC (Direct Client-to-Client) feature implementation.
 │   │   ├── __init__.py
 │   │   ├── dcc_ctcp_handler.py # Handles incoming DCC CTCP requests.
@@ -223,14 +229,14 @@
 │   ├── test_headless.py         # Headless test runner.
 │   └── test_script.py          # General test script.
 │
-├── config/                   # Directory for runtime-generated configuration files.
-│   └── triggers.json         # Stores persistent user-defined triggers.
+├── config/                   # Directory for configuration files.
+│   ├── pyterm_irc_config.ini       # Main configuration file (user-edited)
+│   ├── pyterm_irc_config.ini.example # Example configuration file
+│   └── triggers.json         # Stores persistent user-defined triggers (auto-generated)
 │
-├── data/                     # Directory for static data files.
-│   └── default_help/
-│       └── command_help.ini  # Fallback help texts for core commands.
+├── data/                     # Directory for static data files (e.g. script data).
 │
-└── pyterm_irc_config.ini.example  # Example configuration file. Copy to create config.</code></pre>
+</code></pre>
                 </div>
 
                 <h3>Key Components</h3>
@@ -250,8 +256,11 @@
                 <div class="component-section">
                     <h4><i class="fas fa-laptop-code"></i> Client Implementation (<code>pyrc_core/client/</code>)</h4>
                     <ul>
-                        <li><strong><code>irc_client_logic.py</code></strong>: The main application logic, coordinating interactions between core components and managing the primary asyncio event loop.</li>
-                        <li><strong><code>connection_orchestrator.py</code></strong>: Manages the entire lifecycle of server connections, including CAP negotiation, SASL authentication, and registration.</li>
+                        <li><strong><code>irc_client_logic.py</code></strong>: The main application logic, acting as a high-level orchestrator for various manager and coordinator components. It manages the primary asyncio event loop and delegates specialized tasks.</li>
+                        <li><strong><code>connection_orchestrator.py</code></strong>: Manages the entire lifecycle of server connections, coordinating CAP negotiation (<code>CapNegotiator</code>), SASL authentication (<code>SaslAuthenticator</code>), and NICK/USER registration (<code>RegistrationHandler</code>).</li>
+                        <li><strong><code>client_shutdown_coordinator.py</code></strong>: Encapsulates the complex shutdown sequence, ensuring a graceful and orderly termination of all client components.</li>
+                        <li><strong><code>client_view_manager.py</code></strong>: Manages UI-specific logic related to different views (e.g., split-screen), active context switching, and associated event handling.</li>
+                        <li><strong><code>dummy_ui.py</code></strong>: Provides a non-operational UI interface for headless mode, allowing the core client logic to run without a terminal UI.</li>
                         <li><strong><code>input_handler.py</code></strong>: Processes user input, translating key presses into commands or messages.</li>
                         <li><strong><code>state_change_ui_handler.py</code></strong>: Responsible for updating the User Interface in response to changes in the application state.</li>
                     </ul>
