@@ -6,6 +6,8 @@
 
 > 💬 **A modern, modular IRC client built for power users and AI integration**
 
+For detailed documentation, command references, and developer guides, please visit the [**Official PyRC Wiki**](https://github.com/edgeof8/PyRC/wiki).
+
 ![PyRC Screenshot](image.png)
 
 ## Quick Start
@@ -186,7 +188,6 @@ PyRC/
 ├── pyrc.py                     # Main application entry point
 ├── README.md                   # This file
 ├── requirements.txt            # Project dependencies
-├── script_manager.py           # Script manager
 ├── state.json                  # Persistent client state (auto-generated)
 │
 ├── config/                     # Configuration files
@@ -214,6 +215,7 @@ PyRC/
 │   ├── context_manager.py      # Manages chat contexts (channels, queries, server)
 │   ├── event_manager.py        # Asynchronous event dispatching system
 │   ├── network_handler.py      # Async IRC protocol I/O (asyncio.StreamReader/Writer)
+│   ├── script_manager.py       # Script manager
 │   ├── state_manager.py        # Thread-safe state management with persistence
 │   │
 │   ├── client/                 # Client implementation, UI, and logic
@@ -748,8 +750,6 @@ We welcome contributions! Please follow these guidelines:
    - Description of changes
    - Screenshots if applicable
    - Reference to any related issues
-
-For more details, see our [Contributing Guide](docs/wiki/contributing.html) in the wiki.
 
 ## License
 
