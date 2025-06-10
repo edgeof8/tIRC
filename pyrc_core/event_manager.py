@@ -7,7 +7,7 @@ from pyrc_core.dcc.dcc_transfer import DCCTransfer, DCCTransferType
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    # ScriptManager import no longer needed here for __init__
+    from pyrc_core.script_manager import ScriptManager # Ensure correct import
 
 logger = logging.getLogger("pyrc.event_manager")
 
