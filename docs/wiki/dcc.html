@@ -1,0 +1,306 @@
+<![CDATA[
+<h2>Direct Client-to-Client (DCC)</h2>
+<p class="lead">PyRC implements the DCC protocol, enabling secure and efficient direct communication and file transfers between IRC clients without relaying data through the IRC server. This provides better speed and reliability for large transfers.</p>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>DCC Overview:</strong> DCC establishes a direct TCP connection between two IRC clients. PyRC's DCC implementation is robust, supporting various transfer modes and security features.
+</div>
+
+<h3 class="mt-4">DCC Features</h3>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h4 class="h6 mb-0">Transfer Types</h4>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li><strong><code>DCC SEND</code></strong>: Initiates an outgoing file transfer to another user.</li>
+                    <li><strong><code>DCC GET</code></strong>: Accepts an incoming file transfer offer from another user.</li>
+                    <li><strong><code>DCC CHAT</code></strong>: Establishes a direct chat connection between two clients (currently not fully implemented for interactive use in PyRC, primarily for file transfer control messages).</li>
+                    <li><strong><code>DCC RESUME</code></strong>: Allows resuming interrupted file transfers from where they left off.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h4 class="h6 mb-0">Transfer Modes & Capabilities</h4>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li><strong>Active Mode</strong>: The sender initiates a connection to the receiver's specified IP/port.</li>
+                    <li><strong>Passive Mode (Reverse DCC)</strong>: The receiver initiates a connection to the sender's specified IP/port, useful for clients behind NAT/firewalls. PyRC supports token-based passive offers.</li>
+                    <li><strong>Configurable Port Range</strong>: Define a range of local ports for listening sockets.</li>
+                    <li><strong>Advertised IP</strong>: Option to manually specify an advertised IP address for NAT traversal.</li>
+                    <li><strong>Checksum Verification</strong>: Supports MD5, SHA1, etc., to verify file integrity after transfer.</li>
+                    <li><strong>Bandwidth Throttling</strong>: Limit send and receive speeds (in KB/s) to manage network usage.</li>
+                    <li><strong>Automatic Cleanup</strong>: Configurable cleanup of old or completed transfers to free resources.</li>
+                    <li><strong>Security Features</strong>: File size limits, blocked extensions, and filename sanitization (via <code>dcc_security.py</code>) to mitigate risks.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="mt-4">Key DCC Components</h3>
+<ul>
+    <li><strong><code>DCCManager</code></strong> (<code>pyrc_core/dcc/dcc_manager.py</code>): The central orchestrator for all DCC functionality. It manages the lifecycle of all active transfers, delegates specific tasks to <code>DCCSendManager</code> and <code>DCCReceiveManager</code>, and handles incoming DCC CTCP requests.</li>
+    <li><strong><code>DCCSendManager</code></strong> (<code>pyrc_core/dcc/dcc_send_manager.py</code>): Manages all outgoing DCC file transfers, including queuing multiple files for a single peer, initiating connections, and tracking progress.</li>
+    <li><strong><code>DCCReceiveManager</code></strong> (<code>pyrc_core/dcc/dcc_receive_manager.py</code>): Manages all incoming DCC file transfers, handling acceptance of offers, establishing connections, and saving received data.</li>
+    <li><strong><code>DCCPassiveOfferManager</code></strong> (<code>pyrc_core/dcc/dcc_passive_offer_manager.py</code>): Specifically handles passive (reverse) DCC offers, generating and tracking unique tokens for these transfers.</li>
+    <li><strong><code>DCCTransfer</code> (Base Class)</strong> (<code>pyrc_core/dcc/dcc_transfer.py</code>): Abstract base class defining common properties and methods for both send and receive transfers. Concrete classes like <code>DCCSendTransfer</code> and <code>DCCReceiveTransfer</code> inherit from it.</li>
+    <li><strong><code>dcc_protocol.py</code></strong>: Contains utilities for parsing and formatting DCC CTCP messages (e.g., <code>DCC SEND filename ip port size</code>).</li>
+    <li><strong><code>dcc_security.py</code></strong>: Provides functions for filename sanitization and path validation to prevent malicious file operations.</li>
+</ul>
+
+<h3 class="mt-4">Using DCC in PyRC</h3>
+
+<h4>Initiating a File Transfer (<code>/dcc send</code>)</h4>
+<p>To send a file to another user, use the <code>/dcc send</code> command. You can specify multiple files, and they will be queued for sequential transfer. The <code>-p</code> or <code>--passive</code> flag initiates a passive (reverse) DCC send, where the recipient connects to your client.</p>
+<pre><code class="language-plaintext">/dcc send <nick> <filepath> [filepath2 ...]
+/dcc send -p <nick> <filepath> # Passive send
+</code></pre>
+<p>Example using the scripting API:</p>
+<pre><code class="language-python"># Example: Initiate a DCC SEND via ScriptAPIHandler
+# This would typically be called from a script command handler
+await self.api.dcc_manager.initiate_sends(
+    peer_nick="friend",
+    local_filepaths=["/path/to/my_document.pdf", "another_file.zip"],
+    passive=False # Set to True for passive send
+)</code></pre>
+
+<h4>Handling Incoming Transfers (<code>/dcc get</code>, <code>/dcc accept</code>)</h4>
+<p>When an incoming DCC offer is received, PyRC will display a notification in the Status window. You can then accept the transfer using the appropriate command.</p>
+<ul>
+    <li><strong>Passive Offer (<code>DCC SEND token</code>)</strong>: Use <code>/dcc get</code> with the provided filename and token.
+        <pre><code class="language-plaintext">/dcc get <nick> "<filename>" --token <token></code></pre>
+    </li>
+    <li><strong>Active Offer (<code>DCC SEND ip port size</code>)</strong>: Use <code>/dcc accept</code> with the provided details.
+        <pre><code class="language-plaintext">/dcc accept <nick> "<filename>" <ip> <port> <size></code></pre>
+    </li>
+</ul>
+<p>Example of handling an incoming DCC offer via a script event handler:</p>
+<pre><code class="language-python"># Example: Script event handler for incoming DCC SEND offers
+# Event: INCOMING_DCC_SEND_OFFER
+async def handle_incoming_dcc_offer(event_data: Dict[str, Any]):
+    nick = event_data["nick"]
+    dcc_info = event_data["dcc_info"]
+    command = dcc_info["command"] # e.g., "SEND"
+    filename = dcc_info["filename"]
+    ip_str = dcc_info["ip_str"]
+    port = dcc_info["port"]
+    file_size = dcc_info["filesize"]
+    token = dcc_info.get("token") # Present for passive offers
+
+    self.api.log_info(f"Incoming DCC {command} from {nick}: {filename} ({file_size} bytes)")
+
+    if self.api.config.dcc.auto_accept: # Check auto-accept setting
+        if command == "SEND":
+            if token:
+                # Accept passive offer
+                await self.api.dcc_manager.accept_passive_offer_by_token(nick, filename, token)
+            else:
+                # Accept active offer
+                await self.api.dcc_manager.accept_active_offer(nick, filename, ip_str, port, file_size)
+            self.api.add_message_to_context(
+                f"Auto-accepting incoming DCC {filename} from {nick}.", "info", context_name="Status"
+            )
+        else:
+            self.api.add_message_to_context(
+                f"Auto-accept not configured for DCC {command} type.", "warning", context_name="Status"
+            )
+    else:
+        self.api.add_message_to_context(
+            f"Incoming DCC {command} from {nick}: {filename} ({file_size} bytes). Use /dcc get or /dcc accept.", "notice", context_name="Status"
+        )
+</code></pre>
+
+<h4>Monitoring Transfer Progress (<code>/dcc list</code>)</h4>
+<p>The <code>/dcc list</code> command shows all current, recently completed, or failed DCC transfers. Scripts can monitor progress via dedicated DCC events.</p>
+<pre><code class="language-plaintext">/dcc list # List all active and recent transfers</code></pre>
+<p>Example of monitoring progress via script events:</p>
+<pre><code class="language-python"># Example: Script event handler for DCC transfer progress
+# Event: DCC_TRANSFER_PROGRESS
+async def on_dcc_progress(event_data: Dict[str, Any]):
+    transfer_id = event_data["transfer_id"]
+    filename = event_data["filename"]
+    bytes_transferred = event_data["file_size"]
+    current_rate_bps = event_data["current_rate_bps"]
+    estimated_eta_seconds = event_data["estimated_eta_seconds"]
+
+    progress_percent = (bytes_transferred / file_size) * 100 if file_size > 0 else 0
+    speed_kbps = current_rate_bps / 1024 if current_rate_bps else 0
+
+    eta_display = f"ETA: {int(estimated_eta_seconds)}s" if estimated_eta_seconds is not None else ""
+
+    self.api.log_info(
+        f"DCC Progress [{transfer_id[:8]}]: {filename} - "
+        f"{progress_percent:.1f}% ({speed_kbps:.1f} KB/s) {eta_display}"
+    )
+
+# Event: DCC_TRANSFER_STATUS_CHANGE (for completion/failure)
+async def on_dcc_status_change(event_data: Dict[str, Any]):
+    transfer_id = event_data["transfer_id"]
+    filename = event_data["filename"]
+    status = event_data["status"]
+    error_message = event_data["error_message"]
+    local_filepath = event_data["local_filepath"]
+
+    if status == "COMPLETED":
+        self.api.add_message_to_context(
+            f"DCC Transfer COMPLETE: {filename} saved to {local_filepath}", "success", context_name="Status"
+        )
+    elif status == "FAILED":
+        self.api.add_message_to_context(
+            f"DCC Transfer FAILED: {filename}. Error: {error_message}", "error", context_name="Status"
+        )
+    self.api.log_info(f"DCC Transfer [{transfer_id[:8]}] status: {status}")</code></pre>
+
+<h3 class="mt-4">DCC Configuration (<code>pyterm_irc_config.ini</code>)</h3>
+<p>The <code>[DCC]</code> section in your <code>pyterm_irc_config.ini</code> file provides extensive options for customizing DCC behavior:</p>
+<pre><code class="language-ini">[DCC]
+enabled = true                  ; Enable or disable all DCC functionality
+download_dir = downloads        ; Default directory for incoming files
+upload_dir = uploads            ; Default directory for files to send
+auto_accept = false             ; Automatically accept incoming DCC SEND offers
+max_file_size = 104857600       ; Maximum allowed file size in bytes (e.g., 100MB)
+port_range_start = 1024         ; Start of the port range for listening sockets
+port_range_end = 65535          ; End of the port range for listening sockets
+timeout = 300                   ; General timeout for DCC connections/transfers in seconds
+resume_enabled = true           ; Allow resuming interrupted transfers
+checksum_verify = true          ; Verify file checksum after transfer
+checksum_algorithm = md5        ; Algorithm for checksum verification (md5, sha1, sha256)
+bandwidth_limit_send_kbps =     ; KB/s limit for sending (0 for unlimited)
+bandwidth_limit_recv_kbps =     ; KB/s limit for receiving (0 for unlimited)
+blocked_extensions = .exe,.bat,.sh ; Dangerous file extensions to block
+dcc_advertised_ip =             ; Manual IP for NAT traversal
+cleanup_enabled = true          ; Automatically clean up old transfers
+cleanup_interval_seconds = 3600 ; How often to run cleanup
+transfer_max_age_seconds = 86400; Max age of completed transfers to keep
+</code></pre>
+
+<h3 class="mt-4">Security Considerations</h3>
+<div class="alert alert-warning">
+    <strong>Important Security Notes:</strong>
+    <ul>
+        <li>Only accept files from trusted users</li>
+        <li>Verify checksums of important files</li>
+        <li>Use the blocked extensions list to prevent dangerous file types</li>
+        <li>Consider disabling auto-accept in untrusted environments</li>
+        <li>Regularly review your download directory contents</li>
+    </ul>
+</div>
+
+<h3 class="mt-4">Troubleshooting</h3>
+<div class="card">
+    <div class="card-header">
+        <h4 class="h6 mb-0">Common Issues and Solutions</h4>
+    </div>
+    <div class="card-body">
+        <ul>
+            <li><strong>Transfers failing behind NAT:</strong> Try passive mode (<code>-p</code> flag) or set <code>dcc_advertised_ip</code></li>
+            <li><strong>Slow transfers:</strong> Check bandwidth limits and network conditions</li>
+            <li><strong>File corruption:</strong> Enable checksum verification</li>
+            <li><strong>Port issues:</strong> Ensure port range is open in firewall</li>
+        </ul>
+    </div>
+</div>
+
+<h3 class="mt-4">Transfer Flow Diagrams</h3>
+<div class="mermaid">
+sequenceDiagram
+    participant Sender
+    participant Receiver
+    Sender->>Receiver: DCC SEND CTCP (filename, size)
+    Receiver->>Sender: DCC ACCEPT CTCP
+    Sender->>Receiver: Establishes TCP connection
+    Sender->>Receiver: Sends file data
+    Receiver->>Sender: Sends progress acknowledgments
+    Sender->>Receiver: Sends checksum (optional)
+</div>
+
+<div class="mermaid">
+sequenceDiagram
+    participant Sender
+    participant Receiver
+    Sender->>Receiver: DCC SEND CTCP (filename, size, token)
+    Receiver->>Sender: DCC GET CTCP (token)
+    Receiver->>Sender: Establishes TCP connection
+    Sender->>Receiver: Sends file data
+    Receiver->>Sender: Sends progress acknowledgments
+</div>
+]]>"""
+line_count = len(content.splitlines())
+```
+
+```xml
+<write_to_file>
+<path>docs/wiki/dcc.html</path>
+<content>
+<![CDATA[
+<h2>Direct Client-to-Client (DCC)</h2>
+<p class="lead">PyRC implements the DCC protocol, enabling secure and efficient direct communication and file transfers between IRC clients without relaying data through the IRC server. This provides better speed and reliability for large transfers.</p>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>DCC Overview:</strong> DCC establishes a direct TCP connection between two IRC clients. PyRC's DCC implementation is robust, supporting various transfer modes and security features.
+</div>
+
+<h3 class="mt-4">DCC Features</h3>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h4 class="h6 mb-0">Transfer Types</h4>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li><strong><code>DCC SEND</code></strong>: Initiates an outgoing file transfer to another user.</li>
+                    <li><strong><code>DCC GET</code></strong>: Accepts an incoming file transfer offer from another user.</li>
+                    <li><strong><code>DCC CHAT</code></strong>: Establishes a direct chat connection between two clients (currently not fully implemented for interactive use in PyRC, primarily for file transfer control messages).</li>
+                    <li><strong><code>DCC RESUME</code></strong>: Allows resuming interrupted file transfers from where they left off.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h4 class="h6 mb-0">Transfer Modes & Capabilities</h4>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li><strong>Active Mode</strong>: The sender initiates a connection to the receiver's specified IP/port.</li>
+                    <li><strong>Passive Mode (Reverse DCC)</strong>: The receiver initiates a connection to the sender's specified IP/port, useful for clients behind NAT/firewalls. PyRC supports token-based passive offers.</li>
+                    <li><strong>Configurable Port Range</strong>: Define a range of local ports for listening sockets.</li>
+                    <li><strong>Advertised IP</strong>: Option to manually specify an advertised IP address for NAT traversal.</li>
+                    <li><strong>Checksum Verification</strong>: Supports MD5, SHA1, etc., to verify file integrity after transfer.</li>
+                    <li><strong>Bandwidth Throttling</strong>: Limit send and receive speeds (in KB/s) to manage network usage.</li>
+                    <li><strong>Automatic Cleanup</strong>: Configurable cleanup of old or completed transfers to free resources.</li>
+                    <li><strong>Security Features</strong>: File size limits, blocked extensions, and filename sanitization (via <code>dcc_security.py</code>) to mitigate risks.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="mt-4">Key DCC Components</h3>
+<ul>
+    <li><strong><code>DCCManager</code></strong> (<code>pyrc_core/dcc/dcc_manager.py</code>): The central orchestrator for all DCC functionality. It manages the lifecycle of all active transfers, delegates specific tasks to <code>DCCSendManager</code> and <code>DCCReceiveManager</code>, and handles incoming DCC CTCP requests.</li>
+    <li><strong><code>DCCSendManager</code></strong> (<code>pyrc_core/dcc/dcc_send_manager.py</code>): Manages all outgoing DCC file transfers, including queuing multiple files for a single peer, initiating connections, and tracking progress.</li>
+    <li><strong><code>DCCReceiveManager</code></strong> (<code>pyrc_core/dcc/dcc_receive_manager.py</code>): Manages all incoming DCC file transfers, handling acceptance of offers, establishing connections, and saving received data.</li>
+    <li><strong><code>DCCPassiveOfferManager</code></strong> (<code>pyrc_core/dcc/dcc_passive_offer_manager.py</code>): Specifically handles passive (reverse) DCC offers, generating and tracking unique tokens for these transfers.</li>
+    <li><strong><code>DCCTransfer</code> (Base Class)</strong> (<code>pyrc_core/dcc/dcc_transfer.py</code>): Abstract base class defining common properties and methods for both send and receive transfers. Concrete classes like <code>DCCSendTransfer</code> and <code>DCCReceiveTransfer</code> inherit from it.</li>
+    <li><strong><code>dcc_protocol.py</code></strong>: Contains utilities for parsing and formatting DCC CTCP messages (e.g., <code>DCC SEND filename ip port size</code>).</li>
+    <li><strong><code>dcc_security.py</code></strong>: Provides functions for filename sanitization and path validation to prevent malicious file operations.</li>
+</ul>
+
+<h3 class="mt-4">Using DCC in PyRC</h3>
+
+<h4>Initiating a File Transfer (<code>/dcc send</code>)</h4>
+<p>To send a file to another user, use the <code>/dcc send</code> command. You can specify multiple files, and they will be queued for sequential transfer. The <code>-p</code> or <code>--passive</code> flag initiates a passive (reverse) DCC send, where the recipient connects to your client.</p>
+<pre><code class="language-plaintext">/dcc send <nick> <filepath> [filepath2 ...]
+/dcc send -p <nick> <filepath> #

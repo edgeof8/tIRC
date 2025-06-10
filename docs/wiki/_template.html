@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{%TITLE%} | PyRC Wiki</title>
+    <link rel="stylesheet" href="./styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1>PyRC Documentation</h1>
+                <p class="tagline">Complete guide to the Python IRC Client</p>
+                <div class="search-box">
+                    <input type="text" placeholder="Search documentation...">
+                    <button><i class="fas fa-search"></i></button>
+                </div>
+            </div>
+        </header>
+
+        <div class="sidebar">
+            <nav>
+                <ul>
+                    <li><a href="index.html" class="active"><i class="fas fa-home"></i> Home</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-play-circle"></i> Getting Started</li>
+                    <li><a href="quick-start.html"><i class="fas fa-bolt"></i> Quick Start</a></li>
+                    <li><a href="getting-started.html"><i class="fas fa-rocket"></i> Getting Started</a></li>
+                    <li><a href="development-setup.html"><i class="fas fa-code"></i> Development Setup</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-cubes"></i> Core Components</li>
+                    <li><a href="architecture.html"><i class="fas fa-project-diagram"></i> Architecture</a></li>
+                    <li><a href="codebase-overview.html"><i class="fas fa-sitemap"></i> Codebase Overview</a></li>
+                    <li><a href="core-components.html"><i class="fas fa-cube"></i> Core Components</a></li>
+                    <li><a href="command-system.html"><i class="fas fa-terminal"></i> Command System</a></li>
+                    <li><a href="ui-system.html"><i class="fas fa-desktop"></i> UI System</a></li>
+                    <li><a href="dcc.html"><i class="fas fa-exchange-alt"></i> DCC</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-plug"></i> API & Extensibility</li>
+                    <li><a href="api-documentation.html"><i class="fas fa-book"></i> API Documentation</a></li>
+                    <li><a href="script-api-reference.html"><i class="fas fa-code"></i> Script API Reference</a></li>
+                    <li><a href="contributing.html"><i class="fas fa-hands-helping"></i> Contributing</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-info-circle"></i> Support & Legal</li>
+                    <li><a href="debugging-and-logging.html"><i class="fas fa-bug"></i> Debugging & Logging</a></li>
+                    <li><a href="troubleshooting.html"><i class="fas fa-wrench"></i> Troubleshooting</a></li>
+                    <li><a href="support.html"><i class="fas fa-question"></i> Support</a></li>
+                    <li><a href="license.html"><i class="fas fa-file-contract"></i> License</a></li>
+                    <li><a href="acknowledgments.html"><i class="fas fa-heart"></i> Acknowledgments</a></li>
+                </ul>
+            </nav>
+        </div>
+
+        <main>
+            <article>
+                {%CONTENT%}
+            </article>
+        </main>
+
+        <footer>
+            <p>PyRC &copy; 2025 | Open Source IRC Client | MIT Licensed</p>
+        </footer>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        let currentPage = window.location.pathname;
+        const navLinks = document.querySelectorAll('.sidebar a');
+
+        navLinks.forEach(link => {
+          const linkHref = link.getAttribute('href');
+          if (currentPage === 'index.html' && linkHref === 'index.html') {
+            link.classList.add('active');
+          }
+          else if (currentPage.endsWith(linkHref) || currentPage.startsWith(linkHref)) {
+            link.classList.add('active');
+          } else {
+            link.classList.remove('active');
+          }
+        });
+      });
+    </script>
+</body>
+</html>

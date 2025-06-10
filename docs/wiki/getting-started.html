@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Getting Started | PyRC Wiki</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1>PyRC Documentation</h1>
+                <p class="tagline">Complete guide to the Python IRC Client</p>
+                <div class="search-box">
+                    <input type="text" placeholder="Search documentation...">
+                    <button><i class="fas fa-search"></i></button>
+                </div>
+            </div>
+        </header>
+
+        <div class="sidebar">
+            <nav>
+                <ul>
+                    <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-play-circle"></i> Getting Started</li>
+                    <li><a href="quick-start.html"><i class="fas fa-bolt"></i> Quick Start</a></li>
+                    <li><a href="getting-started.html" class="active"><i class="fas fa-rocket"></i> Getting Started</a></li>
+                    <li><a href="development-setup.html"><i class="fas fa-code"></i> Development Setup</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-cubes"></i> Core Components</li>
+                    <li><a href="architecture.html"><i class="fas fa-project-diagram"></i> Architecture</a></li>
+                    <li><a href="codebase-overview.html"><i class="fas fa-sitemap"></i> Codebase Overview</a></li>
+                    <li><a href="core-components.html"><i class="fas fa-cube"></i> Core Components</a></li>
+                    <li><a href="command-system.html"><i class="fas fa-terminal"></i> Command System</a></li>
+                    <li><a href="ui-system.html"><i class="fas fa-desktop"></i> UI System</a></li>
+                    <li><a href="dcc.html"><i class="fas fa-exchange-alt"></i> DCC</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-plug"></i> API & Extensibility</li>
+                    <li><a href="api-documentation.html"><i class="fas fa-book"></i> API Documentation</a></li>
+                    <li><a href="script-api-reference.html"><i class="fas fa-code"></i> Script API Reference</a></li>
+                    <li><a href="contributing.html"><i class="fas fa-hands-helping"></i> Contributing</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-info-circle"></i> Support & Legal</li>
+                    <li><a href="debugging-and-logging.html"><i class="fas fa-bug"></i> Debugging & Logging</a></li>
+                    <li><a href="troubleshooting.html"><i class="fas fa-wrench"></i> Troubleshooting</a></li>
+                    <li><a href="support.html"><i class="fas fa-question"></i> Support</a></li>
+                    <li><a href="license.html"><i class="fas fa-file-contract"></i> License</a></li>
+                    <li><a href="acknowledgments.html"><i class="fas fa-heart"></i> Acknowledgments</a></li>
+                </ul>
+            </nav>
+        </div>
+
+        <main>
+            <article>
+                <h2>Getting Started with PyRC</h2>
+                <p class="lead">This guide will walk you through the initial steps to get PyRC running and introduce you to its core concepts.</p>
+
+                <div class="alert-box">
+                    <strong>New to PyRC?</strong> Start with the <a href="quick-start.html">Quick Start Guide</a> for a rapid setup.
+                </div>
+
+                <h3>Installation</h3>
+                <p>For detailed installation instructions, including options for installing via pip or from source, please refer to the <a href="quick-start.html">Quick Start Guide</a> or the <a href="development-setup.html">Development Setup</a> page if you plan to contribute.</p>
+
+                <h3>Configuration Overview</h3>
+                <p>PyRC's behavior is managed through the <code>pyterm_irc_config.ini</code> file. This file allows you to define server connections, user identity, UI preferences, logging settings, and feature toggles. For a comprehensive overview of all configurable options, see the <a href="advanced-usage.html">Advanced Usage - Configuration Deep Dive</a> section.</p>
+
+                <h3>Basic Usage and Commands</h3>
+                <p>Once PyRC is installed and configured, you can launch it. The client provides a rich set of built-in commands for interacting with IRC networks and managing the client's behavior. To explore available commands, type <code>/help</code> within the client. For specific command details, use <code>/help <command_name></code>.</p>
+                <p>Learn more about the command system on the <a href="command-system.html">Command System</a> page.</p>
+
+                <h3>Understanding the UI</h3>
+                <p>PyRC features a responsive terminal UI built with Python's <code>curses</code> library. It includes a message panel, sidebar for channels and users, and a status bar. Familiarize yourself with UI navigation and features on the <a href="ui-system.html">UI System</a> page.</p>
+
+                <h3>Extending PyRC with Scripts</h3>
+                <p>PyRC is highly extensible through Python scripts. You can write custom scripts to automate tasks, add new commands, or integrate with external services. Discover more about scripting and the available API on the <a href="script-api-reference.html">Script API Reference</a> page.</p>
+            </article>
+        </main>
+
+        <footer>
+            <p>PyRC &copy; 2025 | Open Source IRC Client | MIT Licensed</p>
+        </footer>
+    </div>
+</body>
+</html>

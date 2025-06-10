@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Development Setup | PyRC Wiki</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1>PyRC Documentation</h1>
+                <p class="tagline">Complete guide to the PyRC IRC client</p>
+            </div>
+        </header>
+
+        <div class="sidebar">
+            <nav>
+                <ul>
+                    <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                    <li class="sidebar-header"><i class="fas fa-play-circle"></i> Getting Started</li>
+                    <li><a href="development-setup.html" class="active"><i class="fas fa-code"></i> Development Setup</a></li>
+                    <!-- Other sidebar links -->
+                </ul>
+            </nav>
+        </div>
+
+        <main>
+            <article>
+                <h2>Development Setup</h2>
+                <p class="lead">Get started with PyRC development with this comprehensive setup guide.</p>
+
+                <div class="alert-box warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Note:</strong> These instructions assume you're familiar with basic command-line usage and Python development.
+                </div>
+
+                <div class="two-column-grid">
+                    <div class="card">
+                        <h3><i class="fas fa-check-circle"></i> Required Software</h3>
+                        <ul>
+                            <li><strong>Python 3.8+</strong> - Core programming language</li>
+                            <li><strong>Git</strong> - Version control system</li>
+                            <li><strong>pip</strong> - Python package installer</li>
+                            <li><strong>Virtual Environment</strong> - Dependency isolation</li>
+                        </ul>
+                    </div>
+
+                    <div class="card">
+                        <h3><i class="fas fa-tools"></i> Recommended Tools</h3>
+                        <ul>
+                            <li><strong>VS Code</strong> or <strong>PyCharm</strong> - Code editors</li>
+                            <li><strong>Poetry</strong> - Dependency management</li>
+                            <li><strong>Docker</strong> - Containerized environments</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="step-section">
+                    <h3><i class="fas fa-code-branch"></i> 1. Clone the Repository</h3>
+                    <pre><code>git clone https://github.com/edgeof8/PyRC.git
+cd PyRC
+git checkout -b feature/your-feature-name</code></pre>
+                </div>
+
+                <div class="step-section">
+                    <h3><i class="fas fa-cog"></i> 2. Set Up Python Environment</h3>
+                    <h4>Using venv (Recommended)</h4>
+                    <pre><code>python -m venv venv
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+pip install -r requirements.txt
+pip install -e .</code></pre>
+
+                    <h4>Using Poetry</h4>
+                    <pre><code>pip install poetry
+poetry install</code></pre>
+                </div>
+
+                <div class="step-section">
+                    <h3><i class="fas fa-wrench"></i> 3. Configuration Setup</h3>
+                    <pre><code>cp pyterm_irc_config.ini.example pyterm_irc_config.ini</code></pre>
+                    <p>Edit <code>pyterm_irc_config.ini</code> to customize your settings.</p>
+                </div>
+
+                <div class="step-section">
+                    <h3><i class="fas fa-play"></i> Running the Application</h3>
+                    <pre><code>python pyrc.py</code></pre>
+                    <p>Or if installed:</p>
+                    <pre><code>pyrc</code></pre>
+                </div>
+
+                <div class="step-section">
+                    <h3><i class="fas fa-vial"></i> Running Tests</h3>
+                    <pre><code>pytest
+pytest tests/test_core.py
+pytest --cov=pyrc_core</code></pre>
+                </div>
+
+                <div class="info-box">
+                    <i class="fas fa-lightbulb"></i>
+                    <strong>Tip:</strong> Use <code>pre-commit install</code> to set up Git hooks for automated linting.
+                </div>
+            </article>
+        </main>
+
+        <footer>
+            <p>PyRC &copy; 2025 | Open Source IRC Client</p>
+        </footer>
+    </div>
+</body>
+</html>

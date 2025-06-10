@@ -1,0 +1,108 @@
+<h2>UI System</h2>
+<p class="lead">PyRC features a responsive, terminal-based user interface built with Python's <code>curses</code> library, designed for both power users and accessibility.</p>
+
+<div class="alert-box">
+    <strong>Terminal-First Design:</strong> PyRC's UI is meticulously optimized for terminal usage, supporting dynamic resizing, split views, and efficient rendering.
+</div>
+
+<h3>UI Architecture</h3>
+<div class="mermaid">
+graph TD
+    A[UIManager] --> B[CursesManager]
+    A --> C[WindowLayoutManager]
+    A --> D[MessagePanelRenderer]
+    A --> E[SidebarPanelRenderer]
+    A --> F[StatusBarRenderer]
+    A --> G[InputLineRenderer]
+    B --> H[Safe Curses Utilities]
+    C --> I[Window Calculations]
+</div>
+
+<div class="features-grid">
+    <div class="feature-card">
+        <h4>Core UI Components</h4>
+        <ul>
+            <li><strong>UIManager</strong>: Central orchestrator and batched updater</li>
+            <li><strong>CursesManager</strong>: Safe low-level curses operations</li>
+            <li><strong>WindowLayoutManager</strong>: Dynamic window sizing/positioning</li>
+            <li><strong>MessagePanelRenderer</strong>: Chat message display with scrollback</li>
+            <li><strong>SidebarPanelRenderer</strong>: Channel/user lists with smart scrolling</li>
+            <li><strong>StatusBarRenderer</strong>: Connection and status information</li>
+            <li><strong>InputLineRenderer</strong>: User input with history and completion</li>
+        </ul>
+    </div>
+
+    <div class="feature-card">
+        <h4>Key UI Features</h4>
+        <ul>
+            <li><strong>Split-Screen Mode</strong>: View two channels simultaneously</li>
+            <li><strong>Responsive Layout</strong>: Adapts to terminal resizing</li>
+            <li><strong>Batched Updates</strong>: Efficient screen refreshes using noutrefresh/doupdate</li>
+            <li><strong>Safe Curses</strong>: Robust error handling for all curses operations</li>
+            <li><strong>Color Themes</strong>: Configurable color schemes</li>
+            <li><strong>Smart Scrolling</strong>: Context-aware message and user list scrolling</li>
+        </ul>
+    </div>
+</div>
+
+<h4>UI Update Flow</h4>
+<pre><code class="language-python"># Typical UI update sequence
+def refresh_all_windows(self):
+    # Check for terminal resize
+    new_height, new_width = self.curses_manager.get_dimensions()
+    if new_height != self.height or new_width != self.width:
+        self.handle_resize(new_height, new_width)
+
+    # Batch drawing operations
+    self.curses_manager.noutrefresh_stdscr()
+    self.draw_messages()
+    self.draw_sidebar()
+    self.draw_status_bar()
+    self.draw_input_line()
+
+    # Perform batched update
+    self.curses_manager.update_screen()</code></pre>
+
+<h4>Safe Curses Example</h4>
+<pre><code class="language-python"># All curses operations are wrapped in error handling
+def addstr_safe(self, window, y, x, text, attr):
+    try:
+        window.addstr(y, x, text, attr)
+    except curses.error as e:
+        self.logger.warning(f"Curses error: {e}")
+        # Fallback to simpler drawing if complex one fails
+        try:
+            window.addstr(0, 0, text[:window.getmaxyx()[1]-1], attr)
+        except curses.error:
+            pass</code></pre>
+
+<h3>UI Components</h3>
+<div class="component-card">
+    <h4>Message Panel</h4>
+    <pre><code>await client.add_message(
+    "Hello world",
+    client.ui.colors["notice"],
+    context_name="#general",
+    prefix_time=True
+)</code></pre>
+</div>
+
+<div class="component-card">
+    <h4>Sidebar</h4>
+    <pre><code>client.ui_needs_update.set()
+channels = client.context_manager.get_all_channels()</code></pre>
+</div>
+
+<h3>UI Customization</h3>
+<h4>Color Themes</h4>
+<pre><code class="language-ini">[UI.Colors]
+foreground = white
+background = black
+highlight = yellow
+error = red</code></pre>
+
+<h4>Layout Configuration</h4>
+<pre><code class="language-ini">[UI.Layout]
+sidebar_width = 20
+show_timestamps = true
+timestamp_format = "%H:%M"</code></pre>

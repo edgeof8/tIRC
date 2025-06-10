@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Usage | PyRC Wiki</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1>PyRC Documentation</h1>
+                <p class="tagline">Complete guide to the Python IRC Client</p>
+                <div class="search-box">
+                    <input type="text" placeholder="Search documentation...">
+                    <button><i class="fas fa-search"></i></button>
+                </div>
+            </div>
+        </header>
+
+        <div class="sidebar">
+            <nav>
+                <ul>
+                    <li><a href="index.html" class="active"><i class="fas fa-home"></i> Home</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-play-circle"></i> Getting Started</li>
+                    <li><a href="quick-start.html"><i class="fas fa-bolt"></i> Quick Start</a></li>
+                    <li><a href="getting-started.html"><i class="fas fa-rocket"></i> Getting Started</a></li>
+                    <li><a href="development-setup.html"><i class="fas fa-code"></i> Development Setup</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-cubes"></i> Core Components</li>
+                    <li><a href="architecture.html"><i class="fas fa-project-diagram"></i> Architecture</a></li>
+                    <li><a href="codebase-overview.html"><i class="fas fa-sitemap"></i> Codebase Overview</a></li>
+                    <li><a href="core-components.html"><i class="fas fa-cube"></i> Core Components</a></li>
+                    <li><a href="command-system.html"><i class="fas fa-terminal"></i> Command System</a></li>
+                    <li><a href="ui-system.html"><i class="fas fa-desktop"></i> UI System</a></li>
+                    <li><a href="dcc.html"><i class="fas fa-exchange-alt"></i> DCC</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-plug"></i> API & Extensibility</li>
+                    <li><a href="api-documentation.html"><i class="fas fa-book"></i> API Documentation</a></li>
+                    <li><a href="contributing.html"><i class="fas fa-hands-helping"></i> Contributing</a></li>
+
+                    <li class="sidebar-header"><i class="fas fa-info-circle"></i> Support & Legal</li>
+                    <li><a href="support.html"><i class="fas fa-question"></i> Support</a></li>
+                    <li><a href="license.html"><i class="fas fa-file-contract"></i> License</a></li>
+                    <li><a href="acknowledgments.html"><i class="fas fa-heart"></i> Acknowledgments</a></li>
+                </ul>
+            </nav>
+        </div>
+
+        <main>
+            <article>
+                <h2>Advanced Usage</h2>
+                <p>This section will cover advanced features and usage patterns for PyRC, including detailed configuration, scripting examples, and more.</p>
+                <h3>Configuration Deep Dive</h3>
+                <p>Explore advanced configuration options in `pyterm_irc_config.ini` beyond basic server settings. This includes fine-tuning logging, UI behaviors, and feature flags.</p>
+                <h3>Custom Command Creation</h3>
+                <p>Learn how to implement your own custom commands using the PyRC scripting API to extend client functionality.</p>
+                <h3>Event-Driven Automation with Triggers</h3>
+                <p>Understand the powerful `/on` command and how to set up event-based triggers to automate actions and responses within PyRC.</p>
+                <h3>Headless Mode for Bots and Automation</h3>
+                <p>Detailed guide on running PyRC in headless mode for use in automated scripts, chatbots, or other programmatic integrations, leveraging its `asyncio` core and `ScriptAPIHandler`.</p>
+                <h3>DCC Advanced Scenarios</h3>
+                <p>Advanced usage of DCC features, including managing multiple transfers, troubleshooting common issues, and optimizing transfer settings.</p>
+            </article>
+        </main>
+
+        <footer>
+            <p>PyRC &copy; 2025 | Open Source IRC Client | MIT Licensed</p>
+        </footer>
+    </div>
+</body>
+</html>

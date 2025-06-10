@@ -1,0 +1,238 @@
+<![CDATA[
+                <h2>Command System</h2>
+                <p class="lead">PyRC features a powerful and extensible command system that handles both built-in client commands and custom commands defined by scripts.</p>
+
+                <div class="alert-box info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Dynamic & Modular:</strong> The command system allows new commands to be added easily without modifying core client logic.
+                </div>
+
+                <div class="command-overview">
+                    <h3>Command Structure</h3>
+                    <pre><code>/command_name [arguments] [--option=value]</code></pre>
+                    <p>Commands are discovered dynamically from the <code>pyrc_core/commands/</code> directory.</p>
+                </div>
+
+                <div class="two-column-grid">
+                    <div class="card">
+                        <h3><i class="fas fa-list"></i> Core Command Categories</h3>
+                        <ul>
+                            <li><strong>Channel Ops:</strong> <code>/join</code>, <code>/part</code>, <code>/topic</code></li>
+                            <li><strong>Server:</strong> <code>/connect</code>, <code>/server</code>, <code>/quit</code></li>
+                            <li><strong>User:</strong> <code>/msg</code>, <code>/query</code>, <code>/nick</code></li>
+                            <li><strong>UI:</strong> <code>/window</code>, <code>/next</code>, <code>/clear</code></li>
+                            <li><strong>DCC:</strong> <code>/dcc send</code>, <code>/dcc get</code></li>
+                            <li><strong>Scripting:</strong> <code>/script</code>, <code>/trigger</code></li>
+                        </ul>
+                    </div>
+
+                    <div class="card">
+                        <h3><i class="fas fa-star"></i> Command Features</h3>
+                        <ul>
+                            <li>Tab completion for commands and arguments</li>
+                            <li>Multiple command aliases</li>
+                            <li>Context-aware execution</li>
+                            <li>Async command handlers</li>
+                            <li>Built-in help system</li>
+                            <li>Scriptable command registration</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="command-lifecycle">
+                    <h3><i class="fas fa-project-diagram"></i> Command Execution Flow</h3>
+                    <div class="command-flow-diagram">
+                        <div class="flow-step">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <strong>Input Capture</strong>
+                                <p>User types command in input line</p>
+                            </div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <strong>Parsing</strong>
+                                <p>CommandHandler splits command and arguments</p>
+                            </div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-content">
+                                <strong>Resolution</strong>
+                                <p>Finds matching command handler</p>
+                                <p class="note">Checks both core commands and script-registered commands</p>
+                            </div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-content">
+                                <strong>Execution</strong>
+                                <p>Runs handler in appropriate context:</p>
+                                <ul>
+                                    <li>Async handlers run directly in event loop</li>
+                                    <li>Sync handlers run in thread pool</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="step-number">5</div>
+                            <div class="step-content">
+                                <strong>Response</strong>
+                                <p>Updates UI or sends IRC messages</p>
+                                <p class="note">All UI updates are thread-safe</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="async-note">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Note:</strong> PyRC's command system is fully async-capable.
+                        Commands can be implemented as either synchronous or asynchronous functions.
+                    </div>
+                </div>
+
+                <div class="code-example">
+                    <h3><i class="fas fa-code"></i> Command Module Structure</h3>
+                    <pre><code># Example command module (pyrc_core/commands/channel/join_command.py)
+from typing import Optional
+from pyrc_core.commands.command_handler import CommandDefinition
+
+COMMAND_DEFINITIONS = [
+    CommandDefinition(
+        name="join",
+        handler="handle_join_command",
+        help={
+            "usage": "/join <channel> [key]",
+            "description": "Joins an IRC channel",
+            "examples": [
+                "/join #python",
+                "/join #secret secretpass"
+            ]
+        },
+        aliases=["j"]
+    )
+]
+
+async def handle_join_command(client, args_str: str):
+    args = args_str.split()
+    if not args:
+        await client.add_message("Error: Channel name required")
+        return
+
+    channel = args[0]
+    key = args[1] if len(args) > 1 else None
+    await client.network_handler.send(f"JOIN {channel} {key or ''}")</code></pre>
+                </div>
+
+                <div class="help-system">
+                    <h3><i class="fas fa-question-circle"></i> Help System Examples</h3>
+                    <pre><code>/help         # List all commands
+/help join    # Show help for /help
+/help script  # Show scripting commands
+/help dcc     # Show DCC commands</code></pre>
+                </div>
+
+                <div class="scripting-integration">
+                    <h3><i class="fas fa-plug"></i> Scripting Integration</h3>
+                    <p>Scripts can register new commands using the ScriptAPI:</p>
+                    <pre><code># In a script's on_load() method:
+self.api.register_command(
+    name="greet",
+    handler=self.handle_greet,
+    help={
+        "usage": "/greet [name]",
+        "description": "Sends a greeting message",
+        "examples": ["/greet Alice", "/greet"]
+    }
+)
+
+async def handle_greet(self, args_str: str):
+    name = args_str.strip() or "everyone"
+    await self.api.send_message(
+        self.api.get_active_context(),
+        f"Hello, {name}!"
+    )</code></pre>
+
+                    <h4>Command Registration Best Practices</h4>
+                    <ul>
+                        <li>Always provide complete help text with examples</li>
+                        <li>Use async handlers for I/O operations</li>
+                        <li>Validate arguments before processing</li>
+                        <li>Handle errors gracefully with user feedback</li>
+                    </ul>
+
+                    <h4>Error Handling Example</h4>
+                    <pre><code>async def handle_complex_command(self, args_str: str):
+    try:
+        # Parse and validate arguments
+        args = self._parse_args(args_str)
+        if not args.valid:
+            await self.show_usage_error()
+            return
+
+        # Perform operation
+        result = await self._perform_operation(args)
+        await self.show_success(result)
+
+    except ValueError as e:
+        await self.show_error(f"Invalid input: {e}")
+    except ConnectionError as e:
+        await self.show_error(f"Network error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error in command: {e}")
+        await self.show_error("An unexpected error occurred")</code></pre>
+
+                    <h4>Performance Considerations</h4>
+                    <ul>
+                        <li>Use async for network/disk operations</li>
+                        <li>Keep sync handlers fast and non-blocking</li>
+                        <li>Cache expensive operations where possible</li>
+                        <li>Limit UI updates during batch operations</li>
+                    </ul>
+                </div>
+
+                <div class="advanced-usage">
+                    <h3><i class="fas fa-cogs"></i> Advanced Usage</h3>
+                    <h4>Command Chaining</h4>
+                    <pre><code># Example of chaining commands in a script
+async def handle_chain(self, args_str: str):
+    await self.api.execute_command("/connect irc.example.net")
+    await asyncio.sleep(1)  # Brief delay
+    await self.api.execute_command("/join #test")
+    await self.api.execute_command("/msg #test Hello from script!")</code></pre>
+
+                    <h4>Complex Command Example</h4>
+                    <pre><code>async def handle_file_upload(self, args_str: str):
+    """Example complex command with multiple steps"""
+    # Parse arguments
+    parts = args_str.split(maxsplit=1)
+    if len(parts) < 2:
+        await self.show_usage_error()
+        return
+
+    nick, filepath = parts
+
+    # Validate file
+    if not os.path.exists(filepath):
+        await self.show_error(f"File not found: {filepath}")
+        return
+
+    # Initiate DCC transfer
+    transfer_id = await self.api.dcc_send_file(nick, filepath)
+
+    # Monitor progress
+    while True:
+        status = await self.api.get_dcc_status(transfer_id)
+        if status in ['COMPLETED', 'FAILED', 'CANCELLED']:
+            break
+        await asyncio.sleep(0.5)
+
+    # Report final status
+    if status == 'COMPLETED':
+        await self.show_success(f"File sent to {nick}")
+    else:
+        await self.show_error(f"Transfer failed: {status}")</code></pre>
+                </div>
+]]>

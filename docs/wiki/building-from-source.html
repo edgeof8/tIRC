@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building from Source | PyRC Wiki</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1>PyRC Documentation</h1>
+                <p class="tagline">Complete guide to the PyRC IRC client</p>
+            </div>
+        </header>
+
+        <div class="sidebar">
+            <nav>
+                <ul>
+                    <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="building-from-source.html" class="active"><i class="fas fa-code-branch"></i> Building from Source</a></li>
+                    <!-- Other sidebar links -->
+                </ul>
+            </nav>
+        </div>
+
+        <main>
+            <article>
+                <h2>Building from Source</h2>
+                <p class="lead">If you want to build PyRC from source, follow these instructions.</p>
+
+                <div class="alert-box">
+                    <i class="fas fa-cogs"></i>
+                    <strong>Advanced:</strong> Building from source is only necessary if you want to modify the core client logic.
+                </div>
+
+                <h3>Prerequisites</h3>
+                <ul class="prerequisites">
+                    <li><strong>Python 3.8 or higher</strong></li>
+                    <li><strong>Git</strong></li>
+                    <li><strong>pip</strong> (Python package installer)</li>
+                    <li><strong><code>build</code></strong> package</li>
+                    <li><strong><code>PyInstaller</code></strong></li>
+                </ul>
+
+                <h3>Build Steps</h3>
+                <div class="step-card">
+                    <h4>1. Clone the repository and set up environment</h4>
+                    <pre><code>git clone https://github.com/edgeof8/PyRC.git
+cd PyRC
+python -m venv venv
+# Activate virtual environment
+# On Windows: venv\Scripts\activate
+# On macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
+pip install -U pip build pyinstaller</code></pre>
+                </div>
+
+                <div class="step-card">
+                    <h4>2. Run the build script</h4>
+                    <p>This script will build the Python package and create standalone executables in the <code>dist/</code> directory.</p>
+                    <pre><code>python build.py</code></pre>
+                </div>
+
+                <div class="step-card">
+                    <h4>3. Test the build (recommended)</h4>
+                    <pre><code>python test_build.py</code></pre>
+                    <p>Verifies package installation, executable functionality, and configuration handling.</p>
+                </div>
+
+                <h3>Build Output</h3>
+                <p>The build process creates these files in <code>dist/</code>:</p>
+                <ul class="output-list">
+                    <li><strong>Python packages:</strong>
+                        <ul>
+                            <li><code>pyrc-<version>.tar.gz</code></li>
+                            <li><code>pyrc-<version>-py3-none-any.whl</code></li>
+                        </ul>
+                    </li>
+                    <li><strong>Standalone Executables:</strong>
+                        <ul>
+                            <li>Windows: <code>pyrc-<version>-win64.exe</code></li>
+                            <li>Linux: <code>pyrc-<version>-linux</code></li>
+                            <li>macOS: <code>pyrc-<version>-macos</code></li>
+                        </ul>
+                    </li>
+                </ul>
+            </article>
+        </main>
+
+        <footer>
+            <p>PyRC &copy; 2025 | Open Source IRC Client</p>
+        </footer>
+    </div>
+</body>
+</html>

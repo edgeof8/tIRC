@@ -1,0 +1,201 @@
+<![CDATA[
+                <h2>Core Components</h2>
+                <p class="lead">PyRC is built on a modular architecture with several key components that work together to provide a robust, extensible, and high-performance IRC client experience.</p>
+
+                <div class="component-section">
+                    <h3><i class="fas fa-database"></i> State Management (<code>pyrc_core/state_manager.py</code>)</h3>
+                    <p>The <code>StateManager</code> is the single source of truth for all connection, session, and client-specific runtime data.</p>
+
+                    <div class="feature-box">
+                        <h4>Key Features:</h4>
+                        <ul>
+                            <li><strong>Centralized Storage</strong>: Holds all critical client state</li>
+                            <li><strong>Robust Validation</strong>: Ensures data integrity with type-safe validators</li>
+                            <li><strong>Thread Safety</strong>: Protected by <code>asyncio.Lock</code></li>
+                            <li><strong>Change Notification</strong>: Event-based system for state changes</li>
+                            <li><strong>Automatic Persistence</strong>: Saves to JSON with custom encoding</li>
+                        </ul>
+                    </div>
+
+                    <h4>ConnectionInfo Structure:</h4>
+                    <pre><code class="language-python">@dataclass
+class ConnectionInfo:
+    server: str          # Server address (hostname or IP)
+    port: int            # Port number (1-65535)
+    ssl: bool            # Use SSL/TLS
+    nick: str            # Current nickname
+    username: Optional[str] = None       # USER username
+    realname: Optional[str] = None       # USER realname
+    server_password: Optional[str] = None # Server password
+    nickserv_password: Optional[str] = None # NickServ password
+    sasl_username: Optional[str] = None  # SASL username
+    sasl_password: Optional[str] = None  # SASL password
+    verify_ssl_cert: bool = True         # Verify SSL certs
+    auto_connect: bool = False           # Auto-connect on startup
+    initial_channels: List[str] = field(default_factory=list) # Auto-join channels
+    desired_caps: List[str] = field(default_factory=list)     # IRCv3 capabilities</code></pre>
+
+                    <h4>Example Usage:</h4>
+                    <pre><code class="language-python"># Initialize StateManager
+state_manager = StateManager(state_file="app_state.json")
+
+# Register change handler
+def on_state_change(change: StateChange):
+    print(f"State changed: {change.key} from {change.old_value} to {change.new_value}")
+
+state_manager.register_change_handler("connection_state", on_state_change)
+
+# Set connection info with validation
+conn_info = ConnectionInfo(
+    server="irc.example.com",
+    port=6697,
+    ssl=True,
+    nick="MyNick"
+)
+await state_manager.set_connection_info(conn_info)</code></pre>
+                </div>
+
+                <div class="component-section">
+                    <h3><i class="fas fa-bolt"></i> Event System (<code>pyrc_core/event_manager.py</code>)</h3>
+                    <p>The <code>EventManager</code> handles all event dispatching using a publish-subscribe pattern.</p>
+
+                    <div class="feature-box">
+                        <h4>Key Features:</h4>
+                        <ul>
+                            <li><strong>Async Support</strong>: Handles both sync and async handlers</li>
+                            <li><strong>Rich Event Data</strong>: Standardized event data structure</li>
+                            <li><strong>Comprehensive Events</strong>: Covers all IRC protocol actions</li>
+                        </ul>
+                    </div>
+
+                    <h4>Event Types:</h4>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Events</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Client Lifecycle</td>
+                                    <td>CLIENT_CONNECTED, CLIENT_REGISTERED, CLIENT_READY, CLIENT_DISCONNECTED</td>
+                                </tr>
+                                <tr>
+                                    <td>IRC Messages</td>
+                                    <td>PRIVMSG, NOTICE, JOIN, PART, QUIT, NICK, MODE, TOPIC</td>
+                                </tr>
+                                <tr>
+                                    <td>DCC Transfers</td>
+                                    <td>DCC_TRANSFER_STATUS_CHANGE, DCC_TRANSFER_PROGRESS</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4>Example Event Data:</h4>
+                    <pre><code class="language-python"># PRIVMSG event data structure
+{
+    "timestamp": 1623456789.123,
+    "raw_line": ":nick!user@host PRIVMSG #channel :Hello world",
+    "client_nick": "MyNick",
+    "nick": "sender",          # Sender nickname
+    "userhost": "user@host",   # Sender userhost
+    "target": "#channel",      # Message target
+    "message": "Hello world",  # Message content
+    "is_channel_msg": True,    # True if target is a channel
+    "tags": {}                 # IRCv3 message tags
+}</code></pre>
+                </div>
+
+                <div class="component-section">
+                    <h3><i class="fas fa-network-wired"></i> Connection Orchestration (<code>pyrc_core/client/connection_orchestrator.py</code>)</h3>
+                    <p>Manages the entire connection lifecycle and coordinates between components.</p>
+
+                    <div class="feature-box">
+                        <h4>Key Responsibilities:</h4>
+                        <ul>
+                            <li><strong>Connection Sequencing</strong>: Coordinates the multi-step connection process</li>
+                            <li><strong>Timeout Management</strong>: Handles timeouts for each connection phase</li>
+                            <li><strong>Error Recovery</strong>: Implements retry logic with backoff</li>
+                            <li><strong>Component Coordination</strong>: Manages interactions between CAP, SASL and registration</li>
+                        </ul>
+                    </div>
+
+                    <h4>Detailed Connection Sequence:</h4>
+                    <div class="mermaid">
+                    sequenceDiagram
+                        participant Client
+                        participant Orchestrator
+                        participant Network
+                        participant CapNegotiator
+                        participant SaslAuthenticator
+                        participant RegistrationHandler
+
+                        Client->>Orchestrator: establish_connection()
+                        Orchestrator->>Network: TCP/SSL Connect
+                        Network-->>Orchestrator: Connection Established
+                        Orchestrator->>CapNegotiator: Start CAP Negotiation
+                        CapNegotiator->>Network: CAP LS
+                        Network-->>CapNegotiator: CAP List
+                        CapNegotiator->>Network: CAP REQ
+                        Network-->>CapNegotiator: CAP ACK/NAK
+                        alt SASL Required
+                            Orchestrator->>SaslAuthenticator: Authenticate
+                            SaslAuthenticator->>Network: AUTHENTICATE
+                            Network-->>SaslAuthenticator: Success/Failure
+                        end
+                        Orchestrator->>RegistrationHandler: Register
+                        RegistrationHandler->>Network: NICK/USER
+                        Network-->>RegistrationHandler: RPL_WELCOME
+                        Orchestrator->>Client: Connection Ready
+                    </div>
+
+                    <h4>Component Interactions:</h4>
+                    <pre><code class="language-python"># Typical connection flow with error handling
+async def connect_to_server(self):
+    try:
+        # Initialize fresh state
+        await self.reset_for_new_connection()
+        self.initialize_handlers()
+
+        # Establish connection with timeout
+        try:
+            await asyncio.wait_for(
+                self.establish_connection(self.conn_info),
+                timeout=self.CONNECTION_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            await self.handle_connection_timeout()
+            return False
+
+        return True
+
+    except ConnectionError as e:
+        await self.state_manager.set_connection_state(
+            ConnectionState.ERROR,
+            error=f"Connection failed: {str(e)}"
+        )
+        return False</code></pre>
+
+                    <h4>Error Recovery Flow:</h4>
+                    <pre><code class="language-python">async def handle_connection_error(self, error):
+    # Log error
+    self.logger.error(f"Connection error: {error}")
+
+    # Update state
+    await self.state_manager.set_connection_state(
+        ConnectionState.ERROR,
+        error=str(error)
+    )
+
+    # Implement backoff if needed
+    if isinstance(error, (ConnectionRefusedError, TimeoutError)):
+        delay = min(self.reconnect_delay * 2, self.MAX_RECONNECT_DELAY)
+        await asyncio.sleep(delay)
+
+    # Clean up resources
+    await self.network_handler.disconnect_gracefully()</code></pre>
+                </div>
+]]>
