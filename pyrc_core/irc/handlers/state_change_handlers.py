@@ -166,11 +166,11 @@ async def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
             if mode["operation"] == "+":
                 current_modes = client.state_manager.get("user_modes", [])
                 if mode["mode"] not in current_modes:
-                    client.state_manager.set("user_modes", current_modes + [mode["mode"]])
+                    client.state_manager.set("user_modes", current_modes + [mode["mode"]]) # type: ignore[reportUnusedCoroutine]
             elif mode["operation"] == "-":
                 current_modes = client.state_manager.get("user_modes", [])
                 if mode["mode"] in current_modes:
-                    client.state_manager.set("user_modes", [m for m in current_modes if m != mode["mode"]])
+                    client.state_manager.set("user_modes", [m for m in current_modes if m != mode["mode"]]) # type: ignore[reportUnusedCoroutine]
 
         # Format mode string for display
         mode_str_display = mode_string
