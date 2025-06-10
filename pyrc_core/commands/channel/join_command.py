@@ -20,11 +20,11 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_join_command(client: "IRCClient_Logic", args_str: str):
+async def handle_join_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /join command"""
     help_data = client.script_manager.get_help_text_for_command("join")
     usage_msg = help_data["help_text"] if help_data else "Usage: /join <channel>"
-    parts = client.command_handler._ensure_args(args_str, usage_msg)
+    parts = await client.command_handler._ensure_args(args_str, usage_msg)
     if not parts:
         return
     channel_name_arg = parts[0]
@@ -38,7 +38,7 @@ def handle_join_command(client: "IRCClient_Logic", args_str: str):
 
     ctx = client.context_manager.get_context(target_channel_name)
     if not ctx:
-        client.context_manager.create_context(
+        await client.context_manager.create_context(
             target_channel_name,
             context_type="channel",
             initial_join_status_for_channel=ChannelJoinStatus.JOIN_COMMAND_SENT,
@@ -53,11 +53,11 @@ def handle_join_command(client: "IRCClient_Logic", args_str: str):
             f"/join: Updated context for {target_channel_name} to status JOIN_COMMAND_SENT."
         )
     else:
-        client.add_message(
+        await client.add_message(
             f"Cannot join '{target_channel_name}': A non-channel window with this name already exists.",
-            "error", # Use semantic color key
-            context_name=client.context_manager.active_context_name,
+            client.ui.colors.get("error", 0), # Use semantic color key
+            context_name=client.context_manager.active_context_name or "Status",
         )
         return
 
-    client.network_handler.send_raw(f"JOIN {target_channel_name}")
+    await client.network_handler.send_raw(f"JOIN {target_channel_name}")
