@@ -20,7 +20,7 @@ import pyrc_core.app_config as app_config
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    from pyrc_core.scripting.script_manager import ScriptManager
+    from pyrc_core.script_manager import ScriptManager
     from pyrc_core.app_config import AppConfig
 
 

@@ -21,7 +21,7 @@ from pyrc_core.app_config import AppConfig, ServerConfig
 from pyrc_core.state_manager import StateManager, ConnectionInfo, ConnectionState
 from pyrc_core.client.state_change_ui_handler import StateChangeUIHandler
 from pyrc_core.logging.channel_logger import ChannelLoggerManager
-from pyrc_core.scripting.script_manager import ScriptManager
+from pyrc_core.script_manager import ScriptManager
 from pyrc_core.event_manager import EventManager
 from pyrc_core.context_manager import ContextManager, ChannelJoinStatus
 from pyrc_core.client.ui_manager import UIManager

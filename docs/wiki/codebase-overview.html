@@ -210,13 +210,14 @@
 │   ├── logging/              # Logging-specific components.
 │   │   └── channel_logger.py  # Manages per-channel and status window log files.
 │   │
+│   ├── script_manager.py  # Discovers, loads, and manages all user scripts, providing the bridge between the core client and custom extensions.
+│   │
 │   └── scripting/            # The Python scripting engine.
 │       ├── __init__.py
 │       ├── api_responder_agent.py # Example AI agent script.
 │       ├── python_trigger_api.py  # API for the /on <event> PY <code> trigger action.
 │       ├── script_api_handler.py  # Provides the `api` object for scripts.
-│       ├── script_base.py     # A base class for scripts to inherit from.
-│       └── script_manager.py  # Discovers, loads, and manages all user scripts.
+│       └── script_base.py     # A base class for scripts to inherit from.
 │
 ├── scripts/                  # Directory for user-provided Python scripts and test utilities.
 │   ├── ai_api_test_script.py    # Test script for AI API integration.
@@ -250,6 +251,7 @@
                         <li><strong><code>event_manager.py</code></strong>: The central asynchronous event dispatching system, enabling loose coupling between components.</li>
                         <li><strong><code>network_handler.py</code></strong>: Handles asynchronous network I/O using <code>asyncio.StreamReader</code> and <code>StreamWriter</code> for sending and receiving raw IRC data.</li>
                         <li><strong><code>state_manager.py</code></strong>: The single, thread-safe source of truth for all connection, session, and client-specific runtime state, with automatic persistence.</li>
+                        <li><strong><code>script_manager.py</code></strong>: Discovers, loads, and manages all user scripts, providing the bridge between the core client and custom extensions.</li>
                     </ul>
                 </div>
 
@@ -287,7 +289,6 @@
                 <div class="component-section">
                     <h4><i class="fas fa-plug"></i> Scripting Engine (<code>pyrc_core/scripting/</code>)</h4>
                     <ul>
-                        <li><strong><code>script_manager.py</code></strong>: Discovers, loads, and manages user-provided Python scripts.</li>
                         <li><strong><code>script_api_handler.py</code></strong>: Provides the API object (<code>self.api</code>) that scripts use to interact with the client.</li>
                         <li><strong><code>python_trigger_api.py</code></strong>: Implements the API for the <code>/on <event> PY <code></code> trigger action.</li>
                     </ul>

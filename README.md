@@ -356,12 +356,13 @@ PyRC/
 │   ├── logging/                # Logging-specific components
 │   │   └── channel_logger.py     # Manages per-channel and status window log files
 │   │
+│   ├── script_manager.py     # Discovers, loads, and manages user scripts
+│   │
 │   ├── scripting/              # The Python scripting engine
 │   │   ├── __init__.py
 │   │   ├── python_trigger_api.py # API for the /on <event> PY <code> trigger action
 │   │   ├── script_api_handler.py # Provides the `api` object for scripts
-│   │   ├── script_base.py        # A base class for scripts to inherit from
-│   │   └── script_manager.py     # Discovers, loads, and manages user scripts
+│   │   └── script_base.py        # A base class for scripts to inherit from
 │   │
 │   └── utils/                  # Utility functions
 │       └── __init__.py
