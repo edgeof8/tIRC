@@ -1,5 +1,6 @@
 import logging
 import random # Added for random nick generation
+import asyncio # Import asyncio
 from typing import Optional
 
 from pyrc_core.irc.irc_message import IRCMessage
@@ -50,7 +51,7 @@ async def _handle_rpl_welcome(
         )
 
     if hasattr(client, "registration_handler") and client.registration_handler:
-        client.registration_handler.on_welcome_received(confirmed_nick)
+        await client.registration_handler.on_welcome_received(confirmed_nick)
     else:
         logger.error(
             "RPL_WELCOME received, but client.registration_handler is not initialized."
@@ -118,6 +119,7 @@ async def _handle_generic_numeric(
     logger.debug(
         f"Received unhandled/generic numeric {parsed_msg.command}: {raw_line.strip()} (Generic msg: {generic_numeric_msg})"
     )
+    # RPL_ENDOFMOTD (376) logic is now in _handle_motd_and_server_info
 
 
 async def _handle_rpl_namreply(
@@ -128,6 +130,7 @@ async def _handle_rpl_namreply(
     trailing: Optional[str],
 ):
     """Handles RPL_NAMREPLY (353)."""
+    logger.debug(f"_handle_rpl_namreply: Called for raw_line='{raw_line.strip()}', display_params={display_params}, trailing='{trailing}'")
     channel_in_reply = display_params[1] if len(display_params) > 1 else None
     if channel_in_reply:
         created_for_namreply = client.context_manager.create_context(
@@ -179,10 +182,12 @@ async def _handle_rpl_endofnames(
     trailing: Optional[str],
 ):
     """Handles RPL_ENDOFNAMES (366)."""
+    logger.debug(f"NumericHandler._handle_rpl_endofnames: Called for raw_line='{raw_line.strip()}', display_params={display_params}, trailing='{trailing}'") # Added Class Name
     channel_ended = display_params[0] if display_params else "Unknown Channel"
     ctx_for_endofnames = client.context_manager.get_context(channel_ended)
     if ctx_for_endofnames and ctx_for_endofnames.type == "channel":
         user_count = len(ctx_for_endofnames.users)
+        logger.debug(f"NumericHandler._handle_rpl_endofnames: Context for {channel_ended} found. User count: {user_count}. Current join_status: {ctx_for_endofnames.join_status.name if ctx_for_endofnames.join_status else 'N/A'}")
 
         if ctx_for_endofnames.join_status in [
             ChannelJoinStatus.SELF_JOIN_RECEIVED,
@@ -191,19 +196,21 @@ async def _handle_rpl_endofnames(
         ]:
             ctx_for_endofnames.join_status = ChannelJoinStatus.FULLY_JOINED
             logger.info(
-                f"RPL_ENDOFNAMES for {channel_ended}. Set join_status to FULLY_JOINED. User count: {user_count}."
+                f"NumericHandler._handle_rpl_endofnames: RPL_ENDOFNAMES for {channel_ended}. Set join_status to FULLY_JOINED. User count: {user_count}."
             )
             conn_info = client.state_manager.get_connection_info()
             if conn_info:
                 conn_info.currently_joined_channels.add(channel_ended)
-                client.state_manager.set("connection_info", conn_info)
+                client.state_manager.set("connection_info", conn_info) # This should be awaited if set_connection_info becomes async
                 logger.info(
-                    f"Added {channel_ended} to tracked client.currently_joined_channels."
+                    f"NumericHandler._handle_rpl_endofnames: Added {channel_ended} to tracked client.currently_joined_channels."
                 )
-            client.handle_channel_fully_joined(channel_ended)
+            logger.debug(f"NumericHandler._handle_rpl_endofnames: About to call client.handle_channel_fully_joined for {channel_ended}")
+            await client.handle_channel_fully_joined(channel_ended) # Made this await, as handle_channel_fully_joined is async
+            logger.debug(f"NumericHandler._handle_rpl_endofnames: Finished calling client.handle_channel_fully_joined for {channel_ended}")
         elif ctx_for_endofnames.join_status == ChannelJoinStatus.NOT_JOINED:
             logger.info(
-                f"RPL_ENDOFNAMES for {channel_ended} (status NOT_JOINED). User count: {user_count}. Not changing join status from this alone, as we weren't in a pending join state."
+                f"NumericHandler._handle_rpl_endofnames: RPL_ENDOFNAMES for {channel_ended} (status NOT_JOINED). User count: {user_count}. Not changing join status from this alone, as we weren't in a pending join state."
             )
 
             # Add distinct logging before and after the client.add_message(...) call
@@ -272,6 +279,14 @@ async def _handle_err_nosuchchannel(
     logger.warning(
         f"ERR_NOSUCHCHANNEL (403) for {channel_name}. Marked as JOIN_FAILED and removed from tracked channels."
     )
+    # Check if this was an initial join attempt
+    normalized_channel_name = client.context_manager._normalize_context_name(channel_name)
+    if hasattr(client, 'pending_initial_joins') and normalized_channel_name in client.pending_initial_joins:
+        client.pending_initial_joins.remove(normalized_channel_name)
+        logger.info(f"ERR_NOSUCHCHANNEL: Removed '{normalized_channel_name}' from pending_initial_joins due to join failure. Remaining: {client.pending_initial_joins}")
+        if not client.pending_initial_joins and hasattr(client, 'all_initial_joins_processed') and not client.all_initial_joins_processed.is_set():
+            logger.info("ERR_NOSUCHCHANNEL: All initial join attempts (including this failure) processed. Setting all_initial_joins_processed event.")
+            client.all_initial_joins_processed.set()
 
 
 async def _handle_err_channel_join_group(
@@ -309,6 +324,14 @@ async def _handle_err_channel_join_group(
     logger.warning(
         f"Channel join error {code} for {channel_name}. Marked as JOIN_FAILED."
     )
+    # Check if this was an initial join attempt
+    normalized_channel_name = client.context_manager._normalize_context_name(channel_name)
+    if hasattr(client, 'pending_initial_joins') and normalized_channel_name in client.pending_initial_joins:
+        client.pending_initial_joins.remove(normalized_channel_name)
+        logger.info(f"ERR_CHANNEL_JOIN_GROUP ({code}): Removed '{normalized_channel_name}' from pending_initial_joins due to join failure. Remaining: {client.pending_initial_joins}")
+        if not client.pending_initial_joins and hasattr(client, 'all_initial_joins_processed') and not client.all_initial_joins_processed.is_set():
+            logger.info(f"ERR_CHANNEL_JOIN_GROUP ({code}): All initial join attempts (including this failure) processed. Setting all_initial_joins_processed event.")
+            client.all_initial_joins_processed.set()
 
 
 async def _handle_err_nicknameinuse(
@@ -533,6 +556,18 @@ async def _handle_motd_and_server_info(
         client.ui.colors["system"],
         "Status",
     )
+    # Specifically set the end_of_motd_received event if this is RPL_ENDOFMOTD
+    if parsed_msg.command == "376": # RPL_ENDOFMOTD
+        if hasattr(client, "registration_handler") and client.registration_handler:
+            if not client.registration_handler.end_of_motd_received.is_set():
+                logger.info("RPL_ENDOFMOTD (376) received via _handle_motd_and_server_info, setting event.")
+                client.registration_handler.end_of_motd_received.set()
+                logger.info("RPL_ENDOFMOTD (376): Directly triggering post-MOTD actions from _handle_motd_and_server_info.")
+                asyncio.create_task(client.registration_handler.execute_post_motd_actions())
+            else:
+                logger.debug("RPL_ENDOFMOTD (376) received via _handle_motd_and_server_info, but event was already set.")
+        else:
+            logger.warning("RPL_ENDOFMOTD (376) received via _handle_motd_and_server_info, but no registration_handler.")
 
 
 async def _handle_rpl_whoreply(
@@ -847,7 +882,7 @@ NUMERIC_HANDLERS = {
     366: _handle_rpl_endofnames,
     372: _handle_motd_and_server_info,
     375: _handle_motd_and_server_info,
-    376: _handle_motd_and_server_info,
+    376: _handle_motd_and_server_info, # Ensure 376 uses _handle_motd_and_server_info
     401: _handle_err_nosuchnick,
     403: _handle_err_nosuchchannel,
     432: _handle_err_erroneusnickname,  # Added
