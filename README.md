@@ -117,23 +117,23 @@ Download pre-built binaries from our [Releases page](https://github.com/edgeof8/
 
 ```mermaid
 graph TD
-    A[pyrc.py] --> B(asyncio.run(IRCClient_Logic.run_main_loop()));
-    B --> C{IRCClient_Logic.run_main_loop() (async)};
-    C -- Creates --> D[asyncio.Task: NetworkHandler.network_loop (async)];
-    C -- Creates --> E[asyncio.Task: InputHandler.async_input_reader (async)];
-    D -- Reads/Writes data --> F(Async Network I/O - StreamReader/Writer);
-    D -- Dispatches messages --> G(irc_protocol.handle_server_message (async));
-    E -- Reads blocking input --> H(asyncio.to_thread(getch));
-    E -- Puts input into --> I(asyncio.Queue);
-    E -- Gets input from queue --> J(InputHandler.handle_key_press (async));
-    J -- Processes commands --> K(CommandHandler.process_user_command (async));
-    K -- Sends data --> D;
-    G -- Dispatches events --> L(EventManager.dispatch_event (async));
-    L -- Calls handlers --> M{ScriptManager.dispatch_event (async)};
-    M -- If async handler --> N(asyncio.create_task(handler(event_data)));
-    M -- If sync handler --> O(loop.run_in_executor(None, handler, event_data));
-    C -- Triggers periodically --> P(IRCClient_Logic._update_ui (async));
-    P -- Refreshes UI --> Q(UIManager.refresh_all_windows);
+    A[pyrc.py] --> B(asyncio.run(IRCClient_Logic.run_main_loop()))
+    B --> C{IRCClient_Logic.run_main_loop() (async)}
+    C -- Creates --> D[asyncio.Task: NetworkHandler.network_loop (async)]
+    C -- Creates --> E[asyncio.Task: InputHandler.async_input_reader (async)]
+    D -- Reads/Writes data --> F(Async Network I/O - StreamReader/Writer)
+    D -- Dispatches messages --> G(irc_protocol.handle_server_message (async))
+    E -- Reads blocking input --> H(asyncio.to_thread(getch))
+    E -- Puts input into --> I(asyncio.Queue)
+    E -- Gets input from queue --> J(InputHandler.handle_key_press (async))
+    J -- Processes commands --> K(CommandHandler.process_user_command (async))
+    K -- Sends data --> D
+    G -- Dispatches events --> L(EventManager.dispatch_event (async))
+    L -- Calls handlers --> M{ScriptManager.dispatch_event (async)}
+    M -- If async handler --> N(asyncio.create_task(handler(event_data)))
+    M -- If sync handler --> O(loop.run_in_executor(None, handler, event_data))
+    C -- Triggers periodically --> P(IRCClient_Logic._update_ui (async))
+    P -- Refreshes UI --> Q(UIManager.refresh_all_windows)
 ```
 
 ## Key Architectural Features
