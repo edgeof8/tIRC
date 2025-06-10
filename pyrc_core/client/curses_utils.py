@@ -14,6 +14,7 @@ class SafeCursesUtils:
             window.bkgd(
                 " ", color_attr
             )
+            window.box() # Draw a border around the window
             if title:
                 max_y, max_x = window.getmaxyx()
                 if max_y > 0 and max_x > 0:

@@ -1,6 +1,14 @@
 import json
 import os
 import logging
+import inspect
+
+# Debug: Verify this file is being loaded
+logger = logging.getLogger("pyrc.debug")
+logger.debug(f"Loading StateManager from: {os.path.abspath(__file__)}")
+
+import os
+import logging
 import dataclasses
 from typing import Any, Dict, List, Optional, Set, Callable, TypeVar, Generic, Union
 from dataclasses import dataclass, field, asdict
@@ -9,7 +17,12 @@ from enum import Enum, auto
 import threading
 from pathlib import Path
 import time
-import asyncio # New import # Pylance re-evaluation
+import asyncio
+
+# Type variable for state value
+T = TypeVar("T")
+
+
 class StateEncoder(json.JSONEncoder):
     """Custom JSON encoder to handle Enum, datetime, and set objects."""
     def default(self, obj):
@@ -17,13 +30,9 @@ class StateEncoder(json.JSONEncoder):
             return obj.name
         if isinstance(obj, datetime):
             return obj.isoformat()
-        if isinstance(obj, set):
+        if hasattr(obj, '__contains__') and hasattr(obj, '__iter__') and hasattr(obj, '__len__'):
             return list(obj)
         return super().default(obj)
-
-
-# Type variable for state value
-T = TypeVar("T")
 
 
 class StateChangeType(Enum):
@@ -237,6 +246,14 @@ class StateManager:
         validate_on_change: bool = True,
     ):
         self.logger = logging.getLogger("pyrc.state_manager")
+
+        # Debug: Verify methods exist on this instance
+        required_methods = ['set_connection_info', 'get_connection_info']
+        missing_methods = [m for m in required_methods if not hasattr(self, m)]
+        if missing_methods:
+            self.logger.error(f"StateManager instance MISSING METHODS: {', '.join(missing_methods)}")
+        else:
+            self.logger.debug("StateManager instance has all required methods")
         self.state_file = state_file
         self.auto_save = auto_save
         self.save_interval = save_interval
@@ -245,9 +262,9 @@ class StateManager:
         # State storage
         self._state: Dict[str, Any] = {}
         self._validators: Dict[str, StateValidator] = {}
-        self._change_handlers: Dict[str, List[Callable[[StateChange], Any]]] = {} # Updated type hint
-        self._global_handlers: List[Callable[[StateChange], Any]] = [] # Updated type hint
-        self.loop = asyncio.get_event_loop() # Get the event loop
+        self._change_handlers: Dict[str, List[Callable[[StateChange], Any]]] = {}
+        self._global_handlers: List[Callable[[StateChange], Any]] = []
+        self.loop = None
 
         # Thread safety
         self._lock = threading.RLock()
@@ -302,7 +319,7 @@ class StateManager:
 
                     # Explicitly convert lists back to sets for fields that are defined as sets
                     if "currently_joined_channels" in conn_info and isinstance(conn_info["currently_joined_channels"], list):
-                        conn_info["currently_joined_channels"] = set(conn_info["currently_joined_channels"])
+                        conn_info["currently_joined_channels"] = set(conn_info["currently_joined_channels"])  # type: ignore
                     # Re-create the ConnectionInfo dataclass from the dictionary
                     loaded_data["connection_info"] = ConnectionInfo(**conn_info)
                 except (TypeError, KeyError, ValueError) as e:
@@ -394,7 +411,7 @@ class StateManager:
             self._validators.pop(key, None)
 
     def register_change_handler(
-        self, key: str, handler: Callable[[StateChange], Any] # Corrected type hint
+        self, key: str, handler: Callable[[StateChange], Any]
     ) -> None:
         """Register a handler for state changes on a specific key."""
         with self._lock:
@@ -402,20 +419,20 @@ class StateManager:
                 self._change_handlers[key] = []
             self._change_handlers[key].append(handler)
 
-    def register_global_handler(self, handler: Callable[[StateChange], Any]) -> None: # Updated type hint
+    def register_global_handler(self, handler: Callable[[StateChange], Any]) -> None:
         """Register a handler for all state changes."""
         with self._lock:
             self._global_handlers.append(handler)
 
     def unregister_change_handler(
-        self, key: str, handler: Callable[[StateChange], Any] # Updated type hint
+        self, key: str, handler: Callable[[StateChange], Any]
     ) -> None:
         """Unregister a handler for state changes on a specific key."""
         with self._lock:
             if key in self._change_handlers:
                 self._change_handlers[key].remove(handler)
 
-    def unregister_global_handler(self, handler: Callable[[StateChange], Any]) -> None: # Corrected type hint
+    def unregister_global_handler(self, handler: Callable[[StateChange], Any]) -> None:
         """Unregister a global state change handler."""
         with self._lock:
             if handler in self._global_handlers:
@@ -429,8 +446,8 @@ class StateManager:
                 try:
                     result = handler(change)
                     if asyncio.iscoroutine(result):
-                        if self.loop.is_running():
-                            await result # Await the coroutine directly
+                        if self.loop and self.loop.is_running():
+                            await result
                         else:
                             self.logger.warning(f"Async handler for key '{change.key}' called when no loop is running: {handler.__name__}. Not awaiting.")
                     # If it's not a coroutine, just execute it (it's synchronous)
@@ -442,8 +459,8 @@ class StateManager:
             try:
                 result = handler(change)
                 if asyncio.iscoroutine(result):
-                    if self.loop.is_running():
-                        await result # Await the coroutine directly
+                    if self.loop and self.loop.is_running():
+                        await result
                     else:
                         self.logger.warning(f"Async global handler called when no loop is running: {handler.__name__}. Not awaiting.")
                 # If it's not a coroutine, just execute it (it's synchronous)
@@ -453,70 +470,70 @@ class StateManager:
     def get(self, key: str, default: Any = None) -> Any:
         """Get a state value."""
         with self._lock:
-            async def set(
-                self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None
-            ) -> bool:
-                """Set a state value with validation."""
-                with self._lock:
-                    old_value = self._state.get(key)
+            return self._state.get(key, default)
 
-                    # Validate if enabled and validator exists
-                    if self.validate_on_change and key in self._validators:
-                        validator = self._validators[key]
-                        if not validator.validate(value):
-                            error_msg = validator.get_error_message(value)
-                            self.logger.error(f"State validation failed for {key}: {error_msg}")
-                            return False
+    async def set(
+        self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Set a state value with validation."""
+        with self._lock:
+            old_value = self._state.get(key)
 
-                    # Update state
-                    self._state[key] = value
-
-                    # Create and notify of change
-                    change = StateChange(
-                        key=key,
-                        old_value=old_value,
-                        new_value=value,
-                        change_type=(
-                            StateChangeType.CREATED
-                            if old_value is None
-                            else StateChangeType.UPDATED
-                        ),
-                        metadata=metadata or {},
-                    )
-                    await self._notify_handlers(change) # Await here
-
-                    # Auto-save if enabled
-                    if self.auto_save:
-                        self._save_state()
-
-                    return True
-
-            async def delete(self, key: str) -> bool:
-                """Delete a state value."""
-                with self._lock:
-                    if key in self._state:
-                        old_value = self._state[key]
-                        del self._state[key]
-
-                        # Create and notify of change
-                        change = StateChange(
-                            key=key,
-                            old_value=old_value,
-                            new_value=None,
-                            change_type=StateChangeType.DELETED,
-                        )
-                        await self._notify_handlers(change) # Await here
-
-                        # Auto-save if enabled
-                        if self.auto_save:
-                            self._save_state()
-
-                        return True
+            # Validate if enabled and validator exists
+            if self.validate_on_change and key in self._validators:
+                validator = self._validators[key]
+                if not validator.validate(value):
+                    error_msg = validator.get_error_message(value)
+                    self.logger.error(f"State validation failed for {key}: {error_msg}")
                     return False
+
+            # Update state
+            self._state[key] = value
+
+            # Create and notify of change
+            change = StateChange(
+                key=key,
+                old_value=old_value,
+                new_value=value,
+                change_type=(
+                    StateChangeType.CREATED
+                    if old_value is None
+                    else StateChangeType.UPDATED
+                ),
+                metadata=metadata or {},
+            )
+            await self._notify_handlers(change)
+
+            # Auto-save if enabled
+            if self.auto_save:
+                self._save_state()
+
+            return True
+
+    async def delete(self, key: str) -> bool:
+        """Delete a state value."""
+        with self._lock:
+            if key in self._state:
+                old_value = self._state[key]
+                del self._state[key]
+
+                # Create and notify of change
+                change = StateChange(
+                    key=key,
+                    old_value=old_value,
+                    new_value=None,
+                    change_type=StateChangeType.DELETED,
+                )
+                await self._notify_handlers(change)
+
+                # Auto-save if enabled
+                if self.auto_save:
+                    self._save_state()
+
                 return True
             return False
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         """Clear all state."""
         with self._lock:
             old_state = self._state.copy()
@@ -530,7 +547,7 @@ class StateManager:
                     new_value=None,
                     change_type=StateChangeType.DELETED,
                 )
-                self._notify_handlers(change)
+                await self._notify_handlers(change)
 
             # Auto-save if enabled
             if self.auto_save:
@@ -561,7 +578,7 @@ class StateManager:
             self._save_state()
 
     # Connection state management methods
-    def set_connection_state(
+    async def set_connection_state(
         self,
         state: ConnectionState,
         error: Optional[str] = None,
@@ -569,6 +586,8 @@ class StateManager:
     ) -> None:
         """Update connection state and optionally set error."""
         with self._lock:
+            if self.loop is None:
+                self.loop = asyncio.get_event_loop()
             old_state = self._state.get("connection_state")
             self._state["connection_state"] = state
 
@@ -594,22 +613,23 @@ class StateManager:
                 change_type=StateChangeType.UPDATED,
                 metadata=metadata_dict,
             )
-            self._notify_handlers(change)
 
-    def set_connection_info(self, info: ConnectionInfo) -> bool:
+            await self._notify_handlers(change)
+
+    async def set_connection_info(self, info: ConnectionInfo) -> bool:
         """Set connection information with validation."""
         with self._lock:
             # Validate connection info
             validator = self._validators.get("connection_info")
             if validator and not validator.validate(info):
                 error_msg = validator.get_error_message(info)
-                self.set_connection_state(
+                await self.set_connection_state(
                     ConnectionState.CONFIG_ERROR, error_msg, info.config_errors
                 )
                 return False
 
             # Update connection info
-            success = self.set("connection_info", info)
+            success = await self.set("connection_info", info)
             if success:
                 # Clear any previous config errors
                 self._state["config_errors"] = []
@@ -635,7 +655,7 @@ class StateManager:
         with self._lock:
             return self._state.get("config_errors", [])
 
-    def update_connection_attempt(
+    async def update_connection_attempt(
         self,
         success: bool,
         error: Optional[str] = None,
@@ -657,7 +677,7 @@ class StateManager:
                     info.last_error_time = datetime.now()
                     if config_errors:
                         info.config_errors = config_errors
-                self.set("connection_info", info)
+                await self.set("connection_info", info)
 
             # Update global connection statistics
             self._state["connection_attempts"] = (

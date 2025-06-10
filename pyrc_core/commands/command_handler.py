@@ -168,14 +168,16 @@ class CommandHandler:
                 if active_context_name:
                     # Send message to the active context (channel or query)
                     await self.client.network_handler.send_raw(f"PRIVMSG {active_context_name} :{line}")
-                    # Also add the message to the local UI for display
+                    # Also add the message to the local UI for display, formatted with nick
+                    client_nick = self.client.nick or "Me" # Fallback to "Me" if nick is somehow None
+                    formatted_line = f"<{client_nick}> {line}"
                     await self.client.add_message(
-                        line,
+                        formatted_line,
                         self.client.ui.colors.get("my_message", 0), # Use my_message color for sent messages
-                        context_name=active_context_name
+                        context_name=active_context_name # This is safe due to the 'if active_context_name:' check
                     )
                     return True
-                else:
+                else: # Corrected indentation: this else corresponds to 'if active_context_name:'
                     await self.client.add_message(
                         "No active window to send message to.",
                         self.client.ui.colors["error"], context_name="Status",

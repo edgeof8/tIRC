@@ -38,7 +38,7 @@ async def handle_join_command(client: "IRCClient_Logic", args_str: str):
 
     ctx = client.context_manager.get_context(target_channel_name)
     if not ctx:
-        await client.context_manager.create_context(
+        client.context_manager.create_context(
             target_channel_name,
             context_type="channel",
             initial_join_status_for_channel=ChannelJoinStatus.JOIN_COMMAND_SENT,
@@ -55,9 +55,13 @@ async def handle_join_command(client: "IRCClient_Logic", args_str: str):
     else:
         await client.add_message(
             f"Cannot join '{target_channel_name}': A non-channel window with this name already exists.",
-            client.ui.colors.get("error", 0), # Use semantic color key
+            client.ui.colors["error"], # Use semantic color key
             context_name=client.context_manager.active_context_name or "Status",
         )
         return
 
     await client.network_handler.send_raw(f"JOIN {target_channel_name}")
+    # Set the new channel as the active context and trigger UI update
+    client.context_manager.set_active_context(target_channel_name)
+    client.ui_needs_update.set()
+    logger.info(f"/join: Set active context to {target_channel_name} and requested UI update.")

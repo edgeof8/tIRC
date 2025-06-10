@@ -11,7 +11,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("pyrc.handlers.membership")
 
 async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
-    """Handles JOIN messages."""
+    logger.debug(f"handle_join_event: Called for raw_line='{raw_line.strip()}', parsed_msg={parsed_msg}")
+    # """Handles JOIN messages.""" # Docstring moved below for clarity
     src_nick = parsed_msg.source_nick
     params = parsed_msg.params
     conn_info = client.state_manager.get_connection_info()
@@ -19,6 +20,8 @@ async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
     src_nick_lower = src_nick.lower() if src_nick else ""
 
     joined_channel = params[0] if params else None
+
+    logger.debug(f"handle_join_event: src_nick='{src_nick}', joined_channel='{joined_channel}'") # Added detailed log
 
     if not joined_channel:
         logger.warning(f"JOIN command received with no channel: {raw_line.strip()}")
@@ -41,7 +44,7 @@ async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
     joined_ctx = client.context_manager.get_context(joined_channel)
 
     if src_nick_lower == client_nick_lower:
-        logger.info(f"Self JOIN received for channel: {joined_channel}")
+        logger.info(f"SELF JOIN detected for channel: {joined_channel}. Client nick: '{client_nick_lower}', Source nick: '{src_nick_lower}'") # Enhanced log
         if joined_ctx:
             joined_ctx.join_status = ChannelJoinStatus.SELF_JOIN_RECEIVED
             joined_ctx.users.clear()
@@ -115,7 +118,7 @@ async def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
 
         if conn_info:
             conn_info.currently_joined_channels.discard(parted_channel)
-            client.state_manager.set("connection_info", conn_info)
+            await client.state_manager.set("connection_info", conn_info)
         await client.add_message(
             f"You left {parted_channel}{reason_message}",
             client.ui.colors["join_part"],
@@ -230,7 +233,7 @@ async def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
         logger.info(f"We were kicked from {channel_kicked_from} by {src_nick}{reason}")
         if conn_info:
             conn_info.currently_joined_channels.discard(channel_kicked_from)
-            client.state_manager.set("connection_info", conn_info)
+            await client.state_manager.set("connection_info", conn_info)
         if kicked_ctx:
             kicked_ctx.join_status = ChannelJoinStatus.NOT_JOINED
             kicked_ctx.users.clear()

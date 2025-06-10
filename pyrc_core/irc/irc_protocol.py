@@ -1,6 +1,7 @@
 # START OF MODIFIED FILE: irc_protocol.py
 import re
 import logging
+import asyncio
 from collections import deque
 from typing import Optional, Awaitable, TYPE_CHECKING, Coroutine, Any
 import time
@@ -40,6 +41,7 @@ COMMAND_DISPATCH_TABLE = {
 }
 
 async def handle_server_message(client: "IRCClient_Logic", line: str) -> Optional[Coroutine[Any, Any, None]]:
+    logger.debug(f"S << {line.strip()}") # Log all incoming raw lines
     if client is None:
         logger.warning("handle_server_message: Client is None, skipping message processing.")
         return None
@@ -95,6 +97,7 @@ async def handle_server_message(client: "IRCClient_Logic", line: str) -> Optiona
     elif cmd.isdigit():
         await _handle_numeric_command(client, parsed_msg, line)
     else:
+        # handle_unknown_command is an async function
         await handle_unknown_command(client, parsed_msg, line)
 
     # If a specific handler generated a command from its own trigger processing, use that.

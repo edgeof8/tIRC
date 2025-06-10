@@ -496,7 +496,7 @@ class ScriptManager:
                     result = handler(event_data)
                     if asyncio.iscoroutine(result):
                         if self.client_logic_ref.loop.is_running(): # Access the event loop from client_logic_ref
-                            asyncio.create_task(result) # Schedule coroutine
+                            await result
                         else:
                             self.logger.warning(f"Async handler '{handler.__name__}' for event '{event_name}' called when no loop is running.")
                 except Exception as e:

@@ -13,7 +13,10 @@ class CursesManager:
         self._setup_curses_settings()
 
     def _setup_curses_settings(self):
-        curses.curs_set(1)
+        curses.curs_set(1) # Make cursor visible
+        curses.noecho()    # Don't echo characters typed by user
+        curses.cbreak()    # React to keys instantly, without waiting for Enter
+        self.stdscr.keypad(True) # Enable special keys (like arrow keys)
         curses.start_color()
         curses.use_default_colors()
 

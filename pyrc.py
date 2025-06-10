@@ -7,12 +7,16 @@ import logging.handlers
 import os
 import sys
 import asyncio  # Import asyncio
+import tracemalloc # For more detailed tracebacks
 from typing import List, Optional
 
 # Import the new AppConfig class and other necessary components
 from pyrc_core.app_config import AppConfig, ServerConfig, DEFAULT_NICK, DEFAULT_SSL_PORT, DEFAULT_PORT
 from pyrc_core.client.irc_client_logic import IRCClient_Logic
 from pyrc_core.client.ui_manager import UIManager
+
+# Define logger at module level for broader access
+main_ui_logger = logging.getLogger("pyrc.main_ui")
 
 
 def setup_logging(config: AppConfig):
@@ -84,40 +88,38 @@ def setup_logging(config: AppConfig):
         logging.getLogger("pyrc").error(f"Advanced file logging setup failed. Using basic console logging. Error: {e}")
 
 
-async def main_curses_wrapper(stdscr, args: argparse.Namespace, config: AppConfig):
-    """Wraps the main application logic for curses compatibility."""
-    main_ui_logger = logging.getLogger("pyrc.main_ui")
-    main_ui_logger.info("Starting PyRC curses wrapper.")
-    client = None
+async def main_curses_wrapper(stdscr, client: IRCClient_Logic, args: argparse.Namespace, config: AppConfig):
+    """Core application logic when running with curses."""
+    main_ui_logger.info("main_curses_wrapper: Initializing client and UI.")
     try:
-        client = IRCClient_Logic(stdscr=stdscr, args=args, config=config)
-        await client.run_main_loop()
-    except Exception as e:
-        main_ui_logger.critical(f"Critical error in main UI loop: {e}", exc_info=True)
-        if client:
-            client.should_quit.set()  # Use .set() for asyncio.Event
-    finally:
-        main_ui_logger.info("Shutting down PyRC (UI mode).")
-        if client:
-            client.should_quit.set()  # Use .set() for asyncio.Event
+        # Client is now created in curses_wrapper_with_args and passed in.
+        # Initialize UI elements that depend on stdscr if client needs it (already done in IRCClient_Logic constructor)
+        await client.add_status_message("PyRC Initializing... Please wait.")
+        client.ui_needs_update.set()
 
+        await client.run_main_loop() # Main execution path
+
+    except (asyncio.CancelledError, GeneratorExit) as e:
+        # These are expected if the task is cancelled from outside (e.g., by KeyboardInterrupt in curses_wrapper_with_args)
+        main_ui_logger.info(f"main_curses_wrapper: Main client loop was cancelled or exited ({type(e).__name__}). Client shutdown should be handled by IRCClient_Logic.")
+        # client.run_main_loop()'s finally block is responsible for setting shutdown_complete_event
+    except Exception as e: # Catch any other unexpected error from client.run_main_loop()
+        main_ui_logger.critical(f"Critical unhandled error in main_curses_wrapper from client.run_main_loop(): {e}", exc_info=True)
+        if client: # pragma: no cover
+            client.request_shutdown(f"Critical Error in main_curses_wrapper: {e}")
+            # The shutdown_complete_event will be awaited by curses_wrapper_with_args
+    finally:
+        main_ui_logger.info("main_curses_wrapper: Entering final curses cleanup.")
         if stdscr:
             try:
                 curses.curs_set(1)
                 stdscr.clear()
                 stdscr.refresh()
                 curses.endwin()
-                main_ui_logger.debug("Curses UI shut down.")
-            except Exception as e_curses_end:
-                main_ui_logger.error(f"Error during curses.endwin(): {e_curses_end}")
-
-        if client and hasattr(client, "event_manager") and client.event_manager:
-            try:
-                main_ui_logger.info("Dispatching CLIENT_SHUTDOWN_FINAL from main_curses_wrapper.")
-                await client.event_manager.dispatch_client_shutdown_final(raw_line="CLIENT_SHUTDOWN_FINAL from UI wrapper")
-            except Exception as e_dispatch:
-                main_ui_logger.error(f"Error dispatching CLIENT_SHUTDOWN_FINAL: {e_dispatch}", exc_info=True)
-        main_ui_logger.info("PyRC UI mode shutdown sequence complete.")
+                main_ui_logger.debug("Curses UI shut down by main_curses_wrapper.")
+            except Exception as e_curses_end: # pragma: no cover
+                main_ui_logger.error(f"Error during curses.endwin() in main_curses_wrapper: {e_curses_end}")
+        main_ui_logger.info("main_curses_wrapper: Curses cleanup complete.")
 
 
 def parse_arguments(default_server_config: Optional[ServerConfig]) -> argparse.Namespace:
@@ -145,6 +147,7 @@ def parse_arguments(default_server_config: Optional[ServerConfig]) -> argparse.N
 
 
 def main():
+    tracemalloc.start() # Start tracemalloc
     # Instantiate the configuration object first
     app_config = AppConfig()
 
@@ -162,31 +165,117 @@ def main():
 
     if args.headless:
         app_logger.info("Starting PyRC in headless mode.")
-        client = None
+        client_headless = IRCClient_Logic(stdscr=None, args=args, config=app_config)
         try:
-            # For headless, we run the async main loop directly
-            asyncio.run(IRCClient_Logic(stdscr=None, args=args, config=app_config).run_main_loop())
-        except KeyboardInterrupt:
-            app_logger.info("Keyboard interrupt received in headless main(). Signaling client to quit.")
-            # If client is not explicitly available here, the run_main_loop would need to handle its own shutdown.
-            # For simplicity, we'll assume the loop naturally exits on KeyboardInterrupt.
-        except Exception as e:
+            # Enable asyncio debug mode for asyncio.run
+            asyncio.run(client_headless.run_main_loop(), debug=True)
+        except KeyboardInterrupt: # pragma: no cover
+            app_logger.info("Keyboard interrupt received in headless main(). Requesting client shutdown.")
+            if client_headless:
+                client_headless.request_shutdown("KeyboardInterrupt in headless mode")
+            # asyncio.run should ideally wait for run_main_loop to finish its finally block.
+        except Exception as e: # pragma: no cover
             app_logger.critical(f"Critical error in headless mode: {e}", exc_info=True)
+            if client_headless:
+                client_headless.request_shutdown(f"Critical error: {e}")
         finally:
-            app_logger.info("PyRC headless mode shutdown sequence complete.")
+            # This finally block in main() for headless mode might be redundant if asyncio.run()
+            # ensures run_main_loop() completes fully, including its own extensive finally block.
+            # However, ensuring request_shutdown is called if the loop exited unexpectedly without
+            # should_quit being set can be a safeguard.
+            if client_headless and not client_headless.should_quit.is_set(): # pragma: no cover
+                 app_logger.info("Headless main() finally: Requesting shutdown as should_quit was not set.")
+                 client_headless.request_shutdown("Headless mode normal exit from main()")
+            app_logger.info("PyRC headless mode shutdown sequence in main() complete.")
     else:
         app_logger.info("Starting PyRC in UI mode.")
         # Define a synchronous wrapper for curses.wrapper
         def curses_wrapper_with_args(stdscr):
-            # Create a new event loop for curses and run the async main_curses_wrapper
-            # This ensures curses runs in its own context without conflicting with an outer loop
+            main_ui_logger.debug("curses_wrapper_with_args: Creating new event loop.")
             loop = asyncio.new_event_loop()
+            main_ui_logger.debug(f"curses_wrapper_with_args: New event loop created: {loop}")
+            loop.set_debug(True)
             asyncio.set_event_loop(loop)
+
+            client_instance: Optional[IRCClient_Logic] = None # To hold the client instance for shutdown
+            main_task: Optional[asyncio.Task] = None
+
             try:
-                loop.run_until_complete(main_curses_wrapper(stdscr, args, app_config))
+                # Create client instance here so it's accessible in KeyboardInterrupt
+                client_instance = IRCClient_Logic(stdscr=stdscr, args=args, config=app_config)
+
+                main_ui_logger.debug("curses_wrapper_with_args: Creating main_task from main_curses_wrapper.")
+                main_task = loop.create_task(main_curses_wrapper(stdscr, client_instance, args, app_config))
+
+                main_ui_logger.debug("curses_wrapper_with_args: Calling loop.run_until_complete(main_task).")
+                loop.run_until_complete(main_task)
+                main_ui_logger.debug("curses_wrapper_with_args: loop.run_until_complete(main_task) returned normally.")
+
+            except KeyboardInterrupt:
+                main_ui_logger.info("curses_wrapper_with_args: KeyboardInterrupt caught. Initiating graceful shutdown.")
+                if client_instance:
+                    main_ui_logger.info("curses_wrapper_with_args (KBInt): Requesting client shutdown.")
+                    client_instance.request_shutdown("KeyboardInterrupt in curses_wrapper_with_args")
+
+                    if hasattr(client_instance, 'shutdown_complete_event'):
+                        if not client_instance.shutdown_complete_event.is_set():
+                            main_ui_logger.info("curses_wrapper_with_args (KBInt): Waiting for client.shutdown_complete_event.")
+                            try:
+                                # Run a new run_until_complete just for the shutdown event
+                                loop.run_until_complete(asyncio.wait_for(client_instance.shutdown_complete_event.wait(), timeout=10.0))
+                                main_ui_logger.info("curses_wrapper_with_args (KBInt): Client shutdown_complete_event received.")
+                            except asyncio.TimeoutError:
+                                main_ui_logger.error("curses_wrapper_with_args (KBInt): Timeout waiting for client.shutdown_complete_event.")
+                            except RuntimeError as e_rt_kb: # Loop might be closing due to other issues
+                                main_ui_logger.error(f"curses_wrapper_with_args (KBInt): RuntimeError waiting for shutdown event: {e_rt_kb}")
+                            except Exception as e_wait_kb: # pragma: no cover
+                                main_ui_logger.error(f"curses_wrapper_with_args (KBInt): Error waiting for shutdown event: {e_wait_kb}", exc_info=True)
+                        else:
+                            main_ui_logger.info("curses_wrapper_with_args (KBInt): Client shutdown_complete_event was already set.")
+                    else: # pragma: no cover
+                        main_ui_logger.warning("curses_wrapper_with_args (KBInt): Client has no shutdown_complete_event.")
+                else: # pragma: no cover
+                    main_ui_logger.warning("curses_wrapper_with_args (KBInt): Client instance not available for shutdown.")
+
+                if main_task and not main_task.done(): # pragma: no cover
+                    main_ui_logger.info("curses_wrapper_with_args (KBInt): Cancelling main_task.")
+                    main_task.cancel()
+                    try:
+                        # Await the task to allow it to process cancellation
+                        loop.run_until_complete(main_task)
+                    except asyncio.CancelledError:
+                        main_ui_logger.info("curses_wrapper_with_args (KBInt): main_task successfully cancelled.")
+                    except Exception as e_task_cancel: # pragma: no cover
+                         main_ui_logger.error(f"curses_wrapper_with_args (KBInt): Error awaiting cancelled main_task: {e_task_cancel}")
+
+            except Exception as e_curses_run: # Catch any other exception from run_until_complete
+                main_ui_logger.error(f"curses_wrapper_with_args: Unhandled exception from loop.run_until_complete(main_task): {e_curses_run}", exc_info=True)
+                # Similar shutdown logic as KeyboardInterrupt might be needed here if client_instance exists
+                if client_instance: # pragma: no cover
+                    client_instance.request_shutdown(f"Exception in curses_wrapper_with_args: {type(e_curses_run).__name__}")
+                    if hasattr(client_instance, 'shutdown_complete_event') and not client_instance.shutdown_complete_event.is_set():
+                        try: loop.run_until_complete(asyncio.wait_for(client_instance.shutdown_complete_event.wait(), timeout=5.0))
+                        except: pass # Best effort
             finally:
-                pass
-                # loop.close()
+                main_ui_logger.debug("curses_wrapper_with_args: Entering finally block for loop closure.")
+
+                # Ensure main_task is cancelled if it's still around and not done (e.g. if run_until_complete exited due to an error not KeyboardInterrupt)
+                if main_task and not main_task.done(): # pragma: no cover
+                    main_ui_logger.warning("curses_wrapper_with_args finally: main_task still pending. Cancelling.")
+                    main_task.cancel()
+                    try:
+                        loop.run_until_complete(main_task) # Give it a chance to process cancellation
+                    except asyncio.CancelledError:
+                        main_ui_logger.info("curses_wrapper_with_args finally: main_task cancelled.")
+                    except Exception: # pragma: no cover
+                        pass # Ignore errors during this final cancellation attempt
+
+                if not loop.is_closed():
+                    main_ui_logger.info("Closing curses event loop in curses_wrapper_with_args finally.")
+                    loop.close()
+                    main_ui_logger.debug("curses_wrapper_with_args: Event loop closed.")
+                else:
+                    main_ui_logger.warning("curses_wrapper_with_args: Event loop was already closed when entering outer finally block.")
 
         curses.wrapper(curses_wrapper_with_args)
 

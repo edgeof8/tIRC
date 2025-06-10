@@ -244,6 +244,7 @@ class ContextManager:
         text_line: str,
         color_attr: Any,
         num_lines_added: int = 1,
+        **kwargs, # Add **kwargs to accept and ignore extra arguments
     ):
         logger.debug(f"add_message_to_context called for '{context_name}'. Current contexts: {list(self.contexts.keys())}")
         original_passed_name = context_name
