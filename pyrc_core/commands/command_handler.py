@@ -160,7 +160,7 @@ class CommandHandler:
     def register_script_command(
         self,
         command_name: str,
-        handler: ScriptCommandHandlerCallable, # Type hint for the script's handler
+        handler: Callable, # Changed to generic Callable
         help_info: Union[str, Dict[str, Any]],
         aliases: Optional[List[str]] = None,
         script_name: Optional[str] = None,
@@ -435,7 +435,7 @@ class CommandHandler:
             else: # Not a core command, check script commands
                 script_cmd_data = self.get_script_command_handler(cmd) # Use new method
                 if script_cmd_data and callable(script_cmd_data.get("handler")):
-                    script_handler: ScriptCommandHandlerCallable = script_cmd_data["handler"]
+                    script_handler: Callable = script_cmd_data["handler"] # Changed to generic Callable
                     # is_script_handler_async = inspect.iscoroutinefunction(script_handler)
                     # The 'is_async' flag is now stored in script_cmd_data
                     is_script_handler_async = script_cmd_data.get("is_async", False)
