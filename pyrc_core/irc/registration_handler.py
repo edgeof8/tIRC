@@ -33,6 +33,10 @@ class RegistrationHandler:
         self.logger = logging.getLogger("pyrc.registration")
         self.cap_negotiator = cap_negotiator
         self.client_logic_ref = client_logic_ref
+        if self.client_logic_ref:
+            logger.debug(f"RegistrationHandler.__init__: client_logic_ref id = {id(self.client_logic_ref)}, pending_initial_joins = {self.client_logic_ref.pending_initial_joins}")
+        else:
+            logger.debug("RegistrationHandler.__init__: client_logic_ref is None.")
         self.sasl_authenticator: Optional['SaslAuthenticator'] = None
 
         self.nick_user_sent = False
@@ -104,19 +108,27 @@ class RegistrationHandler:
         else:
             logger.info("No initial channels to auto-join.")
 
-        if self.client_logic_ref and self.client_logic_ref.pending_initial_joins:
-            logger.info(f"Waiting for {len(self.client_logic_ref.pending_initial_joins)} initial channel join(s) to complete. Pending: {self.client_logic_ref.pending_initial_joins}")
-            try:
-                await asyncio.wait_for(self.client_logic_ref.all_initial_joins_processed.wait(), timeout=10.0)
-                logger.info("All initial join attempts processed or timed out.")
-            except asyncio.TimeoutError:
-                logger.warning("Timeout waiting for all initial joins. Proceeding.")
-                if not self.client_logic_ref.all_initial_joins_processed.is_set():
-                    self.client_logic_ref.all_initial_joins_processed.set()
-        elif self.client_logic_ref:
-             logger.debug("No pending initial joins or all_initial_joins_processed already set.")
-        else:
-            logger.error("client_logic_ref is None, cannot wait for initial joins.")
+        if self.client_logic_ref: # Check if client_logic_ref exists
+            logger.debug(f"RegistrationHandler._perform_post_registration_actions: client_logic_ref id = {id(self.client_logic_ref)}")
+            logger.debug(f"RegistrationHandler._perform_post_registration_actions: Current self.client_logic_ref.pending_initial_joins = {self.client_logic_ref.pending_initial_joins}")
+            if self.client_logic_ref.pending_initial_joins:
+                logger.info(f"Waiting for {len(self.client_logic_ref.pending_initial_joins)} initial channel join(s) to complete. Pending: {self.client_logic_ref.pending_initial_joins}")
+                try:
+                    logger.debug(f"RegistrationHandler: About to await all_initial_joins_processed.wait() for {self.client_logic_ref.pending_initial_joins}")
+                    await asyncio.wait_for(self.client_logic_ref.all_initial_joins_processed.wait(), timeout=10.0)
+                    logger.info("All initial join attempts processed (event was set).")
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout waiting for all initial joins. Proceeding.")
+                    if self.client_logic_ref and not self.client_logic_ref.all_initial_joins_processed.is_set(): # Ensure client_logic_ref still exists
+                        self.client_logic_ref.all_initial_joins_processed.set()
+                except Exception as e_wait: # Catch any other error during wait_for
+                    logger.error(f"Error during asyncio.wait_for for initial joins: {e_wait}", exc_info=True)
+            else: # No pending initial joins according to client_logic_ref
+                logger.debug("RegistrationHandler._perform_post_registration_actions: No pending_initial_joins in client_logic_ref, or all_initial_joins_processed already set.")
+        else: # client_logic_ref is None
+            logger.error("RegistrationHandler._perform_post_registration_actions: client_logic_ref is None, cannot access pending_initial_joins.")
+
+        # Note: The redundant if-block for waiting was removed as the logic is now consolidated above.
 
         if conn_info.nickserv_password:
             sasl_completed_successfully = self.sasl_authenticator and self.sasl_authenticator.sasl_authentication_succeeded
@@ -131,9 +143,10 @@ class RegistrationHandler:
 
         if self.client_logic_ref and hasattr(self.client_logic_ref, 'event_manager'):
             logger.info("Dispatching CLIENT_READY event.")
-            await self.client_logic_ref.event_manager.dispatch_event(
-                "CLIENT_READY",
-                {"nick": conn_info.nick, "channels": conn_info.initial_channels}
+            # Call the specific dispatcher in EventManager to ensure correct payload
+            await self.client_logic_ref.event_manager.dispatch_client_ready(
+                nick=conn_info.nick
+                # channels are implicitly available via client_logic_ref.config or state if needed by scripts
             )
 
     async def execute_post_motd_actions(self):

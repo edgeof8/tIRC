@@ -16,12 +16,12 @@ class RandomMessagesScript(ScriptBase):
         self.quit_messages: List[str] = []
         self.part_messages: List[str] = []
 
-    def load(self):
+    async def load(self): # Changed to async
         self.api.log_info("RandomMessagesScript loading data...")
-        self.quit_messages = self.load_list_from_data_file(
+        self.quit_messages = await self.load_list_from_data_file( # Added await
             "quit_messages.txt", ["Goodbye, cruel world!", "See you later!", "Bye bye!"]
         )
-        self.part_messages = self.load_list_from_data_file(
+        self.part_messages = await self.load_list_from_data_file( # Added await
             "part_messages.txt", ["Leaving the channel!", "See you later!", "Bye bye!"]
         )
 

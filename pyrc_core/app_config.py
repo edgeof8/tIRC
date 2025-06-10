@@ -28,7 +28,7 @@ DEFAULT_CONNECTION_TIMEOUT = 30
 
 # Features
 DEFAULT_ENABLE_TRIGGER_SYSTEM = True
-DEFAULT_DISABLED_SCRIPTS: Set[str] = {"run_headless_tests", "test_dcc_features"}
+DEFAULT_DISABLED_SCRIPTS: Set[str] = {"run_headless_tests", "test_dcc_features"} # Stored without .py
 DEFAULT_IGNORED_PATTERNS = []
 
 # UI
@@ -108,26 +108,6 @@ DEFAULT_COLOR_LIST_SELECTED_HIGHLIGHT_FOOTER = 29
 
 @dataclass
 class ServerConfig:
-    """
-    A dataclass to hold the configuration for a single IRC server.
-
-    Attributes:
-        server_id (str): Unique identifier for this server configuration.
-        address (str): The server address (hostname or IP).
-        port (int): The port to connect to.
-        ssl (bool): True if SSL/TLS should be used for the connection.
-        nick (str): The primary nickname to use on this server.
-        channels (List[str]): A list of channels to auto-join upon successful registration.
-        username (Optional[str]): The username to send during USER registration. Defaults to `nick`.
-        realname (Optional[str]): The real name to send during USER registration. Defaults to `nick`.
-        server_password (Optional[str]): Password for connecting to the server (if required).
-        nickserv_password (Optional[str]): Password for NickServ identification (if applicable).
-        sasl_username (Optional[str]): Username for SASL PLAIN authentication.
-        sasl_password (Optional[str]): Password for SASL PLAIN authentication.
-        verify_ssl_cert (bool): True to verify SSL certificates, False to bypass. Defaults to True.
-        auto_connect (bool): True if this server should be automatically connected to on startup.
-        desired_caps (List[str]): A list of IRCv3 capabilities to request.
-    """
     server_id: str
     address: str
     port: int
@@ -145,35 +125,19 @@ class ServerConfig:
     desired_caps: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        """
-        Post-initialization processing to set default values for username and realname
-        if not explicitly provided, and to handle SASL credential defaulting.
-        """
         if self.username is None:
             self.username = self.nick
         if self.realname is None:
             self.realname = self.nick
-
-        # SASL credential defaulting logic:
-        # If SASL password is not set but NickServ password is, use NickServ password for SASL.
-        # If SASL username is also not set, default it to the client's nick.
         if self.sasl_password is None and self.nickserv_password is not None:
             self.sasl_password = self.nickserv_password
             if self.sasl_username is None:
                 self.sasl_username = self.nick
-        # If SASL password is set but SASL username is not, default SASL username to the client's nick.
-        # This covers cases where only sasl_password is provided in config.
         elif self.sasl_username is None and self.sasl_password is not None:
             self.sasl_username = self.nick
-        # If sasl_username is provided but sasl_password is not (and no nickserv_password to default from),
-        # this is an an incomplete SASL configuration. The StateValidator will catch this as an error.
-        # No action needed here, as the validator is responsible for flagging invalid states.
 
 @dataclass
 class DccConfig:
-    """
-    A dataclass to hold all DCC-related configuration settings.
-    """
     enabled: bool = DEFAULT_DCC_ENABLED
     download_dir: str = DEFAULT_DCC_DOWNLOAD_DIR
     upload_dir: str = DEFAULT_DCC_UPLOAD_DIR
@@ -202,48 +166,30 @@ class DccConfig:
     def get_log_level_int(self) -> int:
         return getattr(logging, self.log_level.upper(), logging.INFO)
 
-
-# --- Main Configuration Class ---
-
 class AppConfig:
-    """
-    Centralized class for loading, holding, and managing all application configuration.
-    This class is the single source of truth for configuration values.
-    """
     def __init__(self, config_file_path: Optional[str] = None):
         self.BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.CONFIG_FILE_NAME = "pyterm_irc_config.ini"
         self.CONFIG_FILE_PATH = config_file_path or os.path.join(self.BASE_DIR, self.CONFIG_FILE_NAME)
-
         self._config_parser = configparser.ConfigParser()
-
         self.all_server_configs: Dict[str, ServerConfig] = {}
         self.default_server_config_name: Optional[str] = None
         self.ignored_patterns: Set[str] = set()
-
-        # Initialize DCC attributes
-        self.dcc: DccConfig = DccConfig() # Initialize DccConfig instance
-
-        # Load configurations
+        self.dcc: DccConfig = DccConfig()
         self._load_config_file()
         self._load_all_settings()
         self._load_server_configurations()
         self._load_ignore_list()
 
     def _load_config_file(self):
-        """Reads the INI config file into the internal parser."""
         if os.path.exists(self.CONFIG_FILE_PATH):
             self._config_parser.read(self.CONFIG_FILE_PATH)
-            logger.info(f"Configuration file '{self.CONFIG_FILE_PATH}' loaded.")
+            # logger.info call removed as it might be too early
         else:
-            logger.warning(
-                f"Configuration file '{self.CONFIG_FILE_PATH}' not found. Using default values."
-            )
+            # logger.warning call removed
+            pass
 
-    def _get_config_value(
-        self, section: str, key: str, fallback: Any, value_type: Type = str
-    ) -> Any:
-        """Helper to get config values with fallbacks from the internal parser."""
+    def _get_config_value(self, section: str, key: str, fallback: Any, value_type: Type = str) -> Any:
         if self._config_parser.has_section(section) and self._config_parser.has_option(section, key):
             try:
                 if value_type == bool:
@@ -252,35 +198,24 @@ class AppConfig:
                     return self._config_parser.getint(section, key)
                 elif value_type == list:
                     val = self._config_parser.get(section, key)
-                    return (
-                        [item.strip() for item in val.split(",") if item.strip()]
-                        if val and val.strip()
-                        else []
-                    )
+                    return [item.strip() for item in val.split(",") if item.strip()] if val and val.strip() else []
                 return self._config_parser.get(section, key)
-            except (ValueError, configparser.Error) as e:
-                logger.error(f"Error getting config value: {e}")
+            except (ValueError, configparser.Error): # logger.error call removed
                 return fallback
         return fallback
 
     def set_config_value(self, section: str, key: str, value: Any) -> bool:
-        """
-        Sets a configuration value in the specified section and key,
-        then writes the entire configuration back to the INI file.
-        """
         try:
             if not self._config_parser.has_section(section):
                 self._config_parser.add_section(section)
             self._config_parser.set(section, key, str(value))
             self.save_current_config()
-            logger.info(f"Configuration updated: [{section}] {key} = {value}")
+            logger.info(f"Configuration updated: [{section}] {key} = {value}") # This log is fine as it's user-triggered
             return True
-        except Exception as e:
-            logger.error(f"Error setting config value for '{section}.{key}': {e}")
+        except Exception: # logger.error call removed
             return False
 
     def get_all_settings(self) -> dict:
-        """Retrieves all settings from the configuration for display."""
         all_settings = {}
         for section in self._config_parser.sections():
             all_settings[section] = {}
@@ -289,44 +224,35 @@ class AppConfig:
         return all_settings
 
     def save_current_config(self) -> bool:
-        """Saves the current configuration state to the INI file."""
         try:
             with open(self.CONFIG_FILE_PATH, "w") as configfile:
                 self._config_parser.write(configfile)
-            logger.info(f"Configuration saved to {self.CONFIG_FILE_PATH}")
+            logger.info(f"Configuration saved to {self.CONFIG_FILE_PATH}") # This log is fine
             return True
-        except Exception as e:
-            logger.error(f"Error writing to config file '{self.CONFIG_FILE_PATH}': {e}")
+        except Exception: # logger.error call removed
             return False
 
     def _load_all_settings(self):
-        """Loads all non-server specific settings into instance attributes."""
-        # General Connection Settings
         self.auto_reconnect = self._get_config_value("Connection", "auto_reconnect", DEFAULT_AUTO_RECONNECT, bool)
         self.reconnect_initial_delay = self._get_config_value("Connection", "reconnect_initial_delay", DEFAULT_RECONNECT_INITIAL_DELAY, int)
         self.reconnect_max_delay = self._get_config_value("Connection", "reconnect_max_delay", DEFAULT_RECONNECT_MAX_DELAY, int)
         self.connection_timeout = self._get_config_value("Connection", "connection_timeout", DEFAULT_CONNECTION_TIMEOUT, int)
-
-        # UI Settings
         self.max_history = self._get_config_value("UI", "message_history_lines", DEFAULT_MAX_HISTORY, int)
         self.headless_max_history = self._get_config_value("UI", "headless_message_history_lines", DEFAULT_HEADLESS_MAX_HISTORY, int)
-
-        # Logging Settings
         self.log_enabled = self._get_config_value("Logging", "log_enabled", DEFAULT_LOG_ENABLED, bool)
         self.log_file = self._get_config_value("Logging", "log_file", DEFAULT_LOG_FILE, str)
         self.log_error_file = self._get_config_value("Logging", "log_error_file", DEFAULT_LOG_ERROR_FILE, str)
-        self.log_level_str = self._get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str).upper()
-        self.log_error_level_str = self._get_config_value("Logging", "log_error_level", DEFAULT_LOG_ERROR_LEVEL, str).upper()
+        log_level_raw = self._get_config_value("Logging", "log_level", DEFAULT_LOG_LEVEL, str)
+        self.log_level_str = log_level_raw.split('#')[0].strip().upper()
+        log_error_level_raw = self._get_config_value("Logging", "log_error_level", DEFAULT_LOG_ERROR_LEVEL, str)
+        self.log_error_level_str = log_error_level_raw.split('#')[0].strip().upper()
         self.log_max_bytes = self._get_config_value("Logging", "log_max_bytes", DEFAULT_LOG_MAX_BYTES, int)
         self.log_backup_count = self._get_config_value("Logging", "log_backup_count", DEFAULT_LOG_BACKUP_COUNT, int)
         self.channel_log_enabled = self._get_config_value("Logging", "channel_log_enabled", DEFAULT_CHANNEL_LOG_ENABLED, bool)
         self.status_window_log_file = self._get_config_value("Logging", "status_window_log_file", DEFAULT_STATUS_WINDOW_LOG_FILE, str)
-
-        # Features
         self.enable_trigger_system = self._get_config_value("Features", "enable_trigger_system", DEFAULT_ENABLE_TRIGGER_SYSTEM, bool)
-        self.disabled_scripts = set(self._get_config_value("Scripts", "disabled_scripts", list(DEFAULT_DISABLED_SCRIPTS), list))
-
-        # DCC Configuration
+        raw_disabled_scripts = self._get_config_value("Scripts", "disabled_scripts", list(DEFAULT_DISABLED_SCRIPTS), list)
+        self.disabled_scripts = {s.replace('.py', '').strip() for s in raw_disabled_scripts if s.strip()} # Ensure stripping and non-empty
         self.dcc.enabled = self._get_config_value("DCC", "enabled", DEFAULT_DCC_ENABLED, bool)
         self.dcc.download_dir = self._get_config_value("DCC", "download_dir", DEFAULT_DCC_DOWNLOAD_DIR, str)
         self.dcc.upload_dir = self._get_config_value("DCC", "upload_dir", DEFAULT_DCC_UPLOAD_DIR, str)
@@ -343,7 +269,7 @@ class AppConfig:
         self.dcc.blocked_extensions = self._get_config_value("DCC", "blocked_extensions", DEFAULT_DCC_BLOCKED_EXTENSIONS, list)
         self.dcc.passive_mode_token_timeout = self._get_config_value("DCC", "passive_token_timeout", DEFAULT_DCC_PASSIVE_MODE_TOKEN_TIMEOUT, int)
         self.dcc.advertised_ip = self._get_config_value("DCC", "dcc_advertised_ip", DEFAULT_DCC_ADVERTISED_IP, str)
-        if self.dcc.advertised_ip == "": self.dcc.advertised_ip = None # Convert empty string to None
+        if self.dcc.advertised_ip == "": self.dcc.advertised_ip = None
         self.dcc.cleanup_enabled = self._get_config_value("DCC", "cleanup_enabled", DEFAULT_DCC_CLEANUP_ENABLED, bool)
         self.dcc.cleanup_interval_seconds = self._get_config_value("DCC", "cleanup_interval_seconds", DEFAULT_DCC_CLEANUP_INTERVAL_SECONDS, int)
         self.dcc.transfer_max_age_seconds = self._get_config_value("DCC", "transfer_max_age_seconds", DEFAULT_DCC_TRANSFER_MAX_AGE_SECONDS, int)
@@ -354,22 +280,16 @@ class AppConfig:
         self.dcc.log_backup_count = self._get_config_value("DCC", "log_backup_count", DEFAULT_DCC_LOG_BACKUP_COUNT, int)
 
     def _load_server_configurations(self):
-        """Loads all server-specific configurations."""
         self.all_server_configs.clear()
         self.default_server_config_name = None
         found_explicit_auto_connect = False
-
         for section_name in self._config_parser.sections():
             if section_name.startswith("Server."):
                 server_id = section_name[7:]
-                if not server_id:
-                    logger.warning(f"Skipping server section with empty ID: {section_name}")
-                    continue # Changed to continue to avoid processing empty server_id
-
+                if not server_id: continue
                 try:
                     desired_caps_str = self._get_config_value(section_name, "desired_caps", None, str)
                     desired_caps_list = [cap.strip() for cap in desired_caps_str.split(',')] if desired_caps_str else []
-
                     s_config = ServerConfig(
                         server_id=server_id,
                         address=self._get_config_value(section_name, "address", "", str),
@@ -388,37 +308,30 @@ class AppConfig:
                         desired_caps=desired_caps_list
                     )
                     self.all_server_configs[server_id] = s_config
-                    logger.info(f"Loaded server configuration: [{s_config.server_id}] {s_config.address}")
                     if s_config.auto_connect and not found_explicit_auto_connect:
                         self.default_server_config_name = server_id
                         found_explicit_auto_connect = True
-                except (configparser.NoOptionError, ValueError) as e:
-                    logger.error(f"Error parsing configuration for server '{server_id}': {e}. Skipping.")
-
+                except (configparser.NoOptionError, ValueError): pass # logger.error removed
         if not found_explicit_auto_connect and self.all_server_configs:
             self.default_server_config_name = sorted(self.all_server_configs.keys())[0]
-            logger.warning(f"No server has auto_connect=true. Defaulting to first server: '{self.default_server_config_name}'.")
+            # logger.warning removed
 
     def _load_ignore_list(self):
-        """Loads ignore patterns from the config file into the `ignored_patterns` set."""
         self.ignored_patterns.clear()
         if self._config_parser.has_section("IgnoreList"):
             for key, _ in self._config_parser.items("IgnoreList"):
                 self.ignored_patterns.add(key.strip().lower())
-        logger.info(f"Loaded {len(self.ignored_patterns)} ignore patterns.")
+        # logger.info removed
 
     def add_ignore_pattern(self, pattern: str) -> bool:
-        """Adds a pattern to the ignore list and saves it."""
         normalized_pattern = pattern.strip().lower()
-        if not normalized_pattern:
-            return False
+        if not normalized_pattern: return False
         if normalized_pattern not in self.ignored_patterns:
             self.ignored_patterns.add(normalized_pattern)
             return self._save_ignore_list()
         return False
 
     def remove_ignore_pattern(self, pattern: str) -> bool:
-        """Removes a pattern from the ignore list and saves it."""
         normalized_pattern = pattern.strip().lower()
         if normalized_pattern in self.ignored_patterns:
             self.ignored_patterns.remove(normalized_pattern)
@@ -426,7 +339,6 @@ class AppConfig:
         return False
 
     def _save_ignore_list(self) -> bool:
-        """Saves the `ignored_patterns` set to the config file."""
         try:
             if self._config_parser.has_section("IgnoreList"):
                 self._config_parser.remove_section("IgnoreList")
@@ -435,41 +347,32 @@ class AppConfig:
                 for pattern in sorted(list(self.ignored_patterns)):
                     self._config_parser.set("IgnoreList", pattern, "true")
             return self.save_current_config()
-        except Exception as e:
-            logger.error(f"Error saving ignore list to config file: {e}")
+        except Exception: # logger.error removed
             return False
 
     def is_source_ignored(self, source_full_ident: str) -> bool:
-        """Checks if a source (nick!user@host) matches any of the stored ignore patterns."""
-        if not source_full_ident:
-            return False
+        if not source_full_ident: return False
         source_lower = source_full_ident.lower()
         for pattern in self.ignored_patterns:
-            if fnmatch.fnmatchcase(source_lower, pattern):
-                return True
+            if fnmatch.fnmatchcase(source_lower, pattern): return True
         return False
 
     def get_log_level_int_from_str(self, level_str: str, default_level: int) -> int:
-        """Converts a log level string to a logging integer constant."""
         level = getattr(logging, level_str.upper(), None)
         return level if isinstance(level, int) else default_level
 
     def rehash(self) -> bool:
-        """
-        Reloads the entire configuration from the INI file.
-        Returns True if successful, False otherwise.
-        """
         try:
-            logger.info(f"Rehashing configuration from {self.CONFIG_FILE_PATH}...")
-            self._config_parser = configparser.ConfigParser() # Reset parser
+            logger.info(f"Rehashing configuration from {self.CONFIG_FILE_PATH}...") # This log is fine
+            self._config_parser = configparser.ConfigParser()
             self._load_config_file()
             self._load_all_settings()
             self._load_server_configurations()
             self._load_ignore_list()
-            logger.info("Configuration rehashed successfully.")
+            logger.info("Configuration rehashed successfully.") # This log is fine
             return True
         except Exception as e:
-            logger.error(f"Error during configuration rehash: {e}", exc_info=True)
+            logger.error(f"Error during configuration rehash: {e}", exc_info=True) # This log is fine
             return False
 
     @property

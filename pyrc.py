@@ -70,13 +70,28 @@ def setup_logging(config: AppConfig):
 
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.INFO) # Console output can remain INFO
         root_logger.addHandler(console_handler)
 
-        app_init_logger = logging.getLogger("pyrc")
-        app_init_logger.info(f"Logging initialized. Full log: {full_log_path}, Error log: {error_log_path}")
+        # Explicitly set the level for the 'pyrc' logger namespace to ensure
+        # all sub-loggers (pyrc.config, pyrc.logic, etc.) inherit this level
+        # for the file handlers.
+        pyrc_base_logger = logging.getLogger("pyrc")
+        pyrc_base_logger.setLevel(config.log_level_int) # Set to configured level, e.g., DEBUG
+
+        # Now use this logger for the initial messages
+        pyrc_base_logger.info(f"Logging initialized. Full log: {full_log_path}, Error log: {error_log_path}")
+        pyrc_base_logger.info(f"'pyrc' base logger set to level: {logging.getLevelName(pyrc_base_logger.level)} (effective: {logging.getLevelName(pyrc_base_logger.getEffectiveLevel())}, target: {config.log_level_str})")
+
+        # Explicitly set levels for known sub-loggers to ensure they adhere to the file log level
+        loggers_to_set = ["pyrc.config", "pyrc.logic", "pyrc.script_manager", "pyrc.network", "pyrc.command_handler", "pyrc.event_manager", "pyrc.main_app", "pyrc.main_ui", "pyrc.irc", "pyrc.dcc"]
+        for logger_name in loggers_to_set:
+            specific_logger = logging.getLogger(logger_name)
+            specific_logger.setLevel(config.log_level_int)
+            pyrc_base_logger.info(f"Logger '{logger_name}' explicitly set to level: {logging.getLevelName(specific_logger.level)} (effective: {logging.getLevelName(specific_logger.getEffectiveLevel())})")
+
         if config.channel_log_enabled:
-            app_init_logger.info(f"Per-channel logging is enabled. Channel logs will be placed in: {log_dir}")
+            pyrc_base_logger.info(f"Per-channel logging is enabled. Channel logs will be placed in: {log_dir}")
 
     except Exception as e:
         print(f"Failed to initialize advanced file logging: {e}")
@@ -153,7 +168,19 @@ def main():
 
     # Setup logging using the config object
     setup_logging(app_config)
-    app_logger = logging.getLogger("pyrc.main_app")
+    app_logger = logging.getLogger("pyrc.main_app") # This logger should now respect the file handler's level
+
+    # Log critical config values AFTER logging is set up
+    app_logger.info(f"--- Post-setup_logging Config Check ---")
+    app_logger.info(f"AppConfig.log_level_str: '{app_config.log_level_str}'")
+    app_logger.info(f"AppConfig.log_level_int: {app_config.log_level_int} (DEBUG is {logging.DEBUG}, INFO is {logging.INFO})")
+    app_logger.info(f"AppConfig.disabled_scripts: {app_config.disabled_scripts}")
+    # Check the effective level of a logger to ensure it's DEBUG for the file.
+    # The 'pyrc.logic' logger is used by IRCClient_Logic where we expect DEBUG messages.
+    logic_logger_level = logging.getLogger("pyrc.logic").getEffectiveLevel()
+    app_logger.info(f"Effective level of 'pyrc.logic' logger: {logging.getLevelName(logic_logger_level)}")
+    app_logger.info(f"--- End Post-setup_logging Config Check ---")
+
     app_logger.info("Starting PyRC application.")
 
     # Get the default server config for argument help text

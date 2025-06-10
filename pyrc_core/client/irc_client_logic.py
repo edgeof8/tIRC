@@ -108,7 +108,7 @@ class IRCClient_Logic:
         self._input_reader_task_ref: Optional[asyncio.Task] = None
         self._input_processor_task_ref: Optional[asyncio.Task] = None
 
-        self.pending_initial_joins: Set[str] = set()
+        self._pending_initial_joins_internal: Set[str] = set() # Internal storage
         self.all_initial_joins_processed = asyncio.Event()
         self._switched_to_initial_channel = False # Flag to track if we've switched to the first successfully auto-joined channel
 
@@ -130,7 +130,13 @@ class IRCClient_Logic:
 
         self.network_handler: NetworkHandler = NetworkHandler(self)
 
-        self.script_manager: ScriptManager = ScriptManager(self, self.config.BASE_DIR, disabled_scripts=self.config.disabled_scripts)
+        # Determine final set of disabled scripts (INI + CLI)
+        cli_disabled_scripts = set(self.args.disable_script if hasattr(self.args, "disable_script") and self.args.disable_script else [])
+        config_disabled_scripts = self.config.disabled_scripts if self.config.disabled_scripts else set()
+        final_disabled_scripts = cli_disabled_scripts.union(config_disabled_scripts)
+        logger.debug(f"Final disabled scripts list for ScriptManager: {final_disabled_scripts}")
+
+        self.script_manager: ScriptManager = ScriptManager(self, self.config.BASE_DIR, disabled_scripts=final_disabled_scripts)
         self.event_manager = EventManager(self, self.script_manager)
 
         # Initialize DCCManager *before* UIManager
@@ -300,6 +306,10 @@ class IRCClient_Logic:
             # disconnect_gracefully itself checks if the loop is closed.
 
             # 3. Shutdown synchronous components
+            if self.script_manager:
+                logger.info("run_main_loop finally: Unloading all scripts.")
+                await self._unload_all_scripts() # Await the async unload
+
             if self.dcc_manager:
                 logger.info("run_main_loop finally: Shutting down DCCManager.")
                 self.dcc_manager.shutdown()
@@ -328,12 +338,40 @@ class IRCClient_Logic:
 
     # Removed shutdown_client method as its logic is now in run_main_loop's finally block.
 
+    @property
+    def pending_initial_joins(self) -> Set[str]:
+        return self._pending_initial_joins_internal
+
+    @pending_initial_joins.setter
+    def pending_initial_joins(self, value: Set[str]):
+        logger.debug(f"IRCClient_Logic: pending_initial_joins BEING SET. Old: {self._pending_initial_joins_internal}, New: {value}", stack_info=True)
+        self._pending_initial_joins_internal = value
+
     def request_shutdown(self, final_quit_message: Optional[str] = "Client shutting down"):
         """Synchronous method to signal the client to start its shutdown process."""
         logger.info(f"request_shutdown called with message: '{final_quit_message}'")
         if final_quit_message:
             self._final_quit_message = final_quit_message
         self.should_quit.set()
+
+    async def _unload_all_scripts(self):
+        """Unload all loaded scripts."""
+        logger.info("Unloading all scripts...")
+        for script_name, script_instance in list(self.script_manager.scripts.items()):
+            try:
+                if hasattr(script_instance, "unload") and callable(script_instance.unload):
+                    logger.info(f"Unloading script: {script_name}")
+                    unload_method = script_instance.unload
+                    if asyncio.iscoroutinefunction(unload_method):
+                        await unload_method()
+                    else:
+                        unload_method()
+                # Remove from ScriptManager's active scripts list
+                if script_name in self.script_manager.scripts:
+                    del self.script_manager.scripts[script_name]
+            except Exception as e:
+                logger.error(f"Error unloading script {script_name}: {e}", exc_info=True)
+        logger.info("All scripts unloaded.")
 
     @property
     def nick(self) -> Optional[str]:
@@ -360,6 +398,7 @@ class IRCClient_Logic:
         return self.context_manager.get_all_channels()
 
     async def _create_initial_state(self):
+        logger.debug(f"IRCClient_Logic: ENTERING _create_initial_state. Current pending_initial_joins: {self.pending_initial_joins}")
         """
         Determines the initial connection state from CLI args and AppConfig,
         then populates the StateManager.
@@ -437,12 +476,22 @@ class IRCClient_Logic:
                     await self.state_manager.set_connection_info(conn_info)
             else: # conn_info was successfully set
                 if conn_info.initial_channels:
+                    # Use the property setter which will log
                     self.pending_initial_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels}
                     if not self.pending_initial_joins: # If initial_channels was empty or all normalized to empty strings
                         self.all_initial_joins_processed.set() # No initial channels to wait for
                     else:
                         self.all_initial_joins_processed.clear() # Ensure it's clear if there are channels to process
-                    logger.debug(f"Initialized pending_initial_joins: {self.pending_initial_joins}")
+
+                    # More detailed logging here
+                    logger.debug(f"IRCClient_Logic._create_initial_state: Full conn_info object = {conn_info}")
+                    logger.debug(f"IRCClient_Logic._create_initial_state: conn_info.initial_channels directly = {conn_info.initial_channels}")
+
+                    # Re-assign and log immediately
+                    temp_pending_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels}
+                    self.pending_initial_joins = temp_pending_joins
+                    logger.debug(f"IRCClient_Logic._create_initial_state: Directly after assignment, self.pending_initial_joins = {self.pending_initial_joins}")
+
                 else: # No initial channels
                     self.all_initial_joins_processed.set()
                     logger.debug("No initial channels configured, all_initial_joins_processed set immediately.")
@@ -902,10 +951,10 @@ class IRCClient_Logic:
         logger.info(f"IRCClient_Logic.handle_channel_fully_joined: Channel {channel_name} is now fully joined.")
         normalized_channel_name = self.context_manager._normalize_context_name(channel_name)
 
-        if normalized_channel_name in self.pending_initial_joins:
-            self.pending_initial_joins.remove(normalized_channel_name)
-            logger.debug(f"IRCClient_Logic.handle_channel_fully_joined: Removed '{normalized_channel_name}' from pending_initial_joins. Remaining: {self.pending_initial_joins}")
-            if not self.pending_initial_joins:
+        if normalized_channel_name in self._pending_initial_joins_internal: # Access internal storage for modification
+            self._pending_initial_joins_internal.remove(normalized_channel_name)
+            logger.debug(f"IRCClient_Logic.handle_channel_fully_joined: Removed '{normalized_channel_name}' from pending_initial_joins. Remaining: {self._pending_initial_joins_internal}")
+            if not self._pending_initial_joins_internal:
                 logger.info("IRCClient_Logic.handle_channel_fully_joined: All initial joins processed. Setting all_initial_joins_processed event.")
                 self.all_initial_joins_processed.set()
 

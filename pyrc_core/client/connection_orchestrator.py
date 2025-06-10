@@ -164,15 +164,18 @@ class ConnectionOrchestrator:
         self.initialize_handlers()
 
         # Update network handler with new parameters
+        logger.debug(f"ConnectionOrchestrator: About to call update_connection_params for {server_config_to_use.server}")
         await self.network_handler.update_connection_params(
             server=server_config_to_use.server,
             port=server_config_to_use.port,
             use_ssl=server_config_to_use.ssl,
             channels_to_join=server_config_to_use.initial_channels
         )
+        logger.debug(f"ConnectionOrchestrator: Returned from update_connection_params for {server_config_to_use.server}")
 
         # Start network handler if it's not already running
         if not self.network_handler._network_task or self.network_handler._network_task.done():
+            logger.debug(f"ConnectionOrchestrator: About to call network_handler.start() for {server_config_to_use.server}")
             await self.network_handler.start()
             logger.info("ConnectionOrchestrator: Network handler started.")
         else:

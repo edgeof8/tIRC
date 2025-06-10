@@ -107,7 +107,7 @@ class ScriptManager:
             if script_file.endswith(".py") and not script_file.startswith("__"):
                 script_name = script_file[:-3]
 
-                if script_name in self.client_logic_ref.config.disabled_scripts:
+                if script_name in self.disabled_scripts: # Use the ScriptManager's own disabled_scripts set
                     self.logger.info(f"Skipping disabled script '{script_name}' during metadata collection.")
                     continue
 
@@ -146,12 +146,12 @@ class ScriptManager:
                 for dep_name in dependencies:
                     if dep_name not in loaded_script_names:
                         # Check if the dependency is a known script or explicitly disabled
-                        if dep_name not in scripts_metadata and dep_name not in self.client_logic_ref.config.disabled_scripts:
+                        if dep_name not in scripts_metadata and dep_name not in self.disabled_scripts: # Use self.disabled_scripts
                             self.logger.error(f"Script '{script_name}' has an unknown dependency '{dep_name}'. Cannot load '{script_name}'.")
                             deps_met = False
                             missing_deps_for_log.append(f"{dep_name} (unknown)")
                             break # Hard failure, cannot proceed with this script
-                        elif dep_name in self.client_logic_ref.config.disabled_scripts:
+                        elif dep_name in self.disabled_scripts: # Use self.disabled_scripts
                             self.logger.warning(f"Script '{script_name}' depends on disabled script '{dep_name}'. Cannot load '{script_name}'.")
                             deps_met = False
                             missing_deps_for_log.append(f"{dep_name} (disabled)")
@@ -180,7 +180,17 @@ class ScriptManager:
                             if script_instance:
                                 self.scripts[script_name] = script_instance
                                 if hasattr(script_instance, "load") and callable(script_instance.load):
-                                    script_instance.load()
+                                    load_method = script_instance.load
+                                    if asyncio.iscoroutinefunction(load_method):
+                                        # Schedule the async load method.
+                                        # Note: This runs it but doesn't wait for completion here,
+                                        # allowing other scripts to load. If load order or completion
+                                        # is critical before proceeding, this needs adjustment.
+                                        # For now, we assume script loads are independent enough.
+                                        asyncio.create_task(load_method())
+                                        self.logger.info(f"Scheduled async load for script: {script_name}")
+                                    else:
+                                        load_method() # Call synchronous load
                                 self.logger.info(f"Successfully loaded and initialized script (deps met): {script_name}")
                                 loaded_script_names.add(script_name)
                                 made_progress_in_iteration = True
@@ -205,10 +215,10 @@ class ScriptManager:
                 dependencies = scripts_metadata.get(script_name, [])
                 missing_deps = [
                     dep for dep in dependencies
-                    if dep not in loaded_script_names and dep not in self.client_logic_ref.config.disabled_scripts
+                    if dep not in loaded_script_names and dep not in self.disabled_scripts # Use self.disabled_scripts
                 ]
                 status = ""
-                if script_name in self.client_logic_ref.config.disabled_scripts:
+                if script_name in self.disabled_scripts: # Use self.disabled_scripts
                     status = " (disabled)"
                 elif script_name not in scripts_metadata:
                     status = " (metadata collection failed)"
@@ -221,13 +231,13 @@ class ScriptManager:
             self.logger.error(f"Could not load some scripts due to missing, disabled, or circular dependencies: {'; '.join(unloaded_scripts_details)}")
 
     def get_script(self, script_name: str) -> Optional[Any]:
-        if script_name in self.client_logic_ref.config.disabled_scripts:
+        if script_name in self.disabled_scripts: # Use self.disabled_scripts
             self.logger.debug(f"Script {script_name} is disabled")
             return None
         return self.scripts.get(script_name)
 
     def is_script_enabled(self, script_name: str) -> bool:
-        return script_name not in self.client_logic_ref.config.disabled_scripts and script_name in self.scripts
+        return script_name not in self.disabled_scripts and script_name in self.scripts # Use self.disabled_scripts
 
     def register_command_from_script(
         self,
@@ -638,7 +648,12 @@ class ScriptManager:
                         if hasattr(script_instance, "load") and callable(
                             script_instance.load
                         ):
-                            script_instance.load()  # Call load on the new instance
+                            load_method = script_instance.load
+                            if asyncio.iscoroutinefunction(load_method):
+                                asyncio.create_task(load_method()) # Schedule async load
+                                self.logger.info(f"Scheduled async load for reloaded script: {script_name}")
+                            else:
+                                load_method() # Call synchronous load
                         self.logger.info(f"Reloaded script: {script_name}")
                         return True
                 else:
@@ -655,7 +670,7 @@ class ScriptManager:
         return False
 
     def get_disabled_scripts(self) -> List[str]:
-        return list(self.client_logic_ref.config.disabled_scripts)
+        return list(self.disabled_scripts) # Use self.disabled_scripts
 
     def get_all_script_commands_with_help(self) -> Dict[str, Dict[str, Any]]:
         """Get all script commands with their help text and metadata.

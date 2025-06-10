@@ -1,4 +1,5 @@
 import os
+import asyncio # Import asyncio
 from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Any, Set
 
 if TYPE_CHECKING:
@@ -82,8 +83,9 @@ class ScriptBase:
         )
         return data_dir_path
 
-    def load_list_from_data_file(self, filename: str, default_items: list) -> list:
+    async def load_list_from_data_file(self, filename: str, default_items: list) -> list:
         """Load a list of items from a data file or return default items if file not found/empty.
+        This method is now asynchronous and uses asyncio.to_thread for file operations.
 
         Args:
             filename: The name of the data file to load
@@ -95,14 +97,21 @@ class ScriptBase:
         items = []
         try:
             file_path = self.api.request_data_file_path(filename)
-            if not os.path.exists(file_path):
+
+            file_exists = await asyncio.to_thread(os.path.exists, file_path)
+            if not file_exists:
                 self.api.log_warning(
                     f"Data file '{filename}' not found at '{file_path}'. Using default items."
                 )
                 return default_items.copy()
 
-            with open(file_path, "r", encoding="utf-8") as f:
-                items = [line.strip() for line in f if line.strip()]
+            def _read_file_sync():
+                _items = []
+                with open(file_path, "r", encoding="utf-8") as f_sync:
+                    _items = [line.strip() for line in f_sync if line.strip()]
+                return _items
+
+            items = await asyncio.to_thread(_read_file_sync)
 
             if not items:
                 self.api.log_warning(

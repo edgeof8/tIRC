@@ -1,8 +1,9 @@
 # scripts/default_fun_commands.py
 import random
 import re
-import os  # For os.path.exists, though api.request_data_file_path handles path construction
-import logging  # Added for script-specific logging
+import os
+import logging
+import importlib.util # For checking pyfiglet availability
 from typing import TYPE_CHECKING, List, Dict, Any, Optional, Callable
 from pyrc_core.scripting.script_base import ScriptBase
 
@@ -19,24 +20,20 @@ class FunCommandsScript(ScriptBase):
         self.slap_items: List[str] = []
         self.eight_ball_answers: List[str] = []
 
-        self.pyfiglet_available = False
-        try:
-            import pyfiglet  # pyfiglet is an optional import for /ascii
-
+        # Check for pyfiglet availability without importing it globally at init
+        if importlib.util.find_spec("pyfiglet"):
             self.pyfiglet_available = True
-            script_logger.info("pyfiglet library found and enabled for /ascii command.")
-        except ImportError:
+            script_logger.info("pyfiglet library found. /ascii command will be available.")
+        else:
             self.pyfiglet_available = False
-            script_logger.info(
-                "pyfiglet library not found. /ascii command will be disabled."
-            )
+            script_logger.info("pyfiglet library not found. /ascii command will be disabled.")
 
-    def load(self):
+    async def load(self): # Changed to async
         self.api.log_info("FunCommandsScript loading data...")
-        self.slap_items = self.load_list_from_data_file(
+        self.slap_items = await self.load_list_from_data_file( # Added await
             "slap_items.txt", ["a large trout", "a wet noodle", "a rubber chicken"]
         )
-        self.eight_ball_answers = self.load_list_from_data_file(
+        self.eight_ball_answers = await self.load_list_from_data_file( # Added await
             "magic_eight_ball_answers.txt",
             [
                 "It is certain.",
@@ -229,8 +226,8 @@ class FunCommandsScript(ScriptBase):
 
         text = " ".join(parts)
         try:
+            # Import pyfiglet here, only when the command is used
             import pyfiglet
-
             ascii_art = pyfiglet.figlet_format(text)
             for line in ascii_art.split("\n"):
                 await self.api.add_message_to_context(
