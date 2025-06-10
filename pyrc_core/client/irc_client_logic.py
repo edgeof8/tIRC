@@ -10,6 +10,7 @@ import logging
 import logging.handlers
 import os
 import platform
+import time # Import time
 from enum import Enum
 from dataclasses import asdict  # Import asdict
 # typing.Optional is already imported by __future__.annotations if Python >= 3.9
@@ -88,6 +89,7 @@ class IRCClient_Logic:
         self.loop = asyncio.get_event_loop()
 
         self.should_quit = asyncio.Event()  # Use asyncio.Event for graceful shutdown
+        self.shutdown_complete_event = asyncio.Event() # Event to signal full shutdown completion
         self.ui_needs_update = asyncio.Event()
         self._server_switch_disconnect_event: Optional[asyncio.Event] = None
         self._server_switch_target_config_name: Optional[str] = None
@@ -99,9 +101,30 @@ class IRCClient_Logic:
         self.max_reconnect_delay: float = 300.0
         self.last_attempted_nick_change: Optional[str] = None
         self._executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+        # self._shutdown_initiated = False # Flag removed, shutdown logic consolidated in run_main_loop's finally
+
+        # To store references to tasks created in run_main_loop for graceful shutdown
+        self._network_task_ref: Optional[asyncio.Task] = None
+        self._input_reader_task_ref: Optional[asyncio.Task] = None
+        self._input_processor_task_ref: Optional[asyncio.Task] = None
+
+        self.pending_initial_joins: Set[str] = set()
+        self.all_initial_joins_processed = asyncio.Event()
+        self._switched_to_initial_channel = False # Flag to track if we've switched to the first successfully auto-joined channel
+
 
         # --- Stage 2: Initialize All Manager Components ---
         self.state_manager = StateManager()
+
+        # Debug: Verify StateManager methods exist immediately after instantiation
+        logger = logging.getLogger("pyrc.debug")
+        required_methods = ['set_connection_info', 'get_connection_info']
+        missing_methods = [m for m in required_methods if not hasattr(self.state_manager, m)]
+        if missing_methods:
+            logger.error(f"StateManager MISSING METHODS: {', '.join(missing_methods)}")
+        else:
+            logger.debug("StateManager has all required methods")
+
         self.channel_logger_manager = ChannelLoggerManager(self.config)
         self.context_manager = ContextManager(max_history_per_context=self.config.max_history)
 
@@ -133,6 +156,9 @@ class IRCClient_Logic:
         self.script_manager.subscribe_script_to_event(
             "RAW_SERVER_MESSAGE", self.handle_raw_server_message, "IRCClient_Logic_Internal_Server_Message"
         )
+        self.script_manager.subscribe_script_to_event(
+            "CHANNEL_FULLY_JOINED", self._handle_auto_channel_fully_joined, "IRCClient_Logic_Internal_Auto_Join_UI_Switch"
+        )
 
     def process_trigger_event(self, event_type: str, event_data: Dict[str, Any]):
         """Process an event through the trigger system if enabled."""
@@ -162,13 +188,7 @@ class IRCClient_Logic:
     async def run_main_loop(self):
         """Main asyncio loop to handle user input and update the UI."""
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
-
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
-
-        network_task = None
-        input_reader_task = None
-        input_processor_task = None # New task for processing input queue
-        tasks_to_await_on_shutdown = set()  # To hold tasks that need graceful shutdown
 
         try:
             await self._create_initial_state()
@@ -179,88 +199,141 @@ class IRCClient_Logic:
             conn_info = self.state_manager.get_connection_info()
             if conn_info and conn_info.auto_connect:
                 logger.info(f"Auto-connecting to {conn_info.server}:{conn_info.port}")
-                await self._start_connection_if_auto()
+                await self._start_connection_if_auto() # This starts network_handler if needed
                 logger.info("Auto-connection initiated.")
 
-            # Start tasks
-            network_task = asyncio.create_task(self.network_handler.network_loop())
-            tasks_to_await_on_shutdown.add(network_task)
+            if not self.network_handler._network_task or self.network_handler._network_task.done():
+                logger.info("Network task not running or is done, attempting to start it now in run_main_loop.")
+                await self.network_handler.start()
+
+            self._network_task_ref = self.network_handler._network_task # Store reference
 
             if not self.is_headless and self.input_handler:
-                input_reader_task = asyncio.create_task(self.input_handler.async_input_reader(self._executor))
-                tasks_to_await_on_shutdown.add(input_reader_task)
+                self._input_reader_task_ref = asyncio.create_task(self.input_handler.async_input_reader(self._executor))
+                self._input_processor_task_ref = asyncio.create_task(self._process_input_queue_loop())
 
-                # Start the new input processing task
-                input_processor_task = asyncio.create_task(self._process_input_queue_loop())
-                tasks_to_await_on_shutdown.add(input_processor_task)
-
-            while not self.should_quit.is_set():
-                try:
-                    await self._update_ui()
-                    await asyncio.sleep(0.01)  # Small sleep to yield control
-
-                except asyncio.CancelledError:
-                    logger.info("Main loop cancelled.")
-                    break
-                except curses.error as e:
-                    logger.error(f"curses error in main loop: {e}")
-                    if not self.is_headless:
-                        self.ui_needs_update.set()
-                except Exception as e:
-                    logger.critical(f"Error in main loop: {e}", exc_info=True)
-                    if not self.is_headless:
-                        self.ui_needs_update.set()
-
-        except Exception as e:
+            # Main operational loop
+            try:
+                while not self.should_quit.is_set():
+                    try:
+                        await self._update_ui()
+                        await asyncio.sleep(0.01)  # Main loop's own small delay
+                    except asyncio.CancelledError: # pragma: no cover
+                        logger.info("Main operational loop's sleep/update cancelled externally.")
+                        self.should_quit.set() # Ensure shutdown pathway is triggered
+                        break # Exit while loop
+                    except curses.error as e:  # pragma: no cover
+                        logger.error(f"curses error in main operational loop: {e}")
+                        if not self.is_headless:
+                            self.ui_needs_update.set()
+                    except Exception as e:  # pragma: no cover
+                        logger.critical(f"Error in main operational loop's inner try: {e}", exc_info=True)
+                        self.should_quit.set() # Ensure shutdown on error
+                        if not self.is_headless:
+                            self.ui_needs_update.set()
+                        break # Exit while loop on critical error
+            except GeneratorExit: # pragma: no cover
+                logger.warning("run_main_loop: GeneratorExit caught in main operational loop. Setting should_quit.")
+                self.should_quit.set() # Ensure shutdown pathway is triggered
+                # Do not re-raise GeneratorExit, allow it to proceed to finally
+        except asyncio.CancelledError: # pragma: no cover
+            logger.info("run_main_loop task itself was cancelled. Proceeding to finally for cleanup.")
+            self.should_quit.set() # Ensure shutdown pathway is triggered
+        except Exception as e: # pragma: no cover
             logger.critical(f"Critical error in main client loop setup or outer execution: {e}", exc_info=True)
+            self.should_quit.set() # Ensure shutdown
         finally:
-            logger.info("Main client loop finally block executing.")
-            # Signal all tasks to stop
-            self.should_quit.set()
+            logger.info("run_main_loop: Entering finally block for full client shutdown.")
+            self.should_quit.set() # Ensure it's set
 
-            # Attempt graceful disconnect from IRC server
-            quit_msg = self._final_quit_message or "Client shutting down"
-            if self.network_handler:
-                logger.info(f"Attempting graceful network disconnect with message: '{quit_msg}'")
-                await self.network_handler.disconnect_gracefully(quit_msg)
+            quit_msg_to_send = self._final_quit_message or "Client shutting down"
+
+            # 1. Gracefully disconnect network (sends QUIT, stops network_handler task)
+            if not self.loop.is_closed():
+                if self.network_handler:
+                    logger.info(f"run_main_loop finally: Attempting graceful network disconnect with message: '{quit_msg_to_send}'")
+                    try:
+                        await self.network_handler.disconnect_gracefully(quit_msg_to_send)
+                    except Exception as e_net_disc: # pragma: no cover
+                        logger.error(f"run_main_loop finally: Error during network_handler.disconnect_gracefully: {e_net_disc}", exc_info=True)
+                else: # pragma: no cover
+                    logger.warning("run_main_loop finally: NetworkHandler not available.")
             else:
-                logger.warning("NetworkHandler not available during shutdown.")
+                logger.warning("run_main_loop finally: Loop closed, skipping network disconnect.")
 
-            # Cancel and await remaining tasks to ensure they clean up
-            async def cancel_and_wait(task: asyncio.Task, name: str):
-                try:
-                    if task and not task.done(): # Check if task exists and is not already done
-                        logger.info(f"Cancelling task: {name}")
-                        task.cancel()
-                        await task
-                except asyncio.CancelledError:
-                    logger.info(f"Task cancelled: {name}")
-                except Exception as e:
-                    logger.error(f"Error awaiting cancelled task {name}: {e}", exc_info=True)
+            # 2. Cancel and await other client-level tasks
+            async def cancel_and_await_task(task: Optional[asyncio.Task], name: str):
+                if task and not task.done():
+                    logger.info(f"run_main_loop finally: Attempting to cancel task: {name}")
+                    if not self.loop.is_closed(): # Check loop before attempting cancel
+                        task.cancel() # This might still raise if loop closes between check and call
+                        try:
+                            # Only await if the loop is still not closed before awaiting
+                            if not self.loop.is_closed():
+                                await task
+                            else:
+                                logger.warning(f"run_main_loop finally: Loop closed before awaiting cancelled task {name}. Task state: {task}")
+                        except asyncio.CancelledError:
+                            logger.info(f"run_main_loop finally: Task {name} successfully cancelled and awaited.")
+                        except Exception as e_await_cancel: # pragma: no cover
+                            logger.error(f"run_main_loop finally: Error awaiting cancelled task {name}: {e_await_cancel}", exc_info=True)
+                    else:
+                        logger.warning(f"run_main_loop finally: Loop closed, cannot initiate cancel for task {name}. Task state: {task}")
 
-            if network_task:
-                await cancel_and_wait(network_task, "network_task")
-            if input_reader_task:
-                await cancel_and_wait(input_reader_task, "input_reader_task")
-            if input_processor_task: # Cancel the new input processor task
-                await cancel_and_wait(input_processor_task, "input_processor_task")
+            # Guard the entire block of these sensitive operations
+            if not self.loop.is_closed():
+                logger.info("run_main_loop finally: Loop is open, proceeding with input task cancellations.")
+                await cancel_and_await_task(self._input_reader_task_ref, "_input_reader_task_ref")
+                if not self.loop.is_closed(): # Re-check before next task
+                    await cancel_and_await_task(self._input_processor_task_ref, "_input_processor_task_ref")
+                else:
+                    logger.warning("run_main_loop finally: Loop closed before cancelling _input_processor_task_ref.")
+            else:
+                logger.warning("run_main_loop finally: Loop was already closed before attempting any input task cancellations.")
+                # Log state of tasks if loop is closed
+                if self._input_reader_task_ref and not self._input_reader_task_ref.done():
+                    logger.warning(f"run_main_loop finally: _input_reader_task_ref not cancelled as loop is closed. State: {self._input_reader_task_ref}")
+                if self._input_processor_task_ref and not self._input_processor_task_ref.done():
+                    logger.warning(f"run_main_loop finally: _input_processor_task_ref not cancelled as loop is closed. State: {self._input_processor_task_ref}")
 
-            # Shutdown UI if active
-            if not self.is_headless and self.ui and hasattr(self.ui, 'shutdown') and callable(self.ui.shutdown):
-                logger.info("Shutting down UI (from main_loop finally).")
-                self.ui.shutdown()
+            # self._network_task_ref is handled by network_handler.disconnect_gracefully -> stop()
+            # disconnect_gracefully itself checks if the loop is closed.
 
-            # Shutdown DCC manager
+            # 3. Shutdown synchronous components
             if self.dcc_manager:
+                logger.info("run_main_loop finally: Shutting down DCCManager.")
                 self.dcc_manager.shutdown()
 
-            # Shutdown thread pool executor
             if self._executor:
-                logger.info("Shutting down ThreadPoolExecutor...")
+                logger.info("run_main_loop finally: Shutting down ThreadPoolExecutor...")
                 self._executor.shutdown(wait=True, cancel_futures=True)
-                logger.info("ThreadPoolExecutor shut down.")
+                self._executor = None
+                logger.info("run_main_loop finally: ThreadPoolExecutor shut down.")
 
-            logger.info("Main client loop ended.")
+            # UI shutdown is handled by pyrc.py after run_main_loop completes.
+
+            # Dispatch final shutdown event as the last async operation of the client
+            if not self.loop.is_closed():
+                if hasattr(self, "event_manager") and self.event_manager:
+                    try:
+                        logger.info("run_main_loop finally: Dispatching CLIENT_SHUTDOWN_FINAL.")
+                        await self.event_manager.dispatch_client_shutdown_final(raw_line="CLIENT_SHUTDOWN_FINAL from IRCClient_Logic")
+                    except Exception as e_dispatch_final: # pragma: no cover
+                        logger.error(f"run_main_loop finally: Error dispatching CLIENT_SHUTDOWN_FINAL: {e_dispatch_final}", exc_info=True)
+            else:
+                logger.warning("run_main_loop finally: Loop closed, skipping CLIENT_SHUTDOWN_FINAL dispatch.")
+
+            logger.info("run_main_loop: Full client shutdown sequence in finally block complete.")
+            self.shutdown_complete_event.set() # Signal that all cleanup is done
+
+    # Removed shutdown_client method as its logic is now in run_main_loop's finally block.
+
+    def request_shutdown(self, final_quit_message: Optional[str] = "Client shutting down"):
+        """Synchronous method to signal the client to start its shutdown process."""
+        logger.info(f"request_shutdown called with message: '{final_quit_message}'")
+        if final_quit_message:
+            self._final_quit_message = final_quit_message
+        self.should_quit.set()
 
     @property
     def nick(self) -> Optional[str]:
@@ -356,12 +429,24 @@ class IRCClient_Logic:
                 await self.add_status_message(f"Initial Configuration Error: {error_summary}", "error")
                 current_conn_info = self.state_manager.get_connection_info()
                 if current_conn_info:
-                    current_conn_info.auto_connect = False
-                    self.state_manager.set_connection_info(current_conn_info)
+                    current_conn_info.auto_connect = False # type: ignore
+                    await self.state_manager.set_connection_info(current_conn_info) # type: ignore
                 elif conn_info:  # Should be the one that just failed validation
                     conn_info.auto_connect = False  # Prevent auto-connect on invalid config
                     # Attempt to set it again, but it might still fail if other issues persist beyond auto_connect
-                    self.state_manager.set_connection_info(conn_info)
+                    await self.state_manager.set_connection_info(conn_info)
+            else: # conn_info was successfully set
+                if conn_info.initial_channels:
+                    self.pending_initial_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels}
+                    if not self.pending_initial_joins: # If initial_channels was empty or all normalized to empty strings
+                        self.all_initial_joins_processed.set() # No initial channels to wait for
+                    else:
+                        self.all_initial_joins_processed.clear() # Ensure it's clear if there are channels to process
+                    logger.debug(f"Initialized pending_initial_joins: {self.pending_initial_joins}")
+                else: # No initial channels
+                    self.all_initial_joins_processed.set()
+                    logger.debug("No initial channels configured, all_initial_joins_processed set immediately.")
+
 
         self.context_manager.create_context("Status", context_type="status")
         if TYPE_CHECKING:
@@ -377,28 +462,100 @@ class IRCClient_Logic:
 
         self.context_manager.set_active_context("Status")
 
-    async def _handle_client_ready_for_ui_switch(self, event_data: Dict[str, Any]):
-        """Handle the CLIENT_READY event and trigger a UI update."""
-        logger.debug("CLIENT_READY event received. Checking for auto-joined channel switch.")
+    async def _join_initial_channels(self):
+        """Send JOIN commands for initial channels specified in the config."""
         conn_info = self.state_manager.get_connection_info()
         if conn_info and conn_info.initial_channels:
-            for ch_name in conn_info.initial_channels:
-                normalized_ch_name = self.context_manager._normalize_context_name(ch_name)
-                channel_context = self.context_manager.get_context(normalized_ch_name)
-                if channel_context and channel_context.join_status == ChannelJoinStatus.FULLY_JOINED:
-                    current_active_ctx_name = self.context_manager.active_context_name
-                    if not current_active_ctx_name or current_active_ctx_name == "Status":
-                        logger.info(f"CLIENT_READY: Auto-joined channel {normalized_ch_name} is fully joined. Setting active context.")
-                        self.context_manager.set_active_context(normalized_ch_name)
-                        self.ui_needs_update.set()
-                        break
-                    else:
-                        logger.debug(f"CLIENT_READY: Auto-joined channel {normalized_ch_name} is fully joined, but active context is already {current_active_ctx_name}. No switch needed.")
-                else:
-                    logger.debug(f"CLIENT_READY: Channel {normalized_ch_name} not fully joined yet or context not found.")
+            logger.info(f"IRCClient_Logic._join_initial_channels: Joining initial channels: {conn_info.initial_channels}")
+            for channel_name in conn_info.initial_channels:
+                logger.debug(f"IRCClient_Logic._join_initial_channels: Attempting to join {channel_name}")
+                # Context creation and join status update is handled by /join command or RegistrationHandler
+                await self.network_handler.send_raw(f"JOIN {channel_name}")
+                logger.debug(f"IRCClient_Logic._join_initial_channels: Sent JOIN command for {channel_name}")
         else:
-            logger.debug("CLIENT_READY: No initial channels configured for auto-switch.")
+            logger.info("IRCClient_Logic._join_initial_channels: No initial channels to join.")
+
+    async def _handle_client_ready_for_ui_switch(self, event_data: Dict[str, Any]):
+        """
+        Handle the CLIENT_READY event.
+        This event signifies that registration is complete and auto-join commands have been sent.
+        """
+        nick = event_data.get("nick", "N/A")
+        initial_channels_attempted = event_data.get("channels", [])
+        logger.info(f"CLIENT_READY event received for nick '{nick}'. Auto-join initiated for: {initial_channels_attempted}")
+        await self.add_status_message(f"Client ready. Nick: {nick}. Attempting to join: {', '.join(initial_channels_attempted) if initial_channels_attempted else 'None'}.")
+
+        # Default to Status window initially.
+        # _handle_auto_channel_fully_joined will switch to the first successfully joined initial channel.
+        if self.context_manager.active_context_name != "Status" and not any(
+            self.context_manager.active_context_name == self.context_manager._normalize_context_name(ch) for ch in initial_channels_attempted if ch # Ensure ch is not None
+        ):
+             # If not already on status or an initial channel, switch to status.
+            current_active = self.context_manager.active_context_name
+            is_initial_channel_active = False
+            if current_active and initial_channels_attempted:
+                normalized_current_active = self.context_manager._normalize_context_name(current_active)
+                for ch_name_config in initial_channels_attempted:
+                    if ch_name_config and self.context_manager._normalize_context_name(ch_name_config) == normalized_current_active:
+                        is_initial_channel_active = True
+                        break
+
+            if not is_initial_channel_active:
+                 logger.debug(f"CLIENT_READY: Active context is '{current_active}', not an initial channel. Setting to 'Status'.")
+                 self.context_manager.set_active_context("Status")
+
         self.ui_needs_update.set()
+
+    async def _handle_auto_channel_fully_joined(self, event_data: Dict[str, Any]):
+        """
+        Handles the CHANNEL_FULLY_JOINED event.
+        Switches UI to the first successfully joined *configured* initial channel
+        if the UI is still on the "Status" window and a switch hasn't occurred yet.
+        """
+        joined_channel_name = event_data.get("channel_name")
+        logger.debug(f"_handle_auto_channel_fully_joined: Called for channel '{joined_channel_name}'.")
+
+        if not joined_channel_name:
+            return
+
+        conn_info = self.state_manager.get_connection_info()
+        if not conn_info or not conn_info.initial_channels:
+            logger.debug("_handle_auto_channel_fully_joined: No conn_info or no initial_channels configured. Returning.")
+            return
+
+        joined_channel_normalized = self.context_manager._normalize_context_name(joined_channel_name)
+        # Ensure initial_channels from config are also normalized for comparison
+        normalized_initial_channels = [self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels if ch]
+
+
+        current_active_context_name_or_status = self.context_manager.active_context_name or "Status"
+        current_active_normalized = self.context_manager._normalize_context_name(current_active_context_name_or_status)
+
+        logger.debug(
+            f"_handle_auto_channel_fully_joined: Joined='{joined_channel_normalized}', ConfiguredInitialChannels='{normalized_initial_channels}', "
+            f"IsStatusActive={current_active_normalized.lower() == 'status'}, SwitchedAlready={self._switched_to_initial_channel}, CurrentActive='{current_active_normalized}'"
+        )
+
+        # Switch to the first successfully joined *configured* initial channel if still on Status window
+        # and we haven't already switched for another initial channel.
+        if (
+            joined_channel_normalized in normalized_initial_channels
+            and current_active_normalized.lower() == "status"
+            and not self._switched_to_initial_channel
+        ):
+            logger.info(f"_handle_auto_channel_fully_joined: Auto-switching to first successfully joined initial channel: {joined_channel_name}")
+            self.context_manager.set_active_context(joined_channel_name) # Use original case for set_active_context
+            if hasattr(self, 'ui_manager') and self.ui_manager: # Ensure ui_manager exists
+                self.ui_manager.request_full_redraw(f"auto_switch_to_{joined_channel_normalized}")
+            self._switched_to_initial_channel = True # Mark that we've done the first switch
+        elif joined_channel_normalized in normalized_initial_channels and self._switched_to_initial_channel:
+            logger.debug(f"CHANNEL_FULLY_JOINED (auto-join): Initial channel '{joined_channel_normalized}' joined, but already switched to an earlier initial channel. No further auto-switch.")
+        elif joined_channel_normalized in normalized_initial_channels and current_active_normalized.lower() != "status":
+            logger.debug(f"CHANNEL_FULLY_JOINED (auto-join): Initial channel '{joined_channel_normalized}' joined, but UI is already on '{current_active_normalized}' (not Status). No auto-switch.")
+        else: # Channel joined is not an initial channel, or some other condition not met
+            logger.debug(
+                f"CHANNEL_FULLY_JOINED: '{joined_channel_normalized}' is not one of the configured initial channels or other conditions not met. No auto-switch action based on this event."
+            )
 
     async def _update_ui(self):
         """Update the UI if needed."""
@@ -457,8 +614,18 @@ class IRCClient_Logic:
 
     async def add_message(self, text: str, color_attr: int, context_name: str, prefix_time: bool = False, **kwargs):
         """Add a message to a specific context, ignoring extra keyword arguments"""
-        if self.ui:
-            await self.ui.add_message_to_context(text, color_attr, prefix_time, context_name)
+        final_text = text
+        if prefix_time:
+            timestamp = time.strftime("%H:%M:%S")
+            final_text = f"[{timestamp}] {text}"
+
+        logger.debug(f"IRCClient_Logic.add_message: Adding to context='{context_name}', text='{final_text[:100]}...', color_attr={color_attr}, kwargs={kwargs}")
+
+        self.context_manager.add_message_to_context(
+            context_name=context_name, text_line=final_text, color_attr=color_attr, **kwargs
+        )
+        if self.ui: # Only set UI update flag if UI is active
+            self.ui_needs_update.set()
         else:
             logger.info(f"[Message to {context_name}] {text}")
 
@@ -501,7 +668,7 @@ class IRCClient_Logic:
 
         except Exception as e:
             logger.error(f"Error configuring from server config {config_name}: {str(e)}", exc_info=True)
-            self.state_manager.set_connection_state(ConnectionState.CONFIG_ERROR, f"Internal error processing config {config_name}")
+            await self.state_manager.set_connection_state(ConnectionState.CONFIG_ERROR, f"Internal error processing config {config_name}")
             return False
 
     async def handle_raw_server_message(self, event_data: Dict[str, Any]):
@@ -529,8 +696,11 @@ class IRCClient_Logic:
         logger.debug(f"Sent CTCP PRIVMSG to {target}: {full_ctcp_command}")
 
     async def switch_active_context(self, direction: str):
+        logger.debug(f"switch_active_context called with direction: '{direction}'")
         context_names = self.context_manager.get_all_context_names()
+        logger.debug(f"Available context names (raw from manager): {context_names}")
         if not context_names:
+            logger.warning("switch_active_context: No context names returned from manager.")
             return
 
         status_context = "Status"
@@ -547,27 +717,45 @@ class IRCClient_Logic:
         if dcc_context in context_names and dcc_context not in sorted_context_names:  # ensure DCC is added if present
             sorted_context_names.append(dcc_context)
 
+        logger.debug(f"Sorted context names for cycling: {sorted_context_names}")
+
         current_active_name = self.context_manager.active_context_name
+        logger.debug(f"Current active context name (from manager): {current_active_name}")
+
         if not current_active_name and sorted_context_names:
             current_active_name = sorted_context_names[0]
-        elif not current_active_name:
+            logger.debug(f"Current active context was None, set to first sorted: {current_active_name}")
+        elif not current_active_name: # Should be caught by the earlier check on context_names
+            logger.warning("switch_active_context: Current active context is None and no sorted_context_names available. Returning.")
             return
 
-        try:
-            current_idx = sorted_context_names.index(current_active_name)
-        except ValueError:
-            current_idx = 0
-            if not sorted_context_names:
-                return
-            current_active_name = sorted_context_names[0]
+        current_idx = -1
+        if current_active_name: # current_active_name could still be None if sorted_context_names was empty
+            try:
+                current_idx = sorted_context_names.index(current_active_name)
+            except ValueError:
+                logger.warning(f"switch_active_context: Current active context '{current_active_name}' not found in sorted list. Defaulting to index 0.")
+                current_idx = 0
+                if sorted_context_names: # If list is not empty, set current_active_name to first element
+                    current_active_name = sorted_context_names[0]
+                else: # Should be caught by earlier checks
+                    logger.error("switch_active_context: sorted_context_names is empty, cannot proceed.")
+                    return
 
-        if not current_active_name:  # Should not happen if logic above is correct
+        logger.debug(f"Determined current_idx: {current_idx} for current_active_name: {current_active_name}")
+
+
+        if not current_active_name:
+            logger.error("switch_active_context: current_active_name is still None after attempting to default. This should not happen. Returning.")
             return
 
         new_active_context_name = None
         num_contexts = len(sorted_context_names)
-        if num_contexts == 0:
+        if num_contexts == 0: # Should be caught by earlier checks
+            logger.warning("switch_active_context: num_contexts is 0. Returning.")
             return
+
+        logger.debug(f"Cycling with num_contexts: {num_contexts}, current_idx: {current_idx}")
 
         if direction == "next":
             new_idx = (current_idx + 1) % num_contexts
@@ -602,8 +790,28 @@ class IRCClient_Logic:
                             )
                             return
                 if new_active_context_name:
-                    self.context_manager.set_active_context(new_active_context_name)
-                    self.ui_needs_update.set()
+                    logger.debug(f"Attempting to set new active context to: {new_active_context_name}")
+                    if self.context_manager.set_active_context(new_active_context_name):
+                        logger.info(f"Successfully switched active context to: {new_active_context_name}")
+                        self.ui_needs_update.set()
+                    else:
+                        logger.error(f"Failed to set active context to {new_active_context_name} via context_manager.")
+                # This else was incorrectly placed; new_active_context_name could be None if direction was not found.
+                # else:
+                #    logger.warning(f"switch_active_context: new_active_context_name is None after processing direction '{direction}'. No switch.")
+        # This block should be outside the final 'else' to apply to 'next' and 'prev' too.
+        if new_active_context_name and new_active_context_name != current_active_name: # Ensure there's a change
+            logger.debug(f"Final attempt to set new active context to: {new_active_context_name}")
+            if self.context_manager.set_active_context(new_active_context_name):
+                logger.info(f"Successfully switched active context from '{current_active_name}' to: {new_active_context_name}")
+                self.ui_needs_update.set()
+            else:
+                logger.error(f"Final attempt: Failed to set active context to {new_active_context_name} via context_manager.")
+        elif new_active_context_name == current_active_name:
+            logger.debug(f"New active context '{new_active_context_name}' is same as current '{current_active_name}'. No switch needed.")
+        else:
+            logger.warning(f"switch_active_context: new_active_context_name is None after all processing for direction '{direction}'. No switch.")
+
 
     async def switch_active_channel(self, direction: str):
         all_context_names = self.context_manager.get_all_context_names()
@@ -659,3 +867,34 @@ class IRCClient_Logic:
     def is_cap_negotiation_pending(self) -> bool:
         """Check if CAP negotiation is still pending."""
         return False
+
+    async def handle_channel_fully_joined(self, channel_name: str):
+        """
+        Handles logic for when a channel is fully joined (after RPL_ENDOFNAMES).
+        """
+        logger.info(f"IRCClient_Logic.handle_channel_fully_joined: Channel {channel_name} is now fully joined.")
+        normalized_channel_name = self.context_manager._normalize_context_name(channel_name)
+
+        if normalized_channel_name in self.pending_initial_joins:
+            self.pending_initial_joins.remove(normalized_channel_name)
+            logger.debug(f"IRCClient_Logic.handle_channel_fully_joined: Removed '{normalized_channel_name}' from pending_initial_joins. Remaining: {self.pending_initial_joins}")
+            if not self.pending_initial_joins:
+                logger.info("IRCClient_Logic.handle_channel_fully_joined: All initial joins processed. Setting all_initial_joins_processed event.")
+                self.all_initial_joins_processed.set()
+
+        # Dispatch an event indicating the channel is fully joined
+        if hasattr(self, "event_manager") and self.event_manager:
+            logger.debug(f"IRCClient_Logic.handle_channel_fully_joined: Dispatching CHANNEL_FULLY_JOINED event for {channel_name}.")
+            await self.event_manager.dispatch_event(
+                "CHANNEL_FULLY_JOINED",
+                {
+                    "channel_name": channel_name,
+                    "client_nick": self.nick
+                }
+            )
+            logger.debug(f"IRCClient_Logic.handle_channel_fully_joined: Dispatched CHANNEL_FULLY_JOINED event for {channel_name}.")
+        else:
+            logger.warning(f"IRCClient_Logic.handle_channel_fully_joined: Cannot dispatch CHANNEL_FULLY_JOINED for {channel_name}: EventManager not found.")
+
+        self.ui_needs_update.set()
+        logger.debug(f"IRCClient_Logic.handle_channel_fully_joined: UI update set for {channel_name}.")
