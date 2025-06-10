@@ -1,20 +1,72 @@
 # event_manager.py
 import logging
 import time
-from typing import TYPE_CHECKING, Dict, Any, Optional, List, Set # Added List, Set
+from typing import TYPE_CHECKING, Dict, Any, Optional, List, Set, Callable # Added Callable
+import asyncio # Added asyncio
 from pyrc_core.dcc.dcc_transfer import DCCTransfer, DCCTransferType
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    from pyrc_core.scripting.script_manager import ScriptManager
+    # ScriptManager import no longer needed here for __init__
 
 logger = logging.getLogger("pyrc.event_manager")
 
 class EventManager:
-    def __init__(self, client_logic_ref: "IRCClient_Logic", script_manager_ref: "ScriptManager"):
+    def __init__(self, client_logic_ref: "IRCClient_Logic"): # Removed script_manager_ref
         self.client_logic = client_logic_ref
-        self.script_manager = script_manager_ref
+        # self.script_manager = script_manager_ref # Removed
+        self.subscriptions: Dict[str, List[Dict[str, Any]]] = {}
         logger.info("EventManager initialized.")
+
+    def subscribe(
+        self, event_name: str, handler_function: Callable, script_name: str
+    ) -> None:
+        """Subscribe a script's handler function to an event."""
+        if not callable(handler_function):
+            logger.error(
+                f"Script '{script_name}' attempted to subscribe non-callable handler for event '{event_name}'."
+            )
+            return
+        if event_name not in self.subscriptions:
+            self.subscriptions[event_name] = []
+
+        # Check for duplicates
+        for sub in self.subscriptions[event_name]:
+            if sub["handler"] == handler_function and sub["script_name"] == script_name:
+                logger.warning(
+                    f"Script '{script_name}' handler already subscribed to event '{event_name}'. Ignoring duplicate."
+                )
+                return
+
+        self.subscriptions[event_name].append(
+            {"handler": handler_function, "script_name": script_name, "enabled": True}
+        )
+        logger.info(
+            f"Script '{script_name}' subscribed to event '{event_name}' with handler '{handler_function.__name__}'."
+        )
+
+    def unsubscribe(
+        self, event_name: str, handler_function: Callable, script_name: str
+    ):
+        """Unsubscribe a script's handler function from an event."""
+        if event_name in self.subscriptions:
+            self.subscriptions[event_name] = [
+                sub
+                for sub in self.subscriptions[event_name]
+                if not (
+                    sub["handler"] == handler_function
+                    and sub["script_name"] == script_name
+                )
+            ]
+            # Clean up empty event lists
+            if not self.subscriptions[event_name]:
+                del self.subscriptions[event_name]
+            logger.info(
+                f"Script '{script_name}' unsubscribed handler '{handler_function.__name__}' from event '{event_name}'."
+            )
+        else:
+            logger.debug(f"Attempted to unsubscribe from event '{event_name}' for script '{script_name}', but no subscriptions found for this event.")
+
 
     def _prepare_base_event_data(self, raw_line: str = "") -> Dict[str, Any]:
         """Prepares a base dictionary with common event data."""
@@ -44,8 +96,56 @@ class EventManager:
         elif raw_line: # Use raw_line passed to dispatch_event if specific_event_data didn't have one
             final_event_data["raw_line"] = raw_line
 
-        await self.script_manager.dispatch_event(event_name, final_event_data)
-        logger.debug(f"Dispatched event '{event_name}' via EventManager with data: {final_event_data}")
+        # Ensure client_nick is present, especially if state_manager might not be fully ready
+        if "client_nick" not in final_event_data:
+             final_event_data["client_nick"] = (lambda:
+                (conn_info := self.client_logic.state_manager.get_connection_info() if
+                    (self.client_logic and
+                     self.client_logic.state_manager)
+                    else None) and
+                hasattr(conn_info, 'nick') and
+                conn_info.nick or "UnknownNick")()
+
+
+        # Directly iterate over self.subscriptions
+        logger.debug(f"Dispatching event '{event_name}' with data: {final_event_data}")
+        if event_name in self.subscriptions:
+            for subscription in list(self.subscriptions[event_name]): # Iterate over a copy
+                if not subscription.get("enabled", True):
+                    continue
+                handler = subscription["handler"]
+                script_name = subscription["script_name"]
+                try:
+                    logger.debug(
+                        f"Calling handler '{getattr(handler, '__name__', 'unknown')}' from script '{script_name}' for event '{event_name}'."
+                    )
+                    if asyncio.iscoroutinefunction(handler):
+                        asyncio.create_task(handler(final_event_data))
+                        logger.debug(f"Scheduled async event handler '{getattr(handler, '__name__', 'unknown')}' for event '{event_name}' from script '{script_name}'.")
+                    else:
+                        # For synchronous handlers, consider running in an executor if they might block
+                        # For now, direct call as per original ScriptManager logic for sync handlers
+                        handler(final_event_data)
+                except Exception as e:
+                    logger.error(
+                        f"Error in event handler '{getattr(handler, '__name__', 'unknown')}' from script '{script_name}' for event '{event_name}': {e}",
+                        exc_info=True,
+                    )
+                    error_message = f"Error in script '{script_name}' event handler for '{event_name}': {e}"
+                    # Use await for add_message as it's now async
+                    await self.client_logic.add_message(
+                        error_message,
+                        self.client_logic.ui.colors.get("error", 0),
+                        context_name="Status", # Or active context if available and appropriate
+                    )
+                    # Disable handler to prevent repeated errors
+                    subscription["enabled"] = False
+                    logger.warning(
+                        f"Disabled event handler '{getattr(handler, '__name__', 'unknown')}' from script '{script_name}' due to error."
+                    )
+        else:
+            logger.debug(f"No subscriptions found for event '{event_name}'.")
+
 
     # --- Client Lifecycle Event Dispatchers ---
     async def dispatch_client_connected(self, server: str, port: int, nick: str, ssl: bool, raw_line: str = ""):

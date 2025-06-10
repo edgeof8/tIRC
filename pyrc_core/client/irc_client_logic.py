@@ -87,7 +87,7 @@ class IRCClient_Logic:
         config_disabled_scripts = self.config.disabled_scripts if self.config.disabled_scripts else set()
         final_disabled_scripts = cli_disabled_scripts.union(config_disabled_scripts)
         self.script_manager: ScriptManager = ScriptManager(self, self.config.BASE_DIR, disabled_scripts=final_disabled_scripts)
-        self.event_manager = EventManager(self, self.script_manager)
+        self.event_manager = EventManager(self) # Pass only self (client_logic_ref)
         self.dcc_manager = DCCManager(self, self.event_manager, self.config)
         self.ui: UIManager | DummyUI = UIManager(stdscr, self) if not self.is_headless else DummyUI()
         self.input_handler: Optional[InputHandler] = InputHandler(self) if not self.is_headless else None
@@ -103,14 +103,20 @@ class IRCClient_Logic:
         self.shutdown_coordinator = ClientShutdownCoordinator(self)
         self.view_manager = ClientViewManager(self)
 
-        self.script_manager.subscribe_script_to_event(
-            "CLIENT_READY", self.view_manager._handle_client_ready_for_ui_switch, "IRCClient_Logic_Internal_UI_Switch"
+        # Update internal subscriptions to use EventManager
+        self.event_manager.subscribe(
+            "CLIENT_READY", self.view_manager._handle_client_ready_for_ui_switch, "IRCClient_Logic_Internal"
         )
-        self.script_manager.subscribe_script_to_event(
-            "RAW_SERVER_MESSAGE", self.handle_raw_server_message, "IRCClient_Logic_Internal_Server_Message"
+        self.event_manager.subscribe(
+            "RAW_SERVER_MESSAGE", self.handle_raw_server_message, "IRCClient_Logic_Internal"
         )
-        self.script_manager.subscribe_script_to_event(
-            "CHANNEL_FULLY_JOINED", self.view_manager._handle_auto_channel_fully_joined, "IRCClient_Logic_Internal_Auto_Join_UI_Switch"
+        # Note: The original code for CHANNEL_FULLY_JOINED subscription was to
+        # self.view_manager._handle_auto_channel_fully_joined.
+        # This handler might need to be re-evaluated if it's still necessary after
+        # the CLIENT_READY event also triggers UI switches.
+        # For now, keeping the subscription as it was, just changing the call.
+        self.event_manager.subscribe(
+            "CHANNEL_FULLY_JOINED", self.view_manager._handle_auto_channel_fully_joined, "IRCClient_Logic_Internal"
         )
 
     def process_trigger_event(self, event_type: str, event_data: Dict[str, Any]):

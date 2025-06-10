@@ -96,10 +96,16 @@ async def handle_help_command(client: "IRCClient_Logic", args_str: str):
         else:
             await client.add_message("\nNo core command categories found (this is unexpected).", system_color, context_name=active_context_name)
 
-        script_commands_by_script = client.script_manager.get_all_script_commands_with_help()
-        if script_commands_by_script:
+        # Get all commands help, then filter for scripts
+        all_commands_help = client.command_handler.get_all_commands_help()
+        script_names_with_commands = set()
+        for cmd_data_val in all_commands_help.values():
+            if cmd_data_val.get("source") == "script" and not cmd_data_val.get("is_alias"):
+                script_names_with_commands.add(cmd_data_val.get("script_name", "UnknownScript"))
+
+        if script_names_with_commands:
             await client.add_message("\nScript Command Categories:", system_color, context_name=active_context_name)
-            for script_name_raw in sorted(script_commands_by_script.keys()):
+            for script_name_raw in sorted(list(script_names_with_commands)):
                 display_name = script_name_raw.replace("_", " ").title()
                 await client.add_message(f"  /help script {script_name_raw}  ({display_name})", system_color, context_name=active_context_name)
 
@@ -110,38 +116,42 @@ async def handle_help_command(client: "IRCClient_Logic", args_str: str):
     if target_arg1 == "script":
         if not target_arg2: # Just "/help script"
             await client.add_message("Usage: /help script <script_name>", error_color, context_name=active_context_name)
-            # Optionally list available script names here
-            script_commands = client.script_manager.get_all_script_commands_with_help()
-            if script_commands:
+            all_commands_help = client.command_handler.get_all_commands_help()
+            available_scripts = set()
+            for cmd_data_val in all_commands_help.values():
+                if cmd_data_val.get("source") == "script" and not cmd_data_val.get("is_alias"):
+                    available_scripts.add(cmd_data_val.get("script_name", "UnknownScript"))
+
+            if available_scripts:
                 await client.add_message("Available scripts with commands:", system_color, context_name=active_context_name)
-                for script_name_key in sorted(script_commands.keys()):
+                for script_name_key in sorted(list(available_scripts)):
                     await client.add_message(f"  {script_name_key}", system_color, context_name=active_context_name)
             else:
                 await client.add_message("No scripts with registered commands found.", system_color, context_name=active_context_name)
             return
 
         # "/help script <script_name_arg>"
-        script_name_arg = target_arg2
-        script_commands_all = client.script_manager.get_all_script_commands_with_help()
-        found_script_name_key = None
-        for sn_key in script_commands_all.keys():
-            if sn_key.lower() == script_name_arg.lower():
-                found_script_name_key = sn_key
-                break
+        script_name_arg_lower = target_arg2.lower()
+        all_commands_help = client.command_handler.get_all_commands_help()
+        commands_for_this_script: Dict[str, Dict[str, Any]] = {}
 
-        if found_script_name_key and found_script_name_key in script_commands_all:
-            script_display_name = found_script_name_key.replace("_", " ").title()
-            await client.add_message(f"\nCommands from script '{script_display_name}':", system_color, context_name=active_context_name)
-            commands_in_script = script_commands_all[found_script_name_key]
-            if not commands_in_script:
-                await client.add_message(f"  No commands registered by script '{script_display_name}'.", system_color, context_name=active_context_name)
-            else:
-                for cmd_name, cmd_data_dict in sorted(commands_in_script.items()):
-                    summary = get_summary_from_help_data(cmd_data_dict)
-                    await client.add_message(f"  /{cmd_name}: {summary}", system_color, context_name=active_context_name)
+        found_script_name_display = None
+        for cmd_name_key, cmd_data_val in all_commands_help.items():
+            if cmd_data_val.get("source") == "script" and \
+               cmd_data_val.get("script_name", "").lower() == script_name_arg_lower and \
+               not cmd_data_val.get("is_alias"):
+                commands_for_this_script[cmd_name_key] = cmd_data_val
+                if not found_script_name_display: # Get the display name once
+                    found_script_name_display = cmd_data_val.get("script_name", script_name_arg_lower).replace("_", " ").title()
+
+        if commands_for_this_script and found_script_name_display:
+            await client.add_message(f"\nCommands from script '{found_script_name_display}':", system_color, context_name=active_context_name)
+            for cmd_name, cmd_data_dict in sorted(commands_for_this_script.items()):
+                summary = get_summary_from_help_data(cmd_data_dict) # cmd_data_dict is already the help data
+                await client.add_message(f"  /{cmd_name}: {summary}", system_color, context_name=active_context_name)
             await client.add_message("\nUse /help <command> for detailed help on a specific command.", system_color, context_name=active_context_name)
         else:
-            await client.add_message(f"Script '{script_name_arg}' not found or has no registered commands.", error_color, context_name=active_context_name)
+            await client.add_message(f"Script '{target_arg2}' not found or has no registered commands.", error_color, context_name=active_context_name)
         return
 
     # Case 3: Help for a core category
@@ -182,12 +192,24 @@ async def handle_help_command(client: "IRCClient_Logic", args_str: str):
     if cmd_to_get_help_for.startswith("/"):
         cmd_to_get_help_for = cmd_to_get_help_for[1:]
 
-    help_data = client.script_manager.get_help_text_for_command(cmd_to_get_help_for)
+    # Use CommandHandler's method
+    help_data = client.command_handler.get_help_text_for_command(cmd_to_get_help_for)
     if help_data:
         source_script_name = help_data.get('script_name', 'Unknown')
-        is_core_command_via_sm = source_script_name == "core" or source_script_name == "core_ini"
-        source_info = "(core command)" if is_core_command_via_sm else f"(from script: {source_script_name})"
-        await client.add_message(f"\nHelp for /{cmd_to_get_help_for} {source_info}:", system_color, context_name=active_context_name)
+        source_type = help_data.get('source', 'unknown') # core, script, ini
+
+        source_info_str = ""
+        if source_type == "core":
+            source_info_str = "(core command)"
+        elif source_type == "script":
+            source_info_str = f"(from script: {source_script_name})"
+        elif source_type == "ini":
+             source_info_str = f"(core_ini: {source_script_name})" # script_name might contain section for ini
+        else:
+            source_info_str = f"(source: {source_script_name})"
+
+
+        await client.add_message(f"\nHelp for /{cmd_to_get_help_for} {source_info_str}:", system_color, context_name=active_context_name)
         formatted_help = format_help_text_for_display(help_data)
         await client.add_message(formatted_help, system_color, context_name=active_context_name)
     else:

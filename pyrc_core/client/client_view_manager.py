@@ -90,6 +90,7 @@ class ClientViewManager:
                     if 0 <= num_idx < num_contexts:
                         new_active_context_name = sorted_context_names[num_idx]
                     else:
+                        # Calling add_status_message on IRCClient_Logic instance
                         await self.client.add_status_message(f"Window number '{direction}' out of range.", "error")
                         return
                 except ValueError: # Not a number, try partial match

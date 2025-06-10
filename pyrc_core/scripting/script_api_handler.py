@@ -241,14 +241,16 @@ class ScriptAPIHandler:
             return False
 
     def subscribe_to_event(self, event_name: str, handler_function: Callable):
-        self.script_manager.subscribe_script_to_event(
+        # Call EventManager's subscribe method
+        self.client_logic.event_manager.subscribe(
             event_name, handler_function, self.script_name
         )
 
     def unsubscribe_from_event(
         self, event_name: str, handler_function: Callable
     ):
-        self.script_manager.unsubscribe_script_from_event(
+        # Call EventManager's unsubscribe method
+        self.client_logic.event_manager.unsubscribe(
             event_name, handler_function, self.script_name
         )
 
@@ -279,11 +281,12 @@ class ScriptAPIHandler:
             # If help_info is a dict but 'aliases' key is missing or not a list,
             # effective_aliases will retain the value from the 'aliases' parameter.
 
-        self.script_manager.register_command_from_script(
-            command_name,
-            handler_function,
-            help_info,
-            effective_aliases,
+        # Call the new method on CommandHandler
+        self.client_logic.command_handler.register_script_command(
+            command_name=command_name,
+            handler=handler_function, # Parameter name is 'handler' in CommandHandler
+            help_info=help_info,
+            aliases=effective_aliases,
             script_name=self.script_name,
         )
 
@@ -299,11 +302,15 @@ class ScriptAPIHandler:
         help_text = usage_str
         if description_str:
             help_text += f"\n{description_str}"
-        self.script_manager.register_help_text_from_script(
-            command_name=command_name,
-            help_text=help_text,
-            aliases=aliases,
-            script_name=self.script_name,
+        # self.script_manager.register_help_text_from_script(
+        #     command_name=command_name,
+        #     help_text=help_text,
+        #     aliases=aliases,
+        #     script_name=self.script_name,
+        # )
+        self.log_warning(
+            "ScriptAPIHandler.register_help_text is deprecated. Help text should be provided "
+            "as part of the help_info dictionary in register_command."
         )
 
     def request_data_file_path(self, data_filename: str) -> str:
@@ -562,18 +569,28 @@ class ScriptAPIHandler:
             return None
 
     def get_script_events(self) -> List[str]:
-        return [
-            event_name
-            for event_name, handlers in self.script_manager.event_subscriptions.items()
-            if any(handler["script_name"] == self.script_name for handler in handlers)
-        ]
+        subscribed_events = []
+        if hasattr(self.client_logic, 'event_manager'):
+            for event_name, subscriptions in self.client_logic.event_manager.subscriptions.items():
+                if any(sub.get("script_name") == self.script_name for sub in subscriptions):
+                    subscribed_events.append(event_name)
+        return subscribed_events
 
     def get_script_commands(self) -> List[Dict[str, Any]]:
-        return [
-            cmd_data
-            for cmd_name, cmd_data in self.script_manager.registered_commands.items()
-            if cmd_data.get("script_name") == self.script_name
-        ]
+        # Retrieve script commands from CommandHandler
+        commands_for_this_script = []
+        if hasattr(self.client_logic, 'command_handler'):
+            for cmd_name, cmd_data in self.client_logic.command_handler.script_commands.items():
+                if cmd_data.get("script_name") == self.script_name:
+                    # We might want to format this to match what scripts expect,
+                    # e.g., just the command name, or a dict with name and help_info
+                    commands_for_this_script.append({
+                        "name": cmd_name,
+                        "help_info": cmd_data.get("help_info", ""),
+                        "aliases": cmd_data.get("aliases", []),
+                        # "handler_name": cmd_data.get("handler").__name__ # Might be useful
+                    })
+        return commands_for_this_script
 
     def get_script_triggers(self) -> List[Dict[str, Any]]:
         if (
