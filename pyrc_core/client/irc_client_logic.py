@@ -622,6 +622,7 @@ class IRCClient_Logic:
             self.ui_needs_update.clear()
 
     # _start_connection_if_auto is now handled by run_main_loop calling connection_orchestrator.establish_connection
+    # _reset_state_for_new_connection was moved to ConnectionOrchestrator.reset_for_new_connection
 
     async def _log_startup_status(self):
         await self.add_status_message("PyRC Client starting...")
