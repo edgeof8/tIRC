@@ -344,7 +344,7 @@ class IRCClient_Logic:
 
     @pending_initial_joins.setter
     def pending_initial_joins(self, value: Set[str]):
-        logger.debug(f"IRCClient_Logic: pending_initial_joins BEING SET. Old: {self._pending_initial_joins_internal}, New: {value}", stack_info=True)
+        logger.debug(f"IRCClient_Logic: pending_initial_joins BEING SET. Old: {self._pending_initial_joins_internal}, New: {value}", stack_info=False) # Changed to False
         self._pending_initial_joins_internal = value
 
     def request_shutdown(self, final_quit_message: Optional[str] = "Client shutting down"):
@@ -534,24 +534,25 @@ class IRCClient_Logic:
         logger.info(f"CLIENT_READY event received for nick '{nick}'. Auto-join initiated for: {initial_channels_attempted}")
         await self.add_status_message(f"Client ready. Nick: {nick}. Attempting to join: {', '.join(initial_channels_attempted) if initial_channels_attempted else 'None'}.")
 
-        # Default to Status window initially.
-        # _handle_auto_channel_fully_joined will switch to the first successfully joined initial channel.
-        if self.context_manager.active_context_name != "Status" and not any(
-            self.context_manager.active_context_name == self.context_manager._normalize_context_name(ch) for ch in initial_channels_attempted if ch # Ensure ch is not None
-        ):
-             # If not already on status or an initial channel, switch to status.
-            current_active = self.context_manager.active_context_name
-            is_initial_channel_active = False
-            if current_active and initial_channels_attempted:
-                normalized_current_active = self.context_manager._normalize_context_name(current_active)
-                for ch_name_config in initial_channels_attempted:
-                    if ch_name_config and self.context_manager._normalize_context_name(ch_name_config) == normalized_current_active:
-                        is_initial_channel_active = True
-                        break
+        # If _switched_to_initial_channel is False, it means _handle_auto_channel_fully_joined
+        # has not yet switched to a successfully joined initial channel.
+        # In this scenario, if we are not on "Status" and not on one of the channels
+        # that were *attempted* for auto-join, then default to "Status".
+        # This prevents staying on a stale context if all initial joins fail or are pending.
+        if not self._switched_to_initial_channel:
+            current_active_normalized = self.context_manager._normalize_context_name(self.context_manager.active_context_name or "Status")
+            normalized_initial_channels_attempted = {self.context_manager._normalize_context_name(ch) for ch in initial_channels_attempted if ch}
 
-            if not is_initial_channel_active:
-                 logger.debug(f"CLIENT_READY: Active context is '{current_active}', not an initial channel. Setting to 'Status'.")
-                 self.context_manager.set_active_context("Status")
+            if current_active_normalized.lower() != "status" and current_active_normalized not in normalized_initial_channels_attempted:
+                logger.debug(
+                    f"CLIENT_READY: Not yet switched to an initial channel. "
+                    f"Active context '{self.context_manager.active_context_name}' is not Status or an attempted initial channel. "
+                    f"Setting to 'Status'."
+                )
+                self.context_manager.set_active_context("Status")
+        else:
+            logger.debug(f"CLIENT_READY: Already switched to an initial channel ('{self.context_manager.active_context_name}'). No UI switch needed here.")
+
 
         self.ui_needs_update.set()
 

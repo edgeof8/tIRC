@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Set
 
 from pyrc_core.irc.cap_negotiator import CapNegotiator
 from pyrc_core.irc.sasl_authenticator import SaslAuthenticator
@@ -172,6 +172,45 @@ class ConnectionOrchestrator:
             channels_to_join=server_config_to_use.initial_channels
         )
         logger.debug(f"ConnectionOrchestrator: Returned from update_connection_params for {server_config_to_use.server}")
+
+        # --- ADDED/MODIFIED CODE START ---
+        # Get the set of previously pending initial joins
+        old_pending_joins_normalized = set(self.client_logic_ref.pending_initial_joins)
+
+        # Determine the new set of pending initial joins for this connection
+        new_pending_joins_normalized: Set[str] = set()
+        if server_config_to_use.initial_channels:
+            new_pending_joins_normalized = {
+                self.client_logic_ref.context_manager._normalize_context_name(ch)
+                for ch in server_config_to_use.initial_channels if ch # Ensure channel name is not empty
+            }
+
+        # Update IRCClient_Logic's tracking
+        self.client_logic_ref.pending_initial_joins = new_pending_joins_normalized
+        logger.info(f"ConnectionOrchestrator: Updated client_logic.pending_initial_joins to: {new_pending_joins_normalized}")
+
+        if not self.client_logic_ref.pending_initial_joins:
+            self.client_logic_ref.all_initial_joins_processed.set()
+            logger.debug("ConnectionOrchestrator: No new pending initial joins, all_initial_joins_processed set.")
+        else:
+            self.client_logic_ref.all_initial_joins_processed.clear()
+            logger.debug(f"ConnectionOrchestrator: New pending initial joins exist ({len(new_pending_joins_normalized)}), all_initial_joins_processed cleared.")
+
+        # Update join status for channels that are no longer pending initial join
+        channels_no_longer_pending = old_pending_joins_normalized - new_pending_joins_normalized
+        if channels_no_longer_pending:
+            logger.debug(f"ConnectionOrchestrator: Channels no longer pending initial join: {channels_no_longer_pending}")
+            for channel_name_norm in channels_no_longer_pending:
+                original_channel_name = self.client_logic_ref.context_manager.find_original_case_for_normalized_name(channel_name_norm)
+                if original_channel_name:
+                    context = self.client_logic_ref.context_manager.get_context(original_channel_name)
+                    if context and context.type == "channel" and context.join_status == ChannelJoinStatus.PENDING_INITIAL_JOIN:
+                        logger.info(f"ConnectionOrchestrator: Channel '{original_channel_name}' ({channel_name_norm}) is no longer a pending initial join. Setting status to NOT_JOINED.")
+                        context.join_status = ChannelJoinStatus.NOT_JOINED
+                        # Optionally, add a status message to the channel itself or Status window
+                        # await self.client_logic_ref.add_message(f"Auto-join for {original_channel_name} cancelled (not in current server's initial channels).", self.client_logic_ref.ui.colors.get("info", 0), context_name=original_channel_name)
+                        self.client_logic_ref.ui_needs_update.set()
+        # --- ADDED/MODIFIED CODE END ---
 
         # Start network handler if it's not already running
         if not self.network_handler._network_task or self.network_handler._network_task.done():

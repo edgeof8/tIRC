@@ -372,6 +372,31 @@ class ContextManager:
         context = self.get_context(context_name)
         return context.unread_count if context else 0
 
+    def find_original_case_for_normalized_name(self, normalized_name_to_find: str) -> Optional[str]:
+        """
+        Finds the original (case-sensitive) name of a context given its normalized name.
+        """
+        if not normalized_name_to_find:
+            return None
+        for context_obj in self.contexts.values():
+            # The context_obj.name should already be normalized as it's the key in self.contexts
+            # but we can re-normalize just to be absolutely sure or if direct access to context_obj.name
+            # might not always yield a normalized form (though it should).
+            if self._normalize_context_name(context_obj.name) == normalized_name_to_find:
+                # We need to return the name as it was originally passed to create_context,
+                # which is stored as the key in self.contexts (which is already normalized).
+                # The Context object itself stores its name, which is also the normalized key.
+                # This means we can directly return context_obj.name if it's a match.
+                # However, the goal is to find the *original* casing if it differed.
+                # Since we store contexts by their normalized name, we can't directly get the *original*
+                # un-normalized name if it differed from the normalized one, unless we stored it separately.
+                # For now, this will return the normalized name, which is what's used as the key.
+                # If the requirement is to get a *potentially different* original casing,
+                # the Context object would need to store its original_name.
+                # For the current use case in ConnectionOrchestrator, returning the normalized name (key) is sufficient.
+                return context_obj.name # This is the normalized name
+        return None
+
     def reset_unread_count(self, context_name: str) -> bool:
         context = self.get_context(context_name)
         if context:
