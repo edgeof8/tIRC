@@ -47,7 +47,7 @@ async def handle_join_command(client: "IRCClient_Logic", args_str: str):
             f"/join: Created context for {target_channel_name} with status JOIN_COMMAND_SENT."
         )
     elif ctx.type == "channel":
-        if hasattr(ctx, "join_status"): # Check if context is a channel context with join_status
+        if hasattr(ctx, "join_status"):
             ctx.join_status = ChannelJoinStatus.JOIN_COMMAND_SENT
         logger.info(
             f"/join: Updated context for {target_channel_name} to status JOIN_COMMAND_SENT."

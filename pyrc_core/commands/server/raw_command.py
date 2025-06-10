@@ -32,7 +32,7 @@ async def handle_raw_command(client: "IRCClient_Logic", args_str: str):
     # This is good for user feedback, as raw commands might not always have visible effects.
     await client.add_message(
         f"Sending RAW: {args_str}",
-        client.ui.colors["system"], # Or a more specific color key if desired, e.g., "raw_command_sent"
+        client.ui.colors["system"],
         context_name="Status"
     )
     logger.info(f"User initiated /raw command: {args_str}")

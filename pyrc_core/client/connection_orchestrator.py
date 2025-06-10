@@ -71,7 +71,7 @@ class ConnectionOrchestrator:
         logger.debug("ConnectionOrchestrator: Connection handlers initialized and set on client_logic_ref.")
 
 
-    def reset_for_new_connection(self) -> None:
+    async def reset_for_new_connection(self) -> None:
         """
         Resets the client's state in preparation for a new server connection.
         Moved from IRCClient_Logic._reset_state_for_new_connection.
@@ -136,7 +136,7 @@ class ConnectionOrchestrator:
             # Do not clear last_error, connection_attempts, etc. here as they might be relevant
             # for reconnection logic or overall stats. StateManager handles their persistence.
             # Instead, ensure they are reset appropriately at the start of a *new* connection attempt if needed.
-            self.state_manager.set_connection_info(conn_info) # Save changes to ConnectionInfo
+            await self.state_manager.set_connection_info(conn_info) # Save changes to ConnectionInfo
 
         client.last_join_command_target = None # This is specific to client logic flow
 

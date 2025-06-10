@@ -34,7 +34,7 @@ async def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage"
         await client.add_message(
             f"[CAP Error] Negotiator not ready for {cap_subcommand}",
             client.ui.colors["error"],
-            context_name="Status", # Corrected from "Status" to context_name="Status"
+            context_name="Status",
         )
         return
 
@@ -84,7 +84,7 @@ async def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IR
         await client.add_message(
             f"[SASL Error] Authenticator not ready for AUTHENTICATE {payload}",
             client.ui.colors["error"],
-            context_name="Status", # Corrected
+            context_name="Status",
         )
         return
 

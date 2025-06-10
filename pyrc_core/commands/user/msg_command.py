@@ -44,8 +44,6 @@ async def handle_msg_command(client: "IRCClient_Logic", args_str: str):
         query_ctx = client.context_manager.get_context(target)
         if not query_ctx:
             client.context_manager.create_context(target, context_type="query")
-            # Optionally, switch to it, though /msg usually doesn't force switch like /query
-            # client.context_manager.set_active_context(target)
 
         # Add the message to this query context
         # This is for our own view of what we sent.

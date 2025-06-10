@@ -187,12 +187,13 @@ class RegistrationHandler:
                 logger.info("POST_WELCOME_SEQ_FALLBACK: Waiting for CAP negotiation (if pending).")
 
                 if self.cap_negotiator and self.cap_negotiator.cap_negotiation_pending:
-                    logger.debug(f"POST_WELCOME_SEQ_FALLBACK: CAP pending, awaiting cap_negotiation_finished_event timeout {cap_timeout}s.")
-                    try:
-                        await asyncio.wait_for(self.cap_negotiator.cap_negotiation_finished_event.wait(), timeout=cap_timeout)
-                        logger.info("POST_WELCOME_SEQ_FALLBACK: CAP negotiation confirmed finished.")
-                    except asyncio.TimeoutError:
-                        logger.warning(f"POST_WELCOME_SEQ_FALLBACK: Timed out ({cap_timeout}s) waiting for CAP to finish. Proceeding cautiously.")
+                    logger.debug(f"POST_WELCOME_SEQ_FALLBACK: CAP pending, awaiting negotiation finish with timeout {cap_timeout}s.")
+                    cap_finished_before_timeout = await self.cap_negotiator.wait_for_negotiation_finish(timeout=cap_timeout)
+                    if cap_finished_before_timeout:
+                        logger.info("POST_WELCOME_SEQ_FALLBACK: CAP negotiation confirmed finished within timeout.")
+                    else: # Timeout occurred
+                        logger.warning(f"POST_WELCOME_SEQ_FALLBACK: Timed out ({cap_timeout}s) waiting for CAP to finish via wait_for_negotiation_finish. Proceeding cautiously.")
+                        # Ensure the event is set if CapNegotiator's own timeout didn't set it or if this path is reached.
                         if self.cap_negotiator and not self.cap_negotiator.cap_negotiation_finished_event.is_set():
                              self.cap_negotiator.cap_negotiation_finished_event.set()
 

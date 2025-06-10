@@ -26,7 +26,7 @@ class RandomMessagesScript(ScriptBase):
         )
 
         self.api.subscribe_to_event("CLIENT_SHUTDOWN", self.handle_client_shutdown)
-        self.api.subscribe_to_event("CHANNEL_PART", self.handle_channel_part)
+        # self.api.subscribe_to_event("CHANNEL_PART", self.handle_channel_part) # Removed to avoid redundant PART messages
         self.api.log_info("RandomMessagesScript loaded and event handlers registered.")
 
     async def handle_client_shutdown(self, event_data: dict):
@@ -37,17 +37,17 @@ class RandomMessagesScript(ScriptBase):
         message = random.choice(self.quit_messages)
         await self.api.send_raw(f"QUIT :{message}")
 
-    async def handle_channel_part(self, event_data: dict):
-        """Handle channel part by sending a random part message."""
-        if not self.part_messages:
-            return
-
-        channel = event_data.get("channel")
-        if not channel:
-            return
-
-        message = random.choice(self.part_messages)
-        await self.api.send_raw(f"PART {channel} :{message}")
+    # async def handle_channel_part(self, event_data: dict): # Removed to avoid redundant PART messages
+    #     """Handle channel part by sending a random part message."""
+    #     if not self.part_messages:
+    #         return
+    #
+    #     channel = event_data.get("channel")
+    #     if not channel:
+    #         return
+    #
+    #     message = random.choice(self.part_messages)
+    #     await self.api.send_raw(f"PART {channel} :{message}")
 
 
 def get_script_instance(api):

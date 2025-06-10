@@ -32,11 +32,16 @@ class InputLineRenderer:
             logger.debug(f"Input line dimensions too small to draw: {max_y}x{max_x}")
             return
 
-        SafeCursesUtils._draw_window_border_and_bkgd(window, self.colors.get("input", 0))
-
-        # Re-fetch max_y, max_x after border draw (as it might change if window was just created)
         try:
-            max_y, max_x = window.getmaxyx()
+            window.erase()
+            window.bkgd(" ", self.colors.get("input", 0))
+        except curses.error as e:
+            logger.warning(f"Error erasing/setting bkgd for input line: {e}")
+            return
+
+
+        try:
+            max_y, max_x = window.getmaxyx() # Re-fetch dimensions in case of resize event
         except curses.error as e:
             logger.warning(
                 f"curses.error re-getting getmaxyx for input_win in draw: {e}. Aborting draw."

@@ -2,7 +2,6 @@ import logging
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from pyrc_core.app_config import DEFAULT_PORT, DEFAULT_SSL_PORT
-from pyrc_core.context_manager import ChannelJoinStatus # For _reset_client_contexts
 from pyrc_core.state_manager import ConnectionInfo # Import ConnectionInfo
 
 if TYPE_CHECKING:
@@ -110,9 +109,6 @@ async def handle_connect_command(client: "IRCClient_Logic", args_str: str):
     logger.info(
         f"Attempting new connection via /connect: {client.server}:{client.port} (SSL: {client.use_ssl})" # Use properties
     )
-
-    # The functionality of _reset_state_for_new_connection is now handled by ConnectionOrchestrator
-    # and other initialization logic, so this call can be removed.
 
     # Ensure connection_info is not None before passing to establish_connection
     final_conn_info = client.state_manager.get_connection_info()

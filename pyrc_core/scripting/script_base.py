@@ -73,23 +73,14 @@ class ScriptBase:
             The directory will be created if it doesn't exist.
             This is handled by ScriptManager.get_data_file_path_for_script().
         """
-        # self.api is an instance of ScriptAPIHandler
-        # self.api.script_module_name is the name of the script (e.g., "default_random_messages")
-        # self.api.script_manager is the ScriptManager instance
-        # self.api.script_manager.get_data_file_path_for_script(script_module_name, data_filename)
-        #   returns <scripts_dir>/data/<script_module_name>/<data_filename>
-
-        # To get just the directory, we pass an empty string for data_filename
-        # and then remove any trailing separator if present.
-        path_with_dummy_file = self.api.script_manager.get_data_file_path_for_script(
+        # To get the script's data directory, we call get_data_file_path_for_script
+        # from the ScriptManager via the API, passing an empty string for the data_filename.
+        # This returns the path to the script's specific data directory.
+        data_dir_path = self.api.script_manager.get_data_file_path_for_script(
             self.api.script_name,
             "",  # Pass empty filename to get the directory path
         )
-        # get_data_file_path_for_script currently creates the dir <scripts_dir>/data/<script_module_name>
-        # and returns os.path.join(data_dir, data_filename).
-        # So, if data_filename is "", it returns <scripts_dir>/data/<script_module_name>
-        # This is already the directory path.
-        return path_with_dummy_file
+        return data_dir_path
 
     def load_list_from_data_file(self, filename: str, default_items: list) -> list:
         """Load a list of items from a data file or return default items if file not found/empty.

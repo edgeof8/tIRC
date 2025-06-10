@@ -37,14 +37,13 @@ async def handle_names_command(client: "IRCClient_Logic", args_str: str):
             context_name=feedback_context_name,
         )
     else:
-        # Behavior for /NAMES without args can vary. Some servers list all users on all common channels.
-        # Others might use the current active channel if it's a channel context.
-        # For simplicity, sending plain NAMES and letting server decide.
-        # Could add logic to use active channel if desired.
+        # Behavior for /NAMES without args can vary.
+        # This implementation sends NAMES for the current channel if it's active and a channel,
+        # otherwise sends a general NAMES command to the server.
         active_context = client.context_manager.get_active_context()
         if active_context and active_context.type == "channel":
-             await client.network_handler.send_raw(f"NAMES {active_context.name}")
-             await client.add_message(
+            await client.network_handler.send_raw(f"NAMES {active_context.name}")
+            await client.add_message(
                 f"Refreshing names for current channel {active_context.name}...",
                 client.ui.colors["system"],
                 context_name=active_context.name,
@@ -52,7 +51,7 @@ async def handle_names_command(client: "IRCClient_Logic", args_str: str):
         else:
             await client.network_handler.send_raw("NAMES")
             await client.add_message(
-                "Requesting names (no specific channel)...", # Using semantic color key
+                "Requesting names (no specific channel)...",
                 client.ui.colors["system"],
                 context_name="Status",
             )

@@ -1,4 +1,4 @@
-# pyrc_core/commands/dcc/dcc_commands.py # Pylance re-evaluation
+# pyrc_core/commands/dcc/dcc_commands.py
 import logging
 import importlib
 import os

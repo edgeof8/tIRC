@@ -1,4 +1,4 @@
-# pyrc_core/commands/dcc/dcc_send_command.py # Pylance re-evaluation
+# pyrc_core/commands/dcc/dcc_send_command.py
 import argparse
 import logging
 from typing import TYPE_CHECKING, List, Dict, Any

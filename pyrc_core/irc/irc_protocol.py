@@ -50,7 +50,8 @@ async def handle_server_message(client: "IRCClient_Logic", line: str) -> Optiona
 
     if not parsed_msg:
         logger.error(f"Failed to parse IRC message: {line.strip()}")
-        await client.ui.add_message_to_context(f"[UNPARSED] {line.strip()}", client.ui.colors["error"], context_name="Status", prefix_time=False)
+        # Use client.add_status_message for messages to the Status window
+        await client.add_status_message(f"[UNPARSED] {line.strip()}", color_key="error")
         return None
 
     cmd = parsed_msg.command

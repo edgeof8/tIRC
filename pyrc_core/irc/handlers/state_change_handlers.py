@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Optional, List, Dict, Any # Ensure all needed 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
     from pyrc_core.irc.irc_message import IRCMessage
-    # from pyrc_core.context_manager import ChannelJoinStatus # Not directly used by these handlers
 
 logger = logging.getLogger("pyrc.handlers.state_change")
 
@@ -31,7 +30,7 @@ async def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
 
         old_nick_val = conn_info.nick
         conn_info.nick = new_nick
-        client.state_manager.set("connection_info", conn_info)
+        await client.state_manager.set_connection_info(conn_info)
         logger.info(f"Our nick changed from {old_nick_val} to {new_nick}")
 
         # Update nick in all contexts
@@ -45,9 +44,8 @@ async def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
                         )
 
         # Add message to status
-        # Add message to status
         await client.add_message(
-            text=f"Nick changed from {old_nick_val} to {new_nick}", # Changed message to text
+            text=f"Nick changed from {old_nick_val} to {new_nick}",
             color_attr=client.ui.colors["system"],
             context_name="Status",
         )
@@ -57,11 +55,11 @@ async def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
            conn_info.last_attempted_nick_change.lower() == new_nick.lower():
             logger.info(f"Successful user-initiated nick change to {new_nick} confirmed.")
             conn_info.last_attempted_nick_change = None
-            client.state_manager.set("connection_info", conn_info)
+            await client.state_manager.set_connection_info(conn_info)
 
         # Dispatch CLIENT_NICK_CHANGED event
         if hasattr(client, "event_manager") and client.event_manager:
-            await client.event_manager.dispatch_client_nick_changed( # Added await
+            await client.event_manager.dispatch_client_nick_changed(
                 old_nick=old_nick_val, new_nick=new_nick, raw_line=raw_line
             )
     else:
@@ -77,14 +75,14 @@ async def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
 
                     # Add message to channel
                     await client.add_message(
-                        text=f"{old_nick} is now known as {new_nick}", # Changed message to text
+                        text=f"{old_nick} is now known as {new_nick}",
                         color_attr=client.ui.colors["system"],
                         context_name=context.name,
                     )
 
     # Dispatch general NICK event
     if hasattr(client, "event_manager") and client.event_manager:
-        await client.event_manager.dispatch_nick( # Added await
+        await client.event_manager.dispatch_nick(
             old_nick=old_nick, new_nick=new_nick,
             userhost=source_full_ident, # Ensure this is the correct var
             is_self=is_our_nick_change, raw_line=raw_line
@@ -147,14 +145,14 @@ async def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
 
             # Add message to channel
             await client.add_message(
-                text=f"Mode {target} [{mode_str_display}] by {source_nick}", # Changed message to text
+                text=f"Mode {target} [{mode_str_display}] by {source_nick}",
                 color_attr=client.ui.colors["system"],
                 context_name=target,
             )
 
             # Dispatch CHANNEL_MODE_APPLIED event
             if hasattr(client, "event_manager") and client.event_manager:
-                await client.event_manager.dispatch_channel_mode_applied( # Added await
+                await client.event_manager.dispatch_channel_mode_applied(
                     channel=target, setter_nick=source_nick, setter_userhost=source_full_ident,
                     mode_changes=parsed_modes, current_channel_modes=list(context.modes),
                     raw_line=raw_line
@@ -180,16 +178,15 @@ async def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
             mode_str_display += " " + " ".join(mode_params)
 
         # Add message to status
-        # Add message to status
         await client.add_message(
-            text=f"Mode {conn_info.nick} [{mode_str_display}] by {source_nick}", # Changed message to text
+            text=f"Mode {conn_info.nick} [{mode_str_display}] by {source_nick}",
             color_attr=client.ui.colors["system"],
             context_name="Status",
         )
 
     # Dispatch general MODE event
     if hasattr(client, "event_manager") and client.event_manager:
-        await client.event_manager.dispatch_mode( # Added await
+        await client.event_manager.dispatch_mode(
             target_name=target, setter_nick=source_nick, setter_userhost=source_full_ident,
             mode_string=mode_string, mode_params=mode_params, parsed_modes=parsed_modes,
             raw_line=raw_line
@@ -212,12 +209,12 @@ async def handle_topic_command_event(client: "IRCClient_Logic", parsed_msg: "IRC
             channel, new_topic if new_topic is not None else ""
         )
         await client.add_message(
-            text=message, color_attr=client.ui.colors["system"], context_name=channel # Changed message to text
+            text=message, color_attr=client.ui.colors["system"], context_name=channel
         )
 
         # Dispatch TOPIC event
         if hasattr(client, "event_manager") and client.event_manager:
-            await client.event_manager.dispatch_topic( # Already had await, ensured it's correct
+            await client.event_manager.dispatch_topic(
                 nick=parsed_msg.source_nick, userhost=parsed_msg.prefix,
                 channel=channel, topic=(new_topic if new_topic is not None else ""),
                 raw_line=raw_line # Pass raw_line here
@@ -282,7 +279,7 @@ async def handle_chghost_command_event(client: "IRCClient_Logic", parsed_msg: "I
 
         # Dispatch CHGHOST event
         if hasattr(client, "event_manager") and client.event_manager:
-            await client.event_manager.dispatch_chghost( # Already had await, ensured it's correct
+            await client.event_manager.dispatch_chghost(
                 nick=src_nick, new_ident=new_ident, new_host=new_host,
                 old_userhost=parsed_msg.prefix, # old userhost is prefix before change
                 raw_line=raw_line # Pass raw_line here

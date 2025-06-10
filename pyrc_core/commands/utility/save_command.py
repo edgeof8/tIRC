@@ -20,18 +20,17 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_save_command(client: "IRCClient_Logic", args_str: str):
+async def handle_save_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /save command."""
-    # args_str is not used for /save
     if client.config.save_current_config():
-        client.add_message(
+        await client.add_message(
             "Configuration saved to pyterm_irc_config.ini.",
-            "system",
+            client.ui.colors.get("system", 0),
             context_name=client.context_manager.active_context_name or "Status",
         )
     else:
-        client.add_message(
+        await client.add_message(
             "Failed to save configuration.",
-            "error",
+            client.ui.colors.get("error", 0),
             context_name=client.context_manager.active_context_name or "Status",
         )

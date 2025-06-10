@@ -19,7 +19,7 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_rawlog_command(client: "IRCClient_Logic", args_str: str):
+async def handle_rawlog_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /rawlog [on|off|toggle] command."""
     help_data = client.script_manager.get_help_text_for_command("rawlog")
     usage_msg = (
@@ -36,16 +36,16 @@ def handle_rawlog_command(client: "IRCClient_Logic", args_str: str):
     elif arg == "toggle" or not arg:
         client.show_raw_log_in_ui = not current_status
     else:
-        client.add_message(
+        await client.add_message(
             usage_msg,
-            "error",
+            client.ui.colors.get("error", 0),
             context_name=active_context_name,
         )
         return
 
     feedback_action = "enabled" if client.show_raw_log_in_ui else "disabled"
-    client.add_message(
+    await client.add_message(
         f"Raw IRC message logging to UI {feedback_action}.",
-        "system",
+        client.ui.colors.get("system", 0),
         context_name=active_context_name,
     )

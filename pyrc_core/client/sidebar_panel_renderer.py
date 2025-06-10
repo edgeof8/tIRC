@@ -20,7 +20,12 @@ class SidebarPanelRenderer:
         if not window:
             return
 
-        SafeCursesUtils._draw_window_border_and_bkgd(window, self.colors.get("list_panel_bg", 0)) # Use get for safety
+        try:
+            window.erase()
+            window.bkgd(" ", self.colors.get("list_panel_bg", 0)) # Use get for safety
+        except curses.error as e:
+            logger.warning(f"Error erasing/setting bkgd for sidebar: {e}")
+            return # If we can't set background, probably can't draw text either
 
         max_y, max_x = window.getmaxyx()
         if max_y <= 0 or max_x <= 0:

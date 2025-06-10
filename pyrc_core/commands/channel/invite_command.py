@@ -57,7 +57,7 @@ async def handle_invite_command(client: "IRCClient_Logic", args_str: str):
         await client.add_message(
             f"Cannot invite to '{channel_to_invite_to}'. Not a valid channel.",
             client.ui.colors["error"],
-            context_name="Status", # Or active_ctx_name if preferred for this error
+            context_name="Status",
         )
         return
 

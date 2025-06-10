@@ -26,7 +26,7 @@ COMMAND_DEFINITIONS = [
 ]
 logger = logging.getLogger("pyrc.commands.set") # Specific logger for this command
 
-def handle_set_command(client: "IRCClient_Logic", args_str: str):
+async def handle_set_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /set command."""
     # Note: This logic is moved from CommandHandler._handle_set_command
     # 'self' is replaced by 'client' where appropriate.
@@ -49,24 +49,24 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
     if not stripped_args:
         all_settings = client.config.get_all_settings()
         if not all_settings:
-            client.add_message(
-                "No settings found.", system_color_key, context_name=active_context_name
+            await client.add_message(
+                "No settings found.", client.ui.colors.get(system_color_key, 0), context_name=active_context_name
             )
             return
 
-        client.add_message(
+        await client.add_message(
             "Current settings (use /help set for usage):",
-            system_color_key,
+            client.ui.colors.get(system_color_key, 0),
             context_name=active_context_name,
         )
         for section, settings_in_section in all_settings.items():
-            client.add_message(
-                f"[{section}]", system_color_key, context_name=active_context_name
+            await client.add_message(
+                f"[{section}]", client.ui.colors.get(system_color_key, 0), context_name=active_context_name
             )
             for key, val in settings_in_section.items():
-                client.add_message(
+                await client.add_message(
                     f"  {key} = {val}",
-                    system_color_key,
+                    client.ui.colors.get(system_color_key, 0),
                     context_name=active_context_name,
                 )
         return
@@ -84,9 +84,9 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
                 if not section_name_filter or not key_name_filter: # Ensure both parts are non-empty
                     raise ValueError("Section or key part is empty.")
             except ValueError:
-                client.add_message(
+                await client.add_message(
                     f"Invalid format for variable: '{variable_arg}'. Use 'key' or 'section.key'.",
-                    error_color_key,
+                    client.ui.colors.get(error_color_key, 0),
                     context_name=active_context_name,
                 )
                 return
@@ -103,9 +103,9 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
                     f"{section_name_filter}.{key_name_filter} = {value}"
                 )
             else: # Specific section.key not found
-                client.add_message(
+                await client.add_message(
                     f"Setting '{variable_arg}' not found.",
-                    error_color_key,
+                    client.ui.colors.get(error_color_key, 0),
                     context_name=active_context_name,
                 )
                 return # Exit if specific setting not found
@@ -117,15 +117,15 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
                     )
 
         if not found_settings_messages:
-            client.add_message(
+            await client.add_message(
                 f"Setting '{key_name_filter}' not found in any section.", # Adjusted message
-                error_color_key,
+                client.ui.colors.get(error_color_key, 0),
                 context_name=active_context_name,
             )
         else:
             for setting_str in found_settings_messages:
-                client.add_message(
-                    setting_str, system_color_key, context_name=active_context_name
+                await client.add_message(
+                    setting_str, client.ui.colors.get(system_color_key, 0), context_name=active_context_name
                 )
         return
 
@@ -133,13 +133,13 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
         value_arg = parts[1]
 
         if "." not in variable_arg: # Must be section.key for setting
-            client.add_message(
+            await client.add_message(
                 "For setting a value, 'section.key' format is required.",
-                error_color_key,
+                client.ui.colors.get(error_color_key, 0),
                 context_name=active_context_name,
             )
-            client.add_message(
-                usage_msg, error_color_key, context_name=active_context_name
+            await client.add_message(
+                usage_msg, client.ui.colors.get(error_color_key, 0), context_name=active_context_name
             )
             return
 
@@ -148,28 +148,28 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
             if not section_to_set or not key_to_set: # Ensure both parts are non-empty
                 raise ValueError("Section or key part is empty for setting.")
         except ValueError:
-            client.add_message(
+            await client.add_message(
                 f"Invalid format for variable: '{variable_arg}'. Use 'section.key'.",
-                error_color_key,
+                client.ui.colors.get(error_color_key, 0),
                 context_name=active_context_name,
             )
             return
 
         if client.config.set_config_value(section_to_set, key_to_set, value_arg):
-            client.add_message(
+            await client.add_message(
                 f"Set {section_to_set}.{key_to_set} = {value_arg}",
-                system_color_key,
+                client.ui.colors.get(system_color_key, 0),
                 context_name=active_context_name,
             )
-            client.add_message(
+            await client.add_message(
                 "Note: Some settings may require an application restart to take full effect.",
-                system_color_key, # Use system color for notes
+                client.ui.colors.get(system_color_key, 0), # Use system color for notes
                 context_name=active_context_name,
             )
         else:
-            client.add_message(
+            await client.add_message(
                 f"Failed to set {section_to_set}.{key_to_set}.", # More specific error
-                error_color_key,
+                client.ui.colors.get(error_color_key, 0),
                 context_name=active_context_name,
             )
         return
@@ -178,6 +178,6 @@ def handle_set_command(client: "IRCClient_Logic", args_str: str):
     # However, _ensure_args is not used in this standalone function for now.
     # The logic above should cover all valid /set command forms.
     # If execution reaches here, it's likely an invalid form not caught.
-    client.add_message(
-        usage_msg, error_color_key, context_name=active_context_name
+    await client.add_message(
+        usage_msg, client.ui.colors.get(error_color_key, 0), context_name=active_context_name
     )

@@ -1,4 +1,4 @@
-# pyrc_core/commands/dcc/dcc_list_command.py # Pylance re-evaluation
+# pyrc_core/commands/dcc/dcc_list_command.py
 import logging
 from typing import TYPE_CHECKING, List, Dict, Any
 
@@ -75,9 +75,6 @@ async def handle_dcc_list_command(client_logic: 'IRCClient_Logic', cmd_args: Lis
             await client_logic.add_message(
                 "---------------------", client_logic.ui.colors["system"], context_name=dcc_context_name
             )
-        await client_logic.add_message(
-            "---------------------", client_logic.ui.colors["system"], context_name=dcc_context_name
-        )
 
         await _ensure_dcc_context(client_logic, dcc_context_name)
     except Exception as e:

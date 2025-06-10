@@ -138,12 +138,9 @@ class DCCManager:
         """Updates the progress of a DCC transfer."""
         with self._lock:
             if transfer_id in self.transfers:
-                transfer = self.transfers[transfer_id]
-                # transfer.bytes_transferred = bytes_transferred # Already updated by the transfer object itself
-                # transfer.file_size = file_size
-                # transfer.current_rate_bps = current_rate_bps
-                # transfer.estimated_eta_seconds = estimated_eta_seconds
-                pass  # No dispatch, handled by transfer object itself
+                # Progress attributes are updated by the DCCTransfer object itself.
+                # This method is primarily a hook if DCCManager needed to react to progress updates.
+                pass  # No dispatch needed from here, handled by transfer object itself
             else:
                 logger.warning(f"Attempted to update progress for unknown transfer ID: {transfer_id}")
 

@@ -110,9 +110,8 @@ def parse_dcc_ctcp(ctcp_message: str) -> Optional[Dict[str, Any]]:
                 parsed_data["is_passive_offer"] = True
             elif parsed_data["port"] == 0: # Port 0 but not 5 args - ambiguous or malformed
                 logger.warning(f"DCC SEND with port 0 but unexpected arg count for token: {args}")
-                # We could treat it as active with port 0, but that's unusual.
-                # For now, let's say it's not a valid passive offer if token is missing.
-                parsed_data["is_passive_offer"] = False # Or return None
+                # Treating as not a valid passive offer if token is missing.
+                parsed_data["is_passive_offer"] = False
 
             return parsed_data
         except (ValueError, IndexError) as e:

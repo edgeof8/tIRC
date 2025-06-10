@@ -1,11 +1,9 @@
-# pyrc_core/commands/dcc/dcc_auto_command.py # Pylance re-evaluation
+# pyrc_core/commands/dcc/dcc_auto_command.py
 import logging
 from typing import TYPE_CHECKING, List, Dict, Any
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    # If direct config manipulation is needed and not exposed via client_logic
-    # import pyrc_core.app_config as app_config_direct # Keep for now, will be app_config_instance
 
 logger = logging.getLogger("pyrc.commands.dcc.auto")
 

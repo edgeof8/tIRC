@@ -1,4 +1,3 @@
-# START OF MODIFIED FILE: script_manager.py # Pylance re-evaluation
 import os
 import importlib.util
 import logging
@@ -35,9 +34,6 @@ class ScriptManager:
         self.base_dir = base_dir
         self.scripts_dir = os.path.join(self.base_dir, SCRIPTS_DIR_NAME)
         self.scripts = {}
-        # The disabled_scripts should now come directly from the IRCClient_Logic's config.
-        # The disabled_scripts should now come directly from the IRCClient_Logic's config.
-        # The constructor of IRCClient_Logic already passes self.config.disabled_scripts.
         self.disabled_scripts = set(disabled_scripts) if disabled_scripts is not None else self.client_logic_ref.config.disabled_scripts
         self.logger = logging.getLogger(__name__)  # Use specific logger
 
@@ -111,7 +107,7 @@ class ScriptManager:
             if script_file.endswith(".py") and not script_file.startswith("__"):
                 script_name = script_file[:-3]
 
-                if script_name in self.client_logic_ref.config.disabled_scripts: # Use config object directly for initial check
+                if script_name in self.client_logic_ref.config.disabled_scripts:
                     self.logger.info(f"Skipping disabled script '{script_name}' during metadata collection.")
                     continue
 
@@ -150,12 +146,12 @@ class ScriptManager:
                 for dep_name in dependencies:
                     if dep_name not in loaded_script_names:
                         # Check if the dependency is a known script or explicitly disabled
-                        if dep_name not in scripts_metadata and dep_name not in self.client_logic_ref.config.disabled_scripts: # Use config object directly
+                        if dep_name not in scripts_metadata and dep_name not in self.client_logic_ref.config.disabled_scripts:
                             self.logger.error(f"Script '{script_name}' has an unknown dependency '{dep_name}'. Cannot load '{script_name}'.")
                             deps_met = False
                             missing_deps_for_log.append(f"{dep_name} (unknown)")
                             break # Hard failure, cannot proceed with this script
-                        elif dep_name in self.client_logic_ref.config.disabled_scripts: # Use config object directly
+                        elif dep_name in self.client_logic_ref.config.disabled_scripts:
                             self.logger.warning(f"Script '{script_name}' depends on disabled script '{dep_name}'. Cannot load '{script_name}'.")
                             deps_met = False
                             missing_deps_for_log.append(f"{dep_name} (disabled)")
@@ -209,10 +205,10 @@ class ScriptManager:
                 dependencies = scripts_metadata.get(script_name, [])
                 missing_deps = [
                     dep for dep in dependencies
-                    if dep not in loaded_script_names and dep not in self.client_logic_ref.config.disabled_scripts # Use config object directly
+                    if dep not in loaded_script_names and dep not in self.client_logic_ref.config.disabled_scripts
                 ]
                 status = ""
-                if script_name in self.client_logic_ref.config.disabled_scripts: # Use config object directly
+                if script_name in self.client_logic_ref.config.disabled_scripts:
                     status = " (disabled)"
                 elif script_name not in scripts_metadata:
                     status = " (metadata collection failed)"
@@ -225,13 +221,13 @@ class ScriptManager:
             self.logger.error(f"Could not load some scripts due to missing, disabled, or circular dependencies: {'; '.join(unloaded_scripts_details)}")
 
     def get_script(self, script_name: str) -> Optional[Any]:
-        if script_name in self.client_logic_ref.config.disabled_scripts: # Use config object directly
+        if script_name in self.client_logic_ref.config.disabled_scripts:
             self.logger.debug(f"Script {script_name} is disabled")
             return None
         return self.scripts.get(script_name)
 
     def is_script_enabled(self, script_name: str) -> bool:
-        return script_name not in self.client_logic_ref.config.disabled_scripts and script_name in self.scripts # Use config object directly
+        return script_name not in self.client_logic_ref.config.disabled_scripts and script_name in self.scripts
 
     def register_command_from_script(
         self,
@@ -565,8 +561,8 @@ class ScriptManager:
         return None
 
     def enable_script(self, script_name: str) -> bool:
-        if script_name in self.client_logic_ref.config.disabled_scripts: # Use config object directly
-            self.client_logic_ref.config.disabled_scripts.discard(script_name) # Modify config object directly
+        if script_name in self.client_logic_ref.config.disabled_scripts:
+            self.client_logic_ref.config.disabled_scripts.discard(script_name)
             # Also update the local disabled_scripts set
             self.disabled_scripts.discard(script_name)
             try:
@@ -590,7 +586,7 @@ class ScriptManager:
 
     def disable_script(self, script_name: str) -> bool:
         if script_name in self.scripts:
-            self.client_logic_ref.config.disabled_scripts.add(script_name) # Modify config object directly
+            self.client_logic_ref.config.disabled_scripts.add(script_name)
             # Also update the local disabled_scripts set
             self.disabled_scripts.add(script_name)
             del self.scripts[script_name]
@@ -659,7 +655,7 @@ class ScriptManager:
         return False
 
     def get_disabled_scripts(self) -> List[str]:
-        return list(self.client_logic_ref.config.disabled_scripts) # Return from config object directly
+        return list(self.client_logic_ref.config.disabled_scripts)
 
     def get_all_script_commands_with_help(self) -> Dict[str, Dict[str, Any]]:
         """Get all script commands with their help text and metadata.

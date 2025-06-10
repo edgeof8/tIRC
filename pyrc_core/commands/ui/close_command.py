@@ -22,8 +22,8 @@ COMMAND_DEFINITIONS = [
 ]
 
 async def _close_channel_context(client: "IRCClient_Logic", channel_context: "CTX_Type"):
-    from pyrc_core.context_manager import ChannelJoinStatus # Local import for enum
     if hasattr(channel_context, "join_status"):
+        # ChannelJoinStatus is imported at the top of the file
         channel_context.join_status = ChannelJoinStatus.PARTING
 
     variables = {"nick": client.nick, "channel": channel_context.name}

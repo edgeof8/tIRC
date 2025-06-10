@@ -18,15 +18,14 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_whowas_command(client: "IRCClient_Logic", args_str: str):
+async def handle_whowas_command(client: "IRCClient_Logic", args_str: str):
     help_data = client.script_manager.get_help_text_for_command("whowas")
     usage_msg = (
         help_data["help_text"]
         if help_data
         else "Usage: /whowas <nick> [count] [server]"
     )
-    # Use client.command_handler._ensure_args
-    parts = client.command_handler._ensure_args(
+    parts = await client.command_handler._ensure_args(
         args_str,
         usage_msg,
         num_expected_parts=1,  # Ensure at least the nick is provided
@@ -53,4 +52,4 @@ def handle_whowas_command(client: "IRCClient_Logic", args_str: str):
     if target_server_arg:
         command_parts.append(target_server_arg)
 
-    client.network_handler.send_raw(" ".join(command_parts))
+    await client.network_handler.send_raw(" ".join(command_parts))

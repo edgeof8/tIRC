@@ -114,28 +114,29 @@ async def handle_help_command(client: "IRCClient_Logic", args_str: str):
                  if "core" in core_categories_map: active_core_categories.add("core")
 
         if active_core_categories:
+            await client.add_message("\nCore Command Categories:", system_color, context_name=active_context_name)
+            for cat_key in sorted(list(active_core_categories)):
+                await client.add_message(f"  /help {cat_key}  ({core_categories_map.get(cat_key, cat_key.title())})", system_color, context_name=active_context_name)
 
-                     if active_core_categories:
-                          await client.add_message("\nCore Command Categories:", system_color, context_name=active_context_name)
-                          for cat_key in sorted(list(active_core_categories)):
-                              await client.add_message(f"  /help {cat_key}  ({core_categories_map.get(cat_key, cat_key.title())})", system_color, context_name=active_context_name)
+            # Note: The script category listing remains conditional on active_core_categories existing,
+            # which might not be the desired logic, but preserves original behavior after removing redundant if.
+            script_commands_by_script = client.script_manager.get_all_script_commands_with_help()
+            if script_commands_by_script:
+                await client.add_message("\nScript Command Categories:", system_color, context_name=active_context_name)
+                for script_name_raw in sorted(script_commands_by_script.keys()):
+                    display_name = script_name_raw.replace("_", " ").title()
+                    await client.add_message(f"  /help script {script_name_raw}  ({display_name})", system_color, context_name=active_context_name)
 
-                     script_commands_by_script = client.script_manager.get_all_script_commands_with_help()
-                     if script_commands_by_script:
-                         await client.add_message("\nScript Command Categories:", system_color, context_name=active_context_name)
-                         for script_name_raw in sorted(script_commands_by_script.keys()):
-                             display_name = script_name_raw.replace("_", " ").title()
-                             await client.add_message(f"  /help script {script_name_raw}  ({display_name})", system_color, context_name=active_context_name)
-
-                     await client.add_message("\nUse /help <category_name>, /help script <script_name>, or /help <command> for more details.", system_color, context_name=active_context_name)
+            await client.add_message("\nUse /help <category_name>, /help script <script_name>, or /help <command> for more details.", system_color, context_name=active_context_name)
     is_script_category_help = target_arg1 == "script"
 
     if is_script_category_help:
-        if not target_arg2:
-            if not target_arg2:
-                await client.add_message("Usage: /help script <script_name>", error_color, context_name=active_context_name)
-                return
-            category_to_list = target_arg2
+        if not target_arg2: # User typed "/help script"
+            await client.add_message("Usage: /help script <script_name>", error_color, context_name=active_context_name)
+            return
+        # If target_arg2 exists, it implies the user wants help for a specific script (e.g., "/help script foo")
+        # or potentially a command named "script" if the logic falls through.
+        # The original complex 'elif/else' structure after this point is maintained.
         elif target_arg1 in ["core", "channel", "information", "server", "ui", "user", "utility"]:
             category_to_list = target_arg1
         else: # Argument is likely a command name for specific help

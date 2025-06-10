@@ -43,7 +43,7 @@ class CapNegotiator:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
             self.logger.warning("CapNegotiator: No running asyncio event loop found during init.")
-            self.loop = None  # Or asyncio.new_event_loop() if appropriate to create one here
+            self.loop = None
         self._negotiation_lock = asyncio.Lock()
 
     def _start_negotiation_timeout_timer(self):

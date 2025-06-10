@@ -36,7 +36,7 @@ class ScriptMetadata:
     updated_at: datetime
     tags: List[str]
     is_enabled: bool = True
-    # ... (rest of ScriptMetadata is unchanged) ...
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert metadata to dictionary for JSON serialization."""
         return {
@@ -391,7 +391,7 @@ class ScriptAPIHandler:
         self.log_info(
             f"Script '{self.script_name}' initiated client quit. Reason: {reason}"
         )
-        self.client_logic.should_quit.set() # Changed to .set()
+        self.client_logic.should_quit.set()
 
     async def execute_client_command(self, command_line_with_slash: str) -> bool: # Made async
         if not command_line_with_slash.startswith("/"):

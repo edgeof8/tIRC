@@ -3,11 +3,6 @@ import os
 import re
 from typing import Dict, List, Union, Optional
 
-# Assuming config.py will have these, or they will be passed to relevant functions.
-# For now, let's define them here for standalone module clarity,
-# but in integration, they'd come from the main config.
-# from config import DCC_DOWNLOAD_DIR, DCC_BLOCKED_EXTENSIONS, DCC_MAX_FILE_SIZE
-
 logger = logging.getLogger("pyrc.dcc.security")
 
 # A more restrictive set of allowed characters for filenames.

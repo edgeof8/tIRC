@@ -3,8 +3,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    # If access to app_config is needed for default nick/server for quit message script.
-    # import config as app_config
 
 logger = logging.getLogger("pyrc.commands.server.quit")
 
@@ -46,7 +44,6 @@ async def handle_quit_command(client: "IRCClient_Logic", args_str: str):
         context_name="Status"
     )
     logger.info(f"User initiated /quit. Reason: {reason}")
-    # The disconnect_gracefully method will also set client.should_quit = True via its call to self.stop()
+    # disconnect_gracefully is expected to trigger the client shutdown sequence,
+    # which includes setting client.should_quit.
     await client.network_handler.disconnect_gracefully(reason)
-    # Ensure should_quit is explicitly set if not already handled by disconnect_gracefully's chain
-    client.should_quit.set()

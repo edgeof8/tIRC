@@ -49,11 +49,11 @@ class Trigger:
         self.is_regex = is_regex
         self.ignore_case = ignore_case
 
-        current_time = time.time()  # Use imported time
+        current_time = time.time()
         self.created_at = created_at if created_at is not None else current_time
         self.updated_at = (
             updated_at if updated_at is not None else current_time
-        )  # Use imported time
+        )
         self.created_by = created_by
         self.description = description
 

@@ -21,6 +21,5 @@ COMMAND_DEFINITIONS = [
 
 def handle_status_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /status command"""
-    # args_str is not used for /status
     client.context_manager.set_active_context("Status")
     client.ui_needs_update.set()

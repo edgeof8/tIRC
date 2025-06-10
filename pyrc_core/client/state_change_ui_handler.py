@@ -18,10 +18,7 @@ class StateChangeUIHandler:
         """Register handlers for specific state changes."""
         self.state_manager.register_change_handler("connection_state", self.on_connection_state_change)
         self.state_manager.register_change_handler("connection_info", self.on_connection_info_change)
-        # Add more handlers as state affecting UI is identified
-        # e.g., self.state_manager.register_change_handler("active_context_name", self.on_active_context_change)
-        # e.g., self.state_manager.register_change_handler("channel_topic_updated", self.on_topic_updated)
-        # e.g., self.state_manager.register_change_handler("user_list_updated", self.on_user_list_updated)
+        # Add more handlers as state affecting UI is identified.
 
     async def _safe_add_status_message(self, message: str, color_key: str = "system"):
         """Safely add a status message if the client and UI are available."""
@@ -132,19 +129,3 @@ class StateChangeUIHandler:
 
         # Potentially other UI updates based on ConnectionInfo changes (e.g., status bar)
         self._trigger_ui_update()
-
-    # Placeholder for other handlers - these would need corresponding state keys in StateManager
-    # def on_active_context_change(self, change: StateChange[Optional[str]]):
-    #     logger.debug(f"UI Handler: Active context changed from {change.old_value} to {change.new_value}")
-    #     self._trigger_ui_update() # Status bar and sidebar might need update
-
-    # def on_topic_updated(self, change: StateChange[Dict[str, str]]): # Assuming value is {channel: topic}
-    #     channel = change.metadata.get("channel")
-    #     new_topic = change.new_value.get(channel) if channel and change.new_value else "N/A"
-    #     logger.debug(f"UI Handler: Topic for {channel} updated to '{new_topic}'")
-    #     self._trigger_ui_update() # Message window and status bar might need update
-
-    # def on_user_list_updated(self, change: StateChange[Dict[str, List[str]]]): # Assuming value is {channel: [users]}
-    #     channel = change.metadata.get("channel")
-    #     logger.debug(f"UI Handler: User list for {channel} updated.")
-    #     self._trigger_ui_update() # Sidebar needs update

@@ -6,7 +6,7 @@ import socket
 import struct # Added for struct.pack
 from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING, List
 from pyrc_core.dcc.dcc_manager import DCCManager
-from pyrc_core.dcc.dcc_transfer import DCCStatus, DCCTransfer, DCCTransferType
+from pyrc_core.dcc.dcc_transfer import DCCStatus, DCCTransfer, DCCTransferType # Moved import to top
 from pyrc_core.dcc.dcc_utils import get_available_port, get_local_ip_for_connection, parse_dcc_address_and_port, get_safe_dcc_path, get_listening_socket, get_local_ip_for_ctcp
 from pyrc_core.app_config import AppConfig, DccConfig
 
@@ -70,7 +70,6 @@ class DCCReceiveManager:
             logger.error(error_msg)
             return
 
-        from pyrc_core.dcc.dcc_transfer import DCCTransferType # Deferred import
         incoming_transfer = DCCTransfer(
             transfer_id=new_transfer_id,
             transfer_type=DCCTransferType.RECEIVE,
@@ -481,6 +480,4 @@ class DCCReceiveManager:
                 f"DCC Error: {error_msg}",
                 self.client_logic.ui.colors["error"], context_name="DCC"
             )
-            return False
-            return False
             return False

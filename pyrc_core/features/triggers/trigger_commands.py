@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING, List, Optional, Dict, Any
 
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-# Removed TriggerType, ActionType is already available via trigger_manager instance or direct import if needed by methods
-# from .trigger_manager import TriggerType, ActionType # ActionType might be needed if used directly
 
 logger = logging.getLogger("pyrc.features.triggers.commands")
 
@@ -65,13 +63,6 @@ class TriggerCommands:
         pattern = parts[1]
         action_type_str = parts[2].upper()
         action_content = parts[3] # The rest of the string
-
-        # Validate ActionType directly here if needed, or let TriggerManager handle it
-        # from .trigger_manager import ActionType # Import locally if needed for validation
-        # action_type_enum = ActionType.from_string(action_type_str)
-        # if not action_type_enum:
-        #     self.client.add_message(f"Invalid action type: {action_type_str}. Use CMD or PY.", "error")
-        #     return None
 
         return {
             "sub_command": "add",

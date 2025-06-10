@@ -26,14 +26,7 @@ async def handle_part_command(client: "IRCClient_Logic", args_str: str):
     usage_msg = (
         help_data["help_text"] if help_data else "Usage: /part [channel] [reason]"
     )
-    # _ensure_args with no num_expected_parts means it can be empty or have content.
-    # For /part, if args_str is empty, we part the current channel.
-    # If it's not empty, the first word is the channel, the rest is the reason.
-    # So, we don't strictly need _ensure_args to validate presence for *this* command structure,
-    # but it's good practice if we wanted to enforce at least a channel if current isn't available.
-    # However, the original logic allows empty args_str to mean "current channel".
-
-    # Let's adjust how we get channel_to_part and reason based on args_str
+    # Determine channel_to_part and reason based on args_str
     current_active_channel_name = None
     active_ctx = client.context_manager.get_active_context()
     if active_ctx and active_ctx.type == "channel":

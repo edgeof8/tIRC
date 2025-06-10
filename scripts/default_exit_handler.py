@@ -1,9 +1,10 @@
 from typing import Dict, Any
+from pyrc_core.scripting.script_base import ScriptBase # Import ScriptBase
 
 
-class ExitHandlerScript:
+class ExitHandlerScript(ScriptBase): # Inherit from ScriptBase
     def __init__(self, api):
-        self.api = api
+        super().__init__(api) # Call superclass constructor
         self.api.log_info("ExitHandlerScript initialized.")
 
     def load(self):

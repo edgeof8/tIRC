@@ -270,7 +270,7 @@ class DCCTransfer:
             self.file_object = None
         self.dcc_event_logger.debug(f"[{self.id}] Cleanup finished.")
 
-    def _apply_throttle(self, chunk_size: int):
+    async def _apply_throttle(self, chunk_size: int):
         """Applies bandwidth throttling if a limit is set."""
         if self.bandwidth_limit_bps <= 0 or chunk_size <= 0:
             return
@@ -284,7 +284,7 @@ class DCCTransfer:
         sleep_duration = expected_time_for_chunk - elapsed_for_chunk
 
         if sleep_duration > 0:
-            time.sleep(sleep_duration)
+            await asyncio.sleep(sleep_duration)
         self.throttle_chunk_start_time = time.monotonic()
 
 

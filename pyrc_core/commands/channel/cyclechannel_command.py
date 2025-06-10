@@ -38,7 +38,7 @@ async def handle_cyclechannel_command(client: "IRCClient_Logic", args_str: str):
     await client.add_message(
         f"Cycling channel {channel}...",
         client.ui.colors["system"],
-        context_name=channel # Or current_active_context_name
+        context_name=channel
     )
     await client.network_handler.send_raw(f"PART {channel}")
     await client.network_handler.send_raw(f"JOIN {channel}")

@@ -87,7 +87,6 @@ class CursesManager:
         # This method can be a no-op or perform other necessary internal adjustments if needed.
         # For now, we'll just log if it's called.
         logger.debug(f"resize_term called to {height}x{width}. Relying on UIManager for redraw.")
-        # self.stdscr.clearok(True) # This is typically handled by refresh_all_windows or specific window logic
 
     def update_screen(self):
         try:

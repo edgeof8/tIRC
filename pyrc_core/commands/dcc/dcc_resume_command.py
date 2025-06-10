@@ -1,4 +1,4 @@
-# pyrc_core/commands/dcc/dcc_resume_command.py # Pylance re-evaluation
+# pyrc_core/commands/dcc/dcc_resume_command.py
 import logging
 import argparse
 from typing import TYPE_CHECKING, List, Dict, Any, cast
@@ -96,7 +96,6 @@ async def handle_dcc_resume_command(client_logic: 'IRCClient_Logic', cmd_args: L
             # We need to tell the send_manager to *offer* a resume.
             # The _execute_send_operation in send_manager already has resume logic.
             # We should call that, passing the existing transfer object if it has a resume_offset.
-            # For now, let's just re-initiate the send. The internal logic will find the offset.
             # For now, let's just re-initiate the send. The internal logic will find the offset.
             await dcc_m.send_manager.resume_send_transfer(cast(DCCSendTransfer, transfer_to_resume), 0)
 

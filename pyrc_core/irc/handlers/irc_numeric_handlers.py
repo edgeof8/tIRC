@@ -182,7 +182,7 @@ async def _handle_rpl_endofnames(
     trailing: Optional[str],
 ):
     """Handles RPL_ENDOFNAMES (366)."""
-    logger.debug(f"NumericHandler._handle_rpl_endofnames: Called for raw_line='{raw_line.strip()}', display_params={display_params}, trailing='{trailing}'") # Added Class Name
+    logger.debug(f"_handle_rpl_endofnames: Called for raw_line='{raw_line.strip()}', display_params={display_params}, trailing='{trailing}'")
     channel_ended = display_params[0] if display_params else "Unknown Channel"
     ctx_for_endofnames = client.context_manager.get_context(channel_ended)
     if ctx_for_endofnames and ctx_for_endofnames.type == "channel":
@@ -201,25 +201,24 @@ async def _handle_rpl_endofnames(
             conn_info = client.state_manager.get_connection_info()
             if conn_info:
                 conn_info.currently_joined_channels.add(channel_ended)
-                client.state_manager.set("connection_info", conn_info) # This should be awaited if set_connection_info becomes async
+                client.state_manager.set("connection_info", conn_info)
                 logger.info(
-                    f"NumericHandler._handle_rpl_endofnames: Added {channel_ended} to tracked client.currently_joined_channels."
+                    f"_handle_rpl_endofnames: Added {channel_ended} to tracked client.currently_joined_channels."
                 )
-            logger.debug(f"NumericHandler._handle_rpl_endofnames: About to call client.handle_channel_fully_joined for {channel_ended}")
-            await client.handle_channel_fully_joined(channel_ended) # Made this await, as handle_channel_fully_joined is async
-            logger.debug(f"NumericHandler._handle_rpl_endofnames: Finished calling client.handle_channel_fully_joined for {channel_ended}")
+            logger.debug(f"_handle_rpl_endofnames: About to call client.handle_channel_fully_joined for {channel_ended}")
+            await client.handle_channel_fully_joined(channel_ended)
+            logger.debug(f"_handle_rpl_endofnames: Finished calling client.handle_channel_fully_joined for {channel_ended}")
         elif ctx_for_endofnames.join_status == ChannelJoinStatus.NOT_JOINED:
             logger.info(
-                f"NumericHandler._handle_rpl_endofnames: RPL_ENDOFNAMES for {channel_ended} (status NOT_JOINED). User count: {user_count}. Not changing join status from this alone, as we weren't in a pending join state."
+                f"_handle_rpl_endofnames: RPL_ENDOFNAMES for {channel_ended} (status NOT_JOINED). User count: {user_count}. Not changing join status from this alone, as we weren't in a pending join state."
             )
 
-            # Add distinct logging before and after the client.add_message(...) call
             logger.info(
                 f"[ENDOFNAMES_DEBUG] About to add user count message for {channel_ended}. Current user count: {user_count}"
             )
             await client.add_message(
                 f"Users in {channel_ended}: {user_count}",
-                client.ui.colors["system"],  # semantic key
+                client.ui.colors.get("system", 0),
                 context_name=channel_ended,
             )
             logger.info(
@@ -231,7 +230,7 @@ async def _handle_rpl_endofnames(
         )
         await client.add_message(
             f"End of names for {channel_ended} (context not found).",
-            client.ui.colors["error"],
+            client.ui.colors.get("error", 0),
             "Status",
         )
 

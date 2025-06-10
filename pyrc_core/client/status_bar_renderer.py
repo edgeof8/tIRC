@@ -14,7 +14,12 @@ class StatusBarRenderer:
         if not window:
             return
 
-        SafeCursesUtils._draw_window_border_and_bkgd(window, self.colors["status_bar"])
+        try:
+            window.erase()
+            window.bkgd(" ", self.colors["status_bar"])
+        except curses.error as e:
+            logger.warning(f"Error erasing/setting bkgd for status bar: {e}")
+            return # If we can't set background, probably can't draw text either
 
         try:
             max_y, max_x = window.getmaxyx()

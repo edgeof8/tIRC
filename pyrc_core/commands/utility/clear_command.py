@@ -19,10 +19,9 @@ COMMAND_DEFINITIONS = [
     }
 ]
 
-def handle_clear_command(client: "IRCClient_Logic", args_str: str):
+async def handle_clear_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /clear command"""
     logger.info(f"--- handle_clear_command EXECUTING for active context: {client.context_manager.active_context_name} ---")
-    # args_str is ignored for the /clear command as it operates on the active context.
     active_ctx = client.context_manager.get_active_context()
     if active_ctx:
         logger.info(f"Attempting to clear messages for context: {active_ctx.name}. Current message count: {len(active_ctx.messages)}")
@@ -32,4 +31,4 @@ def handle_clear_command(client: "IRCClient_Logic", args_str: str):
         # No confirmation message is typically sent to the UI for /clear itself.
     else:
         logger.warning("/clear command executed but no active context found.")
-        client.add_message("No active window to clear.", "error", context_name="Status")
+        await client.add_message("No active window to clear.", client.ui.colors.get("error", 0), context_name="Status")

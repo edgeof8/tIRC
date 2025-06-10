@@ -2,9 +2,11 @@
 import logging
 from typing import TYPE_CHECKING
 
+from pyrc_core.context_manager import ChannelJoinStatus # Moved import to top level
+
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    from pyrc_core.context_manager import ChannelJoinStatus
+    # ChannelJoinStatus is now imported above for runtime use as well
 
 logger = logging.getLogger("pyrc.commands.user.me")
 
@@ -44,8 +46,6 @@ async def handle_me_command(client: "IRCClient_Logic", args_str: str):
             context_name="Status",
         )
         return
-
-    from pyrc_core.context_manager import ChannelJoinStatus
 
     if current_context_obj.type == "channel":
         if (

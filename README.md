@@ -8,19 +8,110 @@
 
 ![PyRC Screenshot](image.png)
 
-## 🚀 Features at a Glance
+## Quick Start
 
-- **🤖 AI-Ready**: Built with AI integration in mind, perfect for building IRC-powered AI agents and chatbots.
-- 🚀 **Lightning Fast**: Modern `asyncio`-based core optimized for speed and low resource usage.
-- 🧩 **Extremely Modular**: Every component is pluggable and replaceable.
-- 💻 **Terminal-First**: Beautiful, responsive UI that stays in your terminal.
-- 🔄 **Persistent State**: Never lose your place with automatic session restoration.
+```bash
+# Install from PyPI
+pip install pyrc
 
-PyRC is a modern, terminal-based IRC (Internet Relay Chat) client written in Python. It provides a feature-rich, lightweight, and user-friendly experience for IRC users who prefer the command line. With a focus on extreme modularity and stability, PyRC enables both traditional IRC usage and programmatic integration with AI agents or other automated systems.
+# Run with default settings
+pyrc
+
+# Connect to a server directly
+pyrc --connect irc.libera.chat
+```
+
+## 🚀 Core Features
+
+- **Modern Architecture**: Fully async `asyncio`-based core for maximum performance
+- **Extensible**: Python scripting API for customization and automation
+- **Terminal UI**: Beautiful curses-based interface with split-screen support
+- **IRCv3 Support**: Full protocol compliance including SASL authentication
+- **State Management**: Persistent sessions and configuration
+- **DCC Support**: Secure file transfers and chat
+- **Modular Design**: Pluggable components and commands
+
+## Architecture Overview
+
+PyRC follows a modular architecture with these key components:
+
+- **Core**: `IRCClient_Logic` orchestrates the event loop and components
+- **Network**: `NetworkHandler` manages async IRC protocol I/O
+- **UI**: Modular renderers for input, messages, and status
+- **Commands**: Dynamic command system with 50+ built-in commands
+- **Scripting**: Python API for extending functionality
+- **State**: Centralized management of connection and session data
+
+```mermaid
+graph TD
+    A[IRCClient_Logic] --> B[NetworkHandler]
+    A --> C[CommandSystem]
+    A --> D[UIManager]
+    A --> E[ScriptManager]
+    A --> F[StateManager]
+    B --> G[IRC Protocol]
+    C --> H[50+ Commands]
+    D --> I[UI Components]
+    E --> J[Python Scripts]
+```
 
 ## Project Status
 
-**PyRC is a stable and mature IRC client** that has recently undergone a significant architectural refactor to an `asyncio`-based core. This migration enhances performance, stability, and maintainability. The client continues to evolve with regular updates and improvements. The current focus is on leveraging the benefits of asyncio, refining the user experience, and maintaining compatibility with modern IRC networks. We welcome contributions and feedback to help make PyRC even better.
+**Stable Release** - PyRC is production-ready with regular updates. Recent improvements include:
+
+- Complete migration to asyncio
+- Enhanced state management
+- Improved UI architecture
+- Better IRCv3 support
+- More robust scripting API
+
+We welcome contributions and feedback!
+
+## Installation
+
+### Requirements
+
+- Python 3.8+
+- `pip` package manager
+- `windows-curses` on Windows (included in requirements.txt)
+
+### From PyPI (Recommended)
+
+```bash
+pip install pyrc
+```
+
+### From Source
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/edgeof8/PyRC.git
+   cd PyRC
+   ```
+2. Set up virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/macOS
+   venv\Scripts\activate     # Windows
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Install package:
+   ```bash
+   pip install .
+   ```
+
+### Standalone Executables
+
+Download pre-built binaries from our [Releases page](https://github.com/edgeof8/PyRC/releases):
+
+- Windows: `pyrc-*.exe`
+- Linux: `pyrc-*-linux`
+- macOS: `pyrc-*-macos`
+
+## Configuration
 
 ## Architecture Overview
 
@@ -48,6 +139,7 @@ graph TD
 ## Key Architectural Features
 
 ### Asyncio-Based Core
+
 - **Complete Migration to asyncio:** The entire client has been refactored to use Python's `asyncio` framework, eliminating the previous threading-based approach for better performance and simplified concurrency management.
 - **Non-blocking I/O:** All network operations, user input handling, and UI updates are handled asynchronously, ensuring a responsive user experience even during heavy network traffic.
 - **Efficient Resource Usage:** The single-threaded event loop model reduces context switching overhead and simplifies synchronization.
@@ -414,6 +506,199 @@ Download the latest release from the [Releases](https://github.com/edgeof8/PyRC/
 
 ## Configuration
 
+PyRC uses `pyterm_irc_config.ini` for configuration. To get started:
+
+```bash
+cp pyterm_irc_config.ini.example pyterm_irc_config.ini
+```
+
+### Key Configuration Sections
+
+#### Server Connections
+
+```ini
+[Server.Libera]
+address = irc.libera.chat
+port = 6697
+ssl = true
+nick = YourNick
+channels = #python,#linux
+sasl_username = your_account
+sasl_password = your_password
+```
+
+#### UI Settings
+
+```ini
+[UI]
+message_history_lines = 1000
+colorscheme = dark
+```
+
+#### Logging
+
+```ini
+[Logging]
+log_enabled = true
+log_file = pyrc.log
+log_level = INFO
+```
+
+#### DCC File Transfers
+
+```ini
+[DCC]
+enabled = true
+download_dir = ~/downloads
+max_file_size = 100MB
+auto_accept = false
+```
+
+### Managing Configuration In-Client
+
+- `/set`: View or modify settings
+- `/rehash`: Reload configuration
+- `/save`: Persist changes to disk
+
+Example usage:
+
+```
+/set UI.colorscheme light
+/rehash
+```
+
+## Usage
+
+### Basic Operation
+
+Start PyRC:
+
+```bash
+python pyrc.py
+```
+
+Connect to a server:
+
+```
+/connect irc.libera.chat 6697 ssl
+```
+
+Join channels:
+
+```
+/join #python #linux
+```
+
+Send messages:
+
+```
+/msg #python Hello everyone!
+```
+
+### Common Commands
+
+#### Connection Management
+
+- `/server Libera` - Connect using Libera config
+- `/disconnect` - Disconnect from current server
+- `/reconnect` - Reconnect to current server
+
+#### Channel Operations
+
+- `/topic` - View or set channel topic
+- `/names` - List users in channel
+- `/mode` - View or set channel modes
+
+#### Messaging
+
+- `/query Nick` - Open private chat
+- `/notice Nick` - Send notice
+- `/me waves` - Send action message
+
+#### UI Controls
+
+- `/split` - Toggle split view
+- `/next` - Next window
+- `/prev` - Previous window
+- `/clear` - Clear current window
+
+### Example Workflow
+
+1. Start client and connect:
+   ```
+   /connect irc.libera.chat 6697 ssl
+   ```
+2. Authenticate with NickServ:
+   ```
+   /msg NickServ IDENTIFY your_password
+   ```
+3. Join channels:
+   ```
+   /join #python #linux
+   ```
+4. Chat normally in channels
+5. Use `/help` for more commands
+
+## Contributing
+
+We welcome contributions! Please follow these guidelines:
+
+### Getting Started
+
+1. Fork the repository
+2. Create a feature branch:
+   ```bash
+   git checkout -b feature/your-feature
+   ```
+3. Set up development environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate
+   pip install -r requirements-dev.txt
+   ```
+
+### Code Style
+
+- Follow PEP 8 guidelines
+- Use type hints for all new code
+- Keep lines under 100 characters
+- Document public APIs with docstrings
+
+### Testing
+
+- Write unit tests for new features
+- Run tests before submitting:
+  ```bash
+  pytest tests/
+  ```
+- For UI changes, test in both:
+  - Terminal mode
+  - Headless mode (`--headless` flag)
+
+### Submitting Changes
+
+1. Commit with descriptive messages
+2. Push to your fork
+3. Open a Pull Request with:
+   - Description of changes
+   - Screenshots if applicable
+   - Reference to any related issues
+
+For more details, see our [Contributing Guide](docs/wiki/contributing.html) in the wiki.
+
+## License
+
+PyRC is licensed under the [MIT License](LICENSE).
+
+---
+
+<p align="center">
+  <a href="https://github.com/edgeof8/PyRC">GitHub</a> •
+  <a href="https://pypi.org/project/pyrc/">PyPI</a> •
+  <a href="https://github.com/edgeof8/PyRC/issues">Issues</a> •
+  <a href="https://github.com/edgeof8/PyRC/pulls">Pull Requests</a>
+</p>
+
 PyRC uses `pyterm_irc_config.ini` in its root directory. To get started:
 
 1. Copy the example configuration file:
@@ -773,27 +1058,27 @@ pip install git+https://github.com/yourusername/pyrc.git
 ### Running PyRC
 
 Start the client with default settings:
+
 ```bash
 pyrc
 ```
 
 Connect to a server directly:
+
 ```bash
 pyrc --connect irc.libera.chat
 ```
 
 Run in headless mode (for testing/automation):
+
 ```bash
 pyrc --headless --connect irc.libera.chat
 ```
 
 ## Configuration
 
-PyRC stores configuration in `~/.config/pyrc/` (or `%APPDATA%\pyrc\` on Windows):
-- `config.ini` - Main configuration file
-- `state.json` - Persistent state (channels, nicks, etc.)
-- `logs/` - Application logs
-- `scripts/` - User scripts directory
+PyRC uses `pyterm_irc_config.ini` in its root directory as the main configuration file.
+The `state.json` (persistent state) and `logs/` (application logs) directories are created in the current working directory.
 
 ### Example `config.ini`
 
@@ -821,17 +1106,20 @@ file = pyrc.log
 ## Core Features
 
 ### Asynchronous Core
+
 - Single-threaded event loop for all I/O operations
 - Non-blocking UI updates and network operations
 - Efficient resource usage with Python's asyncio
 
 ### Modern IRC Features
+
 - Full IRCv3 support with capability negotiation
 - SASL authentication
 - Message tags and metadata
 - DCC file transfers
 
 ### Rich Terminal UI
+
 - Responsive layout that adapts to terminal size
 - Split view for multiple channels
 - Tab completion for nicks, commands, and channels
@@ -839,12 +1127,14 @@ file = pyrc.log
 - Mouse support for scrolling and clicking
 
 ### Extensibility
+
 - Python scripting API
 - Event-driven architecture
 - Custom command support
 - Plugin system
 
 ### State Management
+
 - Persistent connection state
 - Automatic reconnection
 - Channel and user tracking
@@ -853,6 +1143,7 @@ file = pyrc.log
 ## Scripting API
 
 PyRC provides a powerful Python API for automation and extension. Scripts can:
+
 - Listen for and respond to events
 - Register custom commands
 - Interact with the IRC server

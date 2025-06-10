@@ -545,8 +545,9 @@ class IRCClient_Logic:
         ):
             logger.info(f"_handle_auto_channel_fully_joined: Auto-switching to first successfully joined initial channel: {joined_channel_name}")
             self.context_manager.set_active_context(joined_channel_name) # Use original case for set_active_context
-            if hasattr(self, 'ui_manager') and self.ui_manager: # Ensure ui_manager exists
-                self.ui_manager.request_full_redraw(f"auto_switch_to_{joined_channel_normalized}")
+            if not self.is_headless and isinstance(self.ui, UIManager): # Check if it's UIManager
+                # self.ui here would be an instance of UIManager
+                cast(UIManager, self.ui).refresh_all_windows()
             self._switched_to_initial_channel = True # Mark that we've done the first switch
         elif joined_channel_normalized in normalized_initial_channels and self._switched_to_initial_channel:
             logger.debug(f"CHANNEL_FULLY_JOINED (auto-join): Initial channel '{joined_channel_normalized}' joined, but already switched to an earlier initial channel. No further auto-switch.")
@@ -694,6 +695,36 @@ class IRCClient_Logic:
         full_ctcp_command = f"\x01{payload}\x01"
         await self.network_handler.send_raw(f"PRIVMSG {target} :{full_ctcp_command}")
         logger.debug(f"Sent CTCP PRIVMSG to {target}: {full_ctcp_command}")
+
+    async def rehash_configuration(self):
+        """Reloads the application configuration."""
+        logger.info("Attempting to rehash configuration...")
+        if self.config.rehash():
+            # Update components that depend on self.config
+            self.channel_logger_manager = ChannelLoggerManager(self.config)
+            # self.context_manager.max_history_per_context = self.config.max_history # ContextManager uses this at init
+            # ScriptManager might need re-evaluation of disabled_scripts
+            # For now, we assume direct access to self.config.disabled_scripts is sufficient
+            # or a restart is needed for script changes.
+
+            # Re-evaluate TriggerManager based on new config
+            if self.config.enable_trigger_system:
+                if not self.trigger_manager:
+                    self._initialize_trigger_manager() # Initialize if not already
+                elif self.trigger_manager: # If it exists, reload its triggers
+                    self.trigger_manager.triggers.clear()
+                    self.trigger_manager.load_triggers()
+            elif not self.config.enable_trigger_system and self.trigger_manager:
+                logger.info("Trigger system disabled via rehash. Clearing existing triggers.")
+                self.trigger_manager.triggers.clear() # Clear triggers, but manager object might persist
+                # Or, self.trigger_manager = None # To fully disable
+
+            await self.add_status_message("Configuration rehashed successfully.", "system")
+            logger.info("Configuration rehashed successfully.")
+            await self.add_status_message("Some configuration changes may require a client restart to take full effect.", "warning")
+        else:
+            await self.add_status_message("Failed to rehash configuration. Check logs.", "error")
+            logger.error("Failed to rehash configuration.")
 
     async def switch_active_context(self, direction: str):
         logger.debug(f"switch_active_context called with direction: '{direction}'")
@@ -863,10 +894,6 @@ class IRCClient_Logic:
                     f"Error switching to '{new_active_channel_name_to_set}'.",
                     "error",
                 )
-
-    def is_cap_negotiation_pending(self) -> bool:
-        """Check if CAP negotiation is still pending."""
-        return False
 
     async def handle_channel_fully_joined(self, channel_name: str):
         """

@@ -68,7 +68,7 @@ class UIManager:
             self.sidebar_width,
             self.msg_win_height,
             self.msg_win_width,
-            _ # total_height_used_by_ui - remove the unused variable
+            _
         ) = self.window_layout_manager.calculate_and_create_windows(
             term_height, term_width, self.split_mode_active, self.active_split_pane
         )
@@ -380,19 +380,6 @@ class UIManager:
                 logger.error(f"Curses error displaying 'Critical UI Error!' message: {ce_crit_err_msg}")
             except Exception as ex_crit_err_msg:
                 logger.error(f"Unexpected error displaying 'Critical UI Error!' message: {ex_crit_err_msg}", exc_info=True)
-
-    async def add_message_to_context(
-        self, text: str, color_attr: int, prefix_time: bool, context_name: str
-    ):
-        """Adds a message to the specified context's message history."""
-        final_text = text
-        if prefix_time:
-            timestamp = time.strftime("%H:%M:%S")
-            final_text = f"[{timestamp}] {text}"
-
-        self.client.context_manager.add_message_to_context(
-            context_name=context_name, text_line=final_text, color_attr=color_attr
-        )
 
     def get_input_char(self):
         if not self.input_win:

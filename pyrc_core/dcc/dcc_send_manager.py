@@ -369,7 +369,7 @@ class DCCSendManager:
                     if not chunk: # End of file
                         break
 
-                    transfer._apply_throttle(len(chunk)) # Apply throttling before sending
+                    await transfer._apply_throttle(len(chunk)) # Apply throttling before sending
 
                     transfer.writer.write(chunk)
                     await transfer.writer.drain()

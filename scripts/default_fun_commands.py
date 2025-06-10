@@ -109,7 +109,7 @@ class FunCommandsScript(ScriptBase):
 
     async def handle_slap_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /slap command"""
-        parts = self.ensure_command_args(args_str, "slap", 1)
+        parts = await self.ensure_command_args(args_str, "slap", 1)
         if not parts:
             return
 
@@ -119,13 +119,13 @@ class FunCommandsScript(ScriptBase):
 
     async def handle_8ball_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /8ball command"""
-        parts = self.ensure_command_args(args_str, "8ball", 1)
+        parts = await self.ensure_command_args(args_str, "8ball", 1)
         if not parts:
             return
 
         question = " ".join(parts)
         answer = random.choice(self.eight_ball_answers)
-        self.api.add_message_to_context(
+        await self.api.add_message_to_context(
             event_data.get("active_context_name", "Status"),
             f"Question: {question}\nAnswer: {answer}",
             "system",
@@ -133,14 +133,14 @@ class FunCommandsScript(ScriptBase):
 
     async def handle_dice_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /dice command"""
-        parts = self.ensure_command_args(args_str, "dice", 1)
+        parts = await self.ensure_command_args(args_str, "dice", 1)
         if not parts:
             return
 
         dice_str = parts[0]
         match = re.match(r"(\d+)d(\d+)", dice_str)
         if not match:
-            self.api.add_message_to_context(
+            await self.api.add_message_to_context(
                 event_data.get("active_context_name", "Status"),
                 "Invalid dice format. Use NdN (e.g., 2d6)",
                 "error",
@@ -151,7 +151,7 @@ class FunCommandsScript(ScriptBase):
         sides = int(match.group(2))
 
         if num_dice < 1 or sides < 1:
-            self.api.add_message_to_context(
+            await self.api.add_message_to_context(
                 event_data.get("active_context_name", "Status"),
                 "Number of dice and sides must be positive",
                 "error",
@@ -160,7 +160,7 @@ class FunCommandsScript(ScriptBase):
 
         rolls = [random.randint(1, sides) for _ in range(num_dice)]
         total = sum(rolls)
-        self.api.add_message_to_context(
+        await self.api.add_message_to_context(
             event_data.get("active_context_name", "Status"),
             f"Rolling {num_dice}d{sides}: {rolls} = {total}",
             "system",
@@ -168,7 +168,7 @@ class FunCommandsScript(ScriptBase):
 
     async def handle_rainbow_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /rainbow command"""
-        parts = self.ensure_command_args(args_str, "rainbow", 1)
+        parts = await self.ensure_command_args(args_str, "rainbow", 1)
         if not parts:
             return
 
@@ -180,25 +180,25 @@ class FunCommandsScript(ScriptBase):
             rainbow_text += f"\x03{color}{char}"
         rainbow_text += "\x03"  # Reset color
 
-        self.api.add_message_to_context(
+        await self.api.add_message_to_context(
             event_data.get("active_context_name", "Status"), rainbow_text, "system"
         )
 
     async def handle_reverse_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /reverse command"""
-        parts = self.ensure_command_args(args_str, "reverse", 1)
+        parts = await self.ensure_command_args(args_str, "reverse", 1)
         if not parts:
             return
 
         text = " ".join(parts)
         reversed_text = text[::-1]
-        self.api.add_message_to_context(
+        await self.api.add_message_to_context(
             event_data.get("active_context_name", "Status"), reversed_text, "system"
         )
 
     async def handle_wave_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /wave command"""
-        parts = self.ensure_command_args(args_str, "wave", 1)
+        parts = await self.ensure_command_args(args_str, "wave", 1)
         if not parts:
             return
 
@@ -209,21 +209,21 @@ class FunCommandsScript(ScriptBase):
                 wave_text += char.upper()
             else:
                 wave_text += char.lower()
-        self.api.add_message_to_context(
+        await self.api.add_message_to_context(
             event_data.get("active_context_name", "Status"), wave_text, "system"
         )
 
     async def handle_ascii_command(self, args_str: str, event_data: Dict[str, Any]):
         """Handle the /ascii command"""
         if not self.pyfiglet_available:
-            self.api.add_message_to_context(
+            await self.api.add_message_to_context(
                 event_data.get("active_context_name", "Status"),
                 "ASCII art command requires pyfiglet library. Install with: pip install pyfiglet",
                 "error",
             )
             return
 
-        parts = self.ensure_command_args(args_str, "ascii", 1)
+        parts = await self.ensure_command_args(args_str, "ascii", 1)
         if not parts:
             return
 
@@ -233,11 +233,11 @@ class FunCommandsScript(ScriptBase):
 
             ascii_art = pyfiglet.figlet_format(text)
             for line in ascii_art.split("\n"):
-                self.api.add_message_to_context(
+                await self.api.add_message_to_context(
                     event_data.get("active_context_name", "Status"), line, "system"
                 )
         except Exception as e:
-            self.api.add_message_to_context(
+            await self.api.add_message_to_context(
                 event_data.get("active_context_name", "Status"),
                 f"Error generating ASCII art: {e}",
                 "error",

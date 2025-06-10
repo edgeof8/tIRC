@@ -27,8 +27,6 @@ class DCCPassiveOfferManager:
                 "timestamp": time.time()
             }
         self.dcc_event_logger.info(f"Stored pending passive DCC SEND offer from {nick} for '{filename}' (IP: {ip_str}) with token {token}.")
-        # Opportunistic cleanup can be called by DCCManager after this
-        # self.cleanup_stale_offers(self.dcc_config.passive_mode_token_timeout)
 
 
     def retrieve_offer(self, token: str) -> Optional[Dict[str, Any]]:

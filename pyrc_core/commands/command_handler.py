@@ -1,6 +1,5 @@
 # pyrc_core/commands/command_handler.py
 import logging
-import os # Keep for os.path.abspath if still needed, but not for walk
 import importlib
 import pkgutil # Import pkgutil
 from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Callable, Any, Awaitable
@@ -33,8 +32,6 @@ class CommandHandler:
         self.command_map: Dict[str, Tuple[Callable, bool]] = {
             "on": (self.trigger_commands.handle_on_command, False), # Assume sync for now, adjust if needed
         }
-
-        logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
 
         logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
         logger.info(f"pkgutil.walk_packages path: {pyrc_core.commands.__path__}, prefix: {pyrc_core.commands.__name__ + '.'}")

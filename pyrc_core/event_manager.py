@@ -116,7 +116,7 @@ class EventManager:
     async def dispatch_nick(self, old_nick: str, new_nick: str, userhost: str, is_self: bool, raw_line: str = ""):
         data = {
             "old_nick": old_nick, "new_nick": new_nick,
-            "userhost": userhost, "is_self": is_self # Corrected from source_userhost
+            "userhost": userhost, "is_self": is_self
         }
         await self.dispatch_event("NICK", data, raw_line)
 
@@ -129,7 +129,7 @@ class EventManager:
 
     async def dispatch_channel_mode_applied(self, channel: str, setter_nick: Optional[str], setter_userhost: Optional[str], mode_changes: List[Dict[str, Any]], current_channel_modes: List[str], raw_line: str = ""):
         data = {
-            "channel": channel, "setter_nick": setter_nick, "setter_userhost": setter_userhost, # Changed 'setter' to 'setter_nick' for consistency
+            "channel": channel, "setter_nick": setter_nick, "setter_userhost": setter_userhost,
             "mode_changes": mode_changes, "current_channel_modes": current_channel_modes
         }
         await self.dispatch_event("CHANNEL_MODE_APPLIED", data, raw_line)
@@ -139,7 +139,7 @@ class EventManager:
         data = {"nick": nick, "userhost": userhost, "channel": channel, "topic": topic}
         await self.dispatch_event("TOPIC", data, raw_line)
 
-    async def dispatch_chghost(self, nick: str, new_ident: str, new_host: str, old_userhost: str, raw_line: str = ""): # Changed userhost to old_userhost
+    async def dispatch_chghost(self, nick: str, new_ident: str, new_host: str, old_userhost: str, raw_line: str = ""):
         data = {"nick": nick, "new_ident": new_ident, "new_host": new_host, "userhost": old_userhost}
         await self.dispatch_event("CHGHOST", data, raw_line)
 

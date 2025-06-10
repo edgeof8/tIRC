@@ -24,7 +24,6 @@ async def _proceed_with_new_server_connection(client: "IRCClient_Logic", config_
     """
     Helper function to encapsulate the logic for setting up and connecting to a new server.
     """
-    # client.all_server_configs is now client.config.all_server_configs
     if config_name not in client.config.all_server_configs:
         logger.error(f"/server: Target config '{config_name}' not found during connection attempt.")
         await client.add_message(f"Error: Server configuration '{config_name}' disappeared.", client.ui.colors["error"], context_name="Status")
@@ -47,15 +46,6 @@ async def _proceed_with_new_server_connection(client: "IRCClient_Logic", config_
     if not conn_info: # Should not happen if _configure_from_server_config succeeded
         await client.add_message(f"Critical error: Connection info lost after configuring for '{config_name}'.", client.ui.colors["error"], context_name="Status")
         return
-
-    # These direct assignments to client attributes are being phased out by StateManager.
-    # client.active_server_config_name = config_name
-    # client.active_server_config = new_conf # This might still be useful for client logic to know current named config
-
-    # The direct assignments and _reset_state_for_new_connection are no longer needed
-    # as _configure_from_server_config and ConnectionOrchestrator manage the state.
-    # client.active_server_config_name = config_name
-    # client.active_server_config = new_conf # This might still be useful for client logic to know current named config
 
     # The ConnectionOrchestrator handles initialization and connection establishment
     # based on the connection info already set in StateManager by _configure_from_server_config.

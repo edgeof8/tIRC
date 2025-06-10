@@ -12,12 +12,10 @@ if TYPE_CHECKING: # New block
 
 logger = logging.getLogger("pyrc.sasl")
 
-# Forces Pylance re-evaluation (again)
 class SaslAuthenticator:
     def __init__(self, network_handler: 'NetworkHandler', cap_negotiator: 'CapNegotiator', password: Optional[str], client_logic_ref: Optional['IRCClient_Logic'] = None):
         self.network_handler = network_handler
         self.cap_negotiator = cap_negotiator
-        # self.nick removed, will be fetched from client_logic_ref when needed
         self.password = password
         self.client_logic_ref = client_logic_ref
         self.loop = asyncio.get_event_loop()

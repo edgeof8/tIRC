@@ -11,8 +11,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("pyrc.handlers.membership")
 
 async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
+    """Handles JOIN messages."""
     logger.debug(f"handle_join_event: Called for raw_line='{raw_line.strip()}', parsed_msg={parsed_msg}")
-    # """Handles JOIN messages.""" # Docstring moved below for clarity
     src_nick = parsed_msg.source_nick
     params = parsed_msg.params
     conn_info = client.state_manager.get_connection_info()
@@ -118,7 +118,7 @@ async def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
 
         if conn_info:
             conn_info.currently_joined_channels.discard(parted_channel)
-            await client.state_manager.set("connection_info", conn_info)
+            await client.state_manager.set_connection_info(conn_info) # Use async set_connection_info
         await client.add_message(
             f"You left {parted_channel}{reason_message}",
             client.ui.colors["join_part"],

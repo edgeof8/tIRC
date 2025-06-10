@@ -1,4 +1,4 @@
-# pyrc_core/commands/dcc/dcc_browse_command.py # Pylance re-evaluation
+# pyrc_core/commands/dcc/dcc_browse_command.py
 import logging
 import os
 from typing import TYPE_CHECKING, List, Dict, Any

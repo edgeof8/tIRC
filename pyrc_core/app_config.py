@@ -454,6 +454,24 @@ class AppConfig:
         level = getattr(logging, level_str.upper(), None)
         return level if isinstance(level, int) else default_level
 
+    def rehash(self) -> bool:
+        """
+        Reloads the entire configuration from the INI file.
+        Returns True if successful, False otherwise.
+        """
+        try:
+            logger.info(f"Rehashing configuration from {self.CONFIG_FILE_PATH}...")
+            self._config_parser = configparser.ConfigParser() # Reset parser
+            self._load_config_file()
+            self._load_all_settings()
+            self._load_server_configurations()
+            self._load_ignore_list()
+            logger.info("Configuration rehashed successfully.")
+            return True
+        except Exception as e:
+            logger.error(f"Error during configuration rehash: {e}", exc_info=True)
+            return False
+
     @property
     def log_level_int(self) -> int:
         return self.get_log_level_int_from_str(self.log_level_str, logging.INFO)
