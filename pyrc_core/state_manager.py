@@ -577,6 +577,22 @@ class StateManager:
         if self.auto_save:
             self._save_state()
 
+    def reset_session_state(self) -> None:
+        """
+        Resets the dynamic state for a new session, clearing any loaded
+        connection info and related runtime data. This is called at startup
+        to prevent stale data from `state.json` from affecting the new session.
+        """
+        with self._lock:
+            self.logger.info("Resetting session state for new run...")
+            self._state["connection_info"] = None
+            self._state["connection_state"] = ConnectionState.DISCONNECTED
+            self._state["last_error"] = None
+            # We can keep connection_attempts for historical data, or reset it too.
+            # For now, let's reset it for a truly clean session.
+            self._state["connection_attempts"] = 0
+            self.logger.info("Session state has been reset.")
+
     # Connection state management methods
     async def set_connection_state(
         self,

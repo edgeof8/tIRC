@@ -12,7 +12,7 @@ import platform
 import sys # Import sys for sys.exit
 import time # Import time
 from enum import Enum
-from dataclasses import asdict  # Import asdict
+from dataclasses import asdict  # Import asdict - RE-ADDED
 
 # Conditional import for curses based on platform
 if platform.system() == "Windows":
@@ -51,6 +51,7 @@ from pyrc_core.client.connection_orchestrator import ConnectionOrchestrator
 from pyrc_core.client.client_shutdown_coordinator import ClientShutdownCoordinator
 from pyrc_core.client.client_view_manager import ClientViewManager
 from pyrc_core.client.dummy_ui import DummyUI # Added import
+from pyrc_core.client.initial_state_builder import InitialStateBuilder # NEW IMPORT
 
 logger = logging.getLogger("pyrc.logic")
 
@@ -90,6 +91,7 @@ class IRCClient_Logic:
 
         # --- Stage 2: Initialize All Manager Components ---
         self.state_manager = StateManager()
+        self.state_manager.reset_session_state()
         self.channel_logger_manager = ChannelLoggerManager(self.config)
         self.context_manager = ContextManager(max_history_per_context=self.config.max_history)
         self.network_handler: NetworkHandler = NetworkHandler(self)
@@ -130,6 +132,45 @@ class IRCClient_Logic:
             "CHANNEL_FULLY_JOINED", self.view_manager._handle_auto_channel_fully_joined, "IRCClient_Logic_Internal"
         )
 
+        # --- Stage 3: Initial State Setup using InitialStateBuilder ---
+        state_builder = InitialStateBuilder(self.config, self.args)
+        conn_info = state_builder.build()
+
+        if conn_info:
+            if not self.state_manager.set_connection_info(conn_info):
+                logger.error("Initial state creation failed: ConnectionInfo validation error.")
+                config_errors = self.state_manager.get_config_errors()
+                error_summary = "; ".join(config_errors) if config_errors else "Unknown validation error."
+                # Use add_status_message for UI feedback
+                self.loop.create_task(self.add_status_message(f"Initial Configuration Error: {error_summary}", "error"))
+                # Ensure auto_connect is False if validation fails
+                current_conn_info = self.state_manager.get_connection_info()
+                if current_conn_info:
+                    current_conn_info.auto_connect = False # type: ignore
+                    self.loop.create_task(self.state_manager.set_connection_info(current_conn_info)) # type: ignore
+                elif conn_info: # Use conn_info here
+                    conn_info.auto_connect = False
+                    self.loop.create_task(self.state_manager.set_connection_info(conn_info))
+            else:
+                if conn_info.initial_channels:
+                    self.pending_initial_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels}
+                    if not self.pending_initial_joins: self.all_initial_joins_processed.set()
+                    else: self.all_initial_joins_processed.clear()
+                else:
+                    self.all_initial_joins_processed.set()
+                    logger.debug("No initial channels configured.")
+        else:
+            logger.info("No initial connection info built. Starting without auto-connect.")
+            self.all_initial_joins_processed.set() # No initial joins to wait for
+
+        self.context_manager.create_context("Status", context_type="status")
+        if self.config.dcc.enabled:
+            self.context_manager.create_context("DCC", context_type="dcc_transfers")
+        if conn_info and conn_info.initial_channels: # Use conn_info here
+            for ch in conn_info.initial_channels:
+                self.context_manager.create_context(ch, context_type="channel", initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN)
+        self.context_manager.set_active_context("Status")
+
     def process_trigger_event(self, event_type: str, event_data: Dict[str, Any]):
         if self.trigger_manager:
             self.trigger_manager.process_trigger(event_type, event_data)
@@ -156,7 +197,7 @@ class IRCClient_Logic:
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
         try:
-            await self._create_initial_state()
+            # Initial state is now created in __init__
             self.connection_orchestrator.initialize_handlers()
             self.script_manager.load_scripts()
             await self._log_startup_status()
@@ -263,89 +304,6 @@ class IRCClient_Logic:
     def currently_joined_channels(self) -> Set[str]:
         return self.context_manager.get_all_channels()
 
-    async def _create_initial_state(self):
-        logger.debug(f"IRCClient_Logic: ENTERING _create_initial_state. Current pending_initial_joins: {self.pending_initial_joins}")
-        active_config_for_initial_state: Optional[ServerConfig] = None
-        default_server_for_nick: Optional[ServerConfig] = None
-        if self.config.default_server_config_name:
-            default_server_for_nick = self.config.all_server_configs.get(self.config.default_server_config_name)
-
-        if self.args.server:
-            port = self.args.port
-            ssl = self.args.ssl
-            if port is None:
-                if ssl is None: ssl = False
-                port = app_config.DEFAULT_SSL_PORT if ssl else app_config.DEFAULT_PORT
-            elif ssl is None:
-                ssl = (port == app_config.DEFAULT_SSL_PORT)
-            cli_nick = self.args.nick or (default_server_for_nick.nick if default_server_for_nick else app_config.DEFAULT_NICK)
-            active_config_for_initial_state = ServerConfig(
-                server_id="CommandLine", address=self.args.server, port=port, ssl=ssl, nick=cli_nick,
-                username=cli_nick, realname=cli_nick, channels=self.args.channel or [],
-                server_password=self.args.password, nickserv_password=self.args.nickserv_password,
-                sasl_username=None, sasl_password=None,
-                verify_ssl_cert=self.args.verify_ssl_cert if self.args.verify_ssl_cert is not None else True,
-                auto_connect=True, desired_caps=[]
-            )
-        elif self.config.default_server_config_name:
-            active_config_for_initial_state = self.config.all_server_configs.get(self.config.default_server_config_name)
-
-        if active_config_for_initial_state:
-            server_config_dict = asdict(active_config_for_initial_state)
-            # Map ServerConfig fields to ConnectionInfo fields, adjusting for 'address' -> 'server'
-            conn_info_data = {k: v for k, v in server_config_dict.items() if k != 'address'}
-            conn_info_data['server'] = server_config_dict['address']
-            conn_info_data['initial_channels'] = server_config_dict.get('channels', [])
-
-            if 'address' in conn_info_data: # Should be already handled by the line above
-                conn_info_data['server'] = conn_info_data.pop('address')
-
-            final_conn_info_data = {
-                'server': conn_info_data.get('server'),
-                'port': conn_info_data.get('port'),
-                'ssl': conn_info_data.get('ssl'),
-                'nick': conn_info_data.get('nick'),
-                'username': conn_info_data.get('username', conn_info_data.get('nick')),
-                'realname': conn_info_data.get('realname', conn_info_data.get('nick')),
-                'server_password': conn_info_data.get('server_password'),
-                'nickserv_password': conn_info_data.get('nickserv_password'),
-                'sasl_username': conn_info_data.get('sasl_username'),
-                'sasl_password': conn_info_data.get('sasl_password'),
-                'verify_ssl_cert': conn_info_data.get('verify_ssl_cert', True),
-                'auto_connect': conn_info_data.get('auto_connect', False),
-                'initial_channels': conn_info_data.get('initial_channels', []),
-                'desired_caps': conn_info_data.get('desired_caps', [])
-            }
-            conn_info_obj = ConnectionInfo(**final_conn_info_data) # type: ignore
-
-            if not self.state_manager.set_connection_info(conn_info_obj):
-                logger.error("Initial state creation failed: ConnectionInfo validation error.")
-                config_errors = self.state_manager.get_config_errors()
-                error_summary = "; ".join(config_errors) if config_errors else "Unknown validation error."
-                await self.add_status_message(f"Initial Configuration Error: {error_summary}", "error")
-                current_conn_info = self.state_manager.get_connection_info()
-                if current_conn_info:
-                    current_conn_info.auto_connect = False # type: ignore
-                    await self.state_manager.set_connection_info(current_conn_info) # type: ignore
-                elif conn_info_obj: # Use conn_info_obj here
-                    conn_info_obj.auto_connect = False
-                    await self.state_manager.set_connection_info(conn_info_obj)
-            else:
-                if conn_info_obj.initial_channels:
-                    self.pending_initial_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info_obj.initial_channels}
-                    if not self.pending_initial_joins: self.all_initial_joins_processed.set()
-                    else: self.all_initial_joins_processed.clear()
-                else:
-                    self.all_initial_joins_processed.set()
-                    logger.debug("No initial channels configured.")
-
-        self.context_manager.create_context("Status", context_type="status")
-        if self.config.dcc.enabled:
-            self.context_manager.create_context("DCC", context_type="dcc_transfers")
-        if active_config_for_initial_state and active_config_for_initial_state.channels:
-            for ch in active_config_for_initial_state.channels:
-                self.context_manager.create_context(ch, context_type="channel", initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN)
-        self.context_manager.set_active_context("Status")
 
     async def _join_initial_channels(self):
         conn_info = self.state_manager.get_connection_info()
