@@ -127,38 +127,15 @@ class NetworkHandler:
             except Exception as e: # pragma: no cover
                 self.logger.error(f"Error sending QUIT message: {e}")
 
-        await self.stop() # stop() is now more robust
+        # Ensure the network task is stopped first. This will handle reader/writer closure.
+        await self.stop()
 
-        if self._reader: # pragma: no cover
-            self._reader = None
-            self.logger.debug("Reader set to None in disconnect_gracefully.")
-
-        if self._writer:
-            writer_to_clean = self._writer
-            self._writer = None
-            try:
-                if not writer_to_clean.is_closing():
-                    writer_to_clean.close()
-                    self.logger.debug("Writer.close() called in disconnect_gracefully.")
-
-                loop = asyncio.get_event_loop()
-                if not loop.is_closed():
-                    try:
-                        await asyncio.wait_for(writer_to_clean.wait_closed(), timeout=1.0)
-                        self.logger.debug("Writer wait_closed completed in disconnect_gracefully.")
-                    except asyncio.TimeoutError: # pragma: no cover
-                        self.logger.warning("Timeout waiting for writer to close in disconnect_gracefully.")
-                    except Exception as e_wc: # pragma: no cover
-                        self.logger.error(f"Error during writer.wait_closed() in disconnect_gracefully: {e_wc}", exc_info=True)
-                else: # pragma: no cover
-                    self.logger.warning("Loop closed, not awaiting writer.wait_closed() in disconnect_gracefully.")
-            except Exception as e: # pragma: no cover
-                self.logger.error(f"Error handling writer in disconnect_gracefully: {e}", exc_info=True)
-
-        self.connected = False
-        if self.client_logic_ref and self.client_logic_ref.state_manager.get_connection_state() != ConnectionState.DISCONNECTED:
-             self.logger.debug("disconnect_gracefully: Calling _reset_connection_state as a fallback.")
-             await self._reset_connection_state(dispatch_event=True)
+        # After stop(), _reader and _writer should ideally be None or closing.
+        # Call _reset_connection_state to ensure all state is clean and disconnect event is dispatched.
+        # This also handles any lingering reader/writer cleanup.
+        self.logger.debug("disconnect_gracefully: Calling _reset_connection_state for final cleanup.")
+        await self._reset_connection_state(dispatch_event=True)
+        self.connected = False # Ensure connected flag is false after full cleanup
 
 
     async def update_connection_params(
@@ -284,13 +261,23 @@ class NetworkHandler:
                 if not writer_to_close.is_closing():
                     self.logger.debug("Calling writer.close() in _reset_connection_state.")
                     writer_to_close.close()
+                    # Await wait_closed to ensure the transport is fully shut down
+                    try:
+                        await asyncio.wait_for(writer_to_close.wait_closed(), timeout=5.0)
+                        self.logger.debug("Writer.wait_closed() completed in _reset_connection_state.")
+                    except asyncio.TimeoutError:
+                        self.logger.warning("Timeout waiting for writer to close in _reset_connection_state.")
+                    except Exception as e_wc: # pragma: no cover
+                        self.logger.error(f"Error during writer.wait_closed() in _reset_connection_state: {e_wc}", exc_info=True)
+                else:
+                    self.logger.debug("Writer was already closing in _reset_connection_state.")
             except Exception as e:
-                self.logger.error(f"Error calling writer.close() in reset: {e}")
+                self.logger.error(f"Error handling writer in _reset_connection_state: {e}", exc_info=True)
 
-        if old_reader:
-            del old_reader
-        if writer_to_close:
-            del writer_to_close
+        # Explicitly set to None after attempting closure
+        self._reader = None
+        self._writer = None
+        # No need to 'del' explicitly, Python's GC handles it
 
         if self.client_logic_ref:
             current_sm_state = self.client_logic_ref.state_manager.get_connection_state()

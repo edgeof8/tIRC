@@ -12,6 +12,9 @@ class SafeCursesUtils:
             logger.debug(f"_safe_erase ({context_info}): Attempted to erase a non-existent window.")
             return
         try:
+            # Added pre-check for window validity
+            max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0: return
             window.erase()
         except curses.error as e:
             logger.warning(f"_safe_erase ({context_info}): curses.error erasing window {window!r}: {e}")
@@ -19,17 +22,21 @@ class SafeCursesUtils:
             logger.error(f"_safe_erase ({context_info}): Unexpected error erasing window {window!r}: {ex}", exc_info=True)
 
     @staticmethod
-    def _safe_bkgd(window: Any, char: Any, attr: int, context_info: str = ""):
+    def _safe_bkgd(window: Any, char: Any, color_pair_id: int, context_info: str = ""):
         """Safely sets the background character and attribute for the window."""
         if not window:
             logger.debug(f"_safe_bkgd ({context_info}): Attempted to set background on a non-existent window.")
             return
         try:
+            # Added pre-check for window validity
+            max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0: return
+            attr = curses.color_pair(color_pair_id)
             window.bkgd(char, attr)
         except curses.error as e:
-            logger.warning(f"_safe_bkgd ({context_info}): curses.error setting background for window {window!r}: {e}")
+            logger.warning(f"_safe_bkgd ({context_info}): curses.error setting background for window {window!r} with pair_id {color_pair_id}: {e}")
         except Exception as ex:
-            logger.error(f"_safe_bkgd ({context_info}): Unexpected error setting background for window {window!r}: {ex}", exc_info=True)
+            logger.error(f"_safe_bkgd ({context_info}): Unexpected error setting background for window {window!r} with pair_id {color_pair_id}: {ex}", exc_info=True)
 
     @staticmethod
     def _safe_box(window: Any, vertch: Any = 0, horch: Any = 0, context_info: str = ""):
@@ -38,6 +45,9 @@ class SafeCursesUtils:
             logger.debug(f"_safe_box ({context_info}): Attempted to draw box on a non-existent window.")
             return
         try:
+            # Added pre-check for window validity
+            max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0: return
             # Use default characters if not provided
             if vertch == 0 and horch == 0:
                  window.box()
@@ -81,6 +91,9 @@ class SafeCursesUtils:
             logger.debug(f"_safe_clear ({context_info}): Attempted clear on a non-existent window.")
             return
         try:
+            # Added pre-check for window validity
+            max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0: return
             window.clear()
         except curses.error as e:
             logger.warning(f"_safe_clear ({context_info}): curses.error during clear for window {window!r}: {e}")
@@ -207,28 +220,27 @@ class SafeCursesUtils:
             logger.error(f"_safe_endwin ({context_info}): Unexpected error ending curses session: {ex}", exc_info=True)
 
     @staticmethod
-    def _draw_window_border_and_bkgd(window, color_attr, title=""):
+    def _draw_window_border_and_bkgd(window, color_pair_id, title=""):
         if not window:
             return
+        try:
+            max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0:
+                return
+        except curses.error as e:
+            logger.warning(
+                f"curses.error in _draw_window_border_and_bkgd getmaxyx for window {window!r}: {e}"
+            )
+            return
+
         SafeCursesUtils._safe_erase(window, "border_and_bkgd_erase")
-        SafeCursesUtils._safe_bkgd(window, " ", color_attr, "border_and_bkgd_bkgd")
-        SafeCursesUtils._safe_box(window, context_info="border_and_bkgd_box") # Draw a border around the window
+        SafeCursesUtils._safe_bkgd(window, " ", color_pair_id, "border_and_bkgd_bkgd")
+        SafeCursesUtils._safe_box(window, context_info="border_and_bkgd_box")
         if title:
-            try:
-                max_y, max_x = window.getmaxyx()
-                if max_y > 0 and max_x > 0:
-                    if 1 < max_x - 1:
-                        text_to_render = title[: max_x - 2]
-                        SafeCursesUtils._safe_addstr(
-                            window, 0, 1, text_to_render, curses.A_BOLD, "border_title"
-                        )
-            except curses.error as e:
-                logger.warning(
-                    f"curses.error in _draw_window_border_and_bkgd for window {window!r}, title '{title[:30]}...': {e}"
-                )
-            except Exception as ex:
-                logger.error(
-                    f"Unexpected error in _draw_window_border_and_bkgd: {ex}", exc_info=True
+            if 1 < max_x - 1:
+                text_to_render = title[: max_x - 2]
+                SafeCursesUtils._safe_addstr(
+                    window, 0, 1, text_to_render, curses.A_BOLD, "border_title"
                 )
 
     @staticmethod
@@ -244,6 +256,8 @@ class SafeCursesUtils:
 
         try:
             max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0:
+                return
         except curses.error as e:
             logger.warning(
                 f"_safe_addstr ({context_info}): curses.error getting getmaxyx for window {window!r}: {e}"
@@ -315,6 +329,8 @@ class SafeCursesUtils:
 
         try:
             max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0:
+                return
         except curses.error as e:
             logger.warning(
                 f"_safe_hline ({context_info}): curses.error getting getmaxyx for window {window!r}: {e}"
@@ -363,6 +379,8 @@ class SafeCursesUtils:
 
         try:
             max_y, max_x = window.getmaxyx()
+            if max_y <= 0 or max_x <= 0:
+                return
         except curses.error as e:
             logger.warning(
                 f"_safe_move ({context_info}): curses.error getting getmaxyx for window {window!r}: {e}"
@@ -404,10 +422,18 @@ class SafeCursesUtils:
         if not window: return
         try:
             max_y, max_x = window.getmaxyx()
-            if not (0 <= y < max_y): return
-
-            padded_text = text.ljust(max_x)
-
-            SafeCursesUtils._safe_addstr(window, y, 0, padded_text, attr, context_info)
+            if max_y <= 0 or max_x <= 0:
+                logger.debug(f"Skipping banner draw, window dimensions are non-positive ({max_y}x{max_x}).")
+                return
         except curses.error as e:
-            logger.warning(f"curses.error in _draw_full_width_banner for {context_info}: {e}")
+            logger.warning(f"curses.error in _draw_full_width_banner getmaxyx for {context_info}: {e}")
+            return
+        except Exception as ex:
+            logger.error(f"Unexpected error in _draw_full_width_banner getmaxyx: {ex}", exc_info=True)
+            return
+
+        if not (0 <= y < max_y): return
+
+        padded_text = text.ljust(max_x)
+
+        SafeCursesUtils._safe_addstr(window, y, 0, padded_text, attr, context_info)

@@ -9,6 +9,7 @@ import sys
 import asyncio  # Import asyncio
 import tracemalloc # For more detailed tracebacks
 from typing import List, Optional
+import sys # Added for sys.exit
 
 # Import the new AppConfig class and other necessary components
 from pyrc_core.app_config import AppConfig, ServerConfig, DEFAULT_NICK, DEFAULT_SSL_PORT, DEFAULT_PORT
@@ -157,6 +158,11 @@ def parse_arguments(default_server_config: Optional[ServerConfig]) -> argparse.N
     parser.add_argument("--verify-ssl-cert", action=argparse.BooleanOptionalAction, default=None, help="Verify SSL/TLS certificate. Overrides config. (Default: True)")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode (no UI)")
     parser.add_argument("--disable-script", action="append", default=[], metavar="SCRIPT_NAME", help="Disable a specific script.")
+    parser.add_argument( # NEW
+        "--send-raw", # NEW
+        metavar="\"COMMAND\"", # NEW
+        help="Send a raw command to a running PyRC instance and exit." # NEW
+    ) # NEW
 
     return parser.parse_args()
 
@@ -189,6 +195,16 @@ def main():
         default_server_conf = app_config.all_server_configs.get(app_config.default_server_config_name)
 
     args = parse_arguments(default_server_conf)
+
+    if args.send_raw: # NEW
+        # This is an IPC client call, not a full app startup. # NEW
+        # We need a small, separate async function to handle this. # NEW
+        try: # NEW
+            asyncio.run(send_remote_command(args.send_raw, app_config)) # NEW
+        except Exception as e: # NEW
+            print(f"Error sending command: {e}", file=sys.stderr) # NEW
+            sys.exit(1) # NEW
+        sys.exit(0) # Exit successfully after sending. # NEW
 
     if args.headless:
         app_logger.info("Starting PyRC in headless mode.")
@@ -249,7 +265,7 @@ def main():
                             main_ui_logger.info("curses_wrapper_with_args (KBInt): Waiting for client.shutdown_complete_event.")
                             try:
                                 # Run a new run_until_complete just for the shutdown event
-                                loop.run_until_complete(asyncio.wait_for(client_instance.shutdown_complete_event.wait(), timeout=10.0))
+                                loop.run_until_complete(asyncio.wait_for(client_instance.shutdown_complete_event.wait(), timeout=30.0)) # Increased timeout
                                 main_ui_logger.info("curses_wrapper_with_args (KBInt): Client shutdown_complete_event received.")
                             except asyncio.TimeoutError:
                                 main_ui_logger.error("curses_wrapper_with_args (KBInt): Timeout waiting for client.shutdown_complete_event.")
@@ -299,12 +315,30 @@ def main():
 
                 if not loop.is_closed():
                     main_ui_logger.info("Closing curses event loop in curses_wrapper_with_args finally.")
+                    # Add a small sleep to allow any final cleanup tasks to run
+                    asyncio.run(asyncio.sleep(0.1)) # Run sleep in the current loop context
                     loop.close()
                     main_ui_logger.debug("curses_wrapper_with_args: Event loop closed.")
                 else:
                     main_ui_logger.warning("curses_wrapper_with_args: Event loop was already closed when entering outer finally block.")
 
         curses.wrapper(curses_wrapper_with_args)
+
+async def send_remote_command(command: str, config: AppConfig): # NEW
+    ipc_port = config.ipc_port # Get port from config # NEW
+    try: # NEW
+        reader, writer = await asyncio.open_connection('127.0.0.1', ipc_port) # NEW
+        print(f"Connecting to running PyRC instance on port {ipc_port}...") # NEW
+        # Ensure the command is correctly formatted with a newline # NEW
+        writer.write(command.encode() + b'\n') # NEW
+        await writer.drain() # NEW
+        print("Command sent successfully.") # NEW
+        writer.close() # NEW
+        await writer.wait_closed() # NEW
+    except ConnectionRefusedError: # NEW
+        print("Error: Could not connect to a running PyRC instance.", file=sys.stderr) # NEW
+        print("Please ensure PyRC is running.", file=sys.stderr) # NEW
+        raise # NEW
 
 if __name__ == "__main__":
     main()

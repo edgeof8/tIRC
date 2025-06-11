@@ -61,7 +61,9 @@ class InputHandler:
                 self.last_tab_completed_prefix = ""
 
         if key_code == curses.KEY_RESIZE:
-            ui.setup_layout()
+            # This line was causing a race condition with the main UI loop's resize handling. Removing it.
+            # ui.setup_layout()
+            pass # The main loop's refresh_all_windows will now handle the resize event correctly.
         elif key_code in [
             curses.KEY_BACKSPACE,
             127,

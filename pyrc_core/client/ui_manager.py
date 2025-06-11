@@ -214,61 +214,30 @@ class UIManager:
             self.height, self.width = new_height, new_width
             self.ui_is_too_small = False # Reset flag before attempting layout
 
-            try:
                 # Clear and refresh stdscr before re-creating subwindows
-                SafeCursesUtils._safe_clear(self.stdscr, "UIManager.resize_clear_stdscr")
-                SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_refresh_stdscr")
+            SafeCursesUtils._safe_clear(self.stdscr, "UIManager.resize_clear_stdscr")
+            SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_refresh_stdscr")
 
-                self.setup_layout() # This will re-create windows based on new dimensions
+            self.window_layout_manager.delete_windows() # Explicitly delete old windows
+            self.setup_layout() # This will re-create windows based on new dimensions
 
-                # Scroll to end of messages on resize to show latest messages
-                try:
-                    self.scroll_messages("end")
-                    logger.debug(f"Called scroll_messages('end') after resize.")
-                except Exception as e_scroll_end:
-                    logger.error(f"Error calling scroll_messages('end') after resize: {e_scroll_end}", exc_info=True)
-
-            except Exception as e: # Catches exceptions from setup_layout
-                logger.error(f"Error during resize handling sequence: {e}", exc_info=True)
-                if "Terminal too small" in str(e) or self.height <= 0 or self.width <= 0:
-                    self.ui_is_too_small = True
-                    SafeCursesUtils._safe_erase(self.stdscr, "UIManager.resize_error_too_small_erase")
-                    msg = "Terminal too small. Please resize."
-                    if self.height > 0 and self.width > 0:
-                        msg_y = self.height // 2
-                        msg_x = max(0, (self.width - len(msg)) // 2)
-                        if msg_x + len(msg) <= self.width:
-                            error_attr = self.curses_manager.get_color("error") | curses.A_BOLD
-                            SafeCursesUtils._safe_addstr(self.stdscr, msg_y, msg_x, msg, error_attr, "UIManager.resize_error_too_small_addstr")
-                    SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_error_too_small_refresh")
-                    return
-                else:
-                    SafeCursesUtils._safe_erase(self.stdscr, "UIManager.resize_error_generic_erase")
-                    generic_error_msg = "Resize Error!"
-                    if self.height > 0 and self.width > 0:
-                        err_y = self.height // 2
-                        err_x = max(0, (self.width - len(generic_error_msg)) // 2)
-                        if err_x + len(generic_error_msg) <= self.width:
-                            SafeCursesUtils._safe_addstr(self.stdscr, err_y, err_x, generic_error_msg, self.curses_manager.get_color("error"), "UIManager.resize_error_generic_addstr")
-                    SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_error_generic_refresh")
-                    return
+            # Scroll to end of messages on resize to show latest messages
+            try:
+                self.scroll_messages("end")
+                logger.debug(f"Called scroll_messages('end') after resize.")
+            except Exception as e_scroll_end:
+                logger.error(f"Error calling scroll_messages('end') after resize: {e_scroll_end}", exc_info=True)
 
         # If UI is marked as too small (either from this resize or a previous one)
         if self.ui_is_too_small:
-            # Attempt to re-display the "too small" message if resize didn't just happen,
-            # or ensure stdscr is refreshed if it was already set up by the resize block.
-            # This covers cases where a refresh is called without a resize but the UI is still too small.
-            if not resize_occurred: # If no resize, the message might not have been redrawn
-                SafeCursesUtils._safe_erase(self.stdscr, "UIManager.too_small_repeat_erase") # Ensure clean slate
-                msg = "Terminal too small. Please resize."
-                if self.height > 0 and self.width > 0:
-                    msg_y = self.height // 2
-                    msg_x = max(0, (self.width - len(msg)) // 2)
-                    if msg_x + len(msg) <= self.width: # Check if message can fit
-                        error_attr = self.curses_manager.get_color("error") | curses.A_BOLD
-                        SafeCursesUtils._safe_addstr(self.stdscr, msg_y, msg_x, msg, error_attr, "UIManager.too_small_repeat_addstr")
-                SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.too_small_repeat_refresh")
-
+            SafeCursesUtils._safe_erase(self.stdscr, "UIManager.too_small_repeat_erase") # Ensure clean slate
+            msg = "Terminal too small. Please resize."
+            if self.height > 0 and self.width > 0:
+                msg_y = self.height // 2
+                msg_x = max(0, (self.width - len(msg)) // 2)
+                if msg_x + len(msg) <= self.width: # Check if message can fit
+                    error_attr = self.curses_manager.get_color("error") | curses.A_BOLD
+                    SafeCursesUtils._safe_addstr(self.stdscr, msg_y, msg_x, msg, error_attr, "UIManager.too_small_repeat_addstr")
             SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.too_small_final_refresh")
             return
 

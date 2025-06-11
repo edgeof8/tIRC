@@ -21,7 +21,8 @@ class SidebarPanelRenderer:
             return
 
         SafeCursesUtils._safe_erase(window, "SidebarPanelRenderer.draw_erase")
-        SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("list_panel_bg", 0), "SidebarPanelRenderer.draw_bkgd")
+        # The following line is redundant and removed. The background is set once when the window is created.
+        # SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("list_panel_bg", 0), "SidebarPanelRenderer.draw_bkgd")
 
         max_y, max_x = window.getmaxyx()
         if max_y <= 0 or max_x <= 0:
@@ -32,17 +33,18 @@ class SidebarPanelRenderer:
         )
 
         if active_context_obj and active_context_obj.type == "channel": # Only draw user list for channels
-            user_list_bg_color_pair_id = self.colors.get("user_list_panel_bg", 0)
-            user_list_bg_attr = curses.color_pair(user_list_bg_color_pair_id)
-
-            for y_coord in range(line_num, max_y):
-                try:
-                    # Fill the line with the background color
-                    window.chgat(y_coord, 0, max_x, user_list_bg_attr)
-                except curses.error as e:
-                    logger.warning(f"SidebarPanelRenderer.draw_user_list_bg: curses.error chgat at y={y_coord},x=0,n={max_x} (win_dims {max_y}x{max_x}): {e}")
-                except Exception as ex:
-                    logger.error(f"SidebarPanelRenderer.draw_user_list_bg: Unexpected error chgat at y={y_coord},x=0: {ex}", exc_info=True)
+            # The following block that manually fills the background with chgat is redundant and removed.
+            # The background is set once when the window is created.
+            # user_list_bg_color_pair_id = self.colors.get("user_list_panel_bg", 0)
+            # user_list_bg_attr = curses.color_pair(user_list_bg_color_pair_id)
+            #
+            # for y_coord in range(line_num, max_y):
+            #     try:
+            #         window.chgat(y_coord, 0, max_x, user_list_bg_attr)
+            #     except curses.error as e:
+            #         logger.warning(f"SidebarPanelRenderer.draw_user_list_bg: curses.error chgat at y={y_coord},x=0,n={max_x} (win_dims {max_y}x{max_x}): {e}")
+            #     except Exception as ex:
+            #         logger.error(f"SidebarPanelRenderer.draw_user_list_bg: Unexpected error chgat at y={y_coord},x=0: {ex}", exc_info=True)
 
             if line_num > 0 and line_num < max_y:
                 SafeCursesUtils._safe_hline(
@@ -109,7 +111,8 @@ class SidebarPanelRenderer:
                 break
 
             display_name_base = ctx_name[: max_x - 4]
-            attr = self.colors.get("sidebar_item", 0)
+            # Default attribute is the standard item color
+            attr = curses.color_pair(self.colors.get("sidebar_item", 0))
 
             ctx_obj = self.context_manager.get_context(ctx_name)
             unread_count = self.context_manager.get_unread_count(ctx_name) if ctx_obj else 0
@@ -119,40 +122,94 @@ class SidebarPanelRenderer:
 
             if ctx_obj and ctx_obj.type == "channel" and hasattr(ctx_obj, 'join_status') and ctx_obj.join_status:
                 join_status = ctx_obj.join_status
-                if join_status == ChannelJoinStatus.PENDING_INITIAL_JOIN or \
-                   join_status == ChannelJoinStatus.JOIN_COMMAND_SENT:
-                    status_suffix = " (joining...)"
-                    attr = self.colors.get("sidebar_item", 0) | curses.A_DIM
-                elif join_status == ChannelJoinStatus.SELF_JOIN_RECEIVED:
-                    status_suffix = " (users...)"
-                    attr = self.colors.get("sidebar_item", 0) | curses.A_DIM
+                if join_status in [ChannelJoinStatus.PENDING_INITIAL_JOIN, ChannelJoinStatus.JOIN_COMMAND_SENT, ChannelJoinStatus.SELF_JOIN_RECEIVED]:
+                    status_suffix = " (joining...)" if join_status != ChannelJoinStatus.SELF_JOIN_RECEIVED else " (users...)"
+                    attr = curses.color_pair(self.colors.get("sidebar_item", 0)) | curses.A_DIM
                 elif join_status == ChannelJoinStatus.JOIN_FAILED:
                     status_suffix = " (failed!)"
-                    attr = self.colors.get("error", 0)
+                    attr = curses.color_pair(self.colors.get("error", 0))
 
+            # Apply specific highlights, overriding previous attributes
             if ctx_name == current_active_ctx_name_str:
-                attr = self.colors.get("highlight", 0)
+                attr = curses.color_pair(self.colors.get("sidebar_active", 0))
                 prefix = ">"
             elif unread_count > 0:
-                attr = self.colors.get("highlight", 0)
+                attr = curses.color_pair(self.colors.get("sidebar_unread", 0)) | curses.A_BOLD
                 prefix = "*"
+
+            # Draw prefix
+            current_x = 0
+            SafeCursesUtils._safe_addstr(window, line_num, current_x, prefix, attr, "_draw_sidebar_context_list_prefix")
+            current_x += len(prefix)
+
+            # Get the background color of the current line's attribute
+            # This is crucial to ensure consistent background when applying specific foregrounds
+            attr_id = self.colors.get("sidebar_item", 0) # Default to sidebar_item
+            if ctx_name == current_active_ctx_name_str:
+                attr_id = self.colors.get("sidebar_active", 0)
+            elif unread_count > 0:
+                attr_id = self.colors.get("sidebar_unread", 0)
+            elif ctx_obj and ctx_obj.type == "channel" and hasattr(ctx_obj, 'join_status') and ctx_obj.join_status == ChannelJoinStatus.JOIN_FAILED:
+                attr_id = self.colors.get("error", 0)
+
+            # Get the actual foreground and background colors from the determined attribute ID
+            # This is a workaround as curses.color_pair(id) returns an attribute, not just the ID
+            # We need the actual background color to combine with new foregrounds
+            try:
+                _, current_bg_color = curses.pair_content(attr_id)
+            except curses.error:
+                current_bg_color = curses.COLOR_BLACK # Fallback if pair_content fails
+
+            # Draw context name (channel name might have specific color)
+            ctx_name_to_draw = display_name_base
+            if ctx_obj and ctx_obj.type == "channel" and ctx_name_to_draw.startswith("#"):
+                # Get the foreground color of the 'channel' color pair
+                channel_hash_fg = curses.color_content(self.colors.get("channel", 0))[0]
+
+                # Get the background color of the current line's attribute (attr)
+                # attr is already curses.color_pair(some_id)
+                # We need to extract the background color from 'attr'
+                current_attr_pair_id = (attr >> 8) & 0xFF # Extract pair ID from attribute
+                try:
+                    _, current_bg_color_id = curses.pair_content(current_attr_pair_id)
+                except curses.error:
+                    current_bg_color_id = curses.COLOR_BLACK # Fallback if pair_content fails
+
+                # Create a new temporary color pair for the '#'
+                temp_pair_id = 200 # Use a high ID for temporary pair
+                try:
+                    curses.init_pair(temp_pair_id, channel_hash_fg, current_bg_color_id)
+                    channel_hash_attr = curses.color_pair(temp_pair_id)
+                except curses.error as e:
+                    logger.error(f"Error initializing temporary color pair {temp_pair_id} for channel hash: {e}. Falling back to main attr.", exc_info=True)
+                    channel_hash_attr = attr # Fallback to the main line attribute
+
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, "#", channel_hash_attr, "_draw_sidebar_context_list_channel_hash")
+                current_x += 1
+                # Draw rest of channel name with the line's main attribute
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, ctx_name_to_draw[1:], attr, "_draw_sidebar_context_list_channel_name")
+                current_x += len(ctx_name_to_draw) - 1
             else:
-                attr = self.colors.get("list_panel_bg", 0)
+                # Draw regular context name
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, ctx_name_to_draw, attr, "_draw_sidebar_context_list_name")
+                current_x += len(ctx_name_to_draw)
 
+            # Draw status suffix
+            if status_suffix:
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, status_suffix, attr, "_draw_sidebar_context_list_suffix")
+                current_x += len(status_suffix)
 
-            display_name_final = f"{prefix}{display_name_base}{status_suffix}"
+            # Draw unread count
             if unread_count > 0 and ctx_name != current_active_ctx_name_str:
-                display_name_final += f" ({unread_count})"
+                unread_text = f" ({unread_count})"
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, unread_text, attr, "_draw_sidebar_context_list_unread")
+                current_x += len(unread_text)
 
-            padded_display_line = display_name_final.ljust(max_x)
-            SafeCursesUtils._safe_addstr(
-                window,
-                line_num,
-                0,
-                padded_display_line,
-                attr,
-                "_draw_sidebar_context_list_item",
-            )
+            # Fill remaining space with background color
+            remaining_width = max_x - current_x
+            if remaining_width > 0:
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, " " * remaining_width, attr, "_draw_sidebar_context_list_fill")
+
             line_num += 1
 
         if line_num < max_y -1:
@@ -260,21 +317,28 @@ class SidebarPanelRenderer:
         for nick, prefix_str in visible_users_page:
             if line_num >= max_y:
                 break
-            display_user_with_prefix = f"{prefix_str}{nick}"
-            padded_display_line = (" " + display_user_with_prefix).ljust(max_x)
 
-            user_color = self.colors.get("user_list_panel_bg", 0)
-            if prefix_str == "@":
-                user_color = self.colors.get("user_prefix", user_color)
+            current_x = 0
+            # Draw leading space
+            SafeCursesUtils._safe_addstr(window, line_num, current_x, " ", curses.color_pair(self.colors.get("sidebar_item", 0)), "_draw_sidebar_user_list_leading_space")
+            current_x += 1
 
-            SafeCursesUtils._safe_addstr(
-                window,
-                line_num,
-                0,
-                padded_display_line,
-                user_color,
-                "_draw_sidebar_user_list_item",
-            )
+            # Draw prefix (e.g., @, +)
+            if prefix_str:
+                prefix_color = curses.color_pair(self.colors.get("user_prefix", 0))
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, prefix_str, prefix_color, "_draw_sidebar_user_list_prefix")
+                current_x += len(prefix_str)
+
+            # Draw nick
+            nick_color = curses.color_pair(self.colors.get("sidebar_item", 0))
+            SafeCursesUtils._safe_addstr(window, line_num, current_x, nick, nick_color, "_draw_sidebar_user_list_nick")
+            current_x += len(nick)
+
+            # Fill remaining space with background color
+            remaining_width = max_x - current_x
+            if remaining_width > 0:
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, " " * remaining_width, nick_color, "_draw_sidebar_user_list_fill")
+
             line_num += 1
 
         if down_indicator_text and line_num < max_y:

@@ -34,9 +34,10 @@ class InputLineRenderer:
 
         try:
             window.erase()
-            window.bkgd(" ", self.colors.get("input", 0))
+            # The following direct, buggy call to bkgd is removed. The background is set by WindowLayoutManager.
+            # window.bkgd(" ", self.colors.get("input", 0))
         except curses.error as e:
-            logger.warning(f"Error erasing/setting bkgd for input line: {e}")
+            logger.warning(f"Error erasing input line: {e}")
             return
 
 

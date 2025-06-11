@@ -1,6 +1,7 @@
 import curses
 import logging
 from typing import Optional, Any, Tuple, Dict
+from pyrc_core.client.ui_colors import UI_COLOR_PALETTE # Import new color palette
 
 logger = logging.getLogger("pyrc.window_layout_manager")
 
@@ -54,18 +55,26 @@ class WindowLayoutManager:
         )
 
         try:
+            try:
+                # Use the new color IDs for backgrounds from the UI_COLOR_PALETTE
+                # These are now color pair IDs, not raw curses colors
+                msg_bg_color_pair_id = self.colors.get("message_panel_bg", 0)
+                sidebar_bg_color_pair_id = self.colors.get("list_panel_bg", 0)
+                status_bg_color_pair_id = self.colors.get("status_bar", 0)
+                input_bg_color_pair_id = self.colors.get("input", 0)
             if split_mode_active:
                 top_height = self.msg_win_height // 2
                 bottom_height = self.msg_win_height - top_height
 
                 self.msg_win_top = curses.newwin(top_height, self.msg_win_width, 0, 0)
+                SafeCursesUtils._safe_bkgd(self.msg_win_top, " ", msg_bg_color_pair_id, "msg_win_top_bkgd")
                 self.msg_win_top.scrollok(True)
                 self.msg_win_top.idlok(True)
 
                 self.msg_win_bottom = curses.newwin(
-                bottom_height, self.msg_win_width, top_height, 0
+                    bottom_height, self.msg_win_width, top_height, 0
                 )
-                SafeCursesUtils._safe_bkgd(self.msg_win_bottom, " ", self.colors.get("message_panel_bg", 0), "msg_win_bottom_bkgd")
+                SafeCursesUtils._safe_bkgd(self.msg_win_bottom, " ", msg_bg_color_pair_id, "msg_win_bottom_bkgd")
                 self.msg_win_bottom.scrollok(True)
                 self.msg_win_bottom.idlok(True)
 
@@ -78,7 +87,7 @@ class WindowLayoutManager:
                 self.msg_win = curses.newwin(
                     self.msg_win_height, self.msg_win_width, 0, 0
                 )
-                SafeCursesUtils._safe_bkgd(self.msg_win, " ", self.colors.get("message_panel_bg", 0), "msg_win_bkgd")
+                SafeCursesUtils._safe_bkgd(self.msg_win, " ", msg_bg_color_pair_id, "msg_win_bkgd")
                 self.msg_win.scrollok(True)
                 self.msg_win.idlok(True)
                 self.msg_win_top = self.msg_win
@@ -90,11 +99,13 @@ class WindowLayoutManager:
                 0,
                 self.msg_win_width,
             )
-            SafeCursesUtils._safe_bkgd(self.sidebar_win, " ", self.colors.get("user_list_panel_bg", 0), "sidebar_win_bkgd")
+            SafeCursesUtils._safe_bkgd(self.sidebar_win, " ", sidebar_bg_color_pair_id, "sidebar_win_bkgd")
+
             self.status_win = curses.newwin(1, term_width, term_height - 2, 0)
-            SafeCursesUtils._safe_bkgd(self.status_win, " ", self.colors.get("status_bar", 0), "status_win_bkgd")
+            SafeCursesUtils._safe_bkgd(self.status_win, " ", status_bg_color_pair_id, "status_win_bkgd")
+
             self.input_win = curses.newwin(1, term_width, term_height - 1, 0)
-            SafeCursesUtils._safe_bkgd(self.input_win, " ", self.colors.get("input", 0), "input_win_bkgd")
+            SafeCursesUtils._safe_bkgd(self.input_win, " ", input_bg_color_pair_id, "input_win_bkgd")
             self.input_win.keypad(True)
             self.input_win.nodelay(True)
 
@@ -127,6 +138,7 @@ class WindowLayoutManager:
                 try:
                     win.erase()
                     win.refresh()
+                    logger.debug(f"Deleting curses window: {win_name}")
                     del win
                 except curses.error as e:
                     logger.warning(f"Error deleting window {win_name}: {e}")

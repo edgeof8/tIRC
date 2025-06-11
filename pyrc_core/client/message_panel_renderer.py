@@ -1,5 +1,6 @@
 import curses
 import logging
+import re # Added for regex parsing
 from typing import Any, Deque, Tuple, Dict, Optional, TYPE_CHECKING, List # Added List
 from pyrc_core.client.curses_utils import SafeCursesUtils
 
@@ -19,7 +20,7 @@ class MessagePanelRenderer:
             return
 
         SafeCursesUtils._safe_erase(window, "MessagePanelRenderer._draw_messages_erase")
-        SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("message_panel_bg", 0), "MessagePanelRenderer._draw_messages_bkgd")
+        # The background is set once when the window is created by WindowLayoutManager.
         try:
             max_y, max_x = window.getmaxyx()
         except curses.error as e:
@@ -66,21 +67,33 @@ class MessagePanelRenderer:
                     logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': line_render_idx={line_render_idx} >= max_y={max_y}, breaking loop.")
                     break
 
-                # Ensure it's a valid curses attribute
-                final_color_attr = curses.color_pair(color_pair_id) if color_pair_id is not None else 0
+                # New: Parse message text for highlighting
+                # This will return a list of (text_segment, color_pair_name)
+                parsed_segments = self._parse_message_for_highlighting(text, context_obj)
 
-                # Log detailed color information for debugging
-                try:
-                    fg_color_num, bg_color_num = curses.pair_content(color_pair_id)
-                    logger.debug(f"Message '{text[:20]}...' at y={line_render_idx}: color_pair_id={color_pair_id}, fg_num={fg_color_num}, bg_num={bg_color_num}, final_attr={final_color_attr}")
-                except curses.error:
-                    logger.warning(f"Could not get pair_content for color_pair_id {color_pair_id}. Using default attr.")
-                    fg_color_num = -1
-                    bg_color_num = -1
+                current_x = 0
+                for segment_text, segment_color_name in parsed_segments:
+                    if current_x >= max_x:
+                        break # Stop if we've exceeded window width
 
-                SafeCursesUtils._safe_addstr(
-                    window, line_render_idx, 0, text[: max_x], final_color_attr, "message"
-                )
+                    # Get the curses color pair ID from the name
+                    segment_color_pair_id = self.colors.get(segment_color_name, self.colors.get("other_message", 0))
+                    final_color_attr = segment_color_pair_id
+
+                    # Ensure text fits within remaining width
+                    text_to_draw = segment_text[:max_x - current_x]
+
+                    SafeCursesUtils._safe_addstr(
+                        window, line_render_idx, current_x, text_to_draw, final_color_attr, "message_segment"
+                    )
+                    current_x += len(text_to_draw)
+
+                # Fill remaining space on the line with the default message background color
+                remaining_width = max_x - current_x
+                if remaining_width > 0:
+                    default_bg_color_pair_id = self.colors.get("message_panel_bg", self.colors.get("default", 0))
+                    SafeCursesUtils._safe_addstr(window, line_render_idx, current_x, " " * remaining_width, default_bg_color_pair_id, "message_fill_bg")
+
                 line_render_idx += 1
             logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': Drew {line_render_idx} messages.")
 
@@ -125,7 +138,7 @@ class MessagePanelRenderer:
             return
 
         SafeCursesUtils._safe_erase(window, "MessagePanelRenderer._draw_dcc_erase")
-        SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("default", 0), "MessagePanelRenderer._draw_dcc_bkgd")
+        # Background is set by WindowLayoutManager.
         try:
             max_y, max_x = window.getmaxyx()
         except curses.error as e:
@@ -167,5 +180,5 @@ class MessagePanelRenderer:
         except Exception as e:
             logger.error(f"Unexpected error in _draw_dcc_transfer_list: {e}", exc_info=True)
             try:
-                SafeCursesUtils._safe_addstr(window, 0, 0, "[Error drawing DCC list]", self.colors.get("error",0), "dcc_draw_error")
+                SafeCursesUtils._safe_addstr(window, 0, 0, "[Error drawing DCC list]", self.colors.get("error_message",0), "dcc_draw_error")
             except: pass
