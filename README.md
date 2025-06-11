@@ -25,55 +25,62 @@ pyrc --connect irc.libera.chat
 
 ## 🚀 Core Features
 
-- **Modern Architecture**: Fully async `asyncio`-based core for maximum performance
-- **Extensible**: Python scripting API for customization and automation
-- **Terminal UI**: Beautiful curses-based interface with split-screen support
-- **IRCv3 Support**: Full protocol compliance including SASL authentication
-- **State Management**: Persistent sessions and configuration
-- **DCC Support**: Secure file transfers and chat
-- **Modular Design**: Pluggable components and commands
+## 🚀 Core Features
+
+- **Modern Async Core**: Fully asynchronous `asyncio`-based core for high performance and responsiveness.
+- **Modular Architecture**: Decoupled components for connection management, UI, state, and commands.
+- **Extensible Scripting**: Powerful Python scripting API for deep customization and automation.
+- **Terminal UI**: Rich curses-based interface with split-screen support and customizable layouts.
+- **IRCv3 Support**: Comprehensive protocol compliance including SASL authentication and message tags.
+- **Centralized State Management**: Persistent sessions and configuration managed by a single source of truth.
+- **DCC Support**: Secure and efficient Direct Client-to-Client file transfers and chat.
+- **Inter-Process Communication (IPC)**: Allows external command-line tools to send commands to a running PyRC instance.
 
 ## Architecture Overview
 
-PyRC follows a modular architecture with these key components:
-
-- **Core**: `IRCClient_Logic` orchestrates the event loop and components
-- **Network**: `NetworkHandler` manages async IRC protocol I/O
-- **UI**: Modular renderers for input, messages, and status
-- **Commands**: Dynamic command system with 50+ built-in commands
-- **Scripting**: Python API for extending functionality
-- **State**: Centralized management of connection and session data
+PyRC employs a highly modular, event-driven architecture. The `IRCClient_Logic` acts as the central orchestrator, delegating specialized tasks to dedicated managers and coordinators.
 
 ```mermaid
 graph TD
-    subgraph Core Logic
-        A[IRCClient_Logic]
+    subgraph Application Entry
+        A[pyrc.py] --> B{CLI Argument Check}
+        B -- headless/UI mode --> C(curses.wrapper)
+        B -- --send-raw --> D[IPC Client Call]
+        C --> E[asyncio.run(IRCClient_Logic.run_main_loop())]
     end
 
-    subgraph Coordinators & Managers
-        B[ConnectionOrchestrator]
-        C[ClientShutdownCoordinator]
-        D[ClientViewManager]
-        E[UIManager]
-        F[CommandHandler]
-        G[StateManager]
-        H[EventManager]
-        I[ScriptManager]
-        J[NetworkHandler]
+    subgraph Main PyRC Instance
+        E --> F{IRCClient_Logic (Orchestrator)}
+        F -- Manages --> G[ConnectionOrchestrator]
+        F -- Manages --> H[ClientShutdownCoordinator]
+        F -- Manages --> I[ClientViewManager]
+        F -- Manages --> J[UIManager]
+        F -- Manages --> K[CommandHandler]
+        F -- Manages --> L[StateManager]
+        F -- Manages --> M[EventManager]
+        F -- Manages --> N[ScriptManager]
+        F -- Manages --> O[NetworkHandler]
+        F -- Manages --> P[IPCManager]
     end
 
-    A -- Coordinates --> B
-    A -- Coordinates --> C
-    A -- Coordinates --> D
-    A -- Coordinates --> E
-    A -- Coordinates --> F
-    A -- Coordinates --> G
-    A -- Coordinates --> H
-    A -- Coordinates --> I
-    A -- Coordinates --> J
+    subgraph IPC Flow
+        D -- Connects to --> Q(Local TCP Socket)
+        Q -- Handled by --> P
+        P -- Injects Command --> K
+    end
 
-    B -- Uses --> J
-    B -- Uses --> G
+    G -- Uses --> O
+    G -- Uses --> L
+    K -- Sends via --> O
+    K -- Updates --> L
+    M -- Dispatches to --> N
+    M -- Dispatches to --> F
+    N -- Uses API --> F
+    I -- Controls --> J
+    J -- Renders via --> R(Modular Renderers)
+
+    style D fill:#f9f,stroke:#333,stroke-width:2px
+    style Q fill:#ccf,stroke:#333,stroke-width:2px
 ```
 
 ## Project Status
@@ -211,163 +218,164 @@ PyRC/
 │
 ├── pyrc_core/                  # Core application package
 │   ├── __init__.py             # Package initialization
-│   ├── app_config.py           # Centralized configuration management (configparser)
-│   ├── context_manager.py      # Manages chat contexts (channels, queries, server)
-│   ├── event_manager.py        # Asynchronous event dispatching system
-│   ├── network_handler.py      # Async IRC protocol I/O (asyncio.StreamReader/Writer)
-│   ├── script_manager.py       # Script manager
-│   ├── state_manager.py        # Thread-safe state management with persistence
+├── app_config.py           # Centralized configuration management (configparser)
+├── context_manager.py      # Manages chat contexts (channels, queries, server)
+├── event_manager.py        # Asynchronous event dispatching system
+├── ipc_manager.py          # Manages the local IPC server for remote commands
+├── network_handler.py      # Async IRC protocol I/O (asyncio.StreamReader/Writer)
+├── script_manager.py       # Script manager
+├── state_manager.py        # Thread-safe state management with persistence
+│
+├── client/                 # Client implementation, UI, and logic
+│   ├── __init__.py
+│   ├── client_shutdown_coordinator.py # Handles graceful shutdown
+│   ├── client_view_manager.py    # Manages different views/layouts
+│   ├── connection_orchestrator.py  # Coordinates connection lifecycle
+│   ├── curses_manager.py         # Low-level Curses initialization and teardown
+│   ├── curses_utils.py           # Safe Curses drawing utilities
+│   ├── dummy_ui.py               # Dummy UI for headless mode
+│   ├── input_handler.py          # Async input processing and command dispatching
+│   ├── input_line_renderer.py    # Renders the input line
+│   ├── irc_client_logic.py       # Main application logic
+│   ├── message_panel_renderer.py # Renders the message panel
+│   ├── sidebar_panel_renderer.py # Renders the sidebar (nicklist)
+│   ├── state_change_ui_handler.py # Updates UI based on state changes
+│   ├── status_bar_renderer.py    # Renders the status bar
+│   ├── ui_manager.py             # Orchestrates UI components
+│   └── window_layout_manager.py  # Manages window layout calculations
+│
+├── commands/               # Built-in command implementations
+│   ├── __init__.py
+│   ├── command_handler.py    # Command registration and dispatch
 │   │
-│   ├── client/                 # Client implementation, UI, and logic
+│   ├── channel/            # Commands for channel operations
 │   │   ├── __init__.py
-│   │   ├── client_shutdown_coordinator.py # Handles graceful shutdown
-│   │   ├── client_view_manager.py    # Manages different views/layouts
-│   │   ├── connection_orchestrator.py  # Coordinates connection lifecycle
-│   │   ├── curses_manager.py         # Low-level Curses initialization and teardown
-│   │   ├── curses_utils.py           # Safe Curses drawing utilities
-│   │   ├── dummy_ui.py               # Dummy UI for headless mode
-│   │   ├── input_handler.py          # Async input processing and command dispatching
-│   │   ├── input_line_renderer.py    # Renders the input line
-│   │   ├── irc_client_logic.py       # Main application logic
-│   │   ├── message_panel_renderer.py # Renders the message panel
-│   │   ├── sidebar_panel_renderer.py # Renders the sidebar (nicklist)
-│   │   ├── state_change_ui_handler.py # Updates UI based on state changes
-│   │   ├── status_bar_renderer.py    # Renders the status bar
-│   │   ├── ui_manager.py             # Orchestrates UI components
-│   │   └── window_layout_manager.py  # Manages window layout calculations
+│   │   ├── ban_commands.py       # /ban, /unban, /kickban
+│   │   ├── cyclechannel_command.py # /cycle
+│   │   ├── invite_command.py     # /invite
+│   │   ├── join_command.py       # /join
+│   │   ├── kick_command.py       # /kick
+│   │   ├── mode_command.py       # /mode (channel modes)
+│   │   ├── part_command.py       # /part
+│   │   ├── simple_mode_commands.py # /op, /deop, /voice, etc.
+│   │   └── topic_command.py      # /topic
 │   │
-│   ├── commands/               # Built-in command implementations
+│   ├── core/             # Essential client commands
 │   │   ├── __init__.py
-│   │   ├── command_handler.py    # Command registration and dispatch
-│   │   │
-│   │   ├── channel/            # Commands for channel operations
-│   │   │   ├── __init__.py
-│   │   │   ├── ban_commands.py       # /ban, /unban, /kickban
-│   │   │   ├── cyclechannel_command.py # /cycle
-│   │   │   ├── invite_command.py     # /invite
-│   │   │   ├── join_command.py       # /join
-│   │   │   ├── kick_command.py       # /kick
-│   │   │   ├── mode_command.py       # /mode (channel modes)
-│   │   │   ├── part_command.py       # /part
-│   │   │   ├── simple_mode_commands.py # /op, /deop, /voice, etc.
-│   │   │   └── topic_command.py      # /topic
-│   │   │
-│   │   ├── core/             # Essential client commands
-│   │   │   ├── __init__.py
-│   │   │   └── help_command.py       # /help
-│   │   │
-│   │   ├── dcc/              # DCC file transfer and chat commands
-│   │   │   ├── __init__.py
-│   │   │   ├── dcc_accept_command.py # /dcc accept
-│   │   │   ├── dcc_auto_command.py   # /dcc auto
-│   │   │   ├── dcc_browse_command.py # /dcc browse
-│   │   │   ├── dcc_cancel_command.py # /dcc cancel
-│   │   │   ├── dcc_command_base.py   # Base class for DCC commands
-│   │   │   ├── dcc_commands.py       # Main DCC command handler
-│   │   │   ├── dcc_get_command.py    # /dcc get
-│   │   │   ├── dcc_list_command.py   # /dcc list
-│   │   │   ├── dcc_resume_command.py # /dcc resume
-│   │   │   └── dcc_send_command.py   # /dcc send
-│   │   │
-│   │   ├── information/      # Information retrieval commands
-│   │   │   ├── __init__.py
-│   │   │   ├── list_command.py       # /list
-│   │   │   ├── names_command.py      # /names
-│   │   │   ├── who_command.py        # /who
-│   │   │   └── whowas_command.py     # /whowas
-│   │   │
-│   │   ├── server/           # Server connection and management
-│   │   │   ├── __init__.py
-│   │   │   ├── connect_command.py    # /connect
-│   │   │   ├── disconnect_command.py # /disconnect
-│   │   │   ├── quit_command.py       # /quit
-│   │   │   ├── raw_command.py        # /raw
-│   │   │   ├── reconnect_command.py  # /reconnect
-│   │   │   └── server_command.py     # /server
-│   │   │
-│   │   ├── ui/               # User interface control commands
-│   │   │   ├── __init__.py
-│   │   │   ├── close_command.py      # /close
-│   │   │   ├── split_screen_commands.py # /split, /unsplit
-│   │   │   ├── status_command.py     # /status
-│   │   │   ├── userlist_scroll_command.py # /scrollusers
-│   │   │   └── window_navigation_commands.py # /window, /next, /prev
-│   │   │
-│   │   ├── user/             # User interaction commands
-│   │   │   ├── __init__.py
-│   │   │   ├── away_command.py       # /away
-│   │   │   ├── ignore_commands.py    # /ignore, /unignore, /listignores
-│   │   │   ├── me_command.py         # /me
-│   │   │   ├── msg_command.py        # /msg
-│   │   │   ├── nick_command.py       # /nick
-│   │   │   ├── notice_command.py     # /notice
-│   │   │   ├── query_command.py      # /query
-│   │   │   └── whois_command.py      # /whois
-│   │   │
-│   │   └── utility/          # Utility and configuration commands
-│   │       ├── __init__.py
-│   │       ├── clear_command.py      # /clear
-│   │       ├── lastlog_command.py    # /lastlog
-│   │       ├── rawlog_command.py     # /rawlog
-│   │       ├── rehash_command.py     # /rehash
-│   │       ├── save_command.py       # /save
-│   │       ├── script_command.py     # /script
-│   │       └── set_command.py        # /set
-│   │       /* Note: trigger_command.py might be in features/triggers now */
+│   │   └── help_command.py       # /help
 │   │
-│   ├── data/                   # Static data files for pyrc_core
-│   │   └── default_help/
-│   │       └── command_help.ini  # Fallback help texts for core commands
-│   │
-│   ├── dcc/                    # DCC (Direct Client-to-Client) feature implementation
+│   ├── dcc/              # DCC file transfer and chat commands
 │   │   ├── __init__.py
-│   │   ├── dcc_command_base.py   # Base class for DCC related logic (if distinct from commands/dcc)
-│   │   ├── dcc_ctcp_handler.py   # Handles incoming DCC CTCP requests
-│   │   ├── dcc_manager.py        # Main orchestrator for all DCC functionality
-│   │   ├── dcc_passive_offer_manager.py # Manages passive (reverse) DCC offers
-│   │   ├── dcc_protocol.py       # Parses and formats DCC CTCP messages
-│   │   ├── dcc_receive_manager.py# Manages all incoming file transfers
-│   │   ├── dcc_security.py       # Filename sanitization and path validation
-│   │   ├── dcc_send_manager.py   # Manages all outgoing file transfers
-│   │   ├── dcc_transfer.py       # Base classes for DCC send/receive transfer logic
-│   │   └── dcc_utils.py          # Shared utility functions (e.g., socket creation)
+│   │   ├── dcc_accept_command.py # /dcc accept
+│   │   ├── dcc_auto_command.py   # /dcc auto
+│   │   ├── dcc_browse_command.py # /dcc browse
+│   │   ├── dcc_cancel_command.py # /dcc cancel
+│   │   ├── dcc_command_base.py   # Base class for DCC commands
+│   │   ├── dcc_commands.py       # Main DCC command handler
+│   │   ├── dcc_get_command.py    # /dcc get
+│   │   ├── dcc_list_command.py   # /dcc list
+│   │   ├── dcc_resume_command.py # /dcc resume
+│   │   └── dcc_send_command.py   # /dcc send
 │   │
-│   ├── features/               # Self-contained, optional features
+│   ├── information/      # Information retrieval commands
 │   │   ├── __init__.py
-│   │   └── triggers/           # Implementation of the /on command trigger system
-│   │       ├── __init__.py
-│   │       ├── trigger_commands.py # /on, /off, /listtriggers etc.
-│   │       └── trigger_manager.py  # Manages trigger logic
+│   │   ├── list_command.py       # /list
+│   │   ├── names_command.py      # /names
+│   │   ├── who_command.py        # /who
+│   │   ├── whowas_command.py     # /whowas
 │   │
-│   ├── irc/                    # IRC protocol logic and message handling
+│   ├── server/           # Server connection and management
 │   │   ├── __init__.py
-│   │   ├── cap_negotiation_issues.md # Notes on CAP negotiation
-│   │   ├── cap_negotiator.py     # Handles IRCv3 capability negotiation
-│   │   ├── irc_message.py        # Parses raw IRC lines
-│   │   ├── irc_protocol.py       # Main dispatcher for incoming server messages
-│   │   ├── registration_handler.py # Manages NICK/USER registration
-│   │   ├── sasl_authenticator.py   # Handles SASL PLAIN authentication
-│   │   └── handlers/             # Specific handlers for IRC commands/numerics
-│   │       ├── __init__.py
-│   │       ├── irc_numeric_handlers.py # Handlers for server numeric replies
-│   │       ├── membership_handlers.py  # JOIN, PART, QUIT, KICK
-│   │       ├── message_handlers.py     # PRIVMSG, NOTICE
-│   │       ├── protocol_flow_handlers.py # PING, CAP, etc.
-│   │       └── state_change_handlers.py  # NICK, MODE, etc.
+│   │   ├── connect_command.py    # /connect
+│   │   ├── disconnect_command.py # /disconnect
+│   │   ├── quit_command.py       # /quit
+│   │   ├── raw_command.py        # /raw
+│   │   ├── reconnect_command.py  # /reconnect
+│   │   └── server_command.py     # /server
 │   │
-│   ├── logging/                # Logging-specific components
-│   │   └── channel_logger.py     # Manages per-channel and status window log files
-│   │
-│   ├── script_manager.py     # Discovers, loads, and manages user scripts
-│   │
-│   ├── scripting/              # The Python scripting engine
+│   ├── ui/               # User interface control commands
 │   │   ├── __init__.py
-│   │   ├── python_trigger_api.py # API for the /on <event> PY <code> trigger action
-│   │   ├── script_api_handler.py # Provides the `api` object for scripts
-│   │   └── script_base.py        # A base class for scripts to inherit from
+│   │   ├── close_command.py      # /close
+│   │   ├── split_screen_commands.py # /split, /unsplit
+│   │   ├── status_command.py     # /status
+│   │   ├── userlist_scroll_command.py # /scrollusers
+│   │   └── window_navigation_commands.py # /window, /next, /prev
 │   │
-│   └── utils/                  # Utility functions
-│       └── __init__.py
+│   ├── user/             # User interaction commands
+│   │   ├── __init__.py
+│   │   ├── away_command.py       # /away
+│   │   ├── ignore_commands.py    # /ignore, /unignore, /listignores
+│   │   ├── me_command.py         # /me
+│   │   ├── msg_command.py        # /msg
+│   │   ├── nick_command.py       # /nick
+│   │   ├── notice_command.py     # /notice
+│   │   ├── query_command.py      # /query
+│   │   └── whois_command.py      # /whois
+│   │
+│   └── utility/          # Utility and configuration commands
+│       ├── __init__.py
+│       ├── clear_command.py      # /clear
+│       ├── lastlog_command.py    # /lastlog
+│       ├── rawlog_command.py     # /rawlog
+│       ├── rehash_command.py     # /rehash
+│       ├── save_command.py       # /save
+│       ├── script_command.py     # /script
+│       └── set_command.py        # /set
+│       /* Note: trigger_command.py might be in features/triggers now */
+│
+├── data/                   # Static data files for pyrc_core
+│   └── default_help/
+│       └── command_help.ini  # Fallback help texts for core commands
+│
+├── dcc/                    # DCC (Direct Client-to-Client) feature implementation
+│   ├── __init__.py
+│   ├── dcc_command_base.py   # Base class for DCC related logic (if distinct from commands/dcc)
+│   ├── dcc_ctcp_handler.py   # Handles incoming DCC CTCP requests
+│   ├── dcc_manager.py        # Main orchestrator for all DCC functionality
+│   ├── dcc_passive_offer_manager.py # Manages passive (reverse) DCC offers
+│   ├── dcc_protocol.py       # Parses and formats DCC CTCP messages
+│   ├── dcc_receive_manager.py# Manages all incoming file transfers
+│   ├── dcc_security.py       # Filename sanitization and path validation
+│   ├── dcc_send_manager.py   # Manages all outgoing file transfers
+│   ├── dcc_transfer.py       # Base classes for DCC send/receive transfer logic
+│   └── dcc_utils.py          # Shared utility functions (e.g., socket creation)
+│
+├── features/               # Self-contained, optional features
+│   ├── __init__.py
+│   └── triggers/           # Implementation of the /on command trigger system
+│       ├── __init__.py
+│       ├── trigger_commands.py # /on, /off, /listtriggers etc.
+│       └── trigger_manager.py  # Manages trigger logic
+│
+├── irc/                    # IRC protocol logic and message handling
+│   ├── __init__.py
+│   ├── cap_negotiation_issues.md # Notes on CAP negotiation
+│   ├── cap_negotiator.py     # Handles IRCv3 capability negotiation
+│   ├── irc_message.py        # Parses raw IRC lines
+│   ├── irc_protocol.py       # Main dispatcher for incoming server messages
+│   ├── registration_handler.py # Manages NICK/USER registration
+│   ├── sasl_authenticator.py   # Handles SASL PLAIN authentication
+│   └── handlers/             # Specific handlers for IRC commands/numerics
+│       ├── __init__.py
+│       ├── irc_numeric_handlers.py # Handlers for server numeric replies
+│       ├── membership_handlers.py  # JOIN, PART, QUIT, KICK
+│       ├── message_handlers.py     # PRIVMSG, NOTICE
+│       ├── protocol_flow_handlers.py # PING, CAP, etc.
+│       └── state_change_handlers.py  # NICK, MODE, etc.
+│
+├── logging/                # Logging-specific components
+│   └── channel_logger.py     # Manages per-channel and status window log files
+│
+├── script_manager.py     # Discovers, loads, and manages user scripts
+│
+├── scripting/              # The Python scripting engine
+│   ├── __init__.py
+│   ├── python_trigger_api.py # API for the /on <event> PY <code> trigger action
+│   ├── script_api_handler.py # Provides the `api` object for scripts
+│   └── script_base.py        # A base class for scripts to inherit from
+│
+└── utils/                  # Utility functions
+    └── __init__.py
 │
 ├── scripts/                    # Directory for user-provided Python scripts
 │   ├── default_exit_handler.py   # Example: Handles client exit
@@ -404,66 +412,20 @@ PyRC/
 
 This section highlights the significant architectural changes and robustness improvements implemented in recent development cycles.
 
-- **Asynchronous Core with `asyncio`**:
-  - The entire client core has been migrated from a `threading`-based model to a modern `asyncio` architecture.
-  - This change provides significant performance improvements for I/O-bound operations, reduces resource consumption, and simplifies concurrency management.
-  - All network I/O is now non-blocking, and `async`/`await` syntax is used throughout the core logic for cleaner, more efficient code.
-
-- **`IRCClient_Logic` as High-Level Orchestrator**:
-  - Refined the role of `IRCClient_Logic` to be a more focused, high-level orchestrator. It now primarily coordinates the various manager and coordinator components (like `ConnectionOrchestrator`, `ClientShutdownCoordinator`, `ClientViewManager`, `UIManager`, `CommandHandler`, `StateManager`, `EventManager`, `ScriptManager`, and `NetworkHandler`), delegating specialized tasks to them. This enhances modularity and separation of concerns.
-
-- **Modular Connection Management (`ConnectionOrchestrator`)**:
-  - Introduced the `ConnectionOrchestrator` component to centralize and manage the entire server connection lifecycle.
-  - It meticulously coordinates the sequence of operations including TCP/SSL connection, capability negotiation (via `CapNegotiator`), SASL authentication (via `SaslAuthenticator`), and NICK/USER registration (via `RegistrationHandler`).
-  - This delegation simplifies `IRCClient_Logic` significantly by abstracting away the complexities of connection state transitions, error handling, and timeout management for each phase of establishing a connection.
-
-- **Decoupled Shutdown Logic (`ClientShutdownCoordinator`)**:
-  - The complex shutdown sequence, previously managed within `IRCClient_Logic`'s `finally` block and other areas, has been encapsulated into the `ClientShutdownCoordinator`.
-  - This dedicated class ensures a graceful and orderly shutdown of all client components, including network connections, asynchronous tasks, UI elements, and script anagers, improving reliability and preventing resource leaks during client exit.
-
-- **Isolated View Management (`ClientViewManager`)**:
-  - UI-specific logic related to managing different views (e.g., split-screen, single pane), active context switching (which window/channel is currently focused), and associated event handling (like `ACTIVE_CONTEXT_CHANGED`) has been moved from `UIManager` and `IRCClient_Logic` into the `ClientViewManager`.
-  - This decouples core application logic from specific view concerns, making the UI system more flexible and easier to maintain or extend with new view types or behaviors.
-
-- **Decomposed UI System (Modular Renderers & Managers):**
-
-  - The previously monolithic `UIManager` has been refactored into a set of specialized components:
-    - `CursesManager`: Handles low-level Curses setup and terminal interactions.
-    - `WindowLayoutManager`: Manages the creation, sizing, and positioning of all UI windows.
-    - `MessagePanelRenderer`, `SidebarPanelRenderer`, `StatusBarRenderer`, `InputLineRenderer`: Each dedicated to rendering a specific part of the UI.
-    - `SafeCursesUtils`: Provides common, safe drawing utilities.
-  - This decomposition significantly improves separation of concerns, making the UI system more modular, testable, and easier to extend. `UIManager` now acts as an orchestrator for these components.
-  - Fixed issues with color handling and window management through the introduction of `SafeCursesUtils`.
-
-- **Centralized Configuration (`AppConfig`):**
-
-  - All application and server settings are now loaded and managed centrally by the `AppConfig` class. This ensures a single, consistent source of truth for configuration values across the client.
-  - Configuration is automatically loaded from `config/pyterm_irc_config.ini` and can be dynamically updated and saved in-client.
-
-- **Exclusive State Management (`StateManager`):**
-
-  - The `StateManager` is now the sole authority for all runtime state, including connection status, joined channels, user information, and message history.
-  - Features robust validation, thread-safe access, and automatic persistence to `state.json`, ensuring reliable session continuity and easier debugging.
-
-- **Dynamic Command System (`pkgutil`):**
-
-  - The command loading mechanism has been refactored to use `pkgutil.walk_packages`, enabling more reliable and extensible discovery of commands from nested directories within `pyrc_core/commands/`.
-  - This resolves issues with commands not being found and simplifies the addition of new command modules.
-  - Commands are now more modular and easier to maintain, with clear separation between different command categories.
-
-- **Enhanced IRCv3 Feature Handling:**
-
-  - **`CapNegotiator`:** Coordinated by `ConnectionOrchestrator`, now implements comprehensive timeout mechanisms to prevent hangs during capability negotiation, with enhanced state tracking and SASL coordination.
-  - **`SaslAuthenticator`:** Integrated with `ConnectionOrchestrator`, features step-based timeouts for SASL authentication flow, ensuring timely progression or failure, with improved error handling.
-  - **`RegistrationHandler`:** Managed by `ConnectionOrchestrator`, implements a refined registration flow that coordinates with CAP and SASL operations, ensuring proper sequencing of post-registration actions.
-
-- **Streamlined DCC Command Handling:**
-
-  - DCC commands have been refactored to be function-based within `pyrc_core/commands/dcc/`, simplifying their structure and integration into the command system.
-
-- **Enhanced Headless Testing Framework:**
-  - The headless test scripts (`scripts/test_headless.py`, `scripts/ai_api_test_script.py`) have been updated to align with the `StateManager` and `ScriptAPIHandler` paradigms.
-  - Tests now use event-driven waits and more robust state checks, making them more reliable and less prone to timing-related failures.
+- **Asynchronous Core with `asyncio`**: The entire client has been refactored to use Python's `asyncio` framework, providing significant performance improvements for I/O-bound operations and simplified concurrency management.
+- **`IRCClient_Logic` as High-Level Orchestrator**: Its role has been refined to primarily coordinate various specialized manager and coordinator components, enhancing modularity and separation of concerns.
+- **Modular Connection Management (`ConnectionOrchestrator`)**: Centralizes and manages the entire server connection lifecycle, including TCP/SSL connection, capability negotiation, SASL authentication, and NICK/USER registration.
+- **Decoupled Shutdown Logic (`ClientShutdownCoordinator`)**: Encapsulates the complex shutdown sequence, ensuring a graceful and orderly termination of all client components and preventing resource leaks.
+- **Isolated View Management (`ClientViewManager`)**: Manages UI-specific logic related to different views (e.g., split-screen), active context switching, and associated event handling, decoupling core application logic from UI concerns.
+- **Decomposed UI System**: The `UIManager` now orchestrates a suite of smaller, specialized components (`CursesManager`, `WindowLayoutManager`, and various `...Renderer` classes) for rendering specific parts of the UI, improving modularity and testability.
+- **Centralized Configuration (`AppConfig`)**: All application and server settings are loaded and managed centrally, ensuring a single, consistent source of truth for configuration values.
+- **Exclusive State Management (`StateManager`)**: The sole authority for all runtime state, featuring robust validation, thread-safe access, and automatic persistence to `state.json`.
+- **Dynamic Command System**: The `CommandHandler` now uses `pkgutil` for dynamic discovery and loading of all command modules, making the system more robust and extensible.
+- **Refined Event System**: The `EventManager` is a standalone component responsible for all event dispatching, providing a clearer and more consistent API for scripts and internal components.
+- **Inter-Process Communication (IPC)**: A new `IPCManager` enables a running PyRC instance to receive commands from external processes via a local socket, supporting the `--send-raw` CLI functionality for scripting and remote control.
+- **Enhanced IRCv3 Feature Handling**: Improved `CapNegotiator`, `SaslAuthenticator`, and `RegistrationHandler` with comprehensive timeout mechanisms and refined registration flows.
+- **Streamlined DCC Command Handling**: DCC commands are now function-based within `pyrc_core/commands/dcc/`, simplifying their structure.
+- **Enhanced Headless Testing Framework**: Updated headless test scripts align with the `StateManager` and `ScriptAPIHandler` paradigms, using event-driven waits for increased reliability.
 
 These architectural improvements significantly enhance PyRC's stability, maintainability, and extensibility, laying a solid foundation for future development.
 
@@ -810,7 +772,7 @@ python pyrc.py
 Command-line overrides (creates a temporary "CommandLine" server configuration):
 
 ```bash
-python pyrc.py [--server <server>] [--port <port>] [--nick <nick>] [--channel <#channel>] [--ssl] [--password <server_pass>] [--nickserv-password <pass>] [--headless] [--disable-script <script_name>]
+python pyrc.py [--server <server>] [--port <port>] [--nick <nick>] [--channel <#channel>] [--ssl] [--password <server_pass>] [--nickserv-password <pass>] [--headless] [--disable-script <script_name>] [--send-raw "<raw_command>"]
 ```
 
 ## Basic Commands
@@ -819,25 +781,25 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ### Connection & Session Management:
 
-- `/connect <server[:port]> [ssl|nossl]`: Initiates a connection to the specified IRC server. The `ConnectionOrchestrator` handles the entire connection lifecycle, including capability negotiation and authentication.
-- `/server <config_name>` (Alias: `/s`): Switches to a pre-defined server configuration and initiates a connection using the `ConnectionOrchestrator`.
-- `/disconnect [reason]` (Alias: `/d`): Gracefully disconnects from the current server, with proper cleanup of connection resources.
-- `/quit [message]` (Alias: `/q`): Disconnects from the server and exits PyRC, ensuring all resources are properly released.
-- `/reconnect`: Coordinates a clean disconnect followed by a new connection attempt, handled by the `ConnectionOrchestrator`.
+- `/connect <server[:port]> [ssl|nossl]`: Initiates a connection to the specified IRC server.
+- `/server <config_name>` (Alias: `/s`): Switches to a pre-defined server configuration.
+- `/disconnect [reason]` (Alias: `/d`): Gracefully disconnects from the current server.
+- `/quit [message]` (Alias: `/q`): Disconnects from the server and exits PyRC.
+- `/reconnect`: Reconnects to the current server.
 - `/nick <newnickname>` (Alias: `/n`): Changes your nickname.
-- `/away [message]`: Sets your away status with an optional message. If no message is provided, marks you as no longer away.
+- `/away [message]`: Sets your away status.
 
 ### Channel Operations:
 
 - `/join <channel> [#channel2 ...]` (Alias: `/j`): Joins the specified IRC channel(s).
-- `/part [channel] [reason]` (Alias: `/p`): Leaves the specified channel or the current channel if none is specified.
-- `/topic [<channel>] [<new_topic>]` (Alias: `/t`): Views or sets the topic for a channel. If no channel is specified, uses the current channel. If no new_topic is specified, views the current topic.
-- `/invite <nick> [channel]` (Alias: `/i`): Invites a user to a channel. If no channel is specified, uses the current channel.
+- `/part [channel] [reason]` (Alias: `/p`): Leaves the specified channel.
+- `/topic [<channel>] [<new_topic>]` (Alias: `/t`): Views or sets the topic for a channel.
+- `/invite <nick> [channel]` (Alias: `/i`): Invites a user to a channel.
 - `/kick <nick> [reason]` (Alias: `/k`): Kicks a user from the current channel.
 - `/cyclechannel` (Alias: `/cc`): Parts and then rejoins the current channel.
 - `/ban <nick|hostmask>`: Bans a user or hostmask from the current channel.
-- `/unban <hostmask>`: Removes a ban (specified by hostmask) from the current channel.
-- `/mode [<target>] <modes_and_params>`: Sets or views channel or user modes. If <target> is omitted for a channel mode, it defaults to the current channel.
+- `/unban <hostmask>`: Removes a ban from the current channel.
+- `/mode [<target>] <modes_and_params>`: Sets or views channel or user modes.
 - `/op <nick>` (Alias: `/o`): Grants operator status to <nick> in the current channel.
 - `/deop <nick>` (Alias: `/do`): Removes operator status from <nick> in the current channel.
 - `/voice <nick>` (Alias: `/v`): Grants voice status to <nick> in the current channel.
@@ -845,41 +807,56 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ### Messaging & Information:
 
-- `/msg <target> <message>` (Alias: `/m`): Sends a private message to a user or a message to a channel.
-- `/query <nick> [message]`: Opens a query window with <nick> and optionally sends an initial message.
-- `/notice <target> <message>` (Alias: `/no`): Sends a NOTICE to the specified target.
-- `/me <action text>`: Sends an action message (CTCP ACTION) to the current channel or query.
-- `/whois <nick>` (Alias: `/w`): Retrieves WHOIS information for the specified nickname.
-- `/who [channel|nick]`: Shows WHO information for a channel or user.
-- `/whowas <nick> [count] [server]`: Shows WHOWAS information for a user, providing historical data about a nickname.
-- `/list [pattern]`: Lists channels on the server, optionally filtering by a pattern. Results appear in a new temporary window.
-- `/names [channel]`: Shows the list of users in a channel. If no channel is specified, it may list users in the current channel or all visible users depending on the server.
+- `/msg <target> <message>` (Alias: `/m`): Sends a private message or a message to a channel.
+- `/query <nick> [message]`: Opens a private chat window.
+- `/notice <target> <message>` (Alias: `/no`): Sends a NOTICE.
+- `/me <action text>`: Sends an action message (CTCP ACTION).
+- `/whois <nick>` (Alias: `/w`): Retrieves WHOIS information.
+- `/who [channel|nick]`: Shows WHO information.
+- `/whowas <nick> [count] [server]`: Shows WHOWAS information.
+- `/list [pattern]`: Lists channels on the server.
+- `/names [channel]`: Shows the list of users in a channel.
 
 ### Client Utility & UI:
 
-- Ctrl+Y/Ctrl+E: Scroll message buffer.
+- `Ctrl+Y`/`Ctrl+E`: Scroll message buffer.
 - `/clear` (Alias: `/c`): Clears the message history of the current active window.
-- `/close [context_name]` (Aliases: `/wc`, `/partchannel`): Closes the specified window or the current window if none is specified. For channels, this parts the channel.
-- `/help [command_name]` (Alias: `/h`): Displays general help or help for a specific command.
-- Ctrl+N (or `/nextwindow`, Alias: `/next`): Switch to the next window.
-- Ctrl+P (or `/prevwindow`, Alias: `/prev`): Switch to the previous window.
-- `/window <name|number>` (Alias: `/win`): Switches to the window specified by name or number.
+- `/close [context_name]` (Aliases: `/wc`, `/partchannel`): Closes a window.
+- `/help [command_name]` (Alias: `/h`): Displays help.
+- `Ctrl+N` (or `/nextwindow`, Alias: `/next`): Switch to the next window.
+- `Ctrl+P` (or `/prevwindow`, Alias: `/prev`): Switch to the previous window.
+- `/window <name|number>` (Alias: `/win`): Switches to a specific window.
 - `/status`: Switches to the Status window.
 - `/prevchannel` (Alias: `/pc`): Switches to the previously active channel or Status window.
-- `/split`: Toggle split-screen mode on/off.
-- `/focus <top|bottom>`: Switch focus between split panes (top or bottom).
+- `/split`: Toggle split-screen mode.
+- `/focus <top|bottom>`: Switch focus between split panes.
 - `/setpane <top|bottom> <context_name>`: Set a context in a specific pane.
-- Ctrl+U (or `/userlistscroll [offset|direction]`, Alias: `/u`): Scrolls the user list.
+- `Ctrl+U` (or `/userlistscroll [offset|direction]`, Alias: `/u`): Scrolls the user list.
 - `/set [<section.key> [<value>]]` (Alias: `/se`): Views or modifies client configuration settings.
-- `/rehash`: Reloads the client configuration from the INI file.
-- `/save`: Saves the current client configuration to the INI file.
-- `/ignore <nick|hostmask>`: Adds a user/hostmask to the ignore list. Simple nicks are converted to nick!_@_.
-- `/unignore <nick|hostmask>`: Removes a user/hostmask from the ignore list. Tries to match exact pattern or derived nick!_@_.
+- `/rehash`: Reloads the client configuration.
+- `/save`: Saves the current client configuration.
+- `/ignore <nick|hostmask>`: Adds a user/hostmask to the ignore list.
+- `/unignore <nick|hostmask>`: Removes a user/hostmask from the ignore list.
 - `/listignores` (Alias: `/ignores`): Lists all currently ignored patterns.
-- `/rawlog [on|off|toggle]`: Toggles or sets the display of raw IRC messages in the Status window.
-- `/lastlog <pattern>`: Searches the message history of the active window for lines containing <pattern>.
+- `/rawlog [on|off|toggle]`: Toggles or sets the display of raw IRC messages.
+- `/lastlog <pattern>`: Searches message history.
 - `/raw <raw IRC command>` (Aliases: `/quote`, `/r`): Sends a raw command directly to the IRC server.
-- `/on ...`: Manages event-based triggers (see `/help on`).
+- `/on ...`: Manages event-based triggers.
+
+### Remote Control / Scripting
+
+PyRC can be controlled from a second terminal or a script by sending commands to a running instance.
+
+- `/raw <command>`: The primary way to send any IRC line.
+- `--send-raw "<command>"`: A command-line flag to send a single command and then exit. This is ideal for scripting.
+
+**Example:**
+
+```bash
+# In one terminal, PyRC is running.
+# In a second terminal, send a message to #python:
+python pyrc.py --send-raw "/msg #python Hello from a script!"
+```
 
 ### Fun Commands (from default_fun_commands.py script):
 
