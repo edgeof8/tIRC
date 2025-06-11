@@ -98,7 +98,4 @@ class InputLineRenderer:
 
         SafeCursesUtils._safe_move(window, 0, cursor_pos_x, "draw_input_line_cursor")
 
-        try:
-            window.noutrefresh()
-        except curses.error as e:
-            logger.warning(f"curses.error on noutrefresh in draw (InputLineRenderer): {e}")
+        SafeCursesUtils._safe_noutrefresh(window, "InputLineRenderer.draw_noutrefresh")

@@ -14,12 +14,8 @@ class StatusBarRenderer:
         if not window:
             return
 
-        try:
-            window.erase()
-            window.bkgd(" ", self.colors["status_bar"])
-        except curses.error as e:
-            logger.warning(f"Error erasing/setting bkgd for status bar: {e}")
-            return # If we can't set background, probably can't draw text either
+        SafeCursesUtils._safe_erase(window, "StatusBarRenderer.draw_erase")
+        SafeCursesUtils._safe_bkgd(window, " ", self.colors["status_bar"], "StatusBarRenderer.draw_bkgd")
 
         try:
             max_y, max_x = window.getmaxyx()
@@ -70,7 +66,4 @@ class StatusBarRenderer:
             logger.error(f"Unexpected error drawing status bar: {ex}", exc_info=True)
 
         if window:
-            try:
-                window.noutrefresh()
-            except curses.error as e:
-                logger.warning(f"curses.error on noutrefresh in draw (StatusBarRenderer): {e}")
+            SafeCursesUtils._safe_noutrefresh(window, "StatusBarRenderer.draw_noutrefresh")

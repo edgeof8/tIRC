@@ -1,6 +1,7 @@
 import curses
 import logging
 from typing import Any, Dict, Tuple
+from pyrc_core.client.curses_utils import SafeCursesUtils # Import SafeCursesUtils
 
 logger = logging.getLogger("pyrc.curses_manager")
 
@@ -13,12 +14,12 @@ class CursesManager:
         self._setup_curses_settings()
 
     def _setup_curses_settings(self):
-        curses.curs_set(1) # Make cursor visible
-        curses.noecho()    # Don't echo characters typed by user
-        curses.cbreak()    # React to keys instantly, without waiting for Enter
-        self.stdscr.keypad(True) # Enable special keys (like arrow keys)
-        curses.start_color()
-        curses.use_default_colors()
+        SafeCursesUtils._safe_curs_set(1, "CursesManager._setup_curses_settings_curs_set") # Make cursor visible
+        SafeCursesUtils._safe_noecho("CursesManager._setup_curses_settings_noecho")    # Don't echo characters typed by user
+        SafeCursesUtils._safe_cbreak("CursesManager._setup_curses_settings_cbreak")    # React to keys instantly, without waiting for Enter
+        SafeCursesUtils._safe_keypad(self.stdscr, True, "CursesManager._setup_curses_settings_keypad") # Enable special keys (like arrow keys)
+        SafeCursesUtils._safe_start_color("CursesManager._setup_curses_settings_start_color")
+        SafeCursesUtils._safe_use_default_colors("CursesManager._setup_curses_settings_use_default_colors")
 
         # Define color pair IDs locally, as they are internal UI constants
         COLOR_ID_DEFAULT = 1
@@ -70,8 +71,13 @@ class CursesManager:
         self._init_color_pair("user_list_panel_bg", 16, curses.COLOR_GREEN, curses.COLOR_BLACK)
 
     def _init_color_pair(self, name: str, pair_id: int, fg: int, bg: int):
-        curses.init_pair(pair_id, fg, bg)
-        self.colors[name] = curses.color_pair(pair_id)
+        SafeCursesUtils._safe_init_pair(pair_id, fg, bg, f"CursesManager._init_color_pair_{name}")
+        try:
+            self.colors[name] = curses.color_pair(pair_id)
+        except curses.error as e:
+            logger.warning(f"Curses error getting color pair {pair_id} for '{name}': {e}")
+        except Exception as ex:
+            logger.error(f"Unexpected error getting color pair {pair_id} for '{name}': {ex}", exc_info=True)
 
     def get_dimensions(self) -> Tuple[int, int]:
         try:
@@ -89,58 +95,33 @@ class CursesManager:
         logger.debug(f"resize_term called to {height}x{width}. Relying on UIManager for redraw.")
 
     def update_screen(self):
-        try:
-            curses.doupdate()
-        except curses.error as e:
-            logger.error(f"Curses error during doupdate: {e}")
+        SafeCursesUtils._safe_doupdate("CursesManager.update_screen")
 
     def cleanup(self):
-        curses.endwin()
+        SafeCursesUtils._safe_endwin("CursesManager.cleanup")
         logger.debug("Curses cleanup complete.")
 
     def get_color(self, name: str) -> int:
         return self.colors.get(name, 0)
 
     def noutrefresh_stdscr(self):
-        try:
-            self.stdscr.noutrefresh()
-        except curses.error as e:
-            logger.error(f"Error refreshing stdscr: {e}")
+        SafeCursesUtils._safe_noutrefresh(self.stdscr, "CursesManager.noutrefresh_stdscr")
 
     def erase_stdscr(self):
-        try:
-            self.stdscr.erase()
-        except curses.error as e:
-            logger.error(f"Error erasing stdscr: {e}")
+        SafeCursesUtils._safe_erase(self.stdscr, "CursesManager.erase_stdscr")
 
     def clear_stdscr(self):
-        try:
-            self.stdscr.clear()
-        except curses.error as e:
-            logger.error(f"Error clearing stdscr: {e}")
+        SafeCursesUtils._safe_clear(self.stdscr, "CursesManager.clear_stdscr")
 
     def refresh_stdscr(self):
-        try:
-            self.stdscr.refresh()
-        except curses.error as e:
-            logger.error(f"Error refreshing stdscr: {e}")
+        SafeCursesUtils._safe_refresh(self.stdscr, "CursesManager.refresh_stdscr")
 
     def addstr_stdscr(self, y: int, x: int, text: str, attr: int):
-        try:
-            self.stdscr.addstr(y, x, text, attr)
-        except curses.error as e:
-            logger.warning(f"Error adding string to stdscr at {y},{x}: {e}")
+        SafeCursesUtils._safe_addstr(self.stdscr, y, x, text, attr, "CursesManager.addstr_stdscr")
 
     def touchwin(self, window: Any):
         if window:
-            try:
-                window.touchwin()
-            except curses.error as e:
-                logger.warning(f"Error touching window {window!r}: {e}")
-
+            SafeCursesUtils._safe_touchwin(window, f"CursesManager.touchwin_{window!r}")
     def clearok(self, window: Any, flag: bool):
         if window:
-            try:
-                window.clearok(flag)
-            except curses.error as e:
-                logger.warning(f"Error setting clearok for window {window!r}: {e}")
+            SafeCursesUtils._safe_clearok(window, flag, f"CursesManager.clearok_{window!r}")

@@ -1,8 +1,8 @@
 import curses
 import logging
-from typing import Any, Dict, List, Optional # Added Optional
+from typing import Any, Dict, List, Optional
 from pyrc_core.client.curses_utils import SafeCursesUtils
-from pyrc_core.context_manager import ChannelJoinStatus, ContextManager # Added ContextManager
+from pyrc_core.context_manager import ChannelJoinStatus, ContextManager
 
 logger = logging.getLogger("pyrc.sidebar_panel_renderer")
 
@@ -11,21 +11,17 @@ MIN_SIDEBAR_USER_LIST_WIDTH = (
 )
 
 class SidebarPanelRenderer:
-    def __init__(self, colors: Dict[str, int], context_manager_ref: ContextManager): # Added context_manager_ref
+    def __init__(self, colors: Dict[str, int], context_manager_ref: ContextManager):
         self.colors = colors
-        self.context_manager = context_manager_ref # Store reference
+        self.context_manager = context_manager_ref
 
     def draw(self, window: Any, active_context_obj: Any, all_contexts_data: List[str]):
         """Draws the sidebar content, including context list and user list."""
         if not window:
             return
 
-        try:
-            window.erase()
-            window.bkgd(" ", self.colors.get("list_panel_bg", 0)) # Use get for safety
-        except curses.error as e:
-            logger.warning(f"Error erasing/setting bkgd for sidebar: {e}")
-            return # If we can't set background, probably can't draw text either
+        SafeCursesUtils._safe_erase(window, "SidebarPanelRenderer.draw_erase")
+        SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("list_panel_bg", 0), "SidebarPanelRenderer.draw_bkgd")
 
         max_y, max_x = window.getmaxyx()
         if max_y <= 0 or max_x <= 0:
@@ -36,13 +32,10 @@ class SidebarPanelRenderer:
         )
 
         if active_context_obj and active_context_obj.type == "channel": # Only draw user list for channels
-            user_list_bg_color = self.colors.get("user_list_panel_bg", 0) # Use get for safety
-            for y_coord in range(line_num, max_y): # Corrected variable name from y to y_coord
-                try:
-                    if max_x > 0:
-                        window.addnstr(y_coord, 0, ' ' * max_x, max_x, user_list_bg_color)
-                except curses.error:
-                    pass # Ignore errors if drawing background fails (e.g. too small)
+            user_list_bg_color = self.colors.get("user_list_panel_bg", 0)
+            for y_coord in range(line_num, max_y):
+                if max_x > 0:
+                    SafeCursesUtils._safe_addstr(window, y_coord, 0, ' ' * max_x, user_list_bg_color, "SidebarPanelRenderer.draw_user_list_bg")
 
             if line_num > 0 and line_num < max_y:
                 SafeCursesUtils._safe_hline(
@@ -51,7 +44,7 @@ class SidebarPanelRenderer:
                     0,
                     curses.ACS_HLINE,
                     max_x,
-                    self.colors.get("user_list_panel_bg", 0), # Use get for safety
+                    self.colors.get("user_list_panel_bg", 0),
                     "_draw_sidebar_user_list_hline",
                 )
                 line_num += 1
@@ -71,28 +64,25 @@ class SidebarPanelRenderer:
                 )
 
         if window:
-            try:
-                window.noutrefresh()
-            except curses.error as e:
-                logger.warning(f"curses.error on noutrefresh in draw (SidebarPanelRenderer): {e}")
+            SafeCursesUtils._safe_noutrefresh(window, "SidebarPanelRenderer.draw_noutrefresh")
 
     def _draw_sidebar_context_list(
         self, window: Any, max_y: int, max_x: int, current_active_ctx_name_str: str, all_contexts_names: List[str]
-    ) -> int: # Renamed all_contexts_data to all_contexts_names
+    ) -> int:
         """Draws the list of contexts (windows) in the sidebar. Returns the next line_num."""
         line_num = 0
         SafeCursesUtils._draw_full_width_banner(
             window,
             line_num,
             "Windows:",
-            self.colors.get("list_panel_bg", 0), # Use get for safety
+            self.colors.get("list_panel_bg", 0),
             "_draw_sidebar_context_list_header",
         )
         line_num += 1
 
         # Sort contexts: Status last, others alphabetically
         status_context_name = "Status"
-        dcc_context_name = "DCC" # Assuming "DCC" is the name for DCC context
+        dcc_context_name = "DCC"
 
         regular_contexts = [
             name for name in all_contexts_names if name not in [status_context_name, dcc_context_name]
@@ -108,13 +98,13 @@ class SidebarPanelRenderer:
 
 
         for ctx_name in sorted_display_contexts:
-            if line_num >= max_y -1: # Check if space for this item
+            if line_num >= max_y -1:
                 break
 
-            display_name_base = ctx_name[: max_x - 4] # Truncate name if too long
-            attr = self.colors.get("sidebar_item", 0) # Default attribute
+            display_name_base = ctx_name[: max_x - 4]
+            attr = self.colors.get("sidebar_item", 0)
 
-            ctx_obj = self.context_manager.get_context(ctx_name) # Use self.context_manager
+            ctx_obj = self.context_manager.get_context(ctx_name)
             unread_count = self.context_manager.get_unread_count(ctx_name) if ctx_obj else 0
 
             prefix = " "
@@ -139,7 +129,7 @@ class SidebarPanelRenderer:
             elif unread_count > 0:
                 attr = self.colors.get("highlight", 0)
                 prefix = "*"
-            else: # Ensure non-highlighted items use the panel background
+            else:
                 attr = self.colors.get("list_panel_bg", 0)
 
 
@@ -151,14 +141,14 @@ class SidebarPanelRenderer:
             SafeCursesUtils._safe_addstr(
                 window,
                 line_num,
-                0, # Start at column 0 for full background
-                padded_display_line, # Use padded line
+                0,
+                padded_display_line,
                 attr,
                 "_draw_sidebar_context_list_item",
             )
             line_num += 1
 
-        if line_num < max_y -1: # Add a gap if there's space before next section
+        if line_num < max_y -1:
             line_num += 1
         return line_num
 
@@ -169,7 +159,7 @@ class SidebarPanelRenderer:
         line_num: int,
         max_y: int,
         max_x: int,
-        active_ctx_obj_for_users: Any, # This is a Context object
+        active_ctx_obj_for_users: Any,
         current_active_ctx_name_for_user_header: str,
     ) -> int:
         """Draws the user list header in the sidebar. Returns the next line_num."""
@@ -188,7 +178,7 @@ class SidebarPanelRenderer:
             window,
             line_num,
             user_header_full,
-            self.colors.get("user_list_panel_bg", 0), # Use get for safety
+            self.colors.get("user_list_panel_bg", 0),
             "_draw_sidebar_user_list_header_text",
         )
         line_num += 1
@@ -213,9 +203,9 @@ class SidebarPanelRenderer:
                 SafeCursesUtils._safe_addstr(
                     window,
                     line_num,
-                    0, # Start at column 0
-                    "[Users Hidden]".ljust(max_x), # Pad to fill width
-                    self.colors.get("user_list_panel_bg", 0) | curses.A_DIM, # Use panel bg
+                    0,
+                    "[Users Hidden]".ljust(max_x),
+                    self.colors.get("user_list_panel_bg", 0) | curses.A_DIM,
                     "_draw_sidebar_user_list_too_narrow",
                 )
                 line_num += 1
@@ -233,48 +223,48 @@ class SidebarPanelRenderer:
         down_indicator_text: Optional[str] = None
 
         if current_user_scroll_offset > 0:
-            if lines_for_nicks > 0: # Need at least 1 line for the indicator itself
-                up_indicator_text = "^ More"[: max_x -1] # Truncate if needed
-                lines_for_nicks -= 1 # Account for the indicator line
+            if lines_for_nicks > 0:
+                up_indicator_text = "^ More"[: max_x -1]
+                lines_for_nicks -= 1
 
         # Check if there are more users below the current view
         if current_user_scroll_offset + lines_for_nicks < total_users:
-            if lines_for_nicks > 0: # Need at least 1 line for this indicator too
+            if lines_for_nicks > 0:
                 down_indicator_text = "v More"[: max_x -1]
                 lines_for_nicks -= 1
 
-        lines_for_nicks = max(0, lines_for_nicks) # Ensure not negative
+        lines_for_nicks = max(0, lines_for_nicks)
 
         if up_indicator_text and line_num < max_y:
             SafeCursesUtils._safe_addstr(
                 window,
                 line_num,
-                0, # Start at column 0
-                (" " + up_indicator_text).ljust(max_x), # Pad to fill
-                self.colors.get("user_list_panel_bg", 0) | curses.A_DIM, # Use panel bg
+                0,
+                (" " + up_indicator_text).ljust(max_x),
+                self.colors.get("user_list_panel_bg", 0) | curses.A_DIM,
                 "_draw_sidebar_user_list_up_indicator",
             )
             line_num += 1
 
         start_idx = current_user_scroll_offset
-        end_idx = current_user_scroll_offset + lines_for_nicks # Use calculated lines_for_nicks
+        end_idx = current_user_scroll_offset + lines_for_nicks
         visible_users_page = sorted_user_items[start_idx:end_idx]
 
         for nick, prefix_str in visible_users_page:
-            if line_num >= max_y: # Check if we ran out of space
+            if line_num >= max_y:
                 break
             display_user_with_prefix = f"{prefix_str}{nick}"
-            padded_display_line = (" " + display_user_with_prefix).ljust(max_x) # Pad to fill
+            padded_display_line = (" " + display_user_with_prefix).ljust(max_x)
 
-            user_color = self.colors.get("user_list_panel_bg", 0) # Default to panel background
-            if prefix_str == "@": # Example: highlight ops
-                user_color = self.colors.get("user_prefix", user_color) # Use user_prefix if defined, else panel_bg
+            user_color = self.colors.get("user_list_panel_bg", 0)
+            if prefix_str == "@":
+                user_color = self.colors.get("user_prefix", user_color)
 
             SafeCursesUtils._safe_addstr(
                 window,
                 line_num,
-                0, # Start at column 0
-                padded_display_line, # Use padded line
+                0,
+                padded_display_line,
                 user_color,
                 "_draw_sidebar_user_list_item",
             )
@@ -284,9 +274,9 @@ class SidebarPanelRenderer:
             SafeCursesUtils._safe_addstr(
                 window,
                 line_num,
-                0, # Start at column 0
-                (" " + down_indicator_text).ljust(max_x), # Pad to fill
-                self.colors.get("user_list_panel_bg", 0) | curses.A_DIM, # Use panel bg
+                0,
+                (" " + down_indicator_text).ljust(max_x),
+                self.colors.get("user_list_panel_bg", 0) | curses.A_DIM,
                 "_draw_sidebar_user_list_down_indicator",
             )
             line_num += 1

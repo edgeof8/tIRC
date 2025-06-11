@@ -18,17 +18,25 @@ class MessagePanelRenderer:
         if not window or not context_obj:
             return
 
+        SafeCursesUtils._safe_erase(window, "MessagePanelRenderer._draw_messages_erase")
+        SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("default", 0), "MessagePanelRenderer._draw_messages_bkgd")
         try:
-            window.erase()
-            window.bkgd(" ", self.colors.get("default", 0))
             max_y, max_x = window.getmaxyx()
-            if max_y <= 0 or max_x <= 0:
-                return
+        except curses.error as e:
+            logger.warning(f"curses.error getting getmaxyx for window in _draw_messages_in_window: {e}. Aborting draw.")
+            return
+        except Exception as ex:
+            logger.error(f"Unexpected error getting getmaxyx for window in _draw_messages_in_window: {ex}", exc_info=True)
+            return
 
-            if hasattr(context_obj, 'type') and context_obj.type == "dcc_transfers":
-                self._draw_dcc_transfer_list(window, context_obj)
-                return
+        if max_y <= 0 or max_x <= 0:
+            return
 
+        if hasattr(context_obj, 'type') and context_obj.type == "dcc_transfers":
+            self._draw_dcc_transfer_list(window, context_obj)
+            return
+
+        try: # Keep the try block for potential errors during message processing/drawing
             messages_to_draw: List[Tuple[str, Any]] = [] # Use List for the local copy
             if hasattr(context_obj, 'messages') and isinstance(context_obj.messages, Deque):
                 messages_to_draw = list(context_obj.messages) # Convert Deque to List for slicing
@@ -72,15 +80,11 @@ class MessagePanelRenderer:
                 f"Unexpected error in _draw_messages_in_window for context '{getattr(context_obj, 'name', 'Unknown')}': {e}", exc_info=True
             )
 
-
     def draw(self, window: Any, context_obj: Any):
         """Draws messages for a single context. Main entry point for non-split view."""
         self._draw_messages_in_window(window, context_obj)
         if window:
-            try:
-                window.noutrefresh()
-            except curses.error as e:
-                logger.warning(f"curses.error on noutrefresh in draw (MessagePanelRenderer): {e}")
+            SafeCursesUtils._safe_noutrefresh(window, "MessagePanelRenderer.draw_noutrefresh")
 
     def draw_split(
         self,
@@ -93,17 +97,11 @@ class MessagePanelRenderer:
         """Draws messages for split view panes."""
         if top_window:
             self._draw_messages_in_window(top_window, top_context)
-            try:
-                top_window.noutrefresh()
-            except curses.error as e:
-                logger.warning(f"curses.error on noutrefresh for top_window in draw_split: {e}")
+            SafeCursesUtils._safe_noutrefresh(top_window, "MessagePanelRenderer.draw_split_top_noutrefresh")
 
         if bottom_window:
             self._draw_messages_in_window(bottom_window, bottom_context)
-            try:
-                bottom_window.noutrefresh()
-            except curses.error as e:
-                logger.warning(f"curses.error on noutrefresh for bottom_window in draw_split: {e}")
+            SafeCursesUtils._safe_noutrefresh(bottom_window, "MessagePanelRenderer.draw_split_bottom_noutrefresh")
 
 
     def _draw_dcc_transfer_list(self, window: Any, context_obj: Any):
@@ -113,12 +111,20 @@ class MessagePanelRenderer:
             SafeCursesUtils._safe_addstr(window, 0, 0, "[DCC System Error]", self.colors.get("error",0), "dcc_error")
             return
 
+        SafeCursesUtils._safe_erase(window, "MessagePanelRenderer._draw_dcc_erase")
+        SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("default", 0), "MessagePanelRenderer._draw_dcc_bkgd")
         try:
-            window.erase()
-            window.bkgd(" ", self.colors.get("default", 0))
             max_y, max_x = window.getmaxyx()
-            if max_y <= 0 or max_x <= 0: return
+        except curses.error as e:
+            logger.warning(f"curses.error getting getmaxyx for window in _draw_dcc_transfer_list: {e}. Aborting draw.")
+            return
+        except Exception as ex:
+            logger.error(f"Unexpected error getting getmaxyx for window in _draw_dcc_transfer_list: {ex}", exc_info=True)
+            return
 
+        if max_y <= 0 or max_x <= 0: return
+
+        try: # Keep the try block for potential errors during transfer list processing/drawing
             transfers = self.dcc_manager.get_all_transfers()
 
             if not transfers:

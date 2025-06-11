@@ -6,16 +6,215 @@ logger = logging.getLogger("pyrc.curses_utils")
 
 class SafeCursesUtils:
     @staticmethod
-    def _draw_window_border_and_bkgd(window, color_attr, title=""):
+    def _safe_erase(window: Any, context_info: str = ""):
+        """Safely erases the window."""
         if not window:
+            logger.debug(f"_safe_erase ({context_info}): Attempted to erase a non-existent window.")
             return
         try:
             window.erase()
-            window.bkgd(
-                " ", color_attr
-            )
-            window.box() # Draw a border around the window
-            if title:
+        except curses.error as e:
+            logger.warning(f"_safe_erase ({context_info}): curses.error erasing window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_erase ({context_info}): Unexpected error erasing window {window!r}: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_bkgd(window: Any, char: Any, attr: int, context_info: str = ""):
+        """Safely sets the background character and attribute for the window."""
+        if not window:
+            logger.debug(f"_safe_bkgd ({context_info}): Attempted to set background on a non-existent window.")
+            return
+        try:
+            window.bkgd(char, attr)
+        except curses.error as e:
+            logger.warning(f"_safe_bkgd ({context_info}): curses.error setting background for window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_bkgd ({context_info}): Unexpected error setting background for window {window!r}: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_box(window: Any, vertch: Any = 0, horch: Any = 0, context_info: str = ""):
+        """Safely draws a border around the window."""
+        if not window:
+            logger.debug(f"_safe_box ({context_info}): Attempted to draw box on a non-existent window.")
+            return
+        try:
+            # Use default characters if not provided
+            if vertch == 0 and horch == 0:
+                 window.box()
+            else:
+                 window.box(vertch, horch)
+        except curses.error as e:
+            logger.warning(f"_safe_box ({context_info}): curses.error drawing box for window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_box ({context_info}): Unexpected error drawing box for window {window!r}: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_noutrefresh(window: Any, context_info: str = ""):
+        """Safely marks the window for update without refreshing the screen."""
+        if not window:
+            logger.debug(f"_safe_noutrefresh ({context_info}): Attempted noutrefresh on a non-existent window.")
+            return
+        try:
+            window.noutrefresh()
+        except curses.error as e:
+            logger.warning(f"_safe_noutrefresh ({context_info}): curses.error during noutrefresh for window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_noutrefresh ({context_info}): Unexpected error during noutrefresh for window {window!r}: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_refresh(window: Any, context_info: str = ""):
+        """Safely refreshes the window."""
+        if not window:
+            logger.debug(f"_safe_refresh ({context_info}): Attempted refresh on a non-existent window.")
+            return
+        try:
+            window.refresh()
+        except curses.error as e:
+            logger.warning(f"_safe_refresh ({context_info}): curses.error during refresh for window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_refresh ({context_info}): Unexpected error during refresh for window {window!r}: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_clear(window: Any, context_info: str = ""):
+        """Safely clears the window."""
+        if not window:
+            logger.debug(f"_safe_clear ({context_info}): Attempted clear on a non-existent window.")
+            return
+        try:
+            window.clear()
+        except curses.error as e:
+            logger.warning(f"_safe_clear ({context_info}): curses.error during clear for window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_clear ({context_info}): Unexpected error during clear for window {window!r}: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_touchwin(window: Any, context_info: str = ""):
+        """Safely marks the window as having been changed."""
+        if not window:
+            logger.debug(f"_safe_touchwin ({context_info}): Attempted touchwin on a non-existent window.")
+            return
+        try:
+            window.touchwin()
+        except curses.error as e:
+            logger.warning(f"_safe_touchwin ({context_info}): curses.error during touchwin for window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_touchwin ({context_info}): Unexpected error during touchwin for window {window!r}: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_clearok(window: Any, flag: bool, context_info: str = ""):
+        """Safely sets the clearok flag for the window."""
+        if not window:
+            logger.debug(f"_safe_clearok ({context_info}): Attempted clearok on a non-existent window.")
+            return
+        try:
+            window.clearok(flag)
+        except curses.error as e:
+            logger.warning(f"_safe_clearok ({context_info}): curses.error during clearok for window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_clearok ({context_info}): Unexpected error during clearok for window {window!r}: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_curs_set(visibility: int, context_info: str = ""):
+        """Safely sets the cursor visibility."""
+        try:
+            curses.curs_set(visibility)
+        except curses.error as e:
+            logger.warning(f"_safe_curs_set ({context_info}): curses.error setting cursor visibility to {visibility}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_curs_set ({context_info}): Unexpected error setting cursor visibility: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_noecho(context_info: str = ""):
+        """Safely disables echoing of characters."""
+        try:
+            curses.noecho()
+        except curses.error as e:
+            logger.warning(f"_safe_noecho ({context_info}): curses.error disabling echo: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_noecho ({context_info}): Unexpected error disabling echo: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_cbreak(context_info: str = ""):
+        """Safely enters cbreak mode."""
+        try:
+            curses.cbreak()
+        except curses.error as e:
+            logger.warning(f"_safe_cbreak ({context_info}): curses.error entering cbreak mode: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_cbreak ({context_info}): Unexpected error entering cbreak mode: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_keypad(window: Any, enable: bool, context_info: str = ""):
+        """Safely enables or disables keypad mode for a window."""
+        if not window:
+            logger.debug(f"_safe_keypad ({context_info}): Attempted keypad on a non-existent window.")
+            return
+        try:
+            window.keypad(enable)
+        except curses.error as e:
+            logger.warning(f"_safe_keypad ({context_info}): curses.error setting keypad to {enable} for window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_keypad ({context_info}): Unexpected error setting keypad: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_start_color(context_info: str = ""):
+        """Safely starts color support."""
+        try:
+            curses.start_color()
+        except curses.error as e:
+            logger.warning(f"_safe_start_color ({context_info}): curses.error starting color: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_start_color ({context_info}): Unexpected error starting color: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_use_default_colors(context_info: str = ""):
+        """Safely uses default terminal colors."""
+        try:
+            curses.use_default_colors()
+        except curses.error as e:
+            logger.warning(f"_safe_use_default_colors ({context_info}): curses.error using default colors: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_use_default_colors ({context_info}): Unexpected error using default colors: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_init_pair(pair_id: int, fg: int, bg: int, context_info: str = ""):
+        """Safely initializes a color pair."""
+        try:
+            curses.init_pair(pair_id, fg, bg)
+        except curses.error as e:
+            logger.warning(f"_safe_init_pair ({context_info}): curses.error initializing color pair {pair_id}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_init_pair ({context_info}): Unexpected error initializing color pair: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_doupdate(context_info: str = ""):
+        """Safely updates the physical screen."""
+        try:
+            curses.doupdate()
+        except curses.error as e:
+            logger.warning(f"_safe_doupdate ({context_info}): curses.error during doupdate: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_doupdate ({context_info}): Unexpected error during doupdate: {ex}", exc_info=True)
+
+    @staticmethod
+    def _safe_endwin(context_info: str = ""):
+        """Safely ends the curses session."""
+        try:
+            curses.endwin()
+        except curses.error as e:
+            logger.warning(f"_safe_endwin ({context_info}): curses.error ending curses session: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_endwin ({context_info}): Unexpected error ending curses session: {ex}", exc_info=True)
+
+    @staticmethod
+    def _draw_window_border_and_bkgd(window, color_attr, title=""):
+        if not window:
+            return
+        SafeCursesUtils._safe_erase(window, "border_and_bkgd_erase")
+        SafeCursesUtils._safe_bkgd(window, " ", color_attr, "border_and_bkgd_bkgd")
+        SafeCursesUtils._safe_box(window, context_info="border_and_bkgd_box") # Draw a border around the window
+        if title:
+            try:
                 max_y, max_x = window.getmaxyx()
                 if max_y > 0 and max_x > 0:
                     if 1 < max_x - 1:
@@ -23,14 +222,14 @@ class SafeCursesUtils:
                         SafeCursesUtils._safe_addstr(
                             window, 0, 1, text_to_render, curses.A_BOLD, "border_title"
                         )
-        except curses.error as e:
-            logger.warning(
-                f"curses.error in _draw_window_border_and_bkgd for window {window!r}, title '{title[:30]}...': {e}"
-            )
-        except Exception as ex:
-            logger.error(
-                f"Unexpected error in _draw_window_border_and_bkgd: {ex}", exc_info=True
-            )
+            except curses.error as e:
+                logger.warning(
+                    f"curses.error in _draw_window_border_and_bkgd for window {window!r}, title '{title[:30]}...': {e}"
+                )
+            except Exception as ex:
+                logger.error(
+                    f"Unexpected error in _draw_window_border_and_bkgd: {ex}", exc_info=True
+                )
 
     @staticmethod
     def _safe_addstr(
@@ -176,7 +375,6 @@ class SafeCursesUtils:
                     f"_safe_move ({context_info}): Skipping move, y={y},x={x} (corrected to {safe_y},{safe_x}) still invalid for win {max_y}x{max_x}."
                 )
                 return
-
         try:
             window.move(safe_y, safe_x)
         except curses.error as e:
@@ -201,6 +399,6 @@ class SafeCursesUtils:
 
             padded_text = text.ljust(max_x)
 
-            window.addstr(y, 0, padded_text, attr)
+            SafeCursesUtils._safe_addstr(window, y, 0, padded_text, attr, context_info)
         except curses.error as e:
             logger.warning(f"curses.error in _draw_full_width_banner for {context_info}: {e}")
