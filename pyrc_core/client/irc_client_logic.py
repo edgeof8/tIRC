@@ -1,7 +1,6 @@
 # pyrc_core/client/irc_client_logic.py
 from __future__ import annotations
 from typing import TYPE_CHECKING
-import curses
 import asyncio
 import concurrent.futures  # For running blocking calls in a thread pool
 from collections import deque
@@ -10,9 +9,21 @@ import logging
 import logging.handlers
 import os
 import platform
+import sys # Import sys for sys.exit
 import time # Import time
 from enum import Enum
 from dataclasses import asdict  # Import asdict
+
+# Conditional import for curses based on platform
+if platform.system() == "Windows":
+    try:
+        import curses
+    except ImportError:
+        # This block will be important if we add a non-curses fallback UI
+        print("Error: 'windows-curses' is required on Windows. Please run 'pip install windows-curses'")
+        sys.exit(1)
+else:
+    import curses
 # typing.Optional is already imported by __future__.annotations if Python >= 3.9
 # from typing import Optional # Keep for clarity if preferred
 
