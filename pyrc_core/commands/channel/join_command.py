@@ -22,8 +22,9 @@ COMMAND_DEFINITIONS = [
 
 async def handle_join_command(client: "IRCClient_Logic", args_str: str):
     """Handle the /join command"""
-    help_data = client.script_manager.get_help_text_for_command("join")
-    usage_msg = help_data["help_text"] if help_data else "Usage: /join <channel>"
+    help_data = client.command_handler.get_help_text_for_command("join")
+    usage_msg = help_data["help_text"] if help_data and help_data.get("help_text") else \
+                (help_data["help_info"]["usage"] if help_data and help_data.get("help_info") else "Usage: /join <channel>")
     parts = await client.command_handler._ensure_args(args_str, usage_msg)
     if not parts:
         return

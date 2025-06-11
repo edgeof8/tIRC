@@ -50,6 +50,107 @@ class CommandHandler:
         self.ini_help_texts: Dict[str, Dict[str, str]] = {}
         self._load_help_texts()
 
+    def get_help_text_for_command(self, command_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves help text for a given command, prioritizing sources.
+        Order of priority:
+        1. Core command definitions (from COMMAND_DEFINITIONS in modules)
+        2. Script command definitions (registered by scripts)
+        3. INI help texts (from command_help.ini)
+        """
+        cmd_name_lower = command_name.lower()
+
+        # 1. Check core command definitions
+        if cmd_name_lower in self.registered_command_help:
+            help_data = self.registered_command_help[cmd_name_lower].copy()
+            help_data["source"] = "core"
+            return help_data
+
+        # 2. Check script command definitions
+        script_cmd_data = self.get_script_command_handler(cmd_name_lower)
+        if script_cmd_data:
+            # The help_info from script_cmd_data can be a string or a dict
+            help_info = script_cmd_data.get("help_info")
+            # Construct a unified help data dictionary
+            help_data = {
+                "help_info": help_info if isinstance(help_info, dict) else None,
+                "help_text": help_info if isinstance(help_info, str) else None,
+                "aliases": script_cmd_data.get("aliases", []),
+                "script_name": script_cmd_data.get("script_name", "UnknownScript"),
+                "is_alias": script_cmd_data.get("is_alias_call", False),
+                "primary_command": script_cmd_data.get("primary_command", cmd_name_lower),
+                "source": "script"
+            }
+            return help_data
+
+        # 3. Check INI help texts
+        # INI help texts are typically categorized by section (e.g., "core", "script_name")
+        # We need to search all sections for the command.
+        for section, commands_in_section in self.ini_help_texts.items():
+            if cmd_name_lower in commands_in_section:
+                return {
+                    "help_text": commands_in_section[cmd_name_lower],
+                    "source": "ini",
+                    "script_name": section # Use section name as script_name for INI source
+                }
+        return None
+
+    def get_all_commands_help(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Returns a dictionary of all registered commands and their help information.
+        Keys are command names (lowercase), values are dictionaries containing
+        help_text, aliases, script_name (or 'core'), and source ('core', 'script', 'ini').
+        Aliases will point to their primary command's help.
+        """
+        all_help: Dict[str, Dict[str, Any]] = {}
+
+        # 1. Add core commands
+        for cmd_name, help_data in self.registered_command_help.items():
+            if not help_data.get("is_alias"): # Only add primary commands here
+                all_help[cmd_name] = help_data.copy()
+                all_help[cmd_name]["source"] = "core"
+
+        # 2. Add script commands
+        for cmd_name, script_data in self.script_commands.items():
+            # Ensure we don't overwrite a core command with a script command of the same name
+            if cmd_name not in all_help:
+                help_info = script_data.get("help_info")
+                all_help[cmd_name] = {
+                    "help_info": help_info if isinstance(help_info, dict) else None,
+                    "help_text": help_info if isinstance(help_info, str) else None,
+                    "aliases": script_data.get("aliases", []),
+                    "script_name": script_data.get("script_name", "UnknownScript"),
+                    "is_alias": False, # This is the primary script command
+                    "source": "script"
+                }
+
+        # Add script aliases pointing to their primary command's help
+        for alias, primary_cmd in self.script_command_aliases.items():
+            if primary_cmd in all_help: # Ensure primary command exists
+                # Create an alias entry that points to the primary command's help
+                # This is a simplified entry, the help_command will fetch the full help via get_help_text_for_command
+                all_help[alias] = {
+                    "help_text": f"Alias for /{primary_cmd}",
+                    "aliases": [primary_cmd],
+                    "script_name": all_help[primary_cmd].get("script_name", "UnknownScript"),
+                    "is_alias": True,
+                    "primary_command": primary_cmd,
+                    "source": "script"
+                }
+
+        # 3. Add INI help texts (only if no core or script command exists with the same name)
+        for section, commands_in_section in self.ini_help_texts.items():
+            for cmd_name, help_text in commands_in_section.items():
+                if cmd_name not in all_help:
+                    all_help[cmd_name] = {
+                        "help_text": help_text,
+                        "aliases": [], # INI doesn't define aliases directly for commands
+                        "script_name": section, # Use section name as script_name for INI source
+                        "is_alias": False,
+                        "source": "ini"
+                    }
+        return all_help
+
 
         logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
         logger.info(f"pkgutil.walk_packages path: {pyrc_core.commands.__path__}, prefix: {pyrc_core.commands.__name__ + '.'}")
@@ -214,121 +315,6 @@ class CommandHandler:
                 return data
         return None
 
-    def get_help_text_for_command(self, command_name: str) -> Optional[Dict[str, Any]]:
-        """Get help text for any command (core, script, or INI)."""
-        cmd_lower = command_name.lower()
-
-        # Priority 1: Core commands (and their aliases)
-        if cmd_lower in self.registered_command_help:
-            core_help_data = self.registered_command_help[cmd_lower]
-            # Ensure 'help_info' is present for consistency if it's derived
-            # from 'help_text' for core commands.
-            # The current structure of registered_command_help already has 'help_text' and 'aliases'.
-            # We might want to add a 'help_info' field if it's not directly there.
-            # For now, let's assume 'help_text' is the primary source.
-            return {
-                "help_text": core_help_data["help_text"],
-                "aliases": core_help_data.get("aliases", []),
-                "script_name": core_help_data.get("script_name", "core"), # Should be "core"
-                "is_alias": core_help_data.get("is_alias", False),
-                "primary_command": core_help_data.get("primary_command"),
-                 # For core commands, help_info might be the original dict from COMMAND_DEFINITIONS
-                "help_info": core_help_data.get("help_info", core_help_data["help_text"]) # Fallback
-            }
-
-        # Priority 2: Script commands
-        script_cmd_data = self.get_script_command_handler(cmd_lower) # Checks main commands and aliases
-        if script_cmd_data:
-            help_info = script_cmd_data.get("help_info", "")
-            help_text_str = ""
-            if isinstance(help_info, dict):
-                help_text_str = help_info.get("usage", "")
-                if help_info.get("description"):
-                    help_text_str += f"\n  {help_info['description']}"
-            else:
-                help_text_str = str(help_info)
-
-            is_alias = cmd_lower in self.script_command_aliases
-            primary_command = self.script_command_aliases.get(cmd_lower) if is_alias else None
-
-            return {
-                "help_text": help_text_str,
-                "aliases": script_cmd_data.get("aliases", []),
-                "script_name": script_cmd_data.get("script_name", "script"),
-                "is_alias": is_alias,
-                "primary_command": primary_command,
-                "help_info": help_info,
-            }
-
-        # Priority 3: INI help texts
-        for section_name, section_content in self.ini_help_texts.items():
-            if cmd_lower in section_content:
-                return {
-                    "help_text": section_content[cmd_lower],
-                    "aliases": [],
-                    "script_name": f"core_ini ({section_name})",
-                    "is_alias": False,
-                    "help_info": section_content[cmd_lower], # Original string as help_info
-                }
-        return None
-
-    def get_all_commands_help(self) -> Dict[str, Dict[str, Any]]:
-        """Gets all help texts from core, scripts, and INI."""
-        all_help: Dict[str, Dict[str, Any]] = {}
-
-        # 1. INI help texts (lowest priority)
-        for section_name, section_content in self.ini_help_texts.items():
-            for cmd, text in section_content.items():
-                if cmd not in all_help: # Add if not overridden by more specific source
-                    all_help[cmd] = {
-                        "help_text": text,
-                        "script_name": f"core_ini ({section_name})",
-                        "aliases": [],
-                        "is_alias": False,
-                        "help_info": text,
-                        "source": "ini"
-                    }
-
-        # 2. Core commands (from self.registered_command_help)
-        # This already contains primary commands and their aliases correctly.
-        for cmd_name, help_data in self.registered_command_help.items():
-            # Only add primary commands here, aliases point to them.
-            # Or, add all, as help_command might want to list aliases too.
-            # The current structure of registered_command_help handles aliases.
-            if not help_data.get("is_alias"): # Process primary commands
-                 all_help[cmd_name] = {
-                    "help_text": help_data["help_text"],
-                    "aliases": help_data.get("aliases", []),
-                    "script_name": help_data.get("script_name", "core"),
-                    "is_alias": False, # This is a primary entry
-                    "help_info": help_data.get("help_info", help_data["help_text"]),
-                    "source": "core"
-                }
-
-        # 3. Script commands (highest priority for their names)
-        for cmd_name, cmd_data in self.script_commands.items():
-            help_info = cmd_data.get("help_info", "")
-            help_text_str = ""
-            if isinstance(help_info, dict):
-                help_text_str = help_info.get("usage", "")
-                if help_info.get("description"):
-                    help_text_str += f"\n  {help_info['description']}"
-            else:
-                help_text_str = str(help_info)
-
-            all_help[cmd_name] = {
-                "help_text": help_text_str,
-                "aliases": cmd_data.get("aliases", []),
-                "script_name": cmd_data.get("script_name", "UnknownScript"),
-                "is_alias": False, # This is a primary entry for a script command
-                "help_info": help_info,
-                "source": "script"
-            }
-            # Aliases for script commands are not explicitly added here to all_help
-            # as separate entries, but are listed in the 'aliases' field.
-            # The help_command can decide how to display them.
-
-        return all_help
 
     def get_available_commands_for_tab_complete(self) -> List[str]:
         cmds = set()

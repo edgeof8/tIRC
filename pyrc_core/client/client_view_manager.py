@@ -3,9 +3,10 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Optional, List, Dict, Any, cast
 
+from pyrc_core.client.ui_manager import UIManager # For runtime check
+
 if TYPE_CHECKING:
     from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    from pyrc_core.client.ui_manager import UIManager # For type casting
 
 logger = logging.getLogger("pyrc.view_manager")
 
