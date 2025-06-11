@@ -28,7 +28,7 @@ logger = logging.getLogger("pyrc.command_handler")
 
 HELP_INI_FILENAME = "command_help.ini"
 # HELP_INI_PATH is now relative to pyrc_core's base_dir (which is self.client.base_dir)
-HELP_INI_PATH = os.path.join("data", "default_help", HELP_INI_FILENAME)
+HELP_INI_PATH = os.path.join("pyrc_core", "data", "default_help", HELP_INI_FILENAME)
 
 
 class CommandHandler:
@@ -161,8 +161,9 @@ class CommandHandler:
             onerror=lambda x: logger.error(f"Error importing module during walk_packages: {x}")
         ):
             logger.debug(f"Discovered module: {module_name}, is_pkg: {is_pkg}")
-            if is_pkg:
-                logger.debug(f"Skipping package: {module_name}")
+            # If it's a package's __init__.py, skip it unless it explicitly defines commands
+            if module_name.endswith('.__init__'):
+                logger.debug(f"Skipping __init__.py module: {module_name}")
                 continue
 
             # module_name is the full Python path to the module, e.g., 'pyrc_core.commands.core.help_command'
@@ -175,8 +176,10 @@ class CommandHandler:
 
                 if hasattr(module, 'COMMAND_DEFINITIONS'):
                     logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}. Definitions: {getattr(module, 'COMMAND_DEFINITIONS')}")
+                    # Add debug log to check if 'help' command is being processed
                     for cmd_def in module.COMMAND_DEFINITIONS:
                         cmd_name = cmd_def["name"].lower()
+                        logger.debug(f"Checking command definition: {cmd_name} from {python_module_name}")
                         handler_name_str = cmd_def["handler"]
                         handler_func = getattr(module, handler_name_str, None)
                         is_async_handler = inspect.iscoroutinefunction(handler_func)
