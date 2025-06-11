@@ -1,4 +1,3 @@
-# pyrc_core/commands/command_handler.py
 import logging
 import importlib
 import pkgutil # Import pkgutil
@@ -28,7 +27,7 @@ logger = logging.getLogger("pyrc.command_handler")
 
 HELP_INI_FILENAME = "command_help.ini"
 # HELP_INI_PATH is now relative to pyrc_core's base_dir (which is self.client.base_dir)
-HELP_INI_PATH = os.path.join("pyrc_core", "data", "default_help", HELP_INI_FILENAME)
+HELP_INI_PATH = os.path.join("data", "default_help", HELP_INI_FILENAME)
 
 
 class CommandHandler:
@@ -48,7 +47,117 @@ class CommandHandler:
 
         # For INI help texts
         self.ini_help_texts: Dict[str, Dict[str, str]] = {}
-        self._load_help_texts()
+        self._load_help_texts() # Load INI help texts first
+
+        logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
+        logger.info(f"pkgutil.walk_packages path: {pyrc_core.commands.__path__}, prefix: {pyrc_core.commands.__name__ + '.'}")
+
+        for module_loader, module_name, is_pkg in pkgutil.walk_packages(
+            path=pyrc_core.commands.__path__,  # Path to the commands package
+            prefix=pyrc_core.commands.__name__ + '.',  # Prefix for full module names
+            onerror=lambda x: logger.error(f"Error importing module during walk_packages: {x}")
+        ):
+            logger.debug(f"Discovered module: {module_name}, is_pkg: {is_pkg}")
+            # If it's a package's __init__.py, skip it unless it explicitly defines commands
+            if module_name.endswith('.__init__'):
+                logger.debug(f"Skipping __init__.py module: {module_name}")
+                continue
+
+            # module_name is the full Python path to the module, e.g., 'pyrc_core.commands.core.help_command'
+            python_module_name = module_name
+
+            try:
+                logger.debug(f"Attempting to import module: {python_module_name}")
+                module = importlib.import_module(python_module_name)
+                logger.debug(f"Successfully imported module: {python_module_name}")
+
+                if hasattr(module, 'COMMAND_DEFINITIONS'):
+                    logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}. Definitions: {getattr(module, 'COMMAND_DEFINITIONS')}")
+                    # Add debug log to check if 'help' command is being processed
+                    for cmd_def in module.COMMAND_DEFINITIONS:
+                        cmd_name = cmd_def["name"].lower()
+                        logger.debug(f"Checking command definition: {cmd_name} from {python_module_name}")
+                        handler_name_str = cmd_def["handler"]
+                        handler_func = getattr(module, handler_name_str, None)
+                        is_async_handler = inspect.iscoroutinefunction(handler_func)
+                        logger.debug(f"Processing command definition: name='{cmd_name}', handler='{handler_name_str}', is_async: {is_async_handler}")
+
+                        if handler_func and callable(handler_func):
+                            if cmd_name in self.command_map:
+                                logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                            self.command_map[cmd_name] = (handler_func, is_async_handler)
+
+                            if "help" in cmd_def and cmd_def["help"]:
+                                help_info = cmd_def["help"]
+                                self.registered_command_help[cmd_name] = {
+                                    "help_text": f"{help_info['usage']}\n  {help_info['description']}",
+                                    "aliases": [a.lower() for a in help_info.get("aliases", [])],
+                                    "script_name": "core",
+                                    "is_alias": False,
+                                    "module_path": python_module_name
+                                }
+                                for alias_raw in help_info.get("aliases", []):
+                                    alias = alias_raw.lower()
+                                    if alias in self.command_map:
+                                         logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
+                                    self.command_map[alias] = (handler_func, is_async_handler)
+                                    self.registered_command_help[alias] = {
+                                        "help_text": f"{help_info['usage']}\n  {help_info['description']}",
+                                        "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
+                                        "script_name": "core",
+                                        "is_alias": True,
+                                        "primary_command": cmd_name,
+                                        "module_path": python_module_name
+                                    }
+                            logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}. Is async: {is_async_handler}.")
+                        else:
+                            logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
+                else: # This else block was missing, causing "Module ... does not have COMMAND_DEFINITIONS." to be logged incorrectly
+                    logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
+
+            except ImportError as e:
+                logger.error(f"Failed to import module {python_module_name}: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Error processing module {python_module_name}: {e}", exc_info=True)
+        logger.info("Finished dynamic command loading.")
+
+        self.command_primary_map = {} # For core commands
+        seen_handlers = {} # For core commands
+        for cmd_name, (handler_func, is_async) in self.command_map.items():
+            if cmd_name in ["help", "h"]: # Assuming help is a core command
+                continue
+
+            if handler_func in seen_handlers:
+                primary_name = seen_handlers[handler_func]
+                self.command_primary_map[cmd_name] = primary_name
+            else:
+                seen_handlers[handler_func] = cmd_name
+
+    def _load_help_texts(self):
+        # Construct path from pyrc_core's directory (self.client.config.BASE_DIR)
+        help_ini_full_path = os.path.join(self.client.config.BASE_DIR, HELP_INI_PATH)
+        if not os.path.exists(help_ini_full_path):
+            logger.warning(
+                f"Help file '{help_ini_full_path}' not found. No INI help texts will be loaded."
+            )
+            return
+        try:
+            config = configparser.ConfigParser()
+            config.read(help_ini_full_path, encoding="utf-8")
+            for section in config.sections():
+                self.ini_help_texts[section] = {}
+                for command, help_text in config[section].items():
+                    self.ini_help_texts[section][
+                        command.lower()
+                    ] = help_text  # Store command lowercase
+            logger.info(
+                f"Successfully loaded help texts from '{help_ini_full_path}'"
+            )
+        except Exception as e:
+            logger.error(
+                f"Error loading help texts from '{help_ini_full_path}': {e}",
+                exc_info=True,
+            )
 
     def get_help_text_for_command(self, command_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -150,116 +259,6 @@ class CommandHandler:
                         "source": "ini"
                     }
         return all_help
-
-
-        logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
-        logger.info(f"pkgutil.walk_packages path: {pyrc_core.commands.__path__}, prefix: {pyrc_core.commands.__name__ + '.'}")
-
-        for module_loader, module_name, is_pkg in pkgutil.walk_packages(
-            path=pyrc_core.commands.__path__,  # Path to the commands package
-            prefix=pyrc_core.commands.__name__ + '.',  # Prefix for full module names
-            onerror=lambda x: logger.error(f"Error importing module during walk_packages: {x}")
-        ):
-            logger.debug(f"Discovered module: {module_name}, is_pkg: {is_pkg}")
-            # If it's a package's __init__.py, skip it unless it explicitly defines commands
-            if module_name.endswith('.__init__'):
-                logger.debug(f"Skipping __init__.py module: {module_name}")
-                continue
-
-            # module_name is the full Python path to the module, e.g., 'pyrc_core.commands.core.help_command'
-            python_module_name = module_name
-
-            try:
-                logger.debug(f"Attempting to import module: {python_module_name}")
-                module = importlib.import_module(python_module_name)
-                logger.debug(f"Successfully imported module: {python_module_name}")
-
-                if hasattr(module, 'COMMAND_DEFINITIONS'):
-                    logger.info(f"Found COMMAND_DEFINITIONS in {python_module_name}. Definitions: {getattr(module, 'COMMAND_DEFINITIONS')}")
-                    # Add debug log to check if 'help' command is being processed
-                    for cmd_def in module.COMMAND_DEFINITIONS:
-                        cmd_name = cmd_def["name"].lower()
-                        logger.debug(f"Checking command definition: {cmd_name} from {python_module_name}")
-                        handler_name_str = cmd_def["handler"]
-                        handler_func = getattr(module, handler_name_str, None)
-                        is_async_handler = inspect.iscoroutinefunction(handler_func)
-                        logger.debug(f"Processing command definition: name='{cmd_name}', handler='{handler_name_str}', is_async: {is_async_handler}")
-
-                        if handler_func and callable(handler_func):
-                            if cmd_name in self.command_map:
-                                logger.warning(f"Command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
-                            self.command_map[cmd_name] = (handler_func, is_async_handler)
-
-                            if "help" in cmd_def and cmd_def["help"]:
-                                help_info = cmd_def["help"]
-                                self.registered_command_help[cmd_name] = {
-                                    "help_text": f"{help_info['usage']}\n  {help_info['description']}",
-                                    "aliases": [a.lower() for a in help_info.get("aliases", [])],
-                                    "script_name": "core",
-                                    "is_alias": False,
-                                    "module_path": python_module_name
-                                }
-                                for alias_raw in help_info.get("aliases", []):
-                                    alias = alias_raw.lower()
-                                    if alias in self.command_map:
-                                         logger.warning(f"Alias '{alias}' for command '{cmd_name}' from {python_module_name} conflicts with existing command. Overwriting.")
-                                    self.command_map[alias] = (handler_func, is_async_handler)
-                                    self.registered_command_help[alias] = {
-                                        "help_text": f"{help_info['usage']}\n  {help_info['description']}",
-                                        "aliases": [cmd_name] + [a.lower() for a in help_info.get("aliases", []) if a.lower() != alias],
-                                        "script_name": "core",
-                                        "is_alias": True,
-                                        "primary_command": cmd_name,
-                                        "module_path": python_module_name
-                                    }
-                            logger.info(f"Registered command '{cmd_name}' (and aliases) from {python_module_name} handled by {handler_name_str}. Is async: {is_async_handler}.")
-                        else:
-                            logger.error(f"Could not find or call handler '{handler_name_str}' in {python_module_name} for command '{cmd_name}'.")
-                logger.debug(f"Module {python_module_name} does not have COMMAND_DEFINITIONS.")
-
-            except ImportError as e:
-                logger.error(f"Failed to import module {python_module_name}: {e}", exc_info=True)
-            except Exception as e:
-                logger.error(f"Error processing module {python_module_name}: {e}", exc_info=True)
-        logger.info("Finished dynamic command loading.")
-
-        self.command_primary_map = {} # For core commands
-        seen_handlers = {} # For core commands
-        for cmd_name, (handler_func, is_async) in self.command_map.items():
-            if cmd_name in ["help", "h"]: # Assuming help is a core command
-                continue
-
-            if handler_func in seen_handlers:
-                primary_name = seen_handlers[handler_func]
-                self.command_primary_map[cmd_name] = primary_name
-            else:
-                seen_handlers[handler_func] = cmd_name
-
-    def _load_help_texts(self):
-        # Construct path from pyrc_core's directory (self.client.config.BASE_DIR)
-        help_ini_full_path = os.path.join(self.client.config.BASE_DIR, HELP_INI_PATH)
-        if not os.path.exists(help_ini_full_path):
-            logger.warning(
-                f"Help file '{help_ini_full_path}' not found. No INI help texts will be loaded."
-            )
-            return
-        try:
-            config = configparser.ConfigParser()
-            config.read(help_ini_full_path, encoding="utf-8")
-            for section in config.sections():
-                self.ini_help_texts[section] = {}
-                for command, help_text in config[section].items():
-                    self.ini_help_texts[section][
-                        command.lower()
-                    ] = help_text  # Store command lowercase
-            logger.info(
-                f"Successfully loaded help texts from '{help_ini_full_path}'"
-            )
-        except Exception as e:
-            logger.error(
-                f"Error loading help texts from '{help_ini_full_path}': {e}",
-                exc_info=True,
-            )
 
     def register_script_command(
         self,

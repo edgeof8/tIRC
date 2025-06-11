@@ -32,10 +32,17 @@ class SidebarPanelRenderer:
         )
 
         if active_context_obj and active_context_obj.type == "channel": # Only draw user list for channels
-            user_list_bg_color = self.colors.get("user_list_panel_bg", 0)
+            user_list_bg_color_pair_id = self.colors.get("user_list_panel_bg", 0)
+            user_list_bg_attr = curses.color_pair(user_list_bg_color_pair_id)
+
             for y_coord in range(line_num, max_y):
-                if max_x > 0:
-                    SafeCursesUtils._safe_addstr(window, y_coord, 0, ' ' * max_x, user_list_bg_color, "SidebarPanelRenderer.draw_user_list_bg")
+                try:
+                    # Fill the line with the background color
+                    window.chgat(y_coord, 0, max_x, user_list_bg_attr)
+                except curses.error as e:
+                    logger.warning(f"SidebarPanelRenderer.draw_user_list_bg: curses.error chgat at y={y_coord},x=0,n={max_x} (win_dims {max_y}x{max_x}): {e}")
+                except Exception as ex:
+                    logger.error(f"SidebarPanelRenderer.draw_user_list_bg: Unexpected error chgat at y={y_coord},x=0: {ex}", exc_info=True)
 
             if line_num > 0 and line_num < max_y:
                 SafeCursesUtils._safe_hline(

@@ -52,6 +52,7 @@ from pyrc_core.client.client_shutdown_coordinator import ClientShutdownCoordinat
 from pyrc_core.client.client_view_manager import ClientViewManager
 from pyrc_core.client.dummy_ui import DummyUI # Added import
 from pyrc_core.client.initial_state_builder import InitialStateBuilder # NEW IMPORT
+from pyrc_core.ipc_manager import IPCManager # NEW IMPORT
 
 logger = logging.getLogger("pyrc.logic")
 
@@ -115,6 +116,7 @@ class IRCClient_Logic:
         self.connection_orchestrator = ConnectionOrchestrator(self)
         self.shutdown_coordinator = ClientShutdownCoordinator(self)
         self.view_manager = ClientViewManager(self)
+        self.ipc_manager = IPCManager(self) # NEW
 
         # Update internal subscriptions to use EventManager
         self.event_manager.subscribe(
@@ -135,30 +137,68 @@ class IRCClient_Logic:
         # --- Stage 3: Initial State Setup using InitialStateBuilder ---
         state_builder = InitialStateBuilder(self.config, self.args)
         conn_info = state_builder.build()
+        logger.debug(f"IRCClient_Logic: InitialStateBuilder built conn_info: {conn_info}")
 
         if conn_info:
-            if not self.state_manager.set_connection_info(conn_info):
-                logger.error("Initial state creation failed: ConnectionInfo validation error.")
-                config_errors = self.state_manager.get_config_errors()
-                error_summary = "; ".join(config_errors) if config_errors else "Unknown validation error."
-                # Use add_status_message for UI feedback
-                self.loop.create_task(self.add_status_message(f"Initial Configuration Error: {error_summary}", "error"))
-                # Ensure auto_connect is False if validation fails
-                current_conn_info = self.state_manager.get_connection_info()
-                if current_conn_info:
-                    current_conn_info.auto_connect = False # type: ignore
-                    self.loop.create_task(self.state_manager.set_connection_info(current_conn_info)) # type: ignore
-                elif conn_info: # Use conn_info here
-                    conn_info.auto_connect = False
-                    self.loop.create_task(self.state_manager.set_connection_info(conn_info))
-            else:
-                if conn_info.initial_channels:
-                    self.pending_initial_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels}
-                    if not self.pending_initial_joins: self.all_initial_joins_processed.set()
-                    else: self.all_initial_joins_processed.clear()
+            # set_connection_info is an async method, so we need to await it or schedule it.
+            # Since __init__ is synchronous, we must schedule it.
+            # However, ConnectionOrchestrator.initialize_handlers() is called synchronously
+            # right after this block, and it needs the connection info to be present.
+            # This is the core of the problem.
+            # We need to ensure set_connection_info completes before proceeding.
+            # For now, let's schedule it and log the result.
+            # A more robust solution might involve making __init__ async or
+            # deferring ConnectionOrchestrator initialization.
+
+            # For debugging, let's try to run it synchronously if possible,
+            # or at least ensure the state is updated before the next synchronous call.
+            # Given the current structure, the simplest way to ensure it's set
+            # before ConnectionOrchestrator.initialize_handlers() is to make
+            # set_connection_info synchronous or ensure it's awaited.
+            # Since set_connection_info is async, we cannot directly await it in __init__.
+            # This means ConnectionOrchestrator.initialize_handlers() will always
+            # be called before the state is fully updated.
+
+            # Let's change the logic to ensure the state is set synchronously for now,
+            # or at least handle the async nature.
+            # The StateManager.set method is async, which set_connection_info calls.
+            # This is the root cause of the "no connection info found" error.
+
+            # Temporarily, for debugging and to make it work, we can try to run
+            # the async set_connection_info immediately. This is generally bad practice
+            # in __init__ but will help diagnose.
+            try:
+                # This is a hack for synchronous __init__ to run an async method.
+                # In a real app, __init__ should not be doing async work, or
+                # the component initialization should be deferred to an async setup method.
+                # For now, we'll use a temporary event loop or run_until_complete if available.
+                # Given that self.loop is already an asyncio event loop, we can use it.
+                set_success = self.loop.run_until_complete(self.state_manager.set_connection_info(conn_info))
+                logger.debug(f"IRCClient_Logic: state_manager.set_connection_info(conn_info) result: {set_success}")
+
+                if not set_success:
+                    logger.error("Initial state creation failed: ConnectionInfo validation error.")
+                    config_errors = self.state_manager.get_config_errors()
+                    error_summary = "; ".join(config_errors) if config_errors else "Unknown validation error."
+                    self.loop.create_task(self.add_status_message(f"Initial Configuration Error: {error_summary}", "error"))
+                    current_conn_info = self.state_manager.get_connection_info()
+                    if current_conn_info:
+                        current_conn_info.auto_connect = False # type: ignore
+                        self.loop.create_task(self.state_manager.set_connection_info(current_conn_info)) # type: ignore
+                    elif conn_info:
+                        conn_info.auto_connect = False
+                        self.loop.create_task(self.state_manager.set_connection_info(conn_info))
                 else:
-                    self.all_initial_joins_processed.set()
-                    logger.debug("No initial channels configured.")
+                    if conn_info.initial_channels:
+                        self.pending_initial_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels}
+                        if not self.pending_initial_joins: self.all_initial_joins_processed.set()
+                        else: self.all_initial_joins_processed.clear()
+                    else:
+                        self.all_initial_joins_processed.set()
+                        logger.debug("No initial channels configured.")
+            except Exception as e:
+                logger.critical(f"Error setting initial connection info synchronously: {e}", exc_info=True)
+                self.all_initial_joins_processed.set() # Ensure we don't hang if setup fails
         else:
             logger.info("No initial connection info built. Starting without auto-connect.")
             self.all_initial_joins_processed.set() # No initial joins to wait for
@@ -166,7 +206,7 @@ class IRCClient_Logic:
         self.context_manager.create_context("Status", context_type="status")
         if self.config.dcc.enabled:
             self.context_manager.create_context("DCC", context_type="dcc_transfers")
-        if conn_info and conn_info.initial_channels: # Use conn_info here
+        if conn_info and conn_info.initial_channels:
             for ch in conn_info.initial_channels:
                 self.context_manager.create_context(ch, context_type="channel", initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN)
         self.context_manager.set_active_context("Status")
@@ -201,6 +241,7 @@ class IRCClient_Logic:
             self.connection_orchestrator.initialize_handlers()
             self.script_manager.load_scripts()
             await self._log_startup_status()
+            await self.ipc_manager.start_server() # NEW
 
             conn_info = self.state_manager.get_connection_info()
             if conn_info and conn_info.auto_connect:
@@ -349,19 +390,26 @@ class IRCClient_Logic:
         self.trigger_manager = TriggerManager(config_dir_triggers)
         if self.trigger_manager: self.trigger_manager.load_triggers()
 
-    async def add_message(self, text: str, color_attr: int, context_name: str, prefix_time: bool = False, **kwargs):
+    async def add_message(self, text: str, color_pair_id: int, context_name: str, prefix_time: bool = False, **kwargs):
         final_text = text
         if prefix_time:
             timestamp = time.strftime("%H:%M:%S")
             final_text = f"[{timestamp}] {text}"
-        logger.debug(f"IRCClient_Logic.add_message: Adding to context='{context_name}', text='{final_text[:100]}...', color_attr={color_attr}, kwargs={kwargs}")
-        self.context_manager.add_message_to_context(context_name=context_name, text_line=final_text, color_attr=color_attr, **kwargs)
+
+        # The color_pair_id is the raw integer ID (1-17)
+        # It will be converted to a curses attribute in the renderer.
+        logger.debug(f"IRCClient_Logic.add_message: Adding to context='{context_name}', text='{final_text[:100]}...', color_pair_id={color_pair_id}, kwargs={kwargs}")
+        self.context_manager.add_message_to_context(context_name=context_name, text_line=final_text, color_pair_id=color_pair_id, **kwargs)
         if self.ui: self.ui_needs_update.set()
         else: logger.info(f"[Message to {context_name}] {text}")
 
     async def add_status_message(self, text: str, color_key: str = "system"):
-        color_attr = self.ui.colors.get(color_key, self.ui.colors.get("system", 0)) if self.ui else 0
-        await self.add_message(text, color_attr, "Status", prefix_time=False)
+        # Get the color pair ID for the requested color_key from UIManager.
+        # UIManager.colors now stores the raw pair_id (1-17).
+        color_pair_id = self.ui.colors.get(color_key, self.ui.colors.get("system", 0)) if self.ui else 0
+
+        # The add_message function now expects a color_pair_id, which it will convert to an attribute.
+        await self.add_message(text, color_pair_id, "Status", prefix_time=False)
 
     async def _configure_from_server_config(self, config_data: ServerConfig, config_name: str) -> bool:
         try:

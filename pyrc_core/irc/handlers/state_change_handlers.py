@@ -46,7 +46,7 @@ async def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
         # Add message to status
         await client.add_message(
             text=f"Nick changed from {old_nick_val} to {new_nick}",
-            color_attr=client.ui.colors["system"],
+            color_pair_id=client.ui.colors["system"],
             context_name="Status",
         )
 
@@ -76,7 +76,7 @@ async def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
                     # Add message to channel
                     await client.add_message(
                         text=f"{old_nick} is now known as {new_nick}",
-                        color_attr=client.ui.colors["system"],
+                        color_pair_id=client.ui.colors["system"],
                         context_name=context.name,
                     )
 
@@ -146,7 +146,7 @@ async def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
             # Add message to channel
             await client.add_message(
                 text=f"Mode {target} [{mode_str_display}] by {source_nick}",
-                color_attr=client.ui.colors["system"],
+                color_pair_id=client.ui.colors["system"],
                 context_name=target,
             )
 
@@ -180,7 +180,7 @@ async def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage
         # Add message to status
         await client.add_message(
             text=f"Mode {conn_info.nick} [{mode_str_display}] by {source_nick}",
-            color_attr=client.ui.colors["system"],
+            color_pair_id=client.ui.colors["system"],
             context_name="Status",
         )
 
@@ -209,7 +209,7 @@ async def handle_topic_command_event(client: "IRCClient_Logic", parsed_msg: "IRC
             channel, new_topic if new_topic is not None else ""
         )
         await client.add_message(
-            text=message, color_attr=client.ui.colors["system"], context_name=channel
+            text=message, color_pair_id=client.ui.colors["system"], context_name=channel
         )
 
         # Dispatch TOPIC event

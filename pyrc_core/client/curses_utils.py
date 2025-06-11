@@ -271,19 +271,28 @@ class SafeCursesUtils:
                 )
             return
 
-        text_to_render = text[: available_width - 1]
-        num_chars_to_write = len(text_to_render)
+        text_to_render = text[:available_width]
+        # Explicitly encode and decode to handle potential character issues
+        try:
+            # Attempt to encode to UTF-8 and then decode back.
+            # This can sometimes normalize strings for curses.
+            processed_text = text_to_render.encode('utf-8', errors='replace').decode('utf-8')
+        except Exception as e_encode_decode:
+            logger.warning(f"_safe_addstr ({context_info}): Error encoding/decoding text '{text_to_render[:30]}...': {e_encode_decode}. Using original text.")
+            processed_text = text_to_render
+
+        num_chars_to_write = len(processed_text) # Use length of processed text
 
         if num_chars_to_write > 0:
             try:
-                window.addnstr(y, x, text_to_render, num_chars_to_write, attr)
+                window.addstr(y, x, processed_text, attr)
             except curses.error as e:
                 logger.warning(
-                    f"_safe_addstr ({context_info}): curses.error writing '{text_to_render[:30]}...' at y={y},x={x},n={num_chars_to_write} (win_dims {max_y}x{max_x}): {e}"
+                    f"_safe_addstr ({context_info}): curses.error writing '{processed_text[:30]}...' at y={y},x={x} (win_dims {max_y}x{max_x}): {e}"
                 )
             except Exception as ex:
                 logger.error(
-                    f"_safe_addstr ({context_info}): Unexpected error writing '{text_to_render[:30]}...' at y={y},x={x}: {ex}",
+                    f"_safe_addstr ({context_info}): Unexpected error writing '{processed_text[:30]}...' at y={y},x={x}: {ex}",
                     exc_info=True,
                 )
 

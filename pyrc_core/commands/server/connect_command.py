@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from pyrc_core.app_config import DEFAULT_PORT, DEFAULT_SSL_PORT
+from pyrc_core.config_defs import DEFAULT_PORT, DEFAULT_SSL_PORT
 from pyrc_core.state_manager import ConnectionInfo # Import ConnectionInfo
 
 if TYPE_CHECKING:
@@ -24,10 +24,10 @@ COMMAND_DEFINITIONS = [
 async def _parse_connect_args_internal(client: "IRCClient_Logic", args_str: str) -> Optional[Tuple[str, int, bool]]:
     conn_args = args_str.split()
     if not conn_args:
-        help_data = client.script_manager.get_help_text_for_command("connect")
+        help_data = client.script_manager.ini_help_texts.get("connect")
         usage_msg = (
-            help_data["help_text"]
-            if help_data
+            help_data["usage"]
+            if help_data and "usage" in help_data
             else "Usage: /connect <server[:port]> [ssl|nossl]"
         )
         await client.add_message(

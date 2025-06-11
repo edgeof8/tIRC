@@ -4,8 +4,11 @@ from typing import Optional, Any, Tuple, Dict
 
 logger = logging.getLogger("pyrc.window_layout_manager")
 
+from pyrc_core.client.curses_utils import SafeCursesUtils # Added import
+
 class WindowLayoutManager:
-    def __init__(self):
+    def __init__(self, colors: Dict[str, int]):
+        self.colors = colors
         self.msg_win: Optional[curses.window] = None
         self.sidebar_win: Optional[curses.window] = None
         self.status_win: Optional[curses.window] = None
@@ -60,8 +63,9 @@ class WindowLayoutManager:
                 self.msg_win_top.idlok(True)
 
                 self.msg_win_bottom = curses.newwin(
-                    bottom_height, self.msg_win_width, top_height, 0
+                bottom_height, self.msg_win_width, top_height, 0
                 )
+                SafeCursesUtils._safe_bkgd(self.msg_win_bottom, " ", self.colors.get("message_panel_bg", 0), "msg_win_bottom_bkgd")
                 self.msg_win_bottom.scrollok(True)
                 self.msg_win_bottom.idlok(True)
 
@@ -74,6 +78,7 @@ class WindowLayoutManager:
                 self.msg_win = curses.newwin(
                     self.msg_win_height, self.msg_win_width, 0, 0
                 )
+                SafeCursesUtils._safe_bkgd(self.msg_win, " ", self.colors.get("message_panel_bg", 0), "msg_win_bkgd")
                 self.msg_win.scrollok(True)
                 self.msg_win.idlok(True)
                 self.msg_win_top = self.msg_win
@@ -85,8 +90,11 @@ class WindowLayoutManager:
                 0,
                 self.msg_win_width,
             )
+            SafeCursesUtils._safe_bkgd(self.sidebar_win, " ", self.colors.get("user_list_panel_bg", 0), "sidebar_win_bkgd")
             self.status_win = curses.newwin(1, term_width, term_height - 2, 0)
+            SafeCursesUtils._safe_bkgd(self.status_win, " ", self.colors.get("status_bar", 0), "status_win_bkgd")
             self.input_win = curses.newwin(1, term_width, term_height - 1, 0)
+            SafeCursesUtils._safe_bkgd(self.input_win, " ", self.colors.get("input", 0), "input_win_bkgd")
             self.input_win.keypad(True)
             self.input_win.nodelay(True)
 

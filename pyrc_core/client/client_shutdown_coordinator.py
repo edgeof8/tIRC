@@ -78,6 +78,10 @@ class ClientShutdownCoordinator:
             logger.info("ClientShutdownCoordinator: Unloading all scripts.")
             await self.client._unload_all_scripts() # Await the async unload
 
+        if self.client.ipc_manager: # NEW
+            logger.info("ClientShutdownCoordinator: Stopping IPCManager server.") # NEW
+            await self.client.ipc_manager.stop_server() # NEW
+
         if self.client.dcc_manager:
             logger.info("ClientShutdownCoordinator: Shutting down DCCManager.")
             self.client.dcc_manager.shutdown()

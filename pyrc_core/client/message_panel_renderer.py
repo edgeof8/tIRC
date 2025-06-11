@@ -19,7 +19,7 @@ class MessagePanelRenderer:
             return
 
         SafeCursesUtils._safe_erase(window, "MessagePanelRenderer._draw_messages_erase")
-        SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("default", 0), "MessagePanelRenderer._draw_messages_bkgd")
+        SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("message_panel_bg", 0), "MessagePanelRenderer._draw_messages_bkgd")
         try:
             max_y, max_x = window.getmaxyx()
         except curses.error as e:
@@ -61,12 +61,25 @@ class MessagePanelRenderer:
 
             line_render_idx = 0
             logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': Drawing messages from index {start_idx} to {end_idx}")
-            for text, color_attr in messages_to_draw[start_idx:end_idx]: # Iterate over the list slice
+            for text, color_pair_id in messages_to_draw[start_idx:end_idx]: # Iterate over the list slice
                 if line_render_idx >= max_y:
                     logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': line_render_idx={line_render_idx} >= max_y={max_y}, breaking loop.")
                     break
+
+                # Ensure it's a valid curses attribute
+                final_color_attr = curses.color_pair(color_pair_id) if color_pair_id is not None else 0
+
+                # Log detailed color information for debugging
+                try:
+                    fg_color_num, bg_color_num = curses.pair_content(color_pair_id)
+                    logger.debug(f"Message '{text[:20]}...' at y={line_render_idx}: color_pair_id={color_pair_id}, fg_num={fg_color_num}, bg_num={bg_color_num}, final_attr={final_color_attr}")
+                except curses.error:
+                    logger.warning(f"Could not get pair_content for color_pair_id {color_pair_id}. Using default attr.")
+                    fg_color_num = -1
+                    bg_color_num = -1
+
                 SafeCursesUtils._safe_addstr(
-                    window, line_render_idx, 0, text[: max_x], color_attr, "message"
+                    window, line_render_idx, 0, text[: max_x], final_color_attr, "message"
                 )
                 line_render_idx += 1
             logger.debug(f"Context '{getattr(context_obj, 'name', 'Unknown')}': Drew {line_render_idx} messages.")

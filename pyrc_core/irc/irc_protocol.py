@@ -96,7 +96,7 @@ async def handle_server_message(client: "IRCClient_Logic", line: str) -> Optiona
         else:
             await handler(client, parsed_msg, line)
     elif cmd.isdigit():
-        await _handle_numeric_command(client, parsed_msg, line)
+        await _handle_numeric_command(client, parsed_msg, line, client.context_manager.active_context_name or "Status")
     else:
         # handle_unknown_command is an async function
         await handle_unknown_command(client, parsed_msg, line)

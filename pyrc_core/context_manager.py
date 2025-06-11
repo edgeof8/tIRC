@@ -57,8 +57,8 @@ class Context:
         else:
             self.join_status = None
 
-    def add_message(self, text: str, color_attr: Any):
-        self.messages.append((text, color_attr))
+    def add_message(self, text: str, color_pair_id: int):
+        self.messages.append((text, color_pair_id))
 
     def __repr__(self):
         user_count = len(self.users)
@@ -242,7 +242,7 @@ class ContextManager:
         self,
         context_name: str,
         text_line: str,
-        color_attr: Any,
+        color_pair_id: int,
         num_lines_added: int = 1,
         **kwargs, # Add **kwargs to accept and ignore extra arguments
     ):
@@ -257,7 +257,7 @@ class ContextManager:
             )
             return
 
-        context.add_message(text_line, color_attr)
+        context.add_message(text_line, color_pair_id)
 
         if self.active_context_name != normalized_name:
             context.unread_count += num_lines_added

@@ -1,4 +1,3 @@
-# START OF MODIFIED FILE: script_manager.py
 import os
 import importlib.util
 import logging
@@ -19,7 +18,7 @@ logger = logging.getLogger("pyrc.script_manager")
 
 SCRIPTS_DIR_NAME = "scripts"
 HELP_INI_FILENAME = "command_help.ini"
-HELP_INI_PATH = os.path.join("data", "default_help", HELP_INI_FILENAME)
+HELP_INI_PATH = os.path.join("pyrc_core", "data", "default_help", HELP_INI_FILENAME)
 
 
 class ScriptManager:

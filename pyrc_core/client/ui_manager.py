@@ -23,9 +23,9 @@ class UIManager:
         logger.debug("UIManager initializing.")
         self.stdscr = stdscr
         self.client = client_ref # This is IRCClient_Logic
-        self.curses_manager = CursesManager(stdscr)
-        self.window_layout_manager = WindowLayoutManager()
-        self.colors = self.curses_manager.colors
+        self.curses_manager = CursesManager(stdscr, client_ref.config) # Pass the config object
+        self.colors = self.curses_manager.colors # Get colors from CursesManager
+        self.window_layout_manager = WindowLayoutManager(self.colors) # Pass colors to WindowLayoutManager
 
         # Pass necessary dependencies to renderers
         self.message_panel_renderer = MessagePanelRenderer(self.colors, self.client.dcc_manager)
@@ -215,42 +215,11 @@ class UIManager:
             self.ui_is_too_small = False # Reset flag before attempting layout
 
             try:
-                # It's crucial that resizeterm is called if dimensions change.
-                # It can fail if the new dimensions are too small (e.g., 0x0).
-                if self.height > 0 and self.width > 0:
-                    self.curses_manager.resize_term(self.height, self.width)
-                    SafeCursesUtils._safe_clearok(self.stdscr, True, "UIManager.resize_clearok_stdscr") # Force clear on next refresh after resize
-                else:
-                    # If terminal is 0x0, resizeterm might error or behave unpredictably.
-                    # We'll likely hit the "Terminal too small" in setup_layout.
-                    logger.warning(f"Terminal dimensions are non-positive ({self.height}x{self.width}). Skipping resizeterm.")
-
-                SafeCursesUtils._safe_erase(self.stdscr, "UIManager.resize_erase_stdscr") # Add erase for more aggressive clearing
+                # Clear and refresh stdscr before re-creating subwindows
                 SafeCursesUtils._safe_clear(self.stdscr, "UIManager.resize_clear_stdscr")
-                SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_refresh_stdscr") # Refresh stdscr itself after clear before creating subwindows
-                self.setup_layout() # This might raise "Terminal too small..."
+                SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_refresh_stdscr")
 
-                # Touch all windows and set clearok to mark them for full redraw after successful layout
-                SafeCursesUtils._safe_touchwin(self.stdscr, "UIManager.resize_touchwin_stdscr")
-                SafeCursesUtils._safe_clearok(self.stdscr, True, "UIManager.resize_clearok_stdscr_after_touch") # Ensure stdscr is also cleared properly on next refresh cycle
-                if self.msg_win:
-                    SafeCursesUtils._safe_touchwin(self.msg_win, "UIManager.resize_touchwin_msg_win")
-                    SafeCursesUtils._safe_clearok(self.msg_win, True, "UIManager.resize_clearok_msg_win")
-                if self.msg_win_top:
-                    SafeCursesUtils._safe_touchwin(self.msg_win_top, "UIManager.resize_touchwin_msg_win_top")
-                    SafeCursesUtils._safe_clearok(self.msg_win_top, True, "UIManager.resize_clearok_msg_win_top")
-                if self.msg_win_bottom:
-                    SafeCursesUtils._safe_touchwin(self.msg_win_bottom, "UIManager.resize_touchwin_msg_win_bottom")
-                    SafeCursesUtils._safe_clearok(self.msg_win_bottom, True, "UIManager.resize_clearok_msg_win_bottom")
-                if self.sidebar_win:
-                    SafeCursesUtils._safe_touchwin(self.sidebar_win, "UIManager.resize_touchwin_sidebar_win")
-                    SafeCursesUtils._safe_clearok(self.sidebar_win, True, "UIManager.resize_clearok_sidebar_win")
-                if self.status_win:
-                    SafeCursesUtils._safe_touchwin(self.status_win, "UIManager.resize_touchwin_status_win")
-                    SafeCursesUtils._safe_clearok(self.status_win, True, "UIManager.resize_clearok_status_win")
-                if self.input_win:
-                    SafeCursesUtils._safe_touchwin(self.input_win, "UIManager.resize_touchwin_input_win")
-                    SafeCursesUtils._safe_clearok(self.input_win, True, "UIManager.resize_clearok_input_win")
+                self.setup_layout() # This will re-create windows based on new dimensions
 
                 # Scroll to end of messages on resize to show latest messages
                 try:
@@ -259,25 +228,21 @@ class UIManager:
                 except Exception as e_scroll_end:
                     logger.error(f"Error calling scroll_messages('end') after resize: {e_scroll_end}", exc_info=True)
 
-
-            except Exception as e: # Catches exceptions from resizeterm or setup_layout
+            except Exception as e: # Catches exceptions from setup_layout
                 logger.error(f"Error during resize handling sequence: {e}", exc_info=True)
-                if "Terminal too small" in str(e) or self.height <=0 or self.width <=0 :
+                if "Terminal too small" in str(e) or self.height <= 0 or self.width <= 0:
                     self.ui_is_too_small = True
                     SafeCursesUtils._safe_erase(self.stdscr, "UIManager.resize_error_too_small_erase")
                     msg = "Terminal too small. Please resize."
-                    # Ensure msg_y and msg_x are valid before trying to draw
                     if self.height > 0 and self.width > 0:
                         msg_y = self.height // 2
                         msg_x = max(0, (self.width - len(msg)) // 2)
-                        if msg_x + len(msg) <= self.width: # Check if message can fit
+                        if msg_x + len(msg) <= self.width:
                             error_attr = self.curses_manager.get_color("error") | curses.A_BOLD
                             SafeCursesUtils._safe_addstr(self.stdscr, msg_y, msg_x, msg, error_attr, "UIManager.resize_error_too_small_addstr")
-                    # else: message won't fit, stdscr will be blank
                     SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_error_too_small_refresh")
-                    return # Do not proceed to draw other windows
+                    return
                 else:
-                    # Handle other critical resize errors
                     SafeCursesUtils._safe_erase(self.stdscr, "UIManager.resize_error_generic_erase")
                     generic_error_msg = "Resize Error!"
                     if self.height > 0 and self.width > 0:
@@ -286,7 +251,7 @@ class UIManager:
                         if err_x + len(generic_error_msg) <= self.width:
                             SafeCursesUtils._safe_addstr(self.stdscr, err_y, err_x, generic_error_msg, self.curses_manager.get_color("error"), "UIManager.resize_error_generic_addstr")
                     SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_error_generic_refresh")
-                    return # Do not proceed
+                    return
 
         # If UI is marked as too small (either from this resize or a previous one)
         if self.ui_is_too_small:
