@@ -130,11 +130,116 @@ class MessagePanelRenderer:
             SafeCursesUtils._safe_noutrefresh(bottom_window, "MessagePanelRenderer.draw_split_bottom_noutrefresh")
 
 
+    def _parse_message_for_highlighting(self, message_text: str, context_obj: Any) -> List[Tuple[str, str]]:
+        """
+        Parses a message string to identify and apply specific highlighting.
+        Returns a list of (text_segment, color_pair_name) tuples.
+        """
+        segments: List[Tuple[str, str]] = []
+        current_pos = 0
+        default_color = "other_message"
+
+        # Determine base color for the message
+        message_base_color = default_color
+        if hasattr(context_obj, 'type') and context_obj.type == "status":
+            message_base_color = "system_message"
+        # Add more conditions for 'my_message', 'highlight_mention' etc.
+        # This requires knowing the message's origin or if it's a highlight.
+        # For now, we'll assume the color_pair_id passed to _draw_messages_in_window
+        # already indicates 'my_message' or 'highlight_mention' for the whole line.
+        # The current implementation passes a single color_pair_id for the whole line.
+        # We need to adjust the message structure to include this information.
+        # For now, we'll just apply the default_color and then override for specific patterns.
+
+        # Example: Simple regex for #channels, @nicks, +modes, timestamps, server names
+        # This is a simplified example and needs robust regex for real-world IRC parsing.
+        # For full implementation, consider a more sophisticated tokenization or regex engine.
+
+        # Regex for common IRC elements
+        # This is a basic example and needs refinement for robustness
+        # e.g., nicks can have special chars, modes can be complex
+        patterns = {
+            "channel": r"(#\w+)",
+            "nick": r"(@\w+)", # Simplified, needs to match actual nicks
+            "mode": r"(\+\w+)", # Simplified, needs to match actual modes
+            "timestamp": r"^(\[\d{2}:\d{2}:\d{2}\])", # Matches [HH:MM:SS] at start
+            "server_name": r"(\birc\.\w+\.\w+\b|\bserver\.\w+\.\w+\b)", # Basic server name
+        }
+
+        # Combine patterns into a single regex for efficient scanning
+        combined_pattern = '|'.join(f'(?P<{name}>{pattern})' for name, pattern in patterns.items())
+
+        # Add specific logic for 'my_message' and 'highlight_mention'
+        # This information should ideally come with the message object itself,
+        # not be inferred from text content alone.
+        # For now, I'll assume the message's initial color_pair_id (passed as `color_pair_id` in the original loop)
+        # determines if it's 'my_message' or 'highlight_mention'.
+        # The `_draw_messages_in_window` function currently passes `color_pair_id` directly.
+        # We need to adjust the message structure to include this information.
+        # For now, I'll just apply the default_color and then override for specific patterns.
+
+        # If the message is already marked as 'my_message' or 'highlight_mention',
+        # the entire message should take that color, overriding other highlights.
+        # This logic needs to be applied *before* detailed parsing.
+        # For now, I'll just apply the default_color and then override for specific patterns.
+
+        # This function needs to be more sophisticated. It should iterate through the message,
+        # find matches, and yield segments.
+
+        # For demonstration, a very basic implementation:
+        # It will prioritize the first match found.
+
+        # This is a placeholder. A proper implementation would involve:
+        # 1. Iterating through the message.
+        # 2. Using regex.finditer to find all matches for all patterns.
+        # 3. Sorting matches by start position.
+        # 4. Iterating through sorted matches, adding non-matching text as default, then matching text with its specific color.
+
+        # For now, a simplified approach:
+        # If the message is a system message, it's all system_message color.
+        # Otherwise, it's other_message, with specific overrides.
+
+        # This is a simplified placeholder. The actual implementation will be more complex.
+        # The `color_pair_id` passed to `_draw_messages_in_window` should be the *base* color.
+        # Then this function will apply specific highlights on top.
+
+        # For now, let's assume the `color_pair_id` passed to `_draw_messages_in_window`
+        # is the *semantic name* of the base color (e.g., "my_message", "other_message").
+        # This requires a change in how messages are stored and passed.
+
+        # For the purpose of this plan, I will assume `color_pair_id` is the semantic name.
+        base_color_name = "other_message" # Default fallback
+        # In a real scenario, `color_pair_id` would be the semantic name from the message object.
+        # For now, we'll just use the default and apply specific highlights.
+
+        # Simple tokenization for demonstration
+        words = message_text.split(' ')
+        for word in words:
+            if word.startswith('#'):
+                segments.append((word + " ", "channel"))
+            elif word.startswith('@'):
+                segments.append((word + " ", "nick"))
+            elif word.startswith('+'):
+                segments.append((word + " ", "mode"))
+            elif re.match(r"^\[\d{2}:\d{2}:\d{2}\]", word):
+                segments.append((word + " ", "timestamp"))
+            elif "irc.libera.chat" in word: # Example server name
+                segments.append((word + " ", "server_name"))
+            else:
+                segments.append((word + " ", base_color_name))
+
+        # Remove trailing space from the last segment
+        if segments:
+            last_text, last_color = segments[-1]
+            segments[-1] = (last_text.rstrip(), last_color)
+
+        return segments
+
     def _draw_dcc_transfer_list(self, window: Any, context_obj: Any):
         if not window: return
         if not self.dcc_manager:
             logger.warning("DCCManager not available to MessagePanelRenderer for drawing DCC list.")
-            SafeCursesUtils._safe_addstr(window, 0, 0, "[DCC System Error]", self.colors.get("error",0), "dcc_error")
+            SafeCursesUtils._safe_addstr(window, 0, 0, "[DCC System Error]", self.colors.get("error_message",0), "dcc_error")
             return
 
         SafeCursesUtils._safe_erase(window, "MessagePanelRenderer._draw_dcc_erase")
@@ -154,7 +259,7 @@ class MessagePanelRenderer:
             transfers = self.dcc_manager.get_all_transfers()
 
             if not transfers:
-                SafeCursesUtils._safe_addstr(window, 0, 0, "No active DCC transfers.", self.colors.get("system",0), "dcc_empty")
+                SafeCursesUtils._safe_addstr(window, 0, 0, "No active DCC transfers.", self.colors.get("system_message",0), "dcc_empty")
                 return
 
             total_lines = len(transfers)
@@ -173,7 +278,7 @@ class MessagePanelRenderer:
             for transfer in transfers[start_idx:end_idx]:
                 if line_render_idx >= max_y: break
                 SafeCursesUtils._safe_addstr(
-                    window, line_render_idx, 0, str(transfer)[:max_x], self.colors.get("system",0), "dcc_status_line"
+                    window, line_render_idx, 0, str(transfer)[:max_x], self.colors.get("system_message",0), "dcc_status_line"
                 )
                 line_render_idx +=1
 

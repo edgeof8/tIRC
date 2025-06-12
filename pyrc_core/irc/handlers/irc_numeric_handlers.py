@@ -38,7 +38,7 @@ async def _handle_rpl_welcome(
     server_name = client.server if client and client.server else "the server"
     await client.add_message(
         text=f"Welcome to {server_name}: {trailing if trailing else ''}",
-        color_pair_id=client.ui.colors["system"],
+        color_pair_id=client.ui.colors["system_message"],
         context_name="Status",
     )
     logger.info(f"Received RPL_WELCOME (001). Nick confirmed as {confirmed_nick}.")
@@ -58,7 +58,7 @@ async def _handle_rpl_welcome(
         )
         await client.add_message(
             text="Error: Registration handler not ready for RPL_WELCOME.",
-            color_pair_id=client.ui.colors["error"],
+            color_pair_id=client.ui.colors["error_message"],
             context_name="Status",
         )
 
@@ -78,7 +78,7 @@ async def _handle_rpl_notopic(
         context.topic = None
     await client.add_message(
         text=f"No topic set for {channel_name}.",
-        color_pair_id=client.ui.colors["system"],
+        color_pair_id=client.ui.colors["system_message"],
         context_name=channel_name,
     )
 
@@ -97,7 +97,7 @@ async def _handle_rpl_topic(
     client.context_manager.update_topic(channel_name, topic_text)
     await client.add_message(
         text=f"Topic for {channel_name}: {topic_text}",
-        color_pair_id=client.ui.colors["system"],
+        color_pair_id=client.ui.colors["system_message"],
         context_name=channel_name,
     )
 
@@ -113,7 +113,7 @@ async def _handle_generic_numeric(
     """Handles generic or unassigned numeric replies."""
     await client.add_message(
         text=f"[{parsed_msg.command}] {generic_numeric_msg}",
-        color_pair_id=client.ui.colors["system"],
+        color_pair_id=client.ui.colors["system_message"],
         context_name="Status",
     )
     logger.debug(
@@ -246,7 +246,7 @@ async def _handle_err_nosuchnick(
     nosuch_nick = display_params[0] if display_params else "nick"
     await client.add_message(
         text=f"No such nick: {nosuch_nick}",
-        color_pair_id=client.ui.colors["error"],
+        color_pair_id=client.ui.colors["error_message"],
         context_name=client.context_manager.active_context_name or "Status",
     )
 
@@ -262,7 +262,7 @@ async def _handle_err_nosuchchannel(
     channel_name = display_params[0] if display_params else "channel"
     await client.add_message(
         text=f"Channel {channel_name} does not exist or is invalid.",
-        color_pair_id=client.ui.colors["error"],
+        color_pair_id=client.ui.colors["error_message"],
         context_name="Status",
     )
     failed_join_ctx = client.context_manager.get_context(channel_name)
@@ -307,7 +307,7 @@ async def _handle_err_channel_join_group(
     reason = error_message_map.get(code, "join error")
     await client.add_message(
         text=f"Cannot join {channel_name}: {reason}. {trailing if trailing else ''}",
-        color_pair_id=client.ui.colors["error"],
+        color_pair_id=client.ui.colors["error_message"],
         context_name="Status",
     )
     failed_join_ctx = client.context_manager.get_context(channel_name)
@@ -345,7 +345,7 @@ async def _handle_err_nicknameinuse(
     logger.warning(f"ERR_NICKNAMEINUSE (433) for {failed_nick}: {raw_line.strip()}")
     await client.add_message(
         text=f"Nickname {failed_nick} is already in use.",
-        color_pair_id=client.ui.colors["error"],
+        color_pair_id=client.ui.colors["error_message"],
         context_name="Status",
     )
 
@@ -385,7 +385,7 @@ async def _handle_err_nicknameinuse(
 
             logger.info(f"Nickname {failed_nick} in use, trying {new_try_nick}.")
             await client.add_message(
-                text=f"Trying {new_try_nick} instead.", color_pair_id=client.ui.colors["system"], context_name="Status"
+                text=f"Trying {new_try_nick} instead.", color_pair_id=client.ui.colors["system_message"], context_name="Status"
             )
 
             client.network_handler.is_handling_nick_collision = True
@@ -406,7 +406,7 @@ async def _handle_err_nicknameinuse(
         )
         await client.add_message(
             text="Nickname collision handling failed. Please use /nick to choose a different nickname.",
-            color_pair_id=client.ui.colors["error"],
+            color_pair_id=client.ui.colors["error_message"],
             context_name="Status",
         )
         client.network_handler.is_handling_nick_collision = False
@@ -438,7 +438,7 @@ async def _handle_sasl_loggedin_success(
         logger.error(f"SASL Success ({code}), but no sasl_authenticator on client.")
         await client.add_message(
             text=f"SASL Success ({code}), but authenticator missing.",
-            color_pair_id=client.ui.colors["error"],
+            color_pair_id=client.ui.colors["error_message"],
             context_name="Status",
         )
 
@@ -457,7 +457,7 @@ async def _handle_sasl_mechanisms(
         f"SASL: Server indicated mechanisms: {mechanisms} (Code: {code}). Raw: {raw_line.strip()}"
     )
     await client.add_message(
-        text=f"SASL: Server mechanisms: {mechanisms}", color_pair_id=client.ui.colors["system"], context_name="Status"
+        text=f"SASL: Server mechanisms: {mechanisms}", color_pair_id=client.ui.colors["system_message"], context_name="Status"
     )
 
 
@@ -482,7 +482,7 @@ async def _handle_sasl_fail_errors(
         logger.error(f"SASL Failure ({code}), but no sasl_authenticator on client.")
         await client.add_message(
             text=f"SASL Error ({code}): {reason}, but authenticator missing.",
-            color_pair_id=client.ui.colors["error"],
+            color_pair_id=client.ui.colors["error_message"],
             context_name="Status",
         )
 
@@ -502,7 +502,7 @@ async def _handle_err_saslalready(
         logger.error("ERR_SASLALREADY (907), but no sasl_authenticator on client.")
         await client.add_message(
             text=f"SASL Warning (907): {reason}, but authenticator missing.",
-            color_pair_id=client.ui.colors["warning"],
+            color_pair_id=client.ui.colors["system_message"],
             context_name="Status",
         )
 
@@ -524,7 +524,7 @@ async def _handle_rpl_whoisuser(
     message_to_add = (
         f"[WHOIS {whois_nick}] User: {user_info}@{host_info} Realname: {realname}"
     )
-    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system"], context_name=active_context_name) # Changed context
+    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system_message"], context_name=active_context_name) # Changed context
 
 
 async def _handle_rpl_endofwhois(
@@ -539,7 +539,7 @@ async def _handle_rpl_endofwhois(
     original_params = parsed_msg.params
     whois_nick = original_params[0] if len(original_params) > 0 else "N/A"
     await client.add_message(
-        text=f"[WHOIS {whois_nick}] End of WHOIS.", color_pair_id=client.ui.colors["system"], context_name=active_context_name # Changed context
+        text=f"[WHOIS {whois_nick}] End of WHOIS.", color_pair_id=client.ui.colors["system_message"], context_name=active_context_name # Changed context
     )
 
 
@@ -554,7 +554,7 @@ async def _handle_motd_and_server_info(
     """Handles MOTD and various server information numerics."""
     await client.add_message(
         text=f"[{parsed_msg.command}] {generic_numeric_msg}",
-        color_pair_id=client.ui.colors["system"],
+        color_pair_id=client.ui.colors["system_message"],
         context_name="Status",
     )
     # Specifically set the end_of_motd_received event if this is RPL_ENDOFMOTD
@@ -592,7 +592,7 @@ async def _handle_rpl_whoreply(
     # trailing contains "<hopcount> <real_name>"
 
     message_to_add = f"[WHO {channel}] {nick} ({user}@{host} on {server_name}) Flags: {flags} - {trailing if trailing else ''}"
-    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system"], context_name=active_context_name) # Changed context
+    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system_message"], context_name=active_context_name) # Changed context
 
 
 async def _handle_rpl_endofwho(
@@ -609,7 +609,7 @@ async def _handle_rpl_endofwho(
     message_to_add = (
         f"[WHO {who_target}] {trailing if trailing else 'End of WHO list.'}"
     )
-    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system"], context_name=active_context_name) # Changed context
+    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system_message"], context_name=active_context_name) # Changed context
 
 
 async def _handle_rpl_whowasuser(
@@ -632,7 +632,7 @@ async def _handle_rpl_whowasuser(
     real_name = trailing if trailing else "N/A"
 
     message_to_add = f"[WHOWAS {nick}] User: {user}@{host} Realname: {real_name}"
-    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system"], context_name=active_context_name) # Changed context
+    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system_message"], context_name=active_context_name) # Changed context
 
 
 async def _handle_rpl_endofwhowas(
@@ -649,7 +649,7 @@ async def _handle_rpl_endofwhowas(
     message_to_add = (
         f"[WHOWAS {whowas_nick}] {trailing if trailing else 'End of WHOWAS list.'}"
     )
-    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system"], context_name=active_context_name) # Changed context
+    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system_message"], context_name=active_context_name) # Changed context
 
 
 async def _handle_rpl_liststart(
@@ -692,7 +692,7 @@ async def _handle_rpl_liststart(
     elif not display_params and not trailing:
         message = f"{prefix}Channel List Start"
 
-    await client.add_message(text=message, color_pair_id=client.ui.colors["system"], context_name=target_context_name)
+    await client.add_message(text=message, color_pair_id=client.ui.colors["system_message"], context_name=target_context_name)
 
 
 async def _handle_rpl_list(
@@ -735,7 +735,7 @@ async def _handle_rpl_list(
     topic = trailing if trailing else "No topic"
 
     message_to_add = f"{prefix}{channel}: {visible_users} users - {topic}"
-    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system"], context_name=target_context_name)
+    await client.add_message(text=message_to_add, color_pair_id=client.ui.colors["system_message"], context_name=target_context_name)
 
 
 async def _handle_rpl_listend(
@@ -761,12 +761,12 @@ async def _handle_rpl_listend(
             # Add specific instructions to the temporary list window
             await client.add_message(
                 text="--- End of /list results ---",
-                color_pair_id=client.ui.colors["system"],
+                color_pair_id=client.ui.colors["system_message"],
                 context_name=target_context_name_for_message,
             )
             await client.add_message(
                 text="This is a temporary window. Type /close or press Ctrl+W to close it.",
-                color_pair_id=client.ui.colors["system"],
+                color_pair_id=client.ui.colors["system_message"],
                 context_name=target_context_name_for_message,
             )
         elif list_ctx:
@@ -775,7 +775,7 @@ async def _handle_rpl_listend(
             )
             await client.add_message(
                 text=f"[List] {trailing if trailing else 'End of channel list.'}",
-                color_pair_id=client.ui.colors["system"],
+                color_pair_id=client.ui.colors["system_message"],
                 context_name="Status",
             )
         else:
@@ -784,13 +784,13 @@ async def _handle_rpl_listend(
             )
             await client.add_message(
                 text=f"[List] {trailing if trailing else 'End of channel list.'}",
-                color_pair_id=client.ui.colors["system"],
+                color_pair_id=client.ui.colors["system_message"],
                 context_name="Status",
             )
     else:  # No active_list_context_name was set, so message definitely goes to Status
         await client.add_message(
             text=f"[List] {trailing if trailing else 'End of channel list.'}",
-            color_pair_id=client.ui.colors["system"],
+            color_pair_id=client.ui.colors["system_message"],
             context_name="Status",
         )
 
@@ -820,7 +820,7 @@ async def _handle_err_erroneusnickname(
     logger.warning(f"ERR_ERRONEUSNICKNAME (432) for {failed_nick}: {error_reason}")
     await client.add_message(
         text=f"Cannot change nick to {failed_nick}: {error_reason}",
-        color_pair_id=client.ui.colors["error"],
+        color_pair_id=client.ui.colors["error_message"],
         context_name="Status",
     )
     if (
@@ -847,7 +847,7 @@ async def _handle_err_nickcollision(
     logger.warning(f"ERR_NICKCOLLISION (436) for {collided_nick}: {error_reason}")
     await client.add_message(
         text=f"Cannot change nick to {collided_nick}: {error_reason}. The server killed your nick, attempting to restore to {client.registration_handler.initial_nick}.",
-        color_pair_id=client.ui.colors["error"],
+        color_pair_id=client.ui.colors["error_message"],
         context_name="Status",
     )
     if (
@@ -865,7 +865,7 @@ async def _handle_err_nickcollision(
         client.network_handler.send_raw(f"NICK {client.registration_handler.initial_nick}") # Use registration_handler.initial_nick
         await client.add_message(
             text=f"Attempting to restore nick to {client.registration_handler.initial_nick}.", # Use registration_handler.initial_nick
-            color_pair_id=client.ui.colors["system"],
+            color_pair_id=client.ui.colors["system_message"],
             context_name="Status",
         )
 

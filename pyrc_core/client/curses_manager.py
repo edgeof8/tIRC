@@ -236,8 +236,9 @@ class CursesManager:
             self.color_name_to_id["sidebar_unread"] = COLOR_ID_SIDEBAR_UNREAD
 
         # Assign the final color dictionary to self.colors
-        self.colors = {name: curses.color_pair(pair_id) for name, pair_id in self.color_name_to_id.items()}
-        logger.debug(f"Final self.colors dictionary: {self.colors}")
+        # Store the raw pair_id in self.colors
+        self.colors = self.color_name_to_id
+        logger.debug(f"Final self.colors dictionary (raw IDs): {self.colors}")
 
     def _init_color_pair(self, name: str, pair_id: int, fg: int, bg: int):
         logger.debug(f"Initializing color pair '{name}' (ID: {pair_id}) with FG: {fg}, BG: {bg}")
@@ -280,7 +281,9 @@ class CursesManager:
         logger.debug("Curses cleanup complete.")
 
     def get_color(self, name: str) -> int:
-        return self.colors.get(name, 0)
+        # Return the curses attribute (color pair) for the given name
+        pair_id = self.colors.get(name, 0)
+        return curses.color_pair(pair_id)
 
     def noutrefresh_stdscr(self):
         SafeCursesUtils._safe_noutrefresh(self.stdscr, "CursesManager.noutrefresh_stdscr")

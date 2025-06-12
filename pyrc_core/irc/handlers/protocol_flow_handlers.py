@@ -18,7 +18,7 @@ async def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage"
         logger.warning(f"Malformed CAP message received: {raw_line.strip()}")
         await client.add_message(
             f"[Malformed CAP] {raw_line.strip()}",
-            color_pair_id=client.ui.colors["error"],
+            color_pair_id=client.ui.colors["error_message"],
             context_name="Status",
         )
         return
@@ -33,7 +33,7 @@ async def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage"
         )
         await client.add_message(
             f"[CAP Error] Negotiator not ready for {cap_subcommand}",
-            color_pair_id=client.ui.colors["error"],
+            color_pair_id=client.ui.colors["error_message"],
             context_name="Status",
         )
         return
@@ -51,7 +51,7 @@ async def handle_cap_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage"
     else:
         await client.add_message(
             f"[CAP] Unknown subcommand: {cap_subcommand} {capabilities_str}",
-            color_pair_id=client.ui.colors["system"],
+            color_pair_id=client.ui.colors["system_message"],
             context_name="Status",
         )
 
@@ -83,7 +83,7 @@ async def handle_authenticate_command(client: "IRCClient_Logic", parsed_msg: "IR
         )
         await client.add_message(
             f"[SASL Error] Authenticator not ready for AUTHENTICATE {payload}",
-            color_pair_id=client.ui.colors["error"],
+            color_pair_id=client.ui.colors["error_message"],
             context_name="Status",
         )
         return
@@ -116,7 +116,7 @@ async def handle_unknown_command(client: "IRCClient_Logic", parsed_msg: "IRCMess
     )
     await client.add_message(
         f"[{cmd.upper()}] From: {display_src}, Data: {display_p}".strip(),
-        color_pair_id=client.ui.colors["system"],
+        color_pair_id=client.ui.colors["system_message"],
         context_name="Status",
     )
 
@@ -126,7 +126,7 @@ async def handle_error_command(client: "IRCClient_Logic", parsed_msg: "IRCMessag
     logger.error(f"Received ERROR from server: {error_message}. Initiating disconnection.")
     await client.add_message(
         f"[ERROR] Disconnected by server: {error_message}",
-        color_pair_id=client.ui.colors["error"],
+        color_pair_id=client.ui.colors["error_message"],
         context_name="Status",
     )
     # Explicitly disconnect the network handler to ensure a clean state

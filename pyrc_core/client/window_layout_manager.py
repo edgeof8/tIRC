@@ -54,14 +54,14 @@ class WindowLayoutManager:
             f"SidebarW={self.sidebar_width}, MsgH={self.msg_win_height}, MsgW={self.msg_win_width}"
         )
 
+        # Use the new color IDs for backgrounds from the UI_COLOR_PALETTE
+        # These are now color pair IDs, not raw curses colors
+        msg_bg_color_pair_id = self.colors.get("message_panel_bg", 0)
+        sidebar_bg_color_pair_id = self.colors.get("list_panel_bg", 0)
+        status_bg_color_pair_id = self.colors.get("status_bar", 0)
+        input_bg_color_pair_id = self.colors.get("input", 0)
+
         try:
-            try:
-                # Use the new color IDs for backgrounds from the UI_COLOR_PALETTE
-                # These are now color pair IDs, not raw curses colors
-                msg_bg_color_pair_id = self.colors.get("message_panel_bg", 0)
-                sidebar_bg_color_pair_id = self.colors.get("list_panel_bg", 0)
-                status_bg_color_pair_id = self.colors.get("status_bar", 0)
-                input_bg_color_pair_id = self.colors.get("input", 0)
             if split_mode_active:
                 top_height = self.msg_win_height // 2
                 bottom_height = self.msg_win_height - top_height

@@ -21,8 +21,7 @@ class SidebarPanelRenderer:
             return
 
         SafeCursesUtils._safe_erase(window, "SidebarPanelRenderer.draw_erase")
-        # The following line is redundant and removed. The background is set once when the window is created.
-        # SafeCursesUtils._safe_bkgd(window, " ", self.colors.get("list_panel_bg", 0), "SidebarPanelRenderer.draw_bkgd")
+        # The background is set once when the window is created by WindowLayoutManager.
 
         max_y, max_x = window.getmaxyx()
         if max_y <= 0 or max_x <= 0:
@@ -33,18 +32,7 @@ class SidebarPanelRenderer:
         )
 
         if active_context_obj and active_context_obj.type == "channel": # Only draw user list for channels
-            # The following block that manually fills the background with chgat is redundant and removed.
-            # The background is set once when the window is created.
-            # user_list_bg_color_pair_id = self.colors.get("user_list_panel_bg", 0)
-            # user_list_bg_attr = curses.color_pair(user_list_bg_color_pair_id)
-            #
-            # for y_coord in range(line_num, max_y):
-            #     try:
-            #         window.chgat(y_coord, 0, max_x, user_list_bg_attr)
-            #     except curses.error as e:
-            #         logger.warning(f"SidebarPanelRenderer.draw_user_list_bg: curses.error chgat at y={y_coord},x=0,n={max_x} (win_dims {max_y}x{max_x}): {e}")
-            #     except Exception as ex:
-            #         logger.error(f"SidebarPanelRenderer.draw_user_list_bg: Unexpected error chgat at y={y_coord},x=0: {ex}", exc_info=True)
+            # The background is set once when the window is created by WindowLayoutManager.
 
             if line_num > 0 and line_num < max_y:
                 SafeCursesUtils._safe_hline(
@@ -53,7 +41,7 @@ class SidebarPanelRenderer:
                     0,
                     curses.ACS_HLINE,
                     max_x,
-                    self.colors.get("user_list_panel_bg", 0),
+                    self.colors.get("list_panel_bg", 0), # Use general list panel background for hline
                     "_draw_sidebar_user_list_hline",
                 )
                 line_num += 1
@@ -84,7 +72,7 @@ class SidebarPanelRenderer:
             window,
             line_num,
             "Windows:",
-            self.colors.get("list_panel_bg", 0),
+            self.colors.get("list_panel_bg", 0), # Use list_panel_bg for the header background
             "_draw_sidebar_context_list_header",
         )
         line_num += 1
@@ -319,25 +307,28 @@ class SidebarPanelRenderer:
                 break
 
             current_x = 0
-            # Draw leading space
-            SafeCursesUtils._safe_addstr(window, line_num, current_x, " ", curses.color_pair(self.colors.get("sidebar_item", 0)), "_draw_sidebar_user_list_leading_space")
+            current_x = 0
+            # Draw leading space (using the list panel background color)
+            list_panel_bg_attr = self.colors.get("list_panel_bg", 0)
+            SafeCursesUtils._safe_addstr(window, line_num, current_x, " ", list_panel_bg_attr, "_draw_sidebar_user_list_leading_space")
             current_x += 1
+
+            # Determine the color for the nick based on prefix (mode)
+            nick_color_attr = self.colors.get("nick", 0) # Default nick color
+            prefix_color_attr = self.colors.get("mode", 0) # Default mode color
 
             # Draw prefix (e.g., @, +)
             if prefix_str:
-                prefix_color = curses.color_pair(self.colors.get("user_prefix", 0))
-                SafeCursesUtils._safe_addstr(window, line_num, current_x, prefix_str, prefix_color, "_draw_sidebar_user_list_prefix")
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, prefix_str, prefix_color_attr, "_draw_sidebar_user_list_prefix")
                 current_x += len(prefix_str)
 
             # Draw nick
-            nick_color = curses.color_pair(self.colors.get("sidebar_item", 0))
-            SafeCursesUtils._safe_addstr(window, line_num, current_x, nick, nick_color, "_draw_sidebar_user_list_nick")
+            SafeCursesUtils._safe_addstr(window, line_num, current_x, nick, nick_color_attr, "_draw_sidebar_user_list_nick")
             current_x += len(nick)
-
-            # Fill remaining space with background color
+            # Fill remaining space with the list panel background color
             remaining_width = max_x - current_x
             if remaining_width > 0:
-                SafeCursesUtils._safe_addstr(window, line_num, current_x, " " * remaining_width, nick_color, "_draw_sidebar_user_list_fill")
+                SafeCursesUtils._safe_addstr(window, line_num, current_x, " " * remaining_width, list_panel_bg_attr, "_draw_sidebar_user_list_fill")
 
             line_num += 1
 

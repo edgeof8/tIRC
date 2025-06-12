@@ -130,7 +130,7 @@ async def handle_notice(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw
 
     logger.debug(f"HANDLE_NOTICE: Adding to context '{target_context_name}': '{formatted_msg}'")
     await client.add_message(
-        formatted_msg, color_pair_id=client.ui.colors["system"], context_name=target_context_name,
+        formatted_msg, color_pair_id=client.ui.colors["system_message"], context_name=target_context_name,
         source_full_ident=source_full_ident, is_privmsg_or_notice=True,
     )
 

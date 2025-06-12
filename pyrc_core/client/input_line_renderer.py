@@ -34,12 +34,10 @@ class InputLineRenderer:
 
         try:
             window.erase()
-            # The following direct, buggy call to bkgd is removed. The background is set by WindowLayoutManager.
-            # window.bkgd(" ", self.colors.get("input", 0))
+            # The background is set by WindowLayoutManager.
         except curses.error as e:
             logger.warning(f"Error erasing input line: {e}")
             return
-
 
         try:
             max_y, max_x = window.getmaxyx() # Re-fetch dimensions in case of resize event
@@ -87,13 +85,13 @@ class InputLineRenderer:
         cursor_pos_x = len(prompt) + actual_cursor_pos_in_display
         cursor_pos_x = min(cursor_pos_x, max_x - 1) # Ensure cursor stays within bounds
 
-        input_color = self.colors.get("input", 0)
+        input_color_pair_id = self.colors.get("input", 0)
         SafeCursesUtils._safe_addstr(
             window,
             0,
             0,
             prompt + display_buffer,
-            input_color,
+            input_color_pair_id,
             "draw_input_line_buffer",
         )
 

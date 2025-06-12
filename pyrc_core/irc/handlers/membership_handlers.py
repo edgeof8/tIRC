@@ -26,7 +26,7 @@ async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
     if not joined_channel:
         logger.warning(f"JOIN command received with no channel: {raw_line.strip()}")
         await client.add_message(
-            f"[INVALID JOIN] {raw_line.strip()}", color_pair_id=client.ui.colors["error"], context_name="Status"
+            f"[INVALID JOIN] {raw_line.strip()}", color_pair_id=client.ui.colors["error_message"], context_name="Status"
         )
         return
 
@@ -56,7 +56,7 @@ async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
         await client.network_handler.send_raw(f"MODE {joined_channel}")
         await client.add_message(
             f"Joining {joined_channel}...",
-            color_pair_id=client.ui.colors["join_part"],
+            color_pair_id=client.ui.colors["system_message"],
             context_name=joined_channel,
         )
     else:
@@ -64,7 +64,7 @@ async def handle_join_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
             client.context_manager.add_user(joined_channel, src_nick)
             await client.add_message(
                 f"{src_nick} joined {joined_channel}",
-                color_pair_id=client.ui.colors["join_part"],
+                color_pair_id=client.ui.colors["system_message"],
                 context_name=joined_channel,
             )
         else:
@@ -100,7 +100,7 @@ async def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
     if not parted_channel:
         logger.warning(f"PART command received with no channel: {raw_line.strip()}")
         await client.add_message(
-            f"[INVALID PART] {raw_line.strip()}", color_pair_id=client.ui.colors["error"], context_name="Status"
+            f"[INVALID PART] {raw_line.strip()}", color_pair_id=client.ui.colors["error_message"], context_name="Status"
         )
         return
 
@@ -121,7 +121,7 @@ async def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
             await client.state_manager.set_connection_info(conn_info) # Use async set_connection_info
         await client.add_message(
             f"You left {parted_channel}{reason_message}",
-            color_pair_id=client.ui.colors["join_part"],
+            color_pair_id=client.ui.colors["system_message"],
             context_name=parted_channel,
         )
 
@@ -145,7 +145,7 @@ async def handle_part_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
             client.context_manager.remove_user(parted_channel, src_nick)
             await client.add_message(
                 f"{src_nick} left {parted_channel}{reason_message}",
-                color_pair_id=client.ui.colors["join_part"],
+                color_pair_id=client.ui.colors["system_message"],
                 context_name=parted_channel,
             )
         else:
@@ -184,7 +184,7 @@ async def handle_quit_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
             client.context_manager.remove_user(ctx_name, src_nick)
             await client.add_message(
                 f"{display_src_nick} quit{quit_reason}",
-                color_pair_id=client.ui.colors["join_part"],
+                color_pair_id=client.ui.colors["system_message"],
                 context_name=ctx_name,
             )
 
@@ -222,7 +222,7 @@ async def handle_kick_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage",
         logger.debug(f"Ensured channel context exists for KICK: {channel_kicked_from}")
 
     await client.add_message(
-        kick_message, color_pair_id=client.ui.colors["join_part"], context_name=channel_kicked_from
+        kick_message, color_pair_id=client.ui.colors["system_message"], context_name=channel_kicked_from
     )
 
     kicked_ctx = client.context_manager.get_context(channel_kicked_from)

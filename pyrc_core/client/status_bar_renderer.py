@@ -15,8 +15,7 @@ class StatusBarRenderer:
             return
 
         SafeCursesUtils._safe_erase(window, "StatusBarRenderer.draw_erase")
-        # The following line is redundant and removed. The background is set once when the window is created.
-        # SafeCursesUtils._safe_bkgd(window, " ", self.colors["status_bar"], "StatusBarRenderer.draw_bkgd")
+        # The background is set once when the window is created by WindowLayoutManager.
 
         try:
             max_y, max_x = window.getmaxyx()
@@ -57,7 +56,7 @@ class StatusBarRenderer:
                 0,
                 1,
                 status_line,
-                self.colors["status_bar"],
+                self.colors["status_bar"], # This color pair already has the correct FG/BG
                 "status_bar_content",
             )
 
