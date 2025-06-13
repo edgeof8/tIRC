@@ -41,7 +41,7 @@ class SidebarPanelRenderer:
                     0,
                     curses.ACS_HLINE,
                     max_x,
-                    self.colors.get("list_panel_bg", 0), # Use general list panel background for hline
+                    self.colors.get("sidebar_bg", 0), # Use general list panel background for hline
                     "_draw_sidebar_user_list_hline",
                 )
                 line_num += 1
@@ -72,7 +72,7 @@ class SidebarPanelRenderer:
             window,
             line_num,
             "Windows:",
-            self.colors.get("list_panel_bg", 0), # Use list_panel_bg for the header background
+            self.colors.get("sidebar_bg", 0), # Use sidebar_bg for the header background
             "_draw_sidebar_context_list_header",
         )
         line_num += 1
@@ -230,7 +230,7 @@ class SidebarPanelRenderer:
             window,
             line_num,
             user_header_full,
-            self.colors.get("list_panel_bg", 0), # Corrected color key
+            self.colors.get("sidebar_bg", 0), # Corrected color key
             "_draw_sidebar_user_list_header_text",
         )
         line_num += 1
@@ -293,7 +293,7 @@ class SidebarPanelRenderer:
                 line_num,
                 0,
                 (" " + up_indicator_text).ljust(max_x),
-                self.colors.get("list_panel_bg", 0) | curses.A_DIM, # Corrected color key
+                self.colors.get("sidebar_bg", 0) | curses.A_DIM, # Corrected color key
                 "_draw_sidebar_user_list_up_indicator",
             )
             line_num += 1
@@ -309,7 +309,7 @@ class SidebarPanelRenderer:
             current_x = 0
             current_x = 0
             # Draw leading space (using the list panel background color)
-            list_panel_bg_attr = self.colors.get("list_panel_bg", 0)
+            list_panel_bg_attr = self.colors.get("sidebar_bg", 0)
             SafeCursesUtils._safe_addstr(window, line_num, current_x, " ", list_panel_bg_attr, "_draw_sidebar_user_list_leading_space")
             current_x += 1
 
@@ -338,7 +338,7 @@ class SidebarPanelRenderer:
                 line_num,
                 0,
                 (" " + down_indicator_text).ljust(max_x),
-                self.colors.get("list_panel_bg", 0) | curses.A_DIM, # Corrected color key
+                self.colors.get("sidebar_bg", 0) | curses.A_DIM, # Corrected color key
                 "_draw_sidebar_user_list_down_indicator",
             )
             line_num += 1

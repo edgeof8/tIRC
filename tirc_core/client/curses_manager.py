@@ -85,6 +85,10 @@ class CursesManager:
             self.color_name_to_id["message_panel_bg"] = color_id_counter
             color_id_counter += 1
 
+            self._init_color_pair("sidebar_bg", color_id_counter, get_curses_color(UI_COLOR_PALETTE["other_message"]), get_curses_color(UI_COLOR_PALETTE["sidebar_background"]))
+            self.color_name_to_id["sidebar_bg"] = color_id_counter
+            color_id_counter += 1
+
             self._init_color_pair("list_panel_bg", color_id_counter, get_curses_color(UI_COLOR_PALETTE["other_message"]), get_curses_color(UI_COLOR_PALETTE["main_background"]))
             self.color_name_to_id["list_panel_bg"] = color_id_counter
             color_id_counter += 1
@@ -189,6 +193,9 @@ class CursesManager:
 
             self._init_color_pair("message_panel_bg", COLOR_ID_MESSAGE_PANEL_BG, get_8_color(UI_COLOR_PALETTE["other_message"]), get_8_color(UI_COLOR_PALETTE["main_background"]))
             self.color_name_to_id["message_panel_bg"] = COLOR_ID_MESSAGE_PANEL_BG
+
+            self._init_color_pair("sidebar_bg", 25, get_8_color(UI_COLOR_PALETTE["other_message"]), get_8_color(UI_COLOR_PALETTE["sidebar_background"])) # Assign a new ID
+            self.color_name_to_id["sidebar_bg"] = 25
 
             self._init_color_pair("list_panel_bg", COLOR_ID_LIST_PANEL_BG, get_8_color(UI_COLOR_PALETTE["other_message"]), get_8_color(UI_COLOR_PALETTE["main_background"]))
             self.color_name_to_id["list_panel_bg"] = COLOR_ID_LIST_PANEL_BG

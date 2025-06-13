@@ -7,7 +7,8 @@ import curses
 
 UI_COLOR_PALETTE = {
     # Base Colors
-    "main_background": "#2C003E",  # Dark Purple/Magenta
+    "main_background": "#1E002A",  # Darker Purple
+    "sidebar_background": "#2C003E",# Dark Purple/Magenta
     "input_background": "#000000", # Pure Black
     "status_background": "#004040",# Dark Cyan/Teal
 
@@ -27,13 +28,14 @@ UI_COLOR_PALETTE = {
     "sidebar_active_fg": "#FFFFFF", # White
     "sidebar_active_bg": "#004040", # Dark Cyan/Teal (same as status_background for consistency)
     "sidebar_unread_fg": "#FFD700", # Gold
-    "sidebar_unread_bg": "#2C003E", # Dark Purple/Magenta (same as main_background)
+    "sidebar_unread_bg": "#1E002A", # Darker Purple (same as main_background)
     "status_bar_fg": "#E0E0E0",    # Light Grey
 }
 
 # Mapping for 8-color fallback (standard curses colors 0-7)
 # 0: Black, 1: Red, 2: Green, 3: Yellow, 4: Blue, 5: Magenta, 6: Cyan, 7: White
 FALLBACK_8_COLOR_MAP = {
+    "#1E002A": curses.COLOR_BLACK,   # Darker Purple -> Black
     "#2C003E": curses.COLOR_BLACK,   # Dark Purple/Magenta -> Black (closest dark)
     "#000000": curses.COLOR_BLACK,   # Pure Black -> Black
     "#004040": curses.COLOR_CYAN,    # Dark Cyan/Teal -> Cyan
