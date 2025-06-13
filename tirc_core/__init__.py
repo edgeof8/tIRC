@@ -1,1 +1,1 @@
-# Makes pyrc_core a package
+# Makes tirc_core a package

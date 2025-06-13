@@ -1,17 +1,18 @@
+# commands/server/raw_command.py
 import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.server.raw")
+logger = logging.getLogger("tirc.commands.server.raw")
 
 COMMAND_DEFINITIONS = [
     {
         "name": "raw",
         "handler": "handle_raw_command",
         "help": {
-            "usage": "/raw <raw IRC command>",
+            "usage": "/raw <irc command>",
             "description": "Sends a raw command directly to the IRC server.",
             "aliases": ["quote", "r"]
         }
@@ -19,21 +20,20 @@ COMMAND_DEFINITIONS = [
 ]
 
 async def handle_raw_command(client: "IRCClient_Logic", args_str: str):
-    """Handle the /raw command"""
-    help_data = client.script_manager.get_help_text_for_command("raw")
-    usage_msg = (
-        help_data["help_text"] if help_data else "Usage: /raw <raw IRC command>"
-    )
-    # _ensure_args requires args_str to be non-empty by default (num_expected_parts=1)
-    if not await client.command_handler._ensure_args(args_str, usage_msg):
+    """Handles the /raw command."""
+    if not args_str:
+        await client.add_message(
+            "Usage: /raw <irc command>",
+            client.ui.colors.get("error", 0),
+            context_name=client.context_manager.active_context_name or "Status",
+        )
         return
 
-    # Add a system message to the status window indicating the raw command is being sent
-    # This is good for user feedback, as raw commands might not always have visible effects.
-    await client.add_message(
-        f"Sending RAW: {args_str}",
-        client.ui.colors["system"],
-        context_name="Status"
-    )
-    logger.info(f"User initiated /raw command: {args_str}")
+    if not client.network_handler.connected:
+        await client.add_status_message("Not connected to any server.", "error")
+        return
+
     await client.network_handler.send_raw(args_str)
+    # No local echo for /raw by default, as server responses will appear.
+    # User can use /rawlog on to see their raw commands if desired.
+    logger.info(f"Sent RAW command: {args_str}")

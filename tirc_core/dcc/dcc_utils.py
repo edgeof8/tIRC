@@ -1,189 +1,178 @@
-import asyncio
-# pyrc_core/dcc/dcc_utils.py
+# tirc_core/dcc/dcc_utils.py
 import socket
-import struct
 import logging
-from typing import Tuple, Optional, List, Union
-from pathlib import Path
+import ipaddress
+import re # Added import for re
+from typing import Optional, Tuple, Dict, Any
 
-logger = logging.getLogger("pyrc.dcc.utils")
+from tirc_core.config_defs import DccConfig
 
-def parse_dcc_address_and_port(address_str: str, port_str: str) -> Tuple[Optional[str], Optional[int]]:
+logger = logging.getLogger("tirc.dcc.utils")
+
+def get_local_ip_for_ctcp(dcc_config: DccConfig, event_logger: Optional[logging.Logger] = None) -> str:
     """
-    Parses DCC address and port strings. Handles both IPv4 and IPv6.
-    Returns a tuple of (address, port) or (None, None) if parsing fails.
+    Determines the local IP address to advertise for DCC CTCP,
+    considering a manually configured dcc_advertised_ip.
     """
-    address = None
-    port = None
+    effective_logger = event_logger or logger
 
-    try:
-        # Attempt to parse port first
-        port = int(port_str)
-        if not (1 <= port <= 65535):
-            logger.warning(f"DCC port out of valid range: {port_str}")
-            return None, None
-
-        # Attempt to parse address as IPv4 (packed or dotted quad)
+    if dcc_config.advertised_ip:
         try:
-            # Try to unpack as a 4-byte IPv4 address
-            packed_ip = int(address_str)
-            address = socket.inet_ntoa(struct.pack('!I', packed_ip))
-            logger.debug(f"Parsed IPv4 (packed) address: {address_str} -> {address}")
-        except (ValueError, struct.error):
-            # If not a packed IPv4, try as a dotted-quad IPv4 string
-            try:
-                socket.inet_pton(socket.AF_INET, address_str)
-                address = address_str
-                logger.debug(f"Parsed IPv4 (dotted quad) address: {address_str}")
-            except socket.error:
-                # If not IPv4, try as IPv6 (literal or bracketed)
-                try:
-                    # Remove brackets if present for IPv6 parsing
-                    if address_str.startswith('[') and address_str.endswith(']'):
-                        address_str = address_str[1:-1]
-                    socket.inet_pton(socket.AF_INET6, address_str)
-                    address = address_str
-                    logger.debug(f"Parsed IPv6 address: {address_str}")
-                except socket.error:
-                    logger.warning(f"Could not parse DCC address '{address_str}' as IPv4 or IPv6.")
-                    return None, None
+            ipaddress.ip_address(dcc_config.advertised_ip)
+            effective_logger.info(f"Using configured advertised_ip: {dcc_config.advertised_ip}")
+            return dcc_config.advertised_ip
+        except ValueError:
+            effective_logger.warning(
+                f"Configured advertised_ip '{dcc_config.advertised_ip}' is invalid. Attempting auto-detection."
+            )
 
-    except ValueError:
-        logger.warning(f"Invalid DCC port string: {port_str}")
-        return None, None
-    except Exception as e:
-        logger.error(f"Unexpected error parsing DCC address/port: {e}", exc_info=True)
-        return None, None
-
-    return address, port
-
-def get_external_ip_address() -> Optional[str]:
-    """
-    Attempts to get the local machine's external IP address by connecting to a
-    well-known STUN server or similar service. This is a best-effort approach.
-    """
-    # This is a common way to get *an* external IP, but it depends on
-    # outbound connectivity and the target server being reachable.
-    # It might return a local IP if NAT is involved.
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80)) # Google's DNS server
-        ip_address = s.getsockname()[0]
-        s.close()
-        logger.info(f"Determined external IP address: {ip_address}")
-        return ip_address
-    except Exception as e:
-        logger.warning(f"Could not determine external IP address: {e}")
-        return None
-
-def get_local_ip_for_connection(target_host: str) -> Optional[str]:
-    """
-    Determines the local IP address that would be used to connect to a target host.
-    This is useful for DCC SEND where the client needs to tell the recipient
-    its IP address for the connection.
-    """
-    try:
-        # Create a socket (doesn't actually connect)
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # Connect to a dummy address (doesn't send data)
-        # This forces the kernel to pick an appropriate local IP for the target
-        s.connect((target_host, 1))
+        s.settimeout(0.1)
+        s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]
         s.close()
-        logger.debug(f"Local IP for target {target_host}: {local_ip}")
+        effective_logger.info(f"Auto-detected local IP for DCC: {local_ip}")
         return local_ip
-    except Exception as e:
-        logger.warning(f"Could not determine local IP for target {target_host}: {e}")
-        return None
+    except socket.gaierror as e:
+        effective_logger.error(f"Socket gaierror during IP auto-detection (e.g. no internet): {e}. Falling back to gethostbyname.")
+    except socket.error as e:
+        effective_logger.error(f"Socket error during IP auto-detection: {e}. Falling back to gethostbyname.")
 
-def get_available_port(start_port: int, end_port: int) -> Optional[int]:
-    """
-    Finds an available port within a given range.
-    """
+    try:
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        if local_ip == "127.0.0.1":
+            all_ips = socket.gethostbyname_ex(hostname)[2]
+            non_localhost_ips = [ip for ip in all_ips if ip != "127.0.0.1" and not ip.startswith("169.254")]
+            if non_localhost_ips:
+                local_ip = non_localhost_ips[0]
+            else:
+                local_ip = all_ips[0] if all_ips else "127.0.0.1"
+        effective_logger.info(f"Fallback auto-detected local IP for DCC: {local_ip}")
+        return local_ip
+    except socket.gaierror:
+        effective_logger.critical("Failed to auto-detect local IP address for DCC. Using 127.0.0.1 as last resort.")
+        return "127.0.0.1"
+
+def find_available_port(start_port: int, end_port: int, host: str = "0.0.0.0") -> Optional[int]:
     for port in range(start_port, end_port + 1):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("0.0.0.0", port))
+                s.bind((host, port))
+                logger.debug(f"Port {port} is available.")
                 return port
-        except OSError:
-            continue # Port is in use, try next
-        except Exception as e:
-            logger.error(f"Error checking port {port}: {e}")
-            return None
-    logger.warning(f"No available port found in range {start_port}-{end_port}")
+        except socket.error:
+            logger.debug(f"Port {port} is in use or unavailable.")
+            continue
+    logger.warning(f"No available port found in range {start_port}-{end_port}.")
     return None
 
-def get_local_ip_for_ctcp(ip_address: str) -> str:
-    """
-    Formats a local IP address for inclusion in a DCC CTCP message.
-    IPv4 addresses are packed into a long integer. IPv6 addresses are sent as-is.
-    """
+async def create_listening_socket(host: str, port: int) -> Optional[socket.socket]:
     try:
-        # Try to pack as IPv4
-        packed_ip = struct.unpack('!I', socket.inet_aton(ip_address))[0]
-        return str(packed_ip)
-    except (socket.error, struct.error):
-        # If it's not IPv4, assume it's IPv6 (or invalid, but we'll send as-is)
-        # IPv6 addresses are typically sent as literal strings, possibly bracketed
-        return f"[{ip_address}]" if ":" in ip_address else ip_address
-
-async def get_listening_socket(
-    host: str, port: int, family: socket.AddressFamily = socket.AF_INET
-) -> Optional[asyncio.Server]:
-    """
-    Attempts to create and return an asyncio listening socket.
-    """
-    try:
-        server = await asyncio.start_server(lambda r, w: None, host=host, port=port, family=family)
-        return server
-    except OSError as e:
-        logger.warning(f"Could not open listening socket on {host}:{port}: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error creating listening socket: {e}", exc_info=True)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, port))
+        sock.listen(1)
+        sock.setblocking(False)
+        logger.info(f"DCC listening socket created on {host}:{port}")
+        return sock
+    except socket.error as e:
+        logger.error(f"Failed to create listening socket on {host}:{port}: {e}")
         return None
 
-def is_valid_dcc_filename(filename: str) -> bool:
-    """
-    Checks if a filename is valid for DCC transfers (basic security check).
-    Prevents path traversal and common problematic characters.
-    """
-    if not filename or filename.strip() == "":
-        return False
-    # Disallow path separators and control characters
-    # On Windows, path separators are \ and /
-    # On Unix-like, path separator is /
-    # Also disallow null byte and other control chars
-    invalid_chars = ['/', '\\', '\0', '\r', '\n', '\t']
-    if any(c in filename for c in invalid_chars):
-        return False
-    # Disallow relative path components
-    if ".." in filename or "./" in filename or ".\\" in filename:
-        return False
-    # Disallow leading/trailing whitespace
-    if filename != filename.strip():
-        return False
-    return True
+def format_dcc_ctcp(command: str, filename: str, ip_int: int, port: int, size: int, token: Optional[str]=None) -> str:
+    if token:
+        return f"DCC {command} \"{filename}\" {token} {size}"
+    else:
+        return f"DCC {command} \"{filename}\" {ip_int} {port} {size}"
 
-def get_safe_dcc_path(base_dir: str, filename: str) -> Optional[str]:
-    """
-    Constructs a safe file path for DCC transfers within a base directory.
-    Prevents path traversal attacks.
-    """
-    if not is_valid_dcc_filename(filename):
-        logger.warning(f"Attempted to create unsafe DCC filename: {filename}")
+def parse_dcc_ctcp(message: str) -> Optional[Dict[str, Any]]:
+    match = re.match(r'DCC\s+([A-Z]+)\s+(?:"([^"]+)"|([^\s]+))\s*(.*)', message, re.IGNORECASE)
+    if not match:
+        logger.debug(f"Not a DCC message or malformed (regex fail): {message}")
         return None
 
-    # Use pathlib for robust path joining and resolution
-    try:
-        base_path = Path(base_dir).resolve()
-        safe_path = (base_path / filename).resolve()
+    command = match.group(1).upper()
+    filename_quoted = match.group(2)
+    filename_unquoted = match.group(3)
+    remaining_args_str = match.group(4).strip()
 
-        # Ensure the resulting path is still within the base directory
-        if not safe_path.is_relative_to(base_path):
-            logger.warning(f"Path traversal detected: {safe_path} is not within {base_path}")
+    filename = filename_quoted if filename_quoted is not None else filename_unquoted
+    if not filename:
+        logger.warning(f"Could not parse filename from DCC message (regex internal): {message}")
+        return None
+
+    other_params = remaining_args_str.split()
+    parsed_data: Dict[str, Any] = {"command": command, "filename": filename}
+
+    if command == "SEND":
+        if len(other_params) == 3:
+            try:
+                parsed_data["ip_int"] = int(other_params[0])
+                parsed_data["port"] = int(other_params[1])
+                parsed_data["filesize"] = int(other_params[2])
+                parsed_data["ip_str"] = socket.inet_ntoa(int(other_params[0]).to_bytes(4, 'big'))
+                parsed_data["is_passive"] = False
+            except (ValueError, IndexError, OverflowError, socket.error) as e:
+                logger.warning(f"Malformed active DCC SEND: {message} - {e}")
+                return None
+        elif len(other_params) == 2:
+            try:
+                parsed_data["token"] = other_params[0]
+                parsed_data["filesize"] = int(other_params[1])
+                parsed_data["is_passive"] = True
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Malformed passive DCC SEND: {message} - {e}")
+                return None
+        else:
+            logger.warning(f"Malformed DCC SEND (expected 3 or 2 params after filename): {message}")
             return None
-        return str(safe_path)
-    except Exception as e:
-        logger.error(f"Error creating safe DCC path for '{filename}' in '{base_dir}': {e}")
+    elif command == "GET":
+        if len(other_params) == 1:
+            parsed_data["token"] = other_params[0]
+        else:
+            logger.warning(f"Malformed DCC GET (expected 1 param after filename): {message}")
+            return None
+    elif command == "ACCEPT":
+        if len(other_params) == 2:
+            try:
+                parsed_data["token"] = other_params[0]
+                parsed_data["port"] = int(other_params[1])
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Malformed DCC ACCEPT: {message} - {e}")
+                return None
+        else:
+            logger.warning(f"Malformed DCC ACCEPT (expected 2 params after filename): {message}")
+            return None
+    elif command == "RESUME":
+        if len(other_params) == 2:
+            try:
+                parsed_data["port"] = int(other_params[0])
+                parsed_data["position"] = int(other_params[1])
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Malformed DCC RESUME: {message} - {e}")
+                return None
+        else:
+            logger.warning(f"Malformed DCC RESUME (expected 2 params after filename): {message}")
+            return None
+    else:
+        logger.warning(f"Unsupported DCC command '{command}' in CTCP: {message}")
         return None
+    return parsed_data
+
+def ip_str_to_int(ip_str: str) -> int:
+    """Converts an IPv4 string to its integer representation."""
+    try:
+        return int(ipaddress.ip_address(ip_str))
+    except ValueError:
+        logger.error(f"Invalid IP string for conversion to int: {ip_str}")
+        return 0
+
+def ip_int_to_str(ip_int: int) -> str:
+    """Converts an integer representation of an IPv4 address to string."""
+    try:
+        return str(ipaddress.ip_address(ip_int))
+    except ValueError:
+        logger.error(f"Invalid IP integer for conversion to str: {ip_int}")
+        return "0.0.0.0"

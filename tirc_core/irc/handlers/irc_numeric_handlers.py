@@ -3,11 +3,11 @@ import random # Added for random nick generation
 import asyncio # Import asyncio
 from typing import Optional
 
-from pyrc_core.irc.irc_message import IRCMessage
-from pyrc_core.context_manager import ChannelJoinStatus
-from pyrc_core.state_manager import ConnectionState
+from tirc_core.irc.irc_message import IRCMessage
+from tirc_core.context_manager import ChannelJoinStatus
+from tirc_core.state_manager import ConnectionState
 
-logger = logging.getLogger("pyrc.protocol")
+logger = logging.getLogger("tirc.protocol")
 
 
 async def _handle_rpl_welcome(
@@ -257,13 +257,15 @@ async def _handle_err_nosuchchannel(
     raw_line: str,
     display_params: list,
     trailing: Optional[str],
+    active_context_name: str, # Added
 ):
     """Handles ERR_NOSUCHCHANNEL (403)."""
     channel_name = display_params[0] if display_params else "channel"
+    target_context_for_message = active_context_name or "Status"
     await client.add_message(
-        text=f"Channel {channel_name} does not exist or is invalid.",
-        color_pair_id=client.ui.colors["error_message"],
-        context_name="Status",
+        text=f"Channel {channel_name} does not exist or is invalid. {trailing if trailing else ''}",
+        color_pair_id=client.ui.colors.get("error_message", 0), # Use .get()
+        context_name=target_context_for_message,
     )
     failed_join_ctx = client.context_manager.get_context(channel_name)
     if failed_join_ctx and failed_join_ctx.type == "channel":

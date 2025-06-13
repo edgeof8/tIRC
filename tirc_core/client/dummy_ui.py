@@ -1,4 +1,4 @@
-# pyrc_core/client/dummy_ui.py
+# tirc_core/client/dummy_ui.py
 import curses # For curses.ERR
 
 class DummyUI:
@@ -11,7 +11,11 @@ class DummyUI:
         self.msg_win_width = 80
         self.msg_win_height = 24
 
-    def refresh_all_windows(self):
+    async def refresh_all_windows(self): # Changed to async def
+        pass
+
+    async def handle_resize(self):
+        """Dummy method for headless UI, does nothing but satisfies the interface."""
         pass
 
     def scroll_messages(self, direction: str, lines: int = 1):

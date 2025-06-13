@@ -1,4 +1,4 @@
-# pyrc_core/client/irc_client_logic.py
+# tirc_core/client/irc_client_logic.py
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import asyncio
@@ -12,51 +12,46 @@ import platform
 import sys # Import sys for sys.exit
 import time # Import time
 from enum import Enum
-from dataclasses import asdict  # Import asdict - RE-ADDED
+from dataclasses import asdict
 
 # Conditional import for curses based on platform
 if platform.system() == "Windows":
     try:
         import curses
     except ImportError:
-        # This block will be important if we add a non-curses fallback UI
         print("Error: 'windows-curses' is required on Windows. Please run 'pip install windows-curses'")
         sys.exit(1)
 else:
     import curses
-# typing.Optional is already imported by __future__.annotations if Python >= 3.9
-# from typing import Optional # Keep for clarity if preferred
 
-from pyrc_core import app_config
-from pyrc_core.app_config import AppConfig, ServerConfig
-from pyrc_core.state_manager import StateManager, ConnectionInfo, ConnectionState
-from pyrc_core.client.state_change_ui_handler import StateChangeUIHandler
-from pyrc_core.logging.channel_logger import ChannelLoggerManager
-from pyrc_core.script_manager import ScriptManager
-from pyrc_core.event_manager import EventManager
-from pyrc_core.context_manager import ContextManager, ChannelJoinStatus
-from pyrc_core.client.ui_manager import UIManager
-from pyrc_core.network_handler import NetworkHandler
-from pyrc_core.commands.command_handler import CommandHandler
-from pyrc_core.client.input_handler import InputHandler
-from pyrc_core.features.triggers.trigger_manager import TriggerManager, ActionType
-from pyrc_core.irc import irc_protocol
-from pyrc_core.irc.irc_message import IRCMessage
-from pyrc_core.irc.cap_negotiator import CapNegotiator
-from pyrc_core.irc.sasl_authenticator import SaslAuthenticator
-from pyrc_core.irc.registration_handler import RegistrationHandler
-from pyrc_core.scripting.python_trigger_api import PythonTriggerAPI
-from pyrc_core.dcc.dcc_manager import DCCManager
-from pyrc_core.client.connection_orchestrator import ConnectionOrchestrator
-from pyrc_core.client.client_shutdown_coordinator import ClientShutdownCoordinator
-from pyrc_core.client.client_view_manager import ClientViewManager
-from pyrc_core.client.dummy_ui import DummyUI # Added import
-from pyrc_core.client.initial_state_builder import InitialStateBuilder # NEW IMPORT
-from pyrc_core.ipc_manager import IPCManager # NEW IMPORT
+from tirc_core import app_config
+from tirc_core.app_config import AppConfig, ServerConfig
+from tirc_core.state_manager import StateManager, ConnectionInfo, ConnectionState
+from tirc_core.client.state_change_ui_handler import StateChangeUIHandler
+from tirc_core.logging.channel_logger import ChannelLoggerManager
+from tirc_core.script_manager import ScriptManager
+from tirc_core.event_manager import EventManager
+from tirc_core.context_manager import ContextManager, ChannelJoinStatus
+from tirc_core.client.ui_manager import UIManager
+from tirc_core.network_handler import NetworkHandler
+from tirc_core.commands.command_handler import CommandHandler
+from tirc_core.client.input_handler import InputHandler
+from tirc_core.features.triggers.trigger_manager import TriggerManager, ActionType
+from tirc_core.irc import irc_protocol
+from tirc_core.irc.irc_message import IRCMessage
+from tirc_core.irc.cap_negotiator import CapNegotiator
+from tirc_core.irc.sasl_authenticator import SaslAuthenticator
+from tirc_core.irc.registration_handler import RegistrationHandler
+from tirc_core.scripting.python_trigger_api import PythonTriggerAPI
+from tirc_core.dcc.dcc_manager import DCCManager
+from tirc_core.client.connection_orchestrator import ConnectionOrchestrator
+from tirc_core.client.client_shutdown_coordinator import ClientShutdownCoordinator
+from tirc_core.client.client_view_manager import ClientViewManager
+from tirc_core.client.dummy_ui import DummyUI
+from tirc_core.client.initial_state_builder import InitialStateBuilder
+from tirc_core.ipc_manager import IPCManager
 
-logger = logging.getLogger("pyrc.logic")
-
-# DummyUI class definition removed from here
+logger = logging.getLogger("tirc.logic")
 
 class IRCClient_Logic:
     def __init__(self, stdscr: Optional[curses.window], args: Any, config: AppConfig):
@@ -101,12 +96,13 @@ class IRCClient_Logic:
         config_disabled_scripts = self.config.disabled_scripts if self.config.disabled_scripts else set()
         final_disabled_scripts = cli_disabled_scripts.union(config_disabled_scripts)
         self.script_manager: ScriptManager = ScriptManager(self, self.config.BASE_DIR, disabled_scripts=final_disabled_scripts)
-        self.event_manager = EventManager(self) # Pass only self (client_logic_ref)
-        self.dcc_manager = DCCManager(self, self.event_manager, self.config)
+        self.event_manager = EventManager(self)
+        self.dcc_manager = DCCManager(self, self.event_manager)
         self.ui: UIManager | DummyUI = UIManager(stdscr, self) if not self.is_headless else DummyUI()
         self.input_handler: Optional[InputHandler] = InputHandler(self) if not self.is_headless else None
         self.command_handler = CommandHandler(self)
         self.trigger_manager: Optional[TriggerManager] = TriggerManager(os.path.join(self.config.BASE_DIR, "config")) if self.config.enable_trigger_system else None
+        self.python_trigger_api_instance = PythonTriggerAPI(self)
 
         self.cap_negotiator: Optional[CapNegotiator] = None
         self.sasl_authenticator: Optional[SaslAuthenticator] = None
@@ -116,63 +112,24 @@ class IRCClient_Logic:
         self.connection_orchestrator = ConnectionOrchestrator(self)
         self.shutdown_coordinator = ClientShutdownCoordinator(self)
         self.view_manager = ClientViewManager(self)
-        self.ipc_manager = IPCManager(self) # NEW
+        self.ipc_manager = IPCManager(self)
 
-        # Update internal subscriptions to use EventManager
         self.event_manager.subscribe(
             "CLIENT_READY", self.view_manager._handle_client_ready_for_ui_switch, "IRCClient_Logic_Internal"
         )
         self.event_manager.subscribe(
             "RAW_SERVER_MESSAGE", self.handle_raw_server_message, "IRCClient_Logic_Internal"
         )
-        # Note: The original code for CHANNEL_FULLY_JOINED subscription was to
-        # self.view_manager._handle_auto_channel_fully_joined.
-        # This handler might need to be re-evaluated if it's still necessary after
-        # the CLIENT_READY event also triggers UI switches.
-        # For now, keeping the subscription as it was, just changing the call.
         self.event_manager.subscribe(
             "CHANNEL_FULLY_JOINED", self.view_manager._handle_auto_channel_fully_joined, "IRCClient_Logic_Internal"
         )
 
-        # --- Stage 3: Initial State Setup using InitialStateBuilder ---
         state_builder = InitialStateBuilder(self.config, self.args)
         conn_info = state_builder.build()
         logger.debug(f"IRCClient_Logic: InitialStateBuilder built conn_info: {conn_info}")
 
         if conn_info:
-            # set_connection_info is an async method, so we need to await it or schedule it.
-            # Since __init__ is synchronous, we must schedule it.
-            # However, ConnectionOrchestrator.initialize_handlers() is called synchronously
-            # right after this block, and it needs the connection info to be present.
-            # This is the core of the problem.
-            # We need to ensure set_connection_info completes before proceeding.
-            # For now, let's schedule it and log the result.
-            # A more robust solution might involve making __init__ async or
-            # deferring ConnectionOrchestrator initialization.
-
-            # For debugging, let's try to run it synchronously if possible,
-            # or at least ensure the state is updated before the next synchronous call.
-            # Given the current structure, the simplest way to ensure it's set
-            # before ConnectionOrchestrator.initialize_handlers() is to make
-            # set_connection_info synchronous or ensure it's awaited.
-            # Since set_connection_info is async, we cannot directly await it in __init__.
-            # This means ConnectionOrchestrator.initialize_handlers() will always
-            # be called before the state is fully updated.
-
-            # Let's change the logic to ensure the state is set synchronously for now,
-            # or at least handle the async nature.
-            # The StateManager.set method is async, which set_connection_info calls.
-            # This is the root cause of the "no connection info found" error.
-
-            # Temporarily, for debugging and to make it work, we can try to run
-            # the async set_connection_info immediately. This is generally bad practice
-            # in __init__ but will help diagnose.
             try:
-                # This is a hack for synchronous __init__ to run an async method.
-                # In a real app, __init__ should not be doing async work, or
-                # the component initialization should be deferred to an async setup method.
-                # For now, we'll use a temporary event loop or run_until_complete if available.
-                # Given that self.loop is already an asyncio event loop, we can use it.
                 set_success = self.loop.run_until_complete(self.state_manager.set_connection_info(conn_info))
                 logger.debug(f"IRCClient_Logic: state_manager.set_connection_info(conn_info) result: {set_success}")
 
@@ -183,14 +140,14 @@ class IRCClient_Logic:
                     self.loop.create_task(self.add_status_message(f"Initial Configuration Error: {error_summary}", "error"))
                     current_conn_info = self.state_manager.get_connection_info()
                     if current_conn_info:
-                        current_conn_info.auto_connect = False # type: ignore
-                        self.loop.create_task(self.state_manager.set_connection_info(current_conn_info)) # type: ignore
+                        current_conn_info.auto_connect = False
+                        self.loop.create_task(self.state_manager.set_connection_info(current_conn_info))
                     elif conn_info:
                         conn_info.auto_connect = False
                         self.loop.create_task(self.state_manager.set_connection_info(conn_info))
                 else:
                     if conn_info.initial_channels:
-                        self.pending_initial_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels}
+                        self.pending_initial_joins = {self.context_manager._normalize_context_name(ch) for ch in conn_info.initial_channels if ch}
                         if not self.pending_initial_joins: self.all_initial_joins_processed.set()
                         else: self.all_initial_joins_processed.clear()
                     else:
@@ -198,10 +155,10 @@ class IRCClient_Logic:
                         logger.debug("No initial channels configured.")
             except Exception as e:
                 logger.critical(f"Error setting initial connection info synchronously: {e}", exc_info=True)
-                self.all_initial_joins_processed.set() # Ensure we don't hang if setup fails
+                self.all_initial_joins_processed.set()
         else:
             logger.info("No initial connection info built. Starting without auto-connect.")
-            self.all_initial_joins_processed.set() # No initial joins to wait for
+            self.all_initial_joins_processed.set()
 
         self.context_manager.create_context("Status", context_type="status")
         if self.config.dcc.enabled:
@@ -211,9 +168,75 @@ class IRCClient_Logic:
                 self.context_manager.create_context(ch, context_type="channel", initial_join_status_for_channel=ChannelJoinStatus.PENDING_INITIAL_JOIN)
         self.context_manager.set_active_context("Status")
 
+    async def execute_python_trigger_code(self, code_string: str, event_data: Dict[str, Any]):
+        """Executes a Python code string from a trigger in a controlled environment."""
+        if not code_string:
+            logger.warning("execute_python_trigger_code called with empty code string.")
+            return
+
+        # Prepare the execution scope
+        # Provide the script API and event data to the executed code
+        execution_globals = {
+            "api": self.python_trigger_api_instance, # The safe API for scripts
+            "event": event_data,
+            "client": self, # Exposing full client logic can be risky, consider if needed
+            "asyncio": asyncio, # Allow async operations within the trigger code
+            "logger": logging.getLogger(f"tirc.trigger.python_code"), # Dedicated logger
+            # Add other safe utilities or modules as needed
+            "__builtins__": {
+                "print": lambda *args, **kwargs: logging.getLogger(f"tirc.trigger.python_code.print").info(" ".join(map(str,args))), # Redirect print
+                "len": len, "str": str, "int": int, "float": float, "bool": bool,
+                "list": list, "dict": dict, "set": set, "tuple": tuple,
+                "True": True, "False": False, "None": None,
+                "abs": abs, "round": round, "min": min, "max": max, "sum": sum,
+                "isinstance": isinstance, "hasattr": hasattr, "getattr": getattr,
+                "Exception": Exception, # Allow raising common exceptions
+            }
+        }
+
+        # Ensure the code is treated as an async function body if it uses await
+        # This is a simplified approach; a more robust solution might involve ast parsing.
+        # For now, we assume simple scripts or that users will manage async correctly.
+        # If the code needs to be `async def`, it should be defined and called.
+        # A common pattern for trigger code is to be a block of statements.
+        # If it's simple, exec might work. For async, it's more complex.
+
+        # For simplicity, if 'await' is in the code, wrap it to be awaitable.
+        # This is a basic heuristic and might not cover all async scenarios.
+        is_async_code = "await " in code_string
+
+        try:
+            if is_async_code:
+                # Wrap the code in an async function and execute it
+                # This allows 'await' to be used directly in the trigger code string
+                wrapped_code = f"async def __trigger_code_runner__():\n"
+                for line in code_string.splitlines():
+                    wrapped_code += f"    {line}\n"
+                wrapped_code += f"asyncio.create_task(__trigger_code_runner__())" # Schedule it
+
+                temp_locals: Dict[str, Any] = {}
+                exec(compile(wrapped_code, '<trigger_code>', 'exec'), execution_globals, temp_locals)
+                # The task is created and runs in the background.
+                # If direct result or completion waiting is needed, this needs adjustment.
+            else:
+                # Execute synchronous code directly
+                exec(code_string, execution_globals)
+
+            logger.info(f"Successfully executed Python trigger code snippet.")
+
+        except Exception as e:
+            logger.error(f"Error executing Python trigger code: {e}\nCode:\n{code_string}", exc_info=True)
+            await self.add_status_message(f"Error in Python trigger: {e}", "error")
+
+
     def process_trigger_event(self, event_type: str, event_data: Dict[str, Any]):
         if self.trigger_manager:
-            self.trigger_manager.process_trigger(event_type, event_data)
+            trigger_action = self.trigger_manager.process_trigger(event_type, event_data)
+            if trigger_action:
+                if trigger_action["type"] == ActionType.COMMAND:
+                    asyncio.create_task(self.command_handler.process_user_command(trigger_action["content"]))
+                elif trigger_action["type"] == ActionType.PYTHON and trigger_action["code"]:
+                    asyncio.create_task(self.execute_python_trigger_code(trigger_action["code"], trigger_action["event_data"]))
         else:
             logger.debug(f"Trigger system not enabled, skipping event: {event_type}")
 
@@ -237,11 +260,10 @@ class IRCClient_Logic:
         logger.info("Starting main client loop (headless=%s).", self.is_headless)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
         try:
-            # Initial state is now created in __init__
             self.connection_orchestrator.initialize_handlers()
             self.script_manager.load_scripts()
             await self._log_startup_status()
-            await self.ipc_manager.start_server() # NEW
+            await self.ipc_manager.start_server()
 
             conn_info = self.state_manager.get_connection_info()
             if conn_info and conn_info.auto_connect:
@@ -253,6 +275,10 @@ class IRCClient_Logic:
                 logger.info("Network task not running or is done, attempting to start it now in run_main_loop.")
                 await self.network_handler.start()
             self._network_task_ref = self.network_handler._network_task
+
+            # Start DCC periodic cleanup task if DCC is enabled
+            if self.dcc_manager and self.dcc_manager.dcc_config.enabled:
+                await self.dcc_manager.start_periodic_task()
 
             if not self.is_headless and self.input_handler:
                 self._input_reader_task_ref = asyncio.create_task(self.input_handler.async_input_reader(self._executor))
@@ -286,7 +312,7 @@ class IRCClient_Logic:
             self.should_quit.set()
         finally:
             logger.info("run_main_loop: Entering finally block, delegating to ClientShutdownCoordinator.")
-            await self.shutdown_coordinator.execute_shutdown(self._final_quit_message or "Client shutting down")
+            await self.shutdown_coordinator.initiate_graceful_shutdown(self._final_quit_message or "Client shutting down")
             logger.info("run_main_loop: Shutdown coordinator finished. Main loop finally block complete.")
 
     @property
@@ -357,11 +383,11 @@ class IRCClient_Logic:
 
     async def _update_ui(self):
         if self.ui and self.ui_needs_update.is_set():
-            self.ui.refresh_all_windows()
+            await self.ui.refresh_all_windows() # Added await
             self.ui_needs_update.clear()
 
     async def _log_startup_status(self):
-        await self.add_status_message("PyRC Client starting...")
+        await self.add_status_message("tIRC Client starting...")
         conn_info = self.state_manager.get_connection_info()
         if conn_info and conn_info.server and conn_info.port:
             channels_display = ", ".join(conn_info.initial_channels) if conn_info.initial_channels else "None"
@@ -396,19 +422,13 @@ class IRCClient_Logic:
             timestamp = time.strftime("%H:%M:%S")
             final_text = f"[{timestamp}] {text}"
 
-        # The color_pair_id is the raw integer ID (1-17)
-        # It will be converted to a curses attribute in the renderer.
         logger.debug(f"IRCClient_Logic.add_message: Adding to context='{context_name}', text='{final_text[:100]}...', color_pair_id={color_pair_id}, kwargs={kwargs}")
         self.context_manager.add_message_to_context(context_name=context_name, text_line=final_text, color_pair_id=color_pair_id, **kwargs)
         if self.ui: self.ui_needs_update.set()
         else: logger.info(f"[Message to {context_name}] {text}")
 
     async def add_status_message(self, text: str, color_key: str = "system"):
-        # Get the color pair ID for the requested color_key from UIManager.
-        # UIManager.colors now stores the raw pair_id (1-17).
-        color_pair_id = self.ui.colors.get(color_key, self.ui.colors.get("system", 0)) if self.ui else 0
-
-        # The add_message function now expects a color_pair_id, which it will convert to an attribute.
+        color_pair_id = self.ui.colors.get(color_key, self.ui.colors.get("system", 0)) if self.ui and hasattr(self.ui, 'colors') else 0
         await self.add_message(text, color_pair_id, "Status", prefix_time=False)
 
     async def _configure_from_server_config(self, config_data: ServerConfig, config_name: str) -> bool:
@@ -429,10 +449,14 @@ class IRCClient_Logic:
                     elif field == 'initial_channels': conn_info_data[field] = []
                     elif field == 'desired_caps': conn_info_data[field] = []
 
-            conn_info_obj = ConnectionInfo(**conn_info_data) # type: ignore
+            filtered_conn_info_data = {k: v for k, v in conn_info_data.items() if k in expected_fields}
+            conn_info_obj = ConnectionInfo(**filtered_conn_info_data)
 
-            if not self.state_manager.set_connection_info(conn_info_obj):
+            if not await self.state_manager.set_connection_info(conn_info_obj):
                 logger.error(f"Configuration for server '{config_name}' failed validation.")
+                await self.state_manager.set_connection_state(ConnectionState.CONFIG_ERROR,
+                                                              f"Validation failed for {config_name}",
+                                                              self.state_manager.get_config_errors())
                 return False
             logger.info(f"Successfully validated and set server config: {config_name} in StateManager.")
             return True
@@ -442,10 +466,9 @@ class IRCClient_Logic:
             return False
 
     async def handle_raw_server_message(self, event_data: Dict[str, Any]):
-        client = event_data.get("client")
         line = event_data.get("line")
-        if client is None or line is None: return
-        await irc_protocol.handle_server_message(client, line)
+        if line is None: return
+        await irc_protocol.handle_server_message(self, line)
 
     async def send_ctcp_privmsg(self, target: str, ctcp_message: str):
         if not target or not ctcp_message: return
@@ -459,8 +482,10 @@ class IRCClient_Logic:
         if self.config.rehash():
             self.channel_logger_manager = ChannelLoggerManager(self.config)
             if self.config.enable_trigger_system:
-                if not self.trigger_manager: self._initialize_trigger_manager()
-                elif self.trigger_manager:
+                if not self.trigger_manager:
+                    config_dir_triggers = os.path.join(self.config.BASE_DIR, "config")
+                    self.trigger_manager = TriggerManager(config_dir_triggers)
+                if self.trigger_manager: # Check again in case initialization failed
                     self.trigger_manager.triggers.clear()
                     self.trigger_manager.load_triggers()
             elif not self.config.enable_trigger_system and self.trigger_manager:

@@ -3,9 +3,9 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.clear")
+logger = logging.getLogger("tirc.commands.clear")
 
 COMMAND_DEFINITIONS = [
     {

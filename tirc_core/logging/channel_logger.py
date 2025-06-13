@@ -1,10 +1,10 @@
-# pyrc_core/logging/channel_logger.py
+# tirc_core/logging/channel_logger.py
 import logging
 import logging.handlers
 import os
 from typing import Optional, Dict
 
-from pyrc_core.app_config import AppConfig
+from tirc_core.app_config import AppConfig
 
 class ChannelLoggerManager:
     """Manages the creation and retrieval of per-channel loggers."""
@@ -55,7 +55,7 @@ class ChannelLoggerManager:
                 log_file_name = f"channel_{safe_filename_part}.log"
                 channel_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
 
-            channel_logger_instance = logging.getLogger(f"pyrc.channel.{safe_filename_part}")
+            channel_logger_instance = logging.getLogger(f"tirc.channel.{safe_filename_part}")
             channel_logger_instance.setLevel(self.config.get_log_level_int_from_str(self.channel_log_level, logging.INFO))
 
             file_handler = logging.handlers.RotatingFileHandler(
@@ -83,7 +83,7 @@ class ChannelLoggerManager:
             log_file_name = self.config.status_window_log_file
             status_log_file_path = os.path.join(self.main_log_dir_path, log_file_name)
 
-            status_logger = logging.getLogger("pyrc.client_status")
+            status_logger = logging.getLogger("tirc.client_status")
             status_logger.setLevel(self.config.get_log_level_int_from_str(self.channel_log_level, logging.INFO))
 
             file_handler = logging.handlers.RotatingFileHandler(
@@ -129,4 +129,4 @@ class ChannelLoggerManager:
                 logger_to_use.info(message) # Default to info
         else:
             # Fallback to main logger if no specific logger could be found/created
-            logging.getLogger("pyrc.fallback_logger").log(level, f"[Fallback Log - {context_name}] {message}")
+            logging.getLogger("tirc.fallback_logger").log(level, f"[Fallback Log - {context_name}] {message}")

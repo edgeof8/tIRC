@@ -2,7 +2,7 @@ import asyncio
 from typing import TYPE_CHECKING, List, Dict, Any, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
 async def handle_script_command(client: "IRCClient_Logic", args_str: str, context_name: Optional[str] = None) -> None:
     """
@@ -119,14 +119,14 @@ COMMAND_INFO = {
         "handler": handle_script_command,
         "help_text": {
             "usage": "/script [list|load <name>|unload <name>|reload <name>]",
-            "description": "Manages PyRC scripts. Lists scripts or performs actions.",
+            "description": "Manages tIRC scripts. Lists scripts or performs actions.",
             "long_description": (
-                "The /script command allows runtime management of PyRC's Python scripts.\n"
+                "The /script command allows runtime management of tIRC's Python scripts.\n"
                 "Subcommands:\n"
-                "  list          - Lists all found scripts and their current status (Loaded, Disabled, Not Loaded).\n"
-                "  load <name>   - Loads a script that is currently disabled. The script must exist in the scripts directory.\n"
+                "  list - Lists all available scripts and their status (loaded/unloaded, enabled/disabled).\n"
+                "  load <name> - Loads and enables a script. If the script was previously disabled, it will be enabled.\n"
                 "  unload <name> - Unloads an active script and disables it for the current session. The script's event handlers and commands will be removed.\n"
-                "  reload <name> - Unloads and then immediately reloads a script. Useful for applying changes to a script without restarting PyRC. If the script was disabled, it will be enabled and reloaded."
+                "  reload <name> - Unloads and then immediately reloads a script. Useful for applying changes to a script without restarting tIRC. If the script was disabled, it will be enabled and reloaded."
             ),
             "examples": [
                 "/script list",

@@ -4,9 +4,9 @@ import time
 from typing import TYPE_CHECKING, List, Optional, Dict, Any
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.features.triggers.commands")
+logger = logging.getLogger("tirc.features.triggers.commands")
 
 class TriggerCommands:
     def __init__(self, client_logic: "IRCClient_Logic"):

@@ -7,7 +7,7 @@ import time  # Import the time module
 from enum import Enum
 from typing import Dict, List, Optional, Any, Union
 
-logger = logging.getLogger("pyrc.features.triggers")
+logger = logging.getLogger("tirc.features.triggers")
 
 TRIGGERS_FILE = "triggers.json"
 

@@ -6,14 +6,12 @@ import asyncio
 import concurrent.futures
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import (
-        IRCClient_Logic,
-        DummyUI,  # Import DummyUI for type checking
-    )
-    from pyrc_core.commands.command_handler import CommandHandler
-    from pyrc_core.client.ui_manager import UIManager  # UIManager for type checking
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.dummy_ui import DummyUI # Import DummyUI for type checking
+    from tirc_core.commands.command_handler import CommandHandler
+    from tirc_core.client.ui_manager import UIManager  # UIManager for type checking
 
-logger = logging.getLogger("pyrc.input")
+logger = logging.getLogger("tirc.input")
 
 COMMAND_HISTORY_MAX_SIZE = 100
 
@@ -61,9 +59,17 @@ class InputHandler:
                 self.last_tab_completed_prefix = ""
 
         if key_code == curses.KEY_RESIZE:
-            # This line was causing a race condition with the main UI loop's resize handling. Removing it.
-            # ui.setup_layout()
-            pass # The main loop's refresh_all_windows will now handle the resize event correctly.
+            logger.info("KEY_RESIZE received in handle_key_press. Flushing input and calling UIManager.handle_resize.")
+            try:
+                curses.flushinp()
+                logger.debug("curses.flushinp() called after KEY_RESIZE.")
+            except curses.error as e:
+                logger.error(f"Curses error during flushinp: {e}")
+            except Exception as ex: # Catch any other potential errors during flushinp
+                logger.error(f"Unexpected error during flushinp: {ex}", exc_info=True)
+
+            if self.client_logic.ui and hasattr(self.client_logic.ui, 'handle_resize'):
+                await self.client_logic.ui.handle_resize()
         elif key_code in [
             curses.KEY_BACKSPACE,
             127,

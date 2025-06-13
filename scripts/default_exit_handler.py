@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from pyrc_core.scripting.script_base import ScriptBase # Import ScriptBase
+from tirc_core.scripting.script_base import ScriptBase # Import ScriptBase
 
 
 class ExitHandlerScript(ScriptBase): # Inherit from ScriptBase
@@ -20,8 +20,8 @@ class ExitHandlerScript(ScriptBase): # Inherit from ScriptBase
             width = 80  # Default width
             height = 24  # Default height
             border_char = "*"
-            title = "PyRC - Python Terminal IRC Client"
-            repo_url = "https://github.com/edgeof8/PyRC"
+            title = "tIRC - Terminal IRC Client"
+            repo_url = "https://github.com/edgeof8/tIRC"
 
             lines = []
             lines.append(border_char * width)  # Top border
@@ -39,13 +39,13 @@ class ExitHandlerScript(ScriptBase): # Inherit from ScriptBase
             )  # Empty line with border
 
             content_messages = [
-                "Thank you for using PyRC!",
+                "Thank you for using tIRC!",
                 "We hope this terminal-based IRC client served you well.",
                 "",
                 "For more information, updates, or to contribute, please visit:",
                 repo_url,
                 "",
-                "PyRC - Happy Chatting!",
+                "tIRC - Happy Chatting!",
                 "Exiting application now...",
             ]
 

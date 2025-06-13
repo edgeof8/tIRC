@@ -1,31 +1,43 @@
 # commands/user/whois_command.py
 import logging
-from typing import TYPE_CHECKING, Optional, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.user.whois")
+logger = logging.getLogger("tirc.commands.user.whois")
 
 COMMAND_DEFINITIONS = [
     {
         "name": "whois",
         "handler": "handle_whois_command",
         "help": {
-            "usage": "/whois <nick>",
+            "usage": "/whois <nickname>",
             "description": "Retrieves WHOIS information for the specified nickname.",
-            "aliases": ["w"]
+            "aliases": ["w"] # Note: /w is also often /window. Consider if this alias is problematic.
         }
     }
 ]
 
 async def handle_whois_command(client: "IRCClient_Logic", args_str: str):
-    """Handle the /whois command"""
-    help_data = client.command_handler.get_help_text_for_command("whois")
-    usage_msg = help_data["help_text"] if help_data else "Usage: /whois <nick>"
+    """Handles the /whois command."""
+    nick_to_whois = args_str.strip()
+    active_context_name = client.context_manager.active_context_name or "Status"
 
-    parts = await client.command_handler._ensure_args(args_str, usage_msg)
-    if not parts:
+    if not nick_to_whois:
+        await client.add_message(
+            "Usage: /whois <nickname>",
+            client.ui.colors.get("error", 0),
+            context_name=active_context_name,
+        )
         return
-    target = parts[0]
-    await client.network_handler.send_raw(f"WHOIS {target}")
+
+    if not client.network_handler.connected:
+        await client.add_status_message("Not connected to any server.", "error")
+        return
+
+    await client.network_handler.send_raw(f"WHOIS {nick_to_whois}")
+    await client.add_status_message(f"Requesting WHOIS information for {nick_to_whois}...", "system")
+    # Server will respond with RPL_WHOISUSER (311), RPL_WHOISSERVER (312), etc.,
+    # and RPL_ENDOFWHOIS (318). These are handled by numeric handlers.
+    # Messages will be added to the active_context_name by the numeric handlers.

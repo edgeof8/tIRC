@@ -1,51 +1,38 @@
+# commands/information/who_command.py
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.information.who")
+logger = logging.getLogger("tirc.commands.information.who")
 
 COMMAND_DEFINITIONS = [
     {
         "name": "who",
         "handler": "handle_who_command",
         "help": {
-            "usage": "/who [channel|nick]",
-            "description": "Shows WHO information for a channel or user.",
+            "usage": "/who [channel|nickname]",
+            "description": "Retrieves WHO information for a channel or user.",
             "aliases": []
         }
     }
 ]
 
 async def handle_who_command(client: "IRCClient_Logic", args_str: str):
+    """Handles the /who command."""
     target = args_str.strip()
+    active_context_name = client.context_manager.active_context_name or "Status"
+
     if not target:
-        active_context = client.context_manager.get_active_context()
-        if active_context and active_context.type == "channel":
-            target = active_context.name
-            logger.debug(f"/who command using active channel '{target}' as target.")
+        # If no target, use active context if it's a channel, otherwise error
+        if active_context_name != "Status" and client.context_manager.get_context_type(active_context_name) == "channel":
+            target = active_context_name
         else:
-            help_data = client.script_manager.get_help_text_for_command("who")
-            usage_msg = (
-                help_data["help_text"]
-                if help_data
-                else "Usage: /who [channel|nick]"
-            )
-            await client.add_message(
-                usage_msg, client.ui.colors["error"], context_name="Status"
-            )
+            await client.add_message("Usage: /who [channel|nickname]", client.ui.colors.get("error", 0), context_name=active_context_name)
             return
 
-    if target:
-        await client.network_handler.send_raw(f"WHO {target}")
-    else:
-        # This case should ideally be caught by the logic above,
-        # but as a fallback, show usage if no target could be determined.
-        help_data = client.script_manager.get_help_text_for_command("who")
-        usage_msg = (
-            help_data["help_text"] if help_data else "Usage: /who [channel|nick]"
-        )
-        await client.add_message(
-            usage_msg, client.ui.colors["error"], context_name="Status"
-        )
+    await client.network_handler.send_raw(f"WHO {target}")
+    await client.add_status_message(f"Requesting WHO information for {target}...", "system")
+    # Server will respond with RPL_WHOREPLY (352) and RPL_ENDOFWHO (315)
+    # These are handled by numeric handlers.

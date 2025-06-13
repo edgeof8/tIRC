@@ -1,67 +1,91 @@
-# pyrc_core/commands/dcc/dcc_browse_command.py
+# commands/dcc/dcc_browse_command.py
 import logging
 import os
-from typing import TYPE_CHECKING, List, Dict, Any
-from .dcc_command_base import DCCCommandHandlerBase
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.dcc.browse")
+logger = logging.getLogger("tirc.commands.dcc.browse")
 
-COMMAND_NAME = "browse"
-COMMAND_ALIASES: List[str] = ["dir"]
-COMMAND_HELP: Dict[str, str] = {
-    "usage": "/dcc browse [path]",
-    "description": "Lists the contents of a local directory. Defaults to the current working directory if no path is provided.",
-    "aliases": "dir"
-}
-
-class DCCBrowseCommandHandler(DCCCommandHandlerBase):
-    """Handles the /dcc browse command."""
-
-    async def execute(self, cmd_args: List[str], active_context_name: str, dcc_context_name: str):
-        """
-        Handles the /dcc browse command.
-        Lists the contents of the specified local directory.
-        """
-        # No specific DCC config check needed for browse, it's a local FS operation.
-
-        target_dir = " ".join(cmd_args) if cmd_args else "."
-        try:
-            abs_target_dir = os.path.abspath(target_dir)
-
-            if not os.path.isdir(abs_target_dir):
-                await self._handle_dcc_error(f"Error: '{target_dir}' (abs: {abs_target_dir}) is not a valid directory.", dcc_context_name)
-                return
-
-            await self.client_logic.add_message(f"Contents of '{abs_target_dir}':", self.client_logic.ui.colors["system"], context_name=dcc_context_name)
-            items = []
-            for item_name in sorted(os.listdir(abs_target_dir)):
-                item_path = os.path.join(abs_target_dir, item_name)
-                is_dir_marker = "[D] " if os.path.isdir(item_path) else "[F] "
-                items.append(f"  {is_dir_marker}{item_name}")
-
-            if not items:
-                await self.client_logic.add_message("  (Directory is empty)", self.client_logic.ui.colors["system"], context_name=dcc_context_name)
-            else:
-                for item_line in items:
-                    await self.client_logic.add_message(item_line, self.client_logic.ui.colors["system"], context_name=dcc_context_name)
-
-            await self._ensure_dcc_context(dcc_context_name)
-
-        except PermissionError:
-            await self._handle_dcc_error(f"Error browsing '{target_dir}': Permission denied.", dcc_context_name, log_level=logging.WARNING)
-        except FileNotFoundError:
-            await self._handle_dcc_error(f"Error browsing '{target_dir}': Directory not found.", dcc_context_name, log_level=logging.WARNING)
-        except Exception as e:
-            await self._handle_dcc_error(f"Error processing /dcc {COMMAND_NAME} for '{target_dir}': {e}", dcc_context_name, exc_info=True)
-
-# This function will be called by the main dcc_commands.py dispatcher
-def get_dcc_command_handler() -> Dict[str, Any]:
-    return {
-        "name": COMMAND_NAME,
-        "aliases": COMMAND_ALIASES,
-        "help": COMMAND_HELP,
-        "handler_class": DCCBrowseCommandHandler
+COMMAND_DEFINITIONS = [
+    {
+        "name": "dcc_browse", # Changed from "browse" to be DCC specific
+        "handler": "handle_dcc_browse_command",
+        "help": {
+            "usage": "/dcc_browse [path]",
+            "description": "Lists contents of a local directory path (or default DCC upload/download dir if no path). Useful for finding files to send.",
+            "aliases": ["dccbrowse", "dbrowse"]
+        }
     }
+]
+
+async def handle_dcc_browse_command(client: "IRCClient_Logic", args_str: str):
+    """Handles the /dcc_browse command."""
+    path_arg = args_str.strip()
+    active_context_name = client.context_manager.active_context_name or "Status"
+    # For DCC browse, results are usually shown in the active context or Status.
+    # A dedicated DCC browse window might be overkill unless results are very large.
+
+    if not client.dcc_manager or not client.config.dcc.enabled:
+        await client.add_message("DCC system is not enabled.", client.ui.colors.get("error", 0), context_name=active_context_name)
+        return
+
+    base_path_to_browse: Path
+    if path_arg:
+        base_path_to_browse = Path(path_arg).expanduser()
+    else:
+        # Default to DCC upload directory, or download if upload not set, or CWD as last resort
+        if client.config.dcc.upload_dir:
+            base_path_to_browse = Path(client.config.dcc.upload_dir).expanduser()
+        elif client.config.dcc.download_dir:
+            base_path_to_browse = Path(client.config.dcc.download_dir).expanduser()
+        else:
+            base_path_to_browse = Path.cwd() # Current working directory of tIRC process
+
+    try:
+        # Resolve to an absolute path to prevent ambiguity and ensure it exists
+        # strict=True will raise FileNotFoundError if path doesn't exist
+        resolved_path = base_path_to_browse.resolve(strict=True)
+        if not resolved_path.is_dir():
+            await client.add_message(f"Error: Path '{resolved_path}' is not a directory.", client.ui.colors.get("error", 0), context_name=active_context_name)
+            return
+
+    except FileNotFoundError:
+        await client.add_message(f"Error: Path '{base_path_to_browse}' not found.", client.ui.colors.get("error", 0), context_name=active_context_name)
+        return
+    except Exception as e:
+        logger.error(f"Error resolving path '{base_path_to_browse}' for /dcc_browse: {e}", exc_info=True)
+        await client.add_message(f"Error accessing path '{base_path_to_browse}': {e}", client.ui.colors.get("error", 0), context_name=active_context_name)
+        return
+
+    await client.add_message(f"--- Contents of {resolved_path} ---", client.ui.colors.get("system_highlight", 0), context_name=active_context_name)
+
+    items_listed = 0
+    try:
+        for item in sorted(os.listdir(resolved_path)): # List and sort
+            item_full_path = resolved_path / item
+            display_item = item
+            if item_full_path.is_dir():
+                display_item += "/" # Indicate directory
+
+            # Could add file size for files, but might make output too verbose for a quick browse
+            # stat_info = item_full_path.stat()
+            # size_str = format_filesize(stat_info.st_size) if item_full_path.is_file() else ""
+            # display_item += f" ({size_str})"
+
+            await client.add_message(display_item, client.ui.colors.get("system", 0), context_name=active_context_name)
+            items_listed += 1
+            if items_listed >= 50: # Limit output to prevent flooding
+                await client.add_message("... (output truncated, too many items)", client.ui.colors.get("info_dim", 0), context_name=active_context_name)
+                break
+
+    except PermissionError:
+        await client.add_message(f"Error: Permission denied to list contents of '{resolved_path}'.", client.ui.colors.get("error", 0), context_name=active_context_name)
+    except Exception as e:
+        logger.error(f"Error listing directory '{resolved_path}' for /dcc_browse: {e}", exc_info=True)
+        await client.add_message(f"Error listing directory '{resolved_path}': {e}", client.ui.colors.get("error", 0), context_name=active_context_name)
+
+    if items_listed == 0:
+        await client.add_message(f"Directory '{resolved_path}' is empty.", client.ui.colors.get("system", 0), context_name=active_context_name)

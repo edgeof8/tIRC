@@ -1,10 +1,11 @@
+# commands/information/names_command.py
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.information.names")
+logger = logging.getLogger("tirc.commands.information.names")
 
 COMMAND_DEFINITIONS = [
     {
@@ -12,46 +13,29 @@ COMMAND_DEFINITIONS = [
         "handler": "handle_names_command",
         "help": {
             "usage": "/names [channel]",
-            "description": "Shows the list of users in a channel. If no channel is specified, it may list users in the current channel or all visible users depending on the server.",
+            "description": "Lists users in the specified channel or the current channel if none is given.",
             "aliases": []
         }
     }
 ]
 
 async def handle_names_command(client: "IRCClient_Logic", args_str: str):
-    channel_arg = args_str.strip()
+    """Handles the /names command."""
+    target_channel = args_str.strip()
+    active_context_name = client.context_manager.active_context_name or "Status"
 
-    if channel_arg:
-        await client.network_handler.send_raw(f"NAMES {channel_arg}")
-        # Determine context for feedback message
-        feedback_context_name = "Status"
-        target_channel_context = client.context_manager.get_context(
-            channel_arg
-        )
-        if target_channel_context and target_channel_context.type == "channel":
-            feedback_context_name = target_channel_context.name
-
-        await client.add_message(
-            f"Refreshing names for {channel_arg}...",
-            client.ui.colors["system"], # Using semantic color key
-            context_name=feedback_context_name,
-        )
-    else:
-        # Behavior for /NAMES without args can vary.
-        # This implementation sends NAMES for the current channel if it's active and a channel,
-        # otherwise sends a general NAMES command to the server.
-        active_context = client.context_manager.get_active_context()
-        if active_context and active_context.type == "channel":
-            await client.network_handler.send_raw(f"NAMES {active_context.name}")
-            await client.add_message(
-                f"Refreshing names for current channel {active_context.name}...",
-                client.ui.colors["system"],
-                context_name=active_context.name,
-            )
+    if not target_channel:
+        if active_context_name != "Status" and client.context_manager.get_context_type(active_context_name) == "channel":
+            target_channel = active_context_name
         else:
-            await client.network_handler.send_raw("NAMES")
-            await client.add_message(
-                "Requesting names (no specific channel)...",
-                client.ui.colors["system"],
-                context_name="Status",
-            )
+            await client.add_message("Usage: /names [channel] - Please specify a channel or be in one.", client.ui.colors.get("error", 0), context_name=active_context_name)
+            return
+
+    # Normalize channel name
+    normalized_channel = client.context_manager._normalize_context_name(target_channel)
+
+    # Send NAMES command to server
+    await client.network_handler.send_raw(f"NAMES {normalized_channel}")
+    await client.add_status_message(f"Requested user list for {normalized_channel}...", "system")
+    # Server will respond with RPL_NAMREPLY (353) and RPL_ENDOFNAMES (366)
+    # These are handled by numeric handlers which will populate the UI.

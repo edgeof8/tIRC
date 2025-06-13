@@ -1,78 +1,63 @@
-# pyrc_core/commands/dcc/dcc_auto_command.py
+# commands/dcc/dcc_auto_command.py
 import logging
-from typing import TYPE_CHECKING, List, Dict, Any
-from .dcc_command_base import DCCCommandHandlerBase
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.dcc.auto")
+logger = logging.getLogger("tirc.commands.dcc.auto")
 
-COMMAND_NAME = "auto"
-COMMAND_ALIASES: List[str] = []
-COMMAND_HELP: Dict[str, str] = {
-    "usage": "/dcc auto [on|off]",
-    "description": "Toggles or sets the global auto-accept feature for incoming DCC offers. Displays current status if no argument.",
-    "aliases": "None"
-}
-
-class DCCAutoCommandHandler(DCCCommandHandlerBase):
-    """Handles the /dcc auto command."""
-
-    async def execute(self, cmd_args: List[str], active_context_name: str, dcc_context_name: str): # dcc_context_name is not strictly needed here but part of the signature
-        """
-        Handles the /dcc auto command.
-        Toggles or sets the DCC auto-accept feature.
-        """
-        dcc_m = self.client_logic.dcc_manager
-        if not dcc_m:
-            await self._handle_dcc_error(f"DCC system not available for /dcc {COMMAND_NAME}.", active_context_name)
-            return
-
-        if not cmd_args:
-            current_auto_accept = dcc_m.dcc_config.auto_accept
-            await self.client_logic.add_message(f"DCC auto-accept is currently {'ON' if current_auto_accept else 'OFF'}.", self.client_logic.ui.colors["system"], context_name=active_context_name)
-        elif len(cmd_args) == 1:
-            setting = cmd_args[0].lower()
-            new_value_str = ""
-            if setting == "on":
-                new_value_str = "true"
-            elif setting == "off":
-                new_value_str = "false"
-            else:
-                await self.client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", self.client_logic.ui.colors["error"], context_name=active_context_name)
-                return
-
-            try:
-                new_bool_val = True if new_value_str == "true" else False
-                # Update the live dcc_config attribute in DCCManager first
-                dcc_m.dcc_config.auto_accept = new_bool_val
-
-                # Persist this change to the INI file using the AppConfig instance
-                if self.client_logic.config.set_config_value("DCC", "auto_accept", new_value_str):
-                    await self.client_logic.add_message(
-                        f"DCC auto-accept set to {new_value_str.upper()}. Configuration saved.",
-                        self.client_logic.ui.colors["system"],
-                        context_name=active_context_name
-                    )
-                else:
-                    await self.client_logic.add_message(
-                        f"DCC auto-accept set to {new_value_str.upper()} for current session. Config save failed.",
-                        self.client_logic.ui.colors["warning"],
-                        context_name=active_context_name
-                    )
-
-            except Exception as e:
-                logger.error(f"Error setting DCC auto_accept: {e}", exc_info=True)
-                await self._handle_dcc_error(f"Error setting DCC auto-accept: {e}", active_context_name)
-        else:
-            await self.client_logic.add_message(f"Usage: {COMMAND_HELP['usage']}", self.client_logic.ui.colors["error"], context_name=active_context_name)
-
-# This function will be called by the main dcc_commands.py dispatcher
-def get_dcc_command_handler() -> Dict[str, Any]:
-    return {
-        "name": COMMAND_NAME,
-        "aliases": COMMAND_ALIASES,
-        "help": COMMAND_HELP,
-        "handler_class": DCCAutoCommandHandler
+COMMAND_DEFINITIONS = [
+    {
+        "name": "dcc_auto", # Changed from "auto" to be DCC specific
+        "handler": "handle_dcc_auto_command",
+        "help": {
+            "usage": "/dcc_auto [on|off|toggle]",
+            "description": "Toggles or sets the global auto-accept feature for incoming DCC SEND offers.",
+            "aliases": ["dccauto"]
+        }
     }
+]
+
+async def handle_dcc_auto_command(client: "IRCClient_Logic", args_str: str):
+    """Handles the /dcc_auto [on|off|toggle] command."""
+    arg = args_str.strip().lower()
+    active_context_name = client.context_manager.active_context_name or "Status"
+
+    if not client.dcc_manager:
+        await client.add_message("DCC system is not available.", client.ui.colors.get("error", 0), context_name=active_context_name)
+        return
+
+    current_status = client.config.dcc.auto_accept
+
+    if arg == "on":
+        client.config.dcc.auto_accept = True
+    elif arg == "off":
+        client.config.dcc.auto_accept = False
+    elif arg == "toggle" or not arg: # Toggle if no arg or "toggle"
+        client.config.dcc.auto_accept = not current_status
+    else:
+        await client.add_message(
+            "Usage: /dcc_auto [on|off|toggle]",
+            client.ui.colors.get("error", 0),
+            context_name=active_context_name,
+        )
+        return
+
+    # Save the change to the config file
+    if client.config.set_config_value("DCC", "auto_accept", str(client.config.dcc.auto_accept).lower()):
+        feedback_action = "enabled" if client.config.dcc.auto_accept else "disabled"
+        await client.add_message(
+            f"DCC auto-accept {feedback_action}.",
+            client.ui.colors.get("system", 0),
+            context_name=active_context_name,
+        )
+        logger.info(f"DCC auto_accept set to {client.config.dcc.auto_accept}")
+    else:
+        await client.add_message(
+            "Failed to save DCC auto-accept setting.",
+            client.ui.colors.get("error", 0),
+            context_name=active_context_name,
+        )
+        # Revert in-memory change if save failed
+        client.config.dcc.auto_accept = current_status

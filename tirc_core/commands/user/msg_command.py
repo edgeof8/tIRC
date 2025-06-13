@@ -1,11 +1,11 @@
 # commands/user/msg_command.py
 import logging
-from typing import TYPE_CHECKING, Optional, List
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.user.msg")
+logger = logging.getLogger("tirc.commands.user.msg")
 
 COMMAND_DEFINITIONS = [
     {
@@ -14,43 +14,66 @@ COMMAND_DEFINITIONS = [
         "help": {
             "usage": "/msg <target> <message>",
             "description": "Sends a private message to a user or a message to a channel.",
-            "aliases": ["m"]
+            "aliases": ["m", "say"]
         }
     }
 ]
 
 async def handle_msg_command(client: "IRCClient_Logic", args_str: str):
-    """Handle the /msg command"""
-    help_data = client.script_manager.get_help_text_for_command("msg")
-    usage_msg = (
-        help_data["help_text"] if help_data else "Usage: /msg <target> <message>"
-    )
-    parts = await client.command_handler._ensure_args(args_str, usage_msg, num_expected_parts=2)
-    if not parts:
+    """Handles the /msg <target> <message> command."""
+    parts = args_str.split(" ", 1)
+    active_context_name = client.context_manager.active_context_name or "Status"
+
+    if len(parts) < 2:
+        await client.add_message(
+            "Usage: /msg <target> <message>",
+            client.ui.colors.get("error", 0),
+            context_name=active_context_name,
+        )
         return
-    target = parts[0]
-    message = parts[1]
+
+    target, message = parts[0], parts[1]
+
+    if not target or not message:
+        await client.add_message(
+            "Usage: /msg <target> <message>",
+            client.ui.colors.get("error", 0),
+            context_name=active_context_name,
+        )
+        return
+
     await client.network_handler.send_raw(f"PRIVMSG {target} :{message}")
 
-    # If sending to a user (potential query) and no echo-message, add to our local query context for immediate feedback
-    if (
-        client.cap_negotiator
-        and client.cap_negotiator.supported_caps
-        and "echo-message" not in client.cap_negotiator.supported_caps
-        and not target.startswith(("#", "&", "+", "!"))
-    ):
-        # Ensure a query context exists for the target. If not, create it.
-        # This is important because if we /msg UserHi and no window exists, it should open.
-        query_ctx = client.context_manager.get_context(target)
-        if not query_ctx:
-            client.context_manager.create_context(target, context_type="query")
+    # Echo the sent message to the appropriate context
+    # If target is a channel, echo to that channel's context.
+    # If target is a user (query), echo to that user's query context.
+    # The query context should be created if it doesn't exist.
 
-        # Add the message to this query context
-        # This is for our own view of what we sent.
-        # If the target is ourselves, the server will send a PRIVMSG back which message_handlers will pick up.
-        if client.nick and client.nick.lower() != target.lower():  # Don't self-echo if PMing self here
-            await client.add_message(
-                f"<{client.nick}> {message}",
-                client.ui.colors["my_message"],
-                context_name=target,
-            )
+    echo_context_name = target
+    is_channel_message = target.startswith(("#", "&", "!", "+"))
+
+    if not is_channel_message: # It's a query
+        # Ensure query context exists. ContextManager normalizes the name.
+        client.context_manager.create_context(target, context_type="query")
+        # The name stored in ContextManager might be normalized (e.g., lowercase)
+        # We should use the normalized name for adding the message.
+        normalized_target = client.context_manager._normalize_context_name(target)
+        echo_context_name = normalized_target
+
+
+    # Add the message to the local UI for display, formatted with nick
+    client_nick = client.nick or "Me" # Fallback to "Me" if nick is somehow None
+    formatted_line = f"<{client_nick}> {message}"
+
+    # Determine color based on whether it's a channel message or query
+    # Using "my_message" color for all self-sent messages for consistency
+    color_pair_id = client.ui.colors.get("my_message", client.ui.colors.get("default", 0))
+
+
+    await client.add_message(
+        formatted_line,
+        color_pair_id,
+        context_name=echo_context_name,
+        is_privmsg_or_notice=True # Indicate it's a user-generated message
+    )
+    logger.info(f"Sent PRIVMSG to {target}: {message}")

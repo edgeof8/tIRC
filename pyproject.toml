@@ -3,7 +3,7 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyrc"
+name = "tirc"
 version = "0.1.0"
 description = "A modular, terminal-based IRC client with scripting capabilities"
 readme = "README.md"
@@ -31,10 +31,10 @@ dependencies = [
     "pyfiglet",
 ]
 keywords = ["irc", "client", "terminal", "curses", "chat"]
-urls = {Homepage = "https://github.com/edgeof8/PyRC"}
+urls = {Homepage = "https://github.com/edgeof8/tIRC"}
 
 [project.scripts]
-pyrc = "pyrc:main"
+tirc = "tirc:main"
 
 [project.optional-dependencies]
 dev = [
@@ -46,14 +46,15 @@ dev = [
 
 [tool.setuptools]
 package-dir = {"" = "."}
-packages = ["pyrc"]
+packages = ["tirc_core"]
+include-package-data = true  # Often used with MANIFEST.in for non-package files
 package-data = {
-    "pyrc" = [
-        "pyterm_irc_config.ini.example",
-        "scripts/*.py",
+    "tirc_core" = [
         "commands/**/*.py",
+        "data/default_help/*.ini",
+        "irc/*.md"
     ]
 }
 
 [tool.setuptools.dynamic]
-version = {attr = "pyrc.__version__"}
+version = {attr = "tirc.__version__"}

@@ -1,9 +1,9 @@
 import curses
 import logging
 from typing import Any, Dict
-from pyrc_core.client.curses_utils import SafeCursesUtils
+from tirc_core.client.curses_utils import SafeCursesUtils
 
-logger = logging.getLogger("pyrc.input_line_renderer")
+logger = logging.getLogger("tirc.input_line_renderer")
 
 class InputLineRenderer:
     def __init__(self, colors: Dict[str, int]):

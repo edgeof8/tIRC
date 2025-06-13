@@ -6,14 +6,14 @@ import ssl
 import logging
 import concurrent.futures
 from typing import List, Optional, Set, cast, TYPE_CHECKING, Coroutine, Any  # Added TYPE_CHECKING
-from pyrc_core.app_config import AppConfig
-from pyrc_core.state_manager import ConnectionState, ConnectionInfo
+from tirc_core.app_config import AppConfig
+from tirc_core.state_manager import ConnectionState, ConnectionInfo
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic  # Guarded import
+    from tirc_core.client.irc_client_logic import IRCClient_Logic  # Guarded import
 
 
-logger = logging.getLogger("pyrc.network")
+logger = logging.getLogger("tirc.network")
 
 
 class NetworkHandler:
@@ -27,7 +27,7 @@ class NetworkHandler:
         self._stop_event = asyncio.Event()
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
-        self.logger = logging.getLogger("pyrc.network")
+        self.logger = logging.getLogger("tirc.network")
         self.reconnect_delay: int = self.config.reconnect_initial_delay
         self.channels_to_join_on_connect: List[str] = []
         self.is_handling_nick_collision: bool = False

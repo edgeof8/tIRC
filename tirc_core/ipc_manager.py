@@ -3,8 +3,8 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    from pyrc_core.app_config import AppConfig
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.app_config import AppConfig
 
 logger = logging.getLogger(__name__)
 

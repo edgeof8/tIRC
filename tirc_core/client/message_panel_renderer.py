@@ -2,12 +2,12 @@ import curses
 import logging
 import re # Added for regex parsing
 from typing import Any, Deque, Tuple, Dict, Optional, TYPE_CHECKING, List # Added List
-from pyrc_core.client.curses_utils import SafeCursesUtils
+from tirc_core.client.curses_utils import SafeCursesUtils
 
 if TYPE_CHECKING:
-    from pyrc_core.dcc.dcc_manager import DCCManager
+    from tirc_core.dcc.dcc_manager import DCCManager
 
-logger = logging.getLogger("pyrc.message_panel_renderer")
+logger = logging.getLogger("tirc.message_panel_renderer")
 
 class MessagePanelRenderer:
     def __init__(self, colors: Dict[str, int], dcc_manager_ref: "DCCManager"):
@@ -256,7 +256,7 @@ class MessagePanelRenderer:
         if max_y <= 0 or max_x <= 0: return
 
         try: # Keep the try block for potential errors during transfer list processing/drawing
-            transfers = self.dcc_manager.get_all_transfers()
+            transfers = self.dcc_manager.list_transfers_as_dicts() # Changed method name
 
             if not transfers:
                 SafeCursesUtils._safe_addstr(window, 0, 0, "No active DCC transfers.", self.colors.get("system_message",0), "dcc_empty")

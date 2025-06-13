@@ -6,19 +6,19 @@ import time
 import sys
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Any, Set, Tuple, Union
 import threading
-from pyrc_core.app_config import AppConfig
+from tirc_core.app_config import AppConfig
 
-from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
+from tirc_core.scripting.script_api_handler import ScriptAPIHandler
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
 
-logger = logging.getLogger("pyrc.script_manager")
+logger = logging.getLogger("tirc.script_manager")
 
 SCRIPTS_DIR_NAME = "scripts"
 HELP_INI_FILENAME = "command_help.ini"
-HELP_INI_PATH = os.path.join("pyrc_core", "data", "default_help", HELP_INI_FILENAME)
+HELP_INI_PATH = os.path.join("tirc_core", "data", "default_help", HELP_INI_FILENAME)
 
 
 class ScriptManager:
@@ -107,8 +107,8 @@ class ScriptManager:
                 try:
                     # Temporarily create ScriptAPIHandler to load metadata
                     # This relies on ScriptAPIHandler's __init__ calling _load_metadata
-                    temp_api = ScriptAPIHandler(self.client_logic_ref, self, script_name)  # type: ignore[arg-type]
-                    dependencies = temp_api.metadata.dependencies
+                    temp_api = ScriptAPIHandler(self.client_logic_ref, self, script_name) # type: ignore[arg-type]
+                    dependencies = temp_api.metadata.get("dependencies", []) # Use .get() for dictionary access
                     scripts_metadata[script_name] = dependencies
                     script_load_candidates.append(script_name)
                     self.logger.debug(f"Script '{script_name}' metadata collected. Dependencies: {dependencies}")

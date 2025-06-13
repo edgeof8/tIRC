@@ -3,11 +3,11 @@ import asyncio # Import asyncio
 from typing import TYPE_CHECKING, List, Optional, Tuple, Dict, Any, Set
 
 if TYPE_CHECKING:
-    from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
+    from tirc_core.scripting.script_api_handler import ScriptAPIHandler
 
 
 class ScriptBase:
-    """Base class for all PyRC scripts.
+    """Base class for all tIRC scripts.
 
     This class provides common functionality and interface that all scripts should implement.
     Scripts should inherit from this class and override the load() and unload() methods as needed.
@@ -153,12 +153,25 @@ class ScriptBase:
             Optional[List[str]]: List of argument parts if valid, None if invalid
         """
         # Get help text for the command
-        help_data = self.api.script_manager.get_help_text_for_command(command_name)
-        usage_msg = (
-            help_data.get("help_text", f"Usage: /{command_name}")
-            if help_data
-            else f"Usage: /{command_name}"
-        )
+        help_data = self.api.client_logic.command_handler.get_help_text_for_command(command_name)
+
+        default_usage = f"Usage: /{command_name}"
+        usage_msg = default_usage # Default
+        if help_data:
+            # get_help_text_for_command returns a dict that might have 'help_info' (a dict) or 'help_text' (a string)
+            # We need to access the 'usage' from 'help_info' if it exists
+            help_info_dict = help_data.get("help_info")
+            if isinstance(help_info_dict, dict):
+                usage_from_help = help_info_dict.get("usage")
+                if usage_from_help:
+                    usage_msg = usage_from_help
+            else: # If help_info_dict is not a dict, try help_text
+                help_text_str = help_data.get("help_text")
+                if isinstance(help_text_str, str) and "Usage: " in help_text_str:
+                    usage_from_help = help_text_str.split('\n')[0]
+                    if usage_from_help:
+                        usage_msg = usage_from_help
+            # If 'usage' is not in help_data, or is empty, usage_msg remains default_usage
 
         # Split args and check count
         parts = args_str.strip().split()

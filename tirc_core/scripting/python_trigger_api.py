@@ -2,9 +2,9 @@ import logging
 from typing import TYPE_CHECKING, Dict, Any, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
     # If ScriptManager methods were called directly on a ScriptManager instance,
-    # 'from pyrc_core.scripting.script_manager import ScriptManager' would be needed here.
+    # 'from tirc_core.scripting.script_manager import ScriptManager' would be needed here.
     # However, it appears script_manager attributes (like logger) are accessed
     # via the client_logic instance (e.g., self._client_logic.script_manager.logger)
 

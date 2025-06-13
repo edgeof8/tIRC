@@ -1,4 +1,4 @@
-# pyrc.py
+# tirc.py
 import curses
 import argparse
 import time
@@ -12,12 +12,14 @@ from typing import List, Optional
 import sys # Added for sys.exit
 
 # Import the new AppConfig class and other necessary components
-from pyrc_core.app_config import AppConfig, ServerConfig, DEFAULT_NICK, DEFAULT_SSL_PORT, DEFAULT_PORT
-from pyrc_core.client.irc_client_logic import IRCClient_Logic
-from pyrc_core.client.ui_manager import UIManager
+from tirc_core.app_config import AppConfig
+from tirc_core.config_defs import ServerConfig, DEFAULT_NICK, DEFAULT_SSL_PORT, DEFAULT_PORT
+from tirc_core.client.irc_client_logic import IRCClient_Logic
+from tirc_core.client.dummy_ui import DummyUI
+from tirc_core.client.ui_manager import UIManager
 
 # Define logger at module level for broader access
-main_ui_logger = logging.getLogger("pyrc.main_ui")
+main_ui_logger = logging.getLogger("tirc.main_ui")
 
 
 def setup_logging(config: AppConfig):
@@ -74,25 +76,25 @@ def setup_logging(config: AppConfig):
         console_handler.setLevel(logging.INFO) # Console output can remain INFO
         root_logger.addHandler(console_handler)
 
-        # Explicitly set the level for the 'pyrc' logger namespace to ensure
-        # all sub-loggers (pyrc.config, pyrc.logic, etc.) inherit this level
+        # Explicitly set the level for the 'tirc' logger namespace to ensure
+        # all sub-loggers (tirc.config, tirc.logic, etc.) inherit this level
         # for the file handlers.
-        pyrc_base_logger = logging.getLogger("pyrc")
-        pyrc_base_logger.setLevel(config.log_level_int) # Set to configured level, e.g., DEBUG
+        tirc_base_logger = logging.getLogger("tirc")
+        tirc_base_logger.setLevel(config.log_level_int) # Set to configured level, e.g., DEBUG
 
         # Now use this logger for the initial messages
-        pyrc_base_logger.info(f"Logging initialized. Full log: {full_log_path}, Error log: {error_log_path}")
-        pyrc_base_logger.info(f"'pyrc' base logger set to level: {logging.getLevelName(pyrc_base_logger.level)} (effective: {logging.getLevelName(pyrc_base_logger.getEffectiveLevel())}, target: {config.log_level_str})")
+        tirc_base_logger.info(f"Logging initialized. Full log: {full_log_path}, Error log: {error_log_path}")
+        tirc_base_logger.info(f"'tirc' base logger set to level: {logging.getLevelName(tirc_base_logger.level)} (effective: {logging.getLevelName(tirc_base_logger.getEffectiveLevel())}, target: {config.log_level_str})")
 
         # Explicitly set levels for known sub-loggers to ensure they adhere to the file log level
-        loggers_to_set = ["pyrc.config", "pyrc.logic", "pyrc.script_manager", "pyrc.network", "pyrc.command_handler", "pyrc.event_manager", "pyrc.main_app", "pyrc.main_ui", "pyrc.irc", "pyrc.dcc"]
+        loggers_to_set = ["tirc.config", "tirc.logic", "tirc.script_manager", "tirc.network", "tirc.command_handler", "tirc.event_manager", "tirc.main_app", "tirc.main_ui", "tirc.irc", "tirc.dcc"]
         for logger_name in loggers_to_set:
             specific_logger = logging.getLogger(logger_name)
             specific_logger.setLevel(config.log_level_int)
-            pyrc_base_logger.info(f"Logger '{logger_name}' explicitly set to level: {logging.getLevelName(specific_logger.level)} (effective: {logging.getLevelName(specific_logger.getEffectiveLevel())})")
+            tirc_base_logger.info(f"Logger '{logger_name}' explicitly set to level: {logging.getLevelName(specific_logger.level)} (effective: {logging.getLevelName(specific_logger.getEffectiveLevel())})")
 
         if config.channel_log_enabled:
-            pyrc_base_logger.info(f"Per-channel logging is enabled. Channel logs will be placed in: {log_dir}")
+            tirc_base_logger.info(f"Per-channel logging is enabled. Channel logs will be placed in: {log_dir}")
 
     except Exception as e:
         print(f"Failed to initialize advanced file logging: {e}")
@@ -101,7 +103,7 @@ def setup_logging(config: AppConfig):
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[logging.StreamHandler(sys.stdout)]
         )
-        logging.getLogger("pyrc").error(f"Advanced file logging setup failed. Using basic console logging. Error: {e}")
+        logging.getLogger("tirc").error(f"Advanced file logging setup failed. Using basic console logging. Error: {e}")
 
 
 async def main_curses_wrapper(stdscr, client: IRCClient_Logic, args: argparse.Namespace, config: AppConfig):
@@ -110,7 +112,7 @@ async def main_curses_wrapper(stdscr, client: IRCClient_Logic, args: argparse.Na
     try:
         # Client is now created in curses_wrapper_with_args and passed in.
         # Initialize UI elements that depend on stdscr if client needs it (already done in IRCClient_Logic constructor)
-        await client.add_status_message("PyRC Initializing... Please wait.")
+        await client.add_status_message("tIRC Initializing... Please wait.")
         client.ui_needs_update.set()
 
         await client.run_main_loop() # Main execution path
@@ -140,7 +142,7 @@ async def main_curses_wrapper(stdscr, client: IRCClient_Logic, args: argparse.Na
 
 def parse_arguments(default_server_config: Optional[ServerConfig]) -> argparse.Namespace:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="PyRC IRC Client")
+    parser = argparse.ArgumentParser(description="tIRC IRC Client")
 
     # Get defaults from the config object for help text
     default_server = default_server_config.address if default_server_config else "N/A"
@@ -161,7 +163,7 @@ def parse_arguments(default_server_config: Optional[ServerConfig]) -> argparse.N
     parser.add_argument( # NEW
         "--send-raw", # NEW
         metavar="\"COMMAND\"", # NEW
-        help="Send a raw command to a running PyRC instance and exit." # NEW
+        help="Send a raw command to a running tIRC instance and exit." # NEW
     ) # NEW
 
     return parser.parse_args()
@@ -174,7 +176,7 @@ def main():
 
     # Setup logging using the config object
     setup_logging(app_config)
-    app_logger = logging.getLogger("pyrc.main_app") # This logger should now respect the file handler's level
+    app_logger = logging.getLogger("tirc.main_app") # This logger should now respect the file handler's level
 
     # Log critical config values AFTER logging is set up
     app_logger.info(f"--- Post-setup_logging Config Check ---")
@@ -182,12 +184,12 @@ def main():
     app_logger.info(f"AppConfig.log_level_int: {app_config.log_level_int} (DEBUG is {logging.DEBUG}, INFO is {logging.INFO})")
     app_logger.info(f"AppConfig.disabled_scripts: {app_config.disabled_scripts}")
     # Check the effective level of a logger to ensure it's DEBUG for the file.
-    # The 'pyrc.logic' logger is used by IRCClient_Logic where we expect DEBUG messages.
-    logic_logger_level = logging.getLogger("pyrc.logic").getEffectiveLevel()
-    app_logger.info(f"Effective level of 'pyrc.logic' logger: {logging.getLevelName(logic_logger_level)}")
+    # The 'tirc.logic' logger is used by IRCClient_Logic where we expect DEBUG messages.
+    logic_logger_level = logging.getLogger("tirc.logic").getEffectiveLevel()
+    app_logger.info(f"Effective level of 'tirc.logic' logger: {logging.getLevelName(logic_logger_level)}")
     app_logger.info(f"--- End Post-setup_logging Config Check ---")
 
-    app_logger.info("Starting PyRC application.")
+    app_logger.info("Starting tIRC application.")
 
     # Get the default server config for argument help text
     default_server_conf = None
@@ -207,7 +209,7 @@ def main():
         sys.exit(0) # Exit successfully after sending. # NEW
 
     if args.headless:
-        app_logger.info("Starting PyRC in headless mode.")
+        app_logger.info("Starting tIRC in headless mode.")
         client_headless = IRCClient_Logic(stdscr=None, args=args, config=app_config)
         try:
             # Enable asyncio debug mode for asyncio.run
@@ -229,9 +231,9 @@ def main():
             if client_headless and not client_headless.should_quit.is_set(): # pragma: no cover
                  app_logger.info("Headless main() finally: Requesting shutdown as should_quit was not set.")
                  client_headless.request_shutdown("Headless mode normal exit from main()")
-            app_logger.info("PyRC headless mode shutdown sequence in main() complete.")
+            app_logger.info("tIRC headless mode shutdown sequence in main() complete.")
     else:
-        app_logger.info("Starting PyRC in UI mode.")
+        app_logger.info("Starting tIRC in UI mode.")
         # Define a synchronous wrapper for curses.wrapper
         def curses_wrapper_with_args(stdscr):
             main_ui_logger.debug("curses_wrapper_with_args: Creating new event loop.")
@@ -328,7 +330,7 @@ async def send_remote_command(command: str, config: AppConfig): # NEW
     ipc_port = config.ipc_port # Get port from config # NEW
     try: # NEW
         reader, writer = await asyncio.open_connection('127.0.0.1', ipc_port) # NEW
-        print(f"Connecting to running PyRC instance on port {ipc_port}...") # NEW
+        print(f"Connecting to running tIRC instance on port {ipc_port}...") # NEW
         # Ensure the command is correctly formatted with a newline # NEW
         writer.write(command.encode() + b'\n') # NEW
         await writer.drain() # NEW
@@ -336,8 +338,8 @@ async def send_remote_command(command: str, config: AppConfig): # NEW
         writer.close() # NEW
         await writer.wait_closed() # NEW
     except ConnectionRefusedError: # NEW
-        print("Error: Could not connect to a running PyRC instance.", file=sys.stderr) # NEW
-        print("Please ensure PyRC is running.", file=sys.stderr) # NEW
+        print("Error: Could not connect to a running tIRC instance.", file=sys.stderr) # NEW
+        print("Please ensure tIRC is running.", file=sys.stderr) # NEW
         raise # NEW
 
 if __name__ == "__main__":

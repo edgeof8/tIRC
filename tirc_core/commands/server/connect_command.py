@@ -1,13 +1,13 @@
 import logging
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from pyrc_core.config_defs import DEFAULT_PORT, DEFAULT_SSL_PORT
-from pyrc_core.state_manager import ConnectionInfo # Import ConnectionInfo
+from tirc_core.config_defs import DEFAULT_PORT, DEFAULT_SSL_PORT
+from tirc_core.state_manager import ConnectionInfo # Import ConnectionInfo
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.server.connect")
+logger = logging.getLogger("tirc.commands.server.connect")
 
 COMMAND_DEFINITIONS = [
     {
@@ -67,6 +67,15 @@ async def _parse_connect_args_internal(client: "IRCClient_Logic", args_str: str)
     if new_port is None:
         new_port = DEFAULT_SSL_PORT if new_ssl else DEFAULT_PORT
 
+    # Ensure new_port is not None at this point if we are returning a tuple
+    if new_port is None: # Should not happen with the default logic above, but as a safeguard
+        await client.add_message(
+            "Error: Could not determine port for connection.",
+            client.ui.colors["error"],
+            context_name=client.context_manager.active_context_name or "Status",
+        )
+        return None
+
     return new_server_host, new_port, new_ssl
 
 async def handle_connect_command(client: "IRCClient_Logic", args_str: str):
@@ -82,7 +91,7 @@ async def handle_connect_command(client: "IRCClient_Logic", args_str: str):
     # Create a temporary ConnectionInfo object and set it in the StateManager
     # This will allow IRCClient_Logic's properties and network_handler to pick up the new values
     conn_info = client.state_manager.get_connection_info()
-    current_nick = conn_info.nick if conn_info else "PyRC" # Use existing nick or default
+    current_nick = conn_info.nick if conn_info else "tIRC" # Use existing nick or default
 
     temp_conn_info = ConnectionInfo(
         server=new_server_host,

@@ -1,57 +1,66 @@
 # commands/ui/userlist_scroll_command.py
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.ui.userlist_scroll")
+logger = logging.getLogger("tirc.commands.ui.userlist_scroll")
 
 COMMAND_DEFINITIONS = [
     {
         "name": "userlistscroll",
         "handler": "handle_userlist_scroll_command",
         "help": {
-            "usage": "/userlistscroll [up|down|pageup|pagedown|top|bottom|offset]",
-            "description": "Scrolls the user list in the current channel window.",
-            "aliases": ["u"]
-        },
-        "is_async": True
+            "usage": "/userlistscroll <up|down|pageup|pagedown|top|bottom> [lines]",
+            "description": "Scrolls the user list in the sidebar of the active channel window.",
+            "aliases": ["us", "ulscroll", "scrollusers"]
+        }
     }
 ]
 
 async def handle_userlist_scroll_command(client: "IRCClient_Logic", args_str: str):
-    """Handle the /userlistscroll or /u command"""
-    active_ctx = client.context_manager.get_active_context()
-    active_context_name = client.context_manager.active_context_name or "Status"
-    error_color_attr = client.ui.colors.get("error", 0)
+    """Handles the /userlistscroll command."""
+    if client.is_headless or not hasattr(client, 'ui'):
+        await client.add_status_message("User list scrolling is not available in this mode.", "error")
+        return
 
-    if not active_ctx or active_ctx.type != "channel":
-        await client.add_message(
-            "User list scroll is only available in channel windows.",
-            error_color_attr,
-            context_name=active_context_name,
+    parts = args_str.strip().lower().split()
+    direction: Optional[str] = None
+    lines: Optional[int] = None
+    active_context_name = client.context_manager.active_context_name or "Status"
+
+    if not parts:
+        await client.add_status_message(
+            "Usage: /userlistscroll <up|down|pageup|pagedown|top|bottom> [lines]", "error" # Corrected color_key
         )
         return
 
-    if not args_str: # Default to pagedown if no args
-        client.ui.scroll_user_list("pagedown")
-    else:
+    direction = parts[0]
+    valid_directions = ["up", "down", "pageup", "pagedown", "top", "bottom"]
+    if direction not in valid_directions:
+        await client.add_message(
+            f"Invalid scroll direction '{direction}'. Must be one of: {', '.join(valid_directions)}.",
+            client.ui.colors.get("error", 0),
+            context_name=active_context_name
+        )
+        return
+
+    if len(parts) > 1:
         try:
-            arg_lower = args_str.lower()
-            if arg_lower in ["up", "down", "pageup", "pagedown", "top", "bottom"]:
-                client.ui.scroll_user_list(arg_lower)
-            else: # Try to parse as number
-                offset = int(args_str)
-                if offset > 0:
-                    client.ui.scroll_user_list("down", lines_arg=offset)
-                elif offset < 0:
-                    client.ui.scroll_user_list("up", lines_arg=abs(offset))
-                # If offset is 0, do nothing or treat as error? Current scroll_user_list might handle it.
+            lines = int(parts[1])
         except ValueError:
             await client.add_message(
-                f"Invalid argument for userlistscroll: '{args_str}'. Use up, down, pageup, pagedown, top, bottom, or a number.",
-                error_color_attr,
-                context_name=active_ctx.name,
+                f"Invalid line count '{parts[1]}'. Must be an integer.",
+                client.ui.colors.get("error", 0),
+                context_name=active_context_name
             )
-    client.ui_needs_update.set()
+            return
+
+    # The scroll_user_list method is on UIManager (client.ui) and is synchronous
+    if hasattr(client.ui, 'scroll_user_list') and callable(client.ui.scroll_user_list):
+        client.ui.scroll_user_list(direction, lines_arg=lines) # Removed await, lines_arg is Optional[int]
+        # UIManager.scroll_user_list should set client.ui_needs_update.set()
+    else:
+        logger.warning("UIManager does not have a callable scroll_user_list method.")
+        await client.add_status_message("UI component for user list scrolling not available.", "error")

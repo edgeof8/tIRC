@@ -1,17 +1,17 @@
-# pyrc_core/app_config.py
+# tirc_core/app_config.py
 import configparser
 import os
 import logging
 import fnmatch
 from typing import Type, Any, List, Set, Dict, Optional
-from pyrc_core.config_defs import *
+from tirc_core.config_defs import *
 
-logger = logging.getLogger("pyrc.config")
+logger = logging.getLogger("tirc.config")
 
 class AppConfig:
     def __init__(self, config_file_path: Optional[str] = None):
         self.BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.CONFIG_FILE_NAME = "pyterm_irc_config.ini"
+        self.CONFIG_FILE_NAME = "tirc_config.ini"
         self.CONFIG_DIR = os.path.join(self.BASE_DIR, "config")
         os.makedirs(self.CONFIG_DIR, exist_ok=True)
         self.CONFIG_FILE_PATH = config_file_path or os.path.join(self.CONFIG_DIR, self.CONFIG_FILE_NAME)

@@ -1,11 +1,11 @@
+# commands/information/list_command.py
 import logging
-import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.information.list")
+logger = logging.getLogger("tirc.commands.information.list")
 
 COMMAND_DEFINITIONS = [
     {
@@ -13,45 +13,36 @@ COMMAND_DEFINITIONS = [
         "handler": "handle_list_command",
         "help": {
             "usage": "/list [pattern]",
-            "description": "Lists channels on the server, optionally filtering by a pattern. Results appear in a new temporary window.",
+            "description": "Lists channels on the server, optionally filtered by a pattern.",
             "aliases": []
         }
     }
 ]
 
 async def handle_list_command(client: "IRCClient_Logic", args_str: str):
+    """Handles the /list command."""
     pattern = args_str.strip()
+    active_context_name = client.context_manager.active_context_name or "Status"
 
-    unique_list_context_name = f"##LIST_RESULTS_{time.time_ns()}##"
-    logger.debug(
-        f"Generated unique context name for /list: {unique_list_context_name}"
-    )
+    # The LIST command itself doesn't create a new persistent context.
+    # Results are typically shown in the Status window or a temporary "Server List" window.
+    # For simplicity, we'll show it in the Status window.
+    # A more advanced implementation might create a temporary, non-joinable context.
 
-    created = client.context_manager.create_context(
-        unique_list_context_name, context_type="list_results"
-    )
+    list_results_context = "Status" # Or a dedicated "ServerList" context if one exists/is created
 
-    if created:
-        logger.info(
-            f"Created temporary context '{unique_list_context_name}' for /list results."
-        )
-        client.active_list_context_name = unique_list_context_name
-        logger.debug(
-            f"Set active_list_context_name to {client.active_list_context_name}"
-        )
-
-        # Attempt to switch focus to the new temporary context.
-        await client.switch_active_context(unique_list_context_name)
-
+    if pattern:
+        await client.network_handler.send_raw(f"LIST {pattern}")
+        await client.add_message(f"Requesting channel list matching '{pattern}'...", client.ui.colors.get("system", 0), context_name=list_results_context)
     else:
-        logger.error(
-            f"Failed to create temporary context '{unique_list_context_name}' for /list. Output will go to Status."
-        )
-        client.active_list_context_name = None
-        await client.add_message(
-            "Error: Could not create list results window. Output will appear in Status.",
-            client.ui.colors["error"],
-            context_name="Status"
-        )
+        await client.network_handler.send_raw("LIST")
+        await client.add_message("Requesting full channel list...", client.ui.colors.get("system", 0), context_name=list_results_context)
 
-    await client.network_handler.send_raw(f"LIST {pattern}" if pattern else "LIST")
+    # If the results are shown in a different context than active, switch to it.
+    if active_context_name != list_results_context:
+        # This assumes 'list_results_context' is a valid, existing context name.
+        # If "ServerList" is used, ensure it's created by ContextManager.
+        await client.view_manager.switch_active_context(list_results_context) # Corrected call
+
+    # Server will respond with RPL_LISTSTART (321), RPL_LIST (322), RPL_LISTEND (323).
+    # These are handled by irc_numeric_handlers.py, which should add messages to the appropriate context.

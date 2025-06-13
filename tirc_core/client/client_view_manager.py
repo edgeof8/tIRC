@@ -1,14 +1,14 @@
-# pyrc_core/client/client_view_manager.py
+# tirc_core/client/client_view_manager.py
 import asyncio
 import logging
 from typing import TYPE_CHECKING, Optional, List, Dict, Any, cast
 
-from pyrc_core.client.ui_manager import UIManager # For runtime check
+from tirc_core.client.ui_manager import UIManager # For runtime check
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.view_manager")
+logger = logging.getLogger("tirc.view_manager")
 
 class ClientViewManager:
     def __init__(self, client: "IRCClient_Logic"):

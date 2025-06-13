@@ -1,289 +1,281 @@
+# tirc_core/irc/handlers/state_change_handlers.py
 import logging
-from typing import TYPE_CHECKING, Optional, List, Dict, Any # Ensure all needed types are here
+from typing import TYPE_CHECKING, Optional, List, Dict, Any
+
+from tirc_core.context_manager import ChannelJoinStatus
+from tirc_core.features.triggers.trigger_manager import ActionType
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    from pyrc_core.irc.irc_message import IRCMessage
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.irc.irc_message import IRCMessage
 
-logger = logging.getLogger("pyrc.handlers.state_change")
+logger = logging.getLogger("tirc.handlers.state_change")
 
-async def handle_nick_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
-    """Handles NICK messages."""
-    old_nick = parsed_msg.source_nick
-    new_nick = parsed_msg.trailing
-    source_full_ident = parsed_msg.prefix
+async def _handle_nick(client: "IRCClient_Logic", msg: "IRCMessage", raw_line: str, params: list, trailing: Optional[str]):
+    """Handles NICK messages from the server."""
+    old_nick = msg.source_nick
+    new_nick = trailing or (params[0] if params else None)
 
     if not old_nick or not new_nick:
-        logger.warning(f"Malformed NICK message: {raw_line.strip()}")
+        logger.warning(f"Received NICK without old or new nick: {raw_line.strip()}")
         return
 
-    # Check if this is our own nick change
-    conn_info = client.state_manager.get_connection_info()
-    is_our_nick_change = old_nick.lower() == (conn_info.nick.lower() if conn_info else "")
+    is_self = old_nick.lower() == client.nick.lower() if client.nick else False
 
-    if is_our_nick_change:
-        # Update our nick
+    for context_name, context_obj in client.context_manager.contexts.items():
+        if context_obj.type == "channel" and old_nick in context_obj.users:
+            user_prefix = context_obj.users.pop(old_nick, "")
+            context_obj.users[new_nick] = user_prefix
+            logger.debug(f"Updated nick in channel {context_name}: {old_nick} -> {new_nick}")
+        elif context_obj.type == "query" and context_obj.name.lower() == old_nick.lower():
+            logger.info(f"Query window for {old_nick} needs rename to {new_nick}. Manual /close and /query may be needed.")
+
+    if is_self:
         conn_info = client.state_manager.get_connection_info()
-        if not conn_info:
-            logger.error("Cannot handle nick change - no connection info")
-            return
-
-        old_nick_val = conn_info.nick
-        conn_info.nick = new_nick
-        await client.state_manager.set_connection_info(conn_info)
-        logger.info(f"Our nick changed from {old_nick_val} to {new_nick}")
-
-        # Update nick in all contexts
-        for context in client.context_manager.contexts.values():
-            if context.type == "channel":
-                if old_nick_val in context.users:
-                    context.users[new_nick] = context.users.pop(old_nick_val)
-                    if old_nick_val in context.user_prefixes:
-                        context.user_prefixes[new_nick] = context.user_prefixes.pop(
-                            old_nick_val
-                        )
-
-        # Add message to status
-        await client.add_message(
-            text=f"Nick changed from {old_nick_val} to {new_nick}",
-            color_pair_id=client.ui.colors["system_message"],
-            context_name="Status",
-        )
-
-        conn_info = client.state_manager.get_connection_info()
-        if conn_info and conn_info.last_attempted_nick_change is not None and \
-           conn_info.last_attempted_nick_change.lower() == new_nick.lower():
-            logger.info(f"Successful user-initiated nick change to {new_nick} confirmed.")
-            conn_info.last_attempted_nick_change = None
+        if conn_info:
+            conn_info.nick = new_nick
             await client.state_manager.set_connection_info(conn_info)
-
-        # Dispatch CLIENT_NICK_CHANGED event
-        if hasattr(client, "event_manager") and client.event_manager:
-            await client.event_manager.dispatch_client_nick_changed(
-                old_nick=old_nick_val, new_nick=new_nick, raw_line=raw_line
-            )
+        logger.info(f"Own nick changed: {old_nick} -> {new_nick}")
+        await client.add_status_message(f"Your nickname is now {new_nick}", "system_highlight")
+        await client.event_manager.dispatch_event("CLIENT_NICK_CHANGED", {"old_nick": old_nick, "new_nick": new_nick}, raw_line)
     else:
-        # Handle other users' nick changes
-        for context in client.context_manager.contexts.values():
-            if context.type == "channel":
-                if old_nick in context.users:
-                    context.users[new_nick] = context.users.pop(old_nick)
-                    if old_nick in context.user_prefixes:
-                        context.user_prefixes[new_nick] = context.user_prefixes.pop(
-                            old_nick
-                        )
+        for context_name, context_obj in client.context_manager.contexts.items():
+            if context_obj.type == "channel" and new_nick in context_obj.users:
+                await client.add_message(f"{old_nick} is now known as {new_nick}", client.ui.colors.get("nick_change", 0), context_name)
 
-                    # Add message to channel
-                    await client.add_message(
-                        text=f"{old_nick} is now known as {new_nick}",
-                        color_pair_id=client.ui.colors["system_message"],
-                        context_name=context.name,
-                    )
+    await client.event_manager.dispatch_event(
+        "NICK",
+        {"old_nick": old_nick, "new_nick": new_nick, "userhost": msg.prefix, "is_self": is_self, "source_nick": msg.source_nick},
+        raw_line
+    )
 
-    # Dispatch general NICK event
-    if hasattr(client, "event_manager") and client.event_manager:
-        await client.event_manager.dispatch_nick(
-            old_nick=old_nick, new_nick=new_nick,
-            userhost=source_full_ident, # Ensure this is the correct var
-            is_self=is_our_nick_change, raw_line=raw_line
+    if client.trigger_manager:
+        trigger_action = client.trigger_manager.process_trigger(
+            "NICK",
+            {"old_nick": old_nick, "new_nick": new_nick, "userhost": msg.prefix, "is_self": is_self, "raw_line": raw_line, "source_nick": msg.source_nick}
         )
-async def handle_mode_message(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
-    """Handles MODE messages."""
-    source_nick = parsed_msg.source_nick
-    source_full_ident = parsed_msg.prefix
-    params = parsed_msg.params
+        if trigger_action:
+            if trigger_action["type"] == ActionType.COMMAND:
+                await client.command_handler.process_user_command(trigger_action["content"])
+            elif trigger_action["type"] == ActionType.PYTHON and trigger_action.get("code"):
+                await client.execute_python_trigger_code(trigger_action["code"], trigger_action["event_data"])
+            elif trigger_action["type"] == ActionType.PYTHON:
+                 logger.warning(f"Python trigger action for NICK has no code: {trigger_action}")
 
+
+async def _handle_mode(client: "IRCClient_Logic", msg: "IRCMessage", raw_line: str, params: list, trailing: Optional[str]):
     if not params:
-        logger.warning(f"MODE without parameters: {raw_line.strip()}")
+        logger.warning(f"Received MODE without parameters: {raw_line.strip()}")
         return
 
     target = params[0]
-    mode_string = params[1] if len(params) > 1 else ""
-    mode_params = params[2:] if len(params) > 2 else []
+    modes_and_mode_params_str = " ".join(params[1:])
+    if trailing:
+        modes_and_mode_params_str += f" {trailing}"
 
-    # Parse mode changes
+    setter_nick = msg.source_nick or client.server
+    setter_userhost = msg.prefix
+
+    mode_parts = modes_and_mode_params_str.split()
+    mode_string_from_server = mode_parts[0] if mode_parts else ""
+    mode_params_from_server = mode_parts[1:]
+
+    # TODO: Implement proper mode string parsing.
+    # CapNegotiator does not handle this. Mode parsing is complex and IRC server specific.
+    # For now, parsed_modes will be empty. Scripts and UI will have to rely on raw strings.
     parsed_modes: List[Dict[str, Any]] = []
-    current_operation: Optional[str] = None
-    param_index = 0
+    # Example of what a proper parser might produce:
+    # parsed_modes = client.mode_parser.parse(mode_string_from_server, mode_params_from_server)
 
-    for char in mode_string:
-        if char in ("+", "-"):
-            current_operation = char
-            continue
+    logger.info(f"MODE received: Target='{target}', Modes='{modes_and_mode_params_str}', Setter='{setter_nick}'")
+    await client.add_status_message(f"Mode [{target} {modes_and_mode_params_str}] by {setter_nick}", "mode_change")
 
-        mode_info: Dict[str, Any] = {"operation": current_operation, "mode": char, "param": None}
-
-        # Check if this mode requires a parameter
-        # Common modes requiring parameters: b (ban), k (key/password), l (limit), v (voice), h (halfop), o (op), a (admin), q (owner)
-        # This list might need adjustment based on specific IRCd features.
-        if char in ("b", "k", "l", "v", "h", "o", "a", "q"): # Extended list based on common usage
-            if param_index < len(mode_params):
-                mode_info["param"] = mode_params[param_index]
-                param_index += 1
-
-        parsed_modes.append(mode_info)
-
-    # Handle channel modes
-    if target.startswith(("#", "&", "!", "+")): # Common channel prefixes
+    if client.context_manager.get_context_type(target) == "channel":
         context = client.context_manager.get_context(target)
-        if context and context.type == "channel":
-            # Update channel modes
-            for mode in parsed_modes:
-                if mode["operation"] == "+":
-                    if mode["mode"] not in context.modes:
-                        context.modes.append(mode["mode"])
-                elif mode["operation"] == "-":
-                    try:
-                        context.modes.remove(mode["mode"])
-                    except ValueError:
-                        pass  # Mode not in list, ignore
-
-            # Format mode string for display
-            mode_str_display = mode_string
-            if mode_params:
-                mode_str_display += " " + " ".join(mode_params)
-
-            # Add message to channel
-            await client.add_message(
-                text=f"Mode {target} [{mode_str_display}] by {source_nick}",
-                color_pair_id=client.ui.colors["system_message"],
-                context_name=target,
+        if context:
+            current_channel_modes = list(context.modes)
+            await client.event_manager.dispatch_event(
+                "CHANNEL_MODE_APPLIED",
+                {
+                    "channel": target,
+                    "setter_nick": setter_nick,
+                    "setter_userhost": setter_userhost,
+                    "mode_changes": parsed_modes,
+                    "current_channel_modes": current_channel_modes,
+                    "raw_mode_string": modes_and_mode_params_str
+                },
+                raw_line
             )
+            await client.add_message(f"Mode [{target} {modes_and_mode_params_str}] by {setter_nick}", client.ui.colors.get("mode_change",0), target)
 
-            # Dispatch CHANNEL_MODE_APPLIED event
-            if hasattr(client, "event_manager") and client.event_manager:
-                await client.event_manager.dispatch_channel_mode_applied(
-                    channel=target, setter_nick=source_nick, setter_userhost=source_full_ident,
-                    mode_changes=parsed_modes, current_channel_modes=list(context.modes),
-                    raw_line=raw_line
-                )
+    await client.event_manager.dispatch_event(
+        "MODE",
+        {
+            "target_name": target,
+            "setter_nick": setter_nick,
+            "setter_userhost": setter_userhost,
+            "mode_string": mode_string_from_server,
+            "mode_params": mode_params_from_server,
+            "parsed_modes": parsed_modes,
+            "source_nick": msg.source_nick
+        },
+        raw_line
+    )
 
-    # Handle user modes
-    conn_info = client.state_manager.get_connection_info()
-    if conn_info and target.lower() == conn_info.nick.lower():
-        # Update user modes
-        for mode in parsed_modes:
-            if mode["operation"] == "+":
-                current_modes = client.state_manager.get("user_modes", [])
-                if mode["mode"] not in current_modes:
-                    client.state_manager.set("user_modes", current_modes + [mode["mode"]]) # type: ignore[reportUnusedCoroutine]
-            elif mode["operation"] == "-":
-                current_modes = client.state_manager.get("user_modes", [])
-                if mode["mode"] in current_modes:
-                    client.state_manager.set("user_modes", [m for m in current_modes if m != mode["mode"]]) # type: ignore[reportUnusedCoroutine]
-
-        # Format mode string for display
-        mode_str_display = mode_string
-        if mode_params:
-            mode_str_display += " " + " ".join(mode_params)
-
-        # Add message to status
-        await client.add_message(
-            text=f"Mode {conn_info.nick} [{mode_str_display}] by {source_nick}",
-            color_pair_id=client.ui.colors["system_message"],
-            context_name="Status",
+    if client.trigger_manager:
+        trigger_action = client.trigger_manager.process_trigger(
+            "MODE",
+            {
+                "target": target, "setter": setter_nick, "setter_userhost": setter_userhost,
+                "mode_string": mode_string_from_server, "mode_params": mode_params_from_server,
+                "parsed_modes": parsed_modes, "raw_line": raw_line, "source_nick": msg.source_nick
+            }
         )
+        if trigger_action:
+            if trigger_action["type"] == ActionType.COMMAND:
+                await client.command_handler.process_user_command(trigger_action["content"])
+            elif trigger_action["type"] == ActionType.PYTHON and trigger_action.get("code"):
+                await client.execute_python_trigger_code(trigger_action["code"], trigger_action["event_data"])
+            elif trigger_action["type"] == ActionType.PYTHON:
+                 logger.warning(f"Python trigger action for MODE has no code: {trigger_action}")
 
-    # Dispatch general MODE event
-    if hasattr(client, "event_manager") and client.event_manager:
-        await client.event_manager.dispatch_mode(
-            target_name=target, setter_nick=source_nick, setter_userhost=source_full_ident,
-            mode_string=mode_string, mode_params=mode_params, parsed_modes=parsed_modes,
-            raw_line=raw_line
-        )
-async def handle_topic_command_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
-    """Handles TOPIC command messages."""
-    # raw_line is 'line' from the original handle_server_message context
-    channel = parsed_msg.params[0] if parsed_msg.params else None
-    new_topic = parsed_msg.trailing
 
-    if channel:
-        if new_topic is not None:
-            message = f"Topic for {channel} changed to: {new_topic}"
-            if parsed_msg.source_nick:
-                message = f"{parsed_msg.source_nick} changed topic for {channel} to: {new_topic}"
-        else:
-            message = f"Topic for {channel} cleared."
+async def _handle_topic(client: "IRCClient_Logic", msg: "IRCMessage", raw_line: str, params: list, trailing: Optional[str]):
+    channel = params[0] if params else None
+    new_topic = trailing
 
-        client.context_manager.update_topic(
-            channel, new_topic if new_topic is not None else ""
-        )
-        await client.add_message(
-            text=message, color_pair_id=client.ui.colors["system_message"], context_name=channel
-        )
-
-        # Dispatch TOPIC event
-        if hasattr(client, "event_manager") and client.event_manager:
-            await client.event_manager.dispatch_topic(
-                nick=parsed_msg.source_nick, userhost=parsed_msg.prefix,
-                channel=channel, topic=(new_topic if new_topic is not None else ""),
-                raw_line=raw_line # Pass raw_line here
-            )
-    else:
-        logger.warning(f"Malformed TOPIC message (no channel): {raw_line.strip()}")
-
-async def handle_chghost_command_event(client: "IRCClient_Logic", parsed_msg: "IRCMessage", raw_line: str):
-    """Handles CHGHOST command messages."""
-    # raw_line is 'line' from the original handle_server_message context
-    src_nick = parsed_msg.source_nick
-    new_ident = parsed_msg.params[0] if len(parsed_msg.params) > 0 else None # Check param length
-    new_host = parsed_msg.params[1] if len(parsed_msg.params) > 1 else None # Check param length, CHGHOST has user and host in params
-
-    # Note: Some servers might send CHGHOST with new_ident in params[0] and new_host in params[1]
-    # Others might use source_nick for the user and params[0] for new_user, params[1] for new_host
-    # The original code used src_nick, params[0] (as new_ident) and trailing (as new_host)
-    # Let's adjust based on common CHGHOST format: USER newuser newhost
-    # If parsed_msg.params has two elements, they are likely new_ident and new_host
-    # If it has one, it might be just new_host and ident is implied from source_nick
-    # For now, sticking to a more common interpretation:
-    # Params: <user> <newhost> (src_nick is the target user, params[0] is new ident, params[1] is new host)
-    # Or: <newident> <newhost> (src_nick is the target user, params[0] is new ident, params[1] is new host)
-    # The original code had:
-    # new_ident = parsed_msg.params[0] if parsed_msg.params else ""
-    # new_host = parsed_msg.trailing if parsed_msg.trailing else ""
-    # This seems less common for CHGHOST.
-    # Reverting to a structure that matches the original parsing intention for CHGHOST if it was:
-    # :nick!olduser@oldhost CHGHOST newuser newhost
-    # Then params[0] = newuser, params[1] = newhost
-    # If it was :nick!olduser@oldhost CHGHOST newhost (and newuser is taken from nick)
-    # This needs clarification based on server behavior.
-    # For now, let's assume params are [new_ident, new_host] if present.
-
-    # Corrected logic based on typical CHGHOST: :nick!oldident@oldhost CHGHOST newident newhost
-    # source_nick is the user whose host is changing.
-    # params[0] is the new ident (username part).
-    # params[1] is the new hostname.
-
-    if len(parsed_msg.params) >= 2:
-        new_ident = parsed_msg.params[0]
-        new_host = parsed_msg.params[1]
-    else:
-        logger.warning(f"Malformed CHGHOST message (not enough params): {raw_line.strip()}")
-        # Optionally, could try to infer from trailing if that's a server variant
-        # For now, strict parsing based on common format.
+    if not channel:
+        logger.warning(f"Received TOPIC/RPL_TOPIC without channel: {raw_line.strip()}")
         return
 
+    setter_nick = msg.source_nick or client.server
+    setter_userhost = msg.prefix
 
-    if src_nick and new_ident and new_host:
-        logger.info(f"Host change for {src_nick}: {new_ident}@{new_host}")
-        # Update user's ident and host in all contexts where they exist
-        # This part is tricky as we don't store full user@host per user in channel lists directly.
-        # The event dispatch is the primary action here.
-        # UI update might rely on seeing the new prefix in subsequent messages.
-        for ctx_name, ctx_obj in client.context_manager.contexts.items():
-            if ctx_obj.type == "channel" and src_nick in ctx_obj.users:
-                # The user's presence in the channel is already tracked.
-                # Actual update of userhost might happen implicitly via future messages
-                # or a WHOIS/WHO call if needed.
-                pass
+    client.context_manager.update_topic(channel, new_topic or "")
 
-        # Dispatch CHGHOST event
-        if hasattr(client, "event_manager") and client.event_manager:
-            await client.event_manager.dispatch_chghost(
-                nick=src_nick, new_ident=new_ident, new_host=new_host,
-                old_userhost=parsed_msg.prefix, # old userhost is prefix before change
-                raw_line=raw_line # Pass raw_line here
-            )
+    topic_text = f"Topic for {channel} is: {new_topic}" if new_topic else f"No topic set for {channel}."
+    if msg.command.upper() == "TOPIC":
+        topic_text = f"{setter_nick} changed topic for {channel} to: {new_topic}"
+
+    await client.add_message(topic_text, client.ui.colors.get("topic_change",0), channel)
+    if client.context_manager.active_context_name != channel :
+         await client.add_status_message(f"Topic for {channel} by {setter_nick}: {new_topic}", "topic_notify")
+
+    await client.event_manager.dispatch_event(
+        "TOPIC",
+        {"channel": channel, "topic": new_topic, "setter_nick": setter_nick, "setter_userhost": setter_userhost, "source_nick": msg.source_nick},
+        raw_line
+    )
+
+    if client.trigger_manager:
+        trigger_action = client.trigger_manager.process_trigger(
+            "TOPIC",
+            {"channel": channel, "topic": new_topic, "setter": setter_nick, "setter_userhost": setter_userhost, "raw_line": raw_line, "source_nick": msg.source_nick}
+        )
+        if trigger_action:
+            if trigger_action["type"] == ActionType.COMMAND:
+                await client.command_handler.process_user_command(trigger_action["content"])
+            elif trigger_action["type"] == ActionType.PYTHON and trigger_action.get("code"):
+                await client.execute_python_trigger_code(trigger_action["code"], trigger_action["event_data"])
+            elif trigger_action["type"] == ActionType.PYTHON:
+                logger.warning(f"Python trigger action for TOPIC has no code: {trigger_action}")
+
+
+async def _handle_invite(client: "IRCClient_Logic", msg: "IRCMessage", raw_line: str, params: list, trailing: Optional[str]):
+    inviting_nick = msg.source_nick
+    invited_nick = params[0] if params else None
+    channel = trailing or (params[1] if len(params) > 1 else None)
+
+    if not inviting_nick or not invited_nick or not channel:
+        logger.warning(f"Received malformed INVITE: {raw_line.strip()}")
+        return
+
+    is_self_invited = invited_nick.lower() == client.nick.lower() if client.nick else False
+
+    if is_self_invited:
+        message = f"{inviting_nick} invited you to join {channel}. Type /join {channel}"
+        await client.add_status_message(message, "invite_notify")
     else:
-        # This condition might be hit if params were not as expected.
-        logger.warning(f"Could not process CHGHOST due to missing info (src_nick, new_ident, or new_host): {raw_line.strip()}")
+        logger.info(f"Received INVITE for {invited_nick} to {channel} from {inviting_nick}")
+
+    await client.event_manager.dispatch_event(
+        "INVITE",
+        {"inviting_nick": inviting_nick, "invited_nick": invited_nick, "channel": channel, "userhost": msg.prefix, "source_nick": msg.source_nick},
+        raw_line
+    )
+
+    if client.trigger_manager:
+        trigger_action = client.trigger_manager.process_trigger(
+            "INVITE",
+            {"inviter": inviting_nick, "invited": invited_nick, "channel": channel, "userhost": msg.prefix, "raw_line": raw_line, "source_nick": msg.source_nick}
+        )
+        if trigger_action:
+            if trigger_action["type"] == ActionType.COMMAND:
+                await client.command_handler.process_user_command(trigger_action["content"])
+            elif trigger_action["type"] == ActionType.PYTHON and trigger_action.get("code"):
+                await client.execute_python_trigger_code(trigger_action["code"], trigger_action["event_data"])
+            elif trigger_action["type"] == ActionType.PYTHON:
+                logger.warning(f"Python trigger action for INVITE has no code: {trigger_action}")
+
+async def _handle_chghost(client: "IRCClient_Logic", msg: "IRCMessage", raw_line: str, params: List[str], trailing: Optional[str]):
+    old_nick_from_prefix = msg.source_nick
+    old_userhost_from_prefix = msg.prefix
+
+    if not old_nick_from_prefix or not old_userhost_from_prefix:
+        logger.warning(f"CHGHOST received without a full prefix: {raw_line.strip()}")
+        return
+
+    if len(params) == 2:
+        target_nick = old_nick_from_prefix
+        new_ident = params[0]
+        new_host = params[1]
+    elif len(params) == 3:
+        target_nick = params[0]
+        new_ident = params[1]
+        new_host = params[2]
+        if target_nick.lower() != old_nick_from_prefix.lower():
+            logger.warning(f"CHGHOST prefix nick {old_nick_from_prefix} differs from param nick {target_nick}. Using prefix nick.")
+            target_nick = old_nick_from_prefix
+    else:
+        logger.warning(f"Malformed CHGHOST message: {raw_line.strip()}")
+        return
+
+    new_full_userhost = f"{new_ident}@{new_host}"
+    logger.info(f"User {target_nick} changed host: {old_userhost_from_prefix} -> {target_nick}!{new_full_userhost}")
+
+    for context in client.context_manager.contexts.values():
+        if context.type == "channel" and target_nick in context.users:
+            pass
+
+    message_to_display = f"{target_nick} is now {target_nick}!{new_full_userhost} (was {old_userhost_from_prefix})"
+    for channel_name in client.context_manager.get_all_channels():
+        if target_nick in client.context_manager.get_users(channel_name):
+            await client.add_message(message_to_display, client.ui.colors.get("system_dim", 0), channel_name)
+
+    await client.event_manager.dispatch_event(
+        "CHGHOST",
+        {
+            "nick": target_nick,
+            "new_ident": new_ident,
+            "new_host": new_host,
+            "old_userhost": old_userhost_from_prefix,
+            "source_nick": msg.source_nick
+        },
+        raw_line
+    )
+
+    if client.trigger_manager:
+        trigger_action = client.trigger_manager.process_trigger(
+            "CHGHOST",
+            {
+                "nick": target_nick, "new_ident": new_ident, "new_host": new_host,
+                "old_userhost": old_userhost_from_prefix, "raw_line": raw_line, "source_nick": msg.source_nick
+            }
+        )
+        if trigger_action:
+            if trigger_action["type"] == ActionType.COMMAND:
+                await client.command_handler.process_user_command(trigger_action["content"])
+            elif trigger_action["type"] == ActionType.PYTHON and trigger_action.get("code"):
+                await client.execute_python_trigger_code(trigger_action["code"], trigger_action["event_data"])
+            elif trigger_action["type"] == ActionType.PYTHON:
+                logger.warning(f"Python trigger action for CHGHOST has no code: {trigger_action}")

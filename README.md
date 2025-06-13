@@ -1,4 +1,4 @@
-# PyRC - Python Terminal IRC Client
+# tIRC - terminal IRC Client
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
@@ -6,21 +6,21 @@
 
 > 💬 **A modern, modular IRC client built for power users and AI integration**
 
-For detailed documentation, command references, and developer guides, please visit the [**Official PyRC Wiki**](https://github.com/edgeof8/PyRC/wiki).
+For detailed documentation, command references, and developer guides, please visit the [**Official tIRC Wiki**](https://github.com/edgeof8/tIRC/wiki).
 
-![PyRC Screenshot](image.png)
+![tIRC Screenshot](image.png)
 
 ## Quick Start
 
 ```bash
 # Install from PyPI
-pip install pyrc
+pip install tirc
 
 # Run with default settings
-pyrc
+tirc
 
 # Connect to a server directly
-pyrc --connect irc.libera.chat
+tirc --connect irc.libera.chat
 ```
 
 ## 🚀 Core Features
@@ -34,22 +34,22 @@ pyrc --connect irc.libera.chat
 - **IRCv3 Support**: Comprehensive protocol compliance including SASL authentication and message tags.
 - **Centralized State Management**: Persistent sessions and configuration managed by a single source of truth.
 - **DCC Support**: Secure and efficient Direct Client-to-Client file transfers and chat.
-- **Inter-Process Communication (IPC)**: Allows external command-line tools to send commands to a running PyRC instance.
+- **Inter-Process Communication (IPC)**: Allows external command-line tools to send commands to a running tIRC instance.
 
 ## Architecture Overview
 
-PyRC employs a highly modular, event-driven architecture. The `IRCClient_Logic` acts as the central orchestrator, delegating specialized tasks to dedicated managers and coordinators.
+tIRC employs a highly modular, event-driven architecture. The `IRCClient_Logic` acts as the central orchestrator, delegating specialized tasks to dedicated managers and coordinators.
 
 ```mermaid
 graph TD
     subgraph Application Entry
-        A[pyrc.py] --> B{CLI Argument Check}
+        A[tirc.py] --> B{CLI Argument Check}
         B -- headless/UI mode --> C(curses.wrapper)
         B -- --send-raw --> D[IPC Client Call]
         C --> E[asyncio.run(IRCClient_Logic.run_main_loop())]
     end
 
-    subgraph Main PyRC Instance
+    subgraph Main tIRC Instance
         E --> F{IRCClient_Logic (Orchestrator)}
         F -- Manages --> G[ConnectionOrchestrator]
         F -- Manages --> H[ClientShutdownCoordinator]
@@ -85,7 +85,7 @@ graph TD
 
 ## Project Status
 
-**Stable Release** - PyRC is production-ready with regular updates. Recent improvements include:
+**Stable Release** - tIRC is production-ready with regular updates. Recent improvements include:
 
 - Complete migration to asyncio
 - Enhanced state management
@@ -106,15 +106,15 @@ We welcome contributions and feedback!
 ### From PyPI (Recommended)
 
 ```bash
-pip install pyrc
+pip install tirc
 ```
 
 ### From Source
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/edgeof8/PyRC.git
-   cd PyRC
+   git clone https://github.com/edgeof8/tIRC.git
+   cd tIRC
    ```
 2. Set up virtual environment:
    ```bash
@@ -133,11 +133,11 @@ pip install pyrc
 
 ### Standalone Executables
 
-Download pre-built binaries from our [Releases page](https://github.com/edgeof8/PyRC/releases):
+Download pre-built binaries from our [Releases page](https://github.com/edgeof8/tIRC/releases):
 
-- Windows: `pyrc-*.exe`
-- Linux: `pyrc-*-linux`
-- macOS: `pyrc-*-macos`
+- Windows: `tirc-*.exe`
+- Linux: `tirc-*-linux`
+- macOS: `tirc-*-macos`
 
 ## Configuration
 
@@ -145,7 +145,7 @@ Download pre-built binaries from our [Releases page](https://github.com/edgeof8/
 
 ```mermaid
 graph TD
-    A[pyrc.py] --> B("asyncio.run(IRCClient_Logic.run_main_loop())")
+    A[tirc.py] --> B("asyncio.run(IRCClient_Logic.run_main_loop())")
     B --> C{"IRCClient_Logic.run_main_loop() (async)"}
     C -- Creates --> D["asyncio.Task: NetworkHandler.network_loop (async)"]
     C -- Creates --> E["asyncio.Task: InputHandler.async_input_reader (async)"]
@@ -187,22 +187,22 @@ graph TD
 ## File Structure
 
 ```
-PyRC/
+tIRC/
 ├── .git/                       # Git version control data
 ├── .gitignore                  # Specifies intentionally untracked files for Git
-├── image.png                   # Screenshot of PyRC
+├── image.png                   # Screenshot of tIRC
 ├── pyproject.toml              # Build system requirements and project metadata (PEP 518)
-├── pyrc.py                     # Main application entry point
+├── tirc.py                     # Main application entry point
 ├── README.md                   # This file
 ├── requirements.txt            # Project dependencies
 ├── state.json                  # Persistent client state (auto-generated)
 │
 ├── config/                     # Configuration files
-│   ├── pyterm_irc_config.ini   # Main configuration file (user-edited)
-│   ├── pyterm_irc_config.ini.example # Example configuration file
+│   ├── tirc_config.ini   # Main configuration file (user-edited)
+│   ├── tirc_config.ini.example # Example configuration file
 │   └── triggers.json           # Stores persistent user-defined triggers (auto-generated)
 │
-├── data/                       # General static data files (if any beyond pyrc_core/data)
+├── data/                       # General static data files (if any beyond tirc_core/data)
 │
 ├── docs/                       # Project documentation
 │   └── wiki/                   # Wiki documentation pages
@@ -210,13 +210,13 @@ PyRC/
 ├── downloads/                  # Default directory for DCC downloads
 │
 ├── logs/                       # Log files (auto-generated)
-│   ├── pyrc_core.log           # Main application log
-│   └── pyrc_error.log          # Error log (if specific errors are logged separately)
+│   ├── tirc_core.log           # Main application log
+│   └── tirc_error.log          # Error log (if specific errors are logged separately)
 │   └── client_status_messages.log # Log for status window messages
 │   └── dcc.log                 # Log for DCC transfers
 │   └── (channel_name).log      # Per-channel logs if enabled
 │
-├── pyrc_core/                  # Core application package
+├── tirc_core/                  # Core application package
 │   ├── __init__.py             # Package initialization
 ├── app_config.py           # Centralized configuration management (configparser)
 ├── context_manager.py      # Manages chat contexts (channels, queries, server)
@@ -323,7 +323,7 @@ PyRC/
 │       └── set_command.py        # /set
 │       /* Note: trigger_command.py might be in features/triggers now */
 │
-├── data/                   # Static data files for pyrc_core
+├── data/                   # Static data files for tirc_core
 │   └── default_help/
 │       └── command_help.ini  # Fallback help texts for core commands
 │
@@ -390,9 +390,9 @@ PyRC/
 
 # Logs are stored in the following locations (auto-created when needed):
 
-# - Main application log: logs/pyrc_core.log
+# - Main application log: logs/tirc_core.log
 
-# - Error log: logs/pyrc_error.log (if configured)
+# - Error log: logs/tirc_error.log (if configured)
 
 # - Status window log: logs/client_status_messages.log
 
@@ -404,7 +404,7 @@ PyRC/
 
 ## Project Status
 
-**PyRC is a stable and mature IRC client** that continues to evolve with regular updates and improvements. The current focus is on enhancing stability, improving the user experience, and maintaining compatibility with modern IRC networks. Recent development has focused on robust state management, reliable session persistence, and comprehensive IRCv3 support. We welcome contributions and feedback to help make PyRC even better.
+**tIRC is a stable and mature IRC client** that continues to evolve with regular updates and improvements. The current focus is on enhancing stability, improving the user experience, and maintaining compatibility with modern IRC networks. Recent development has focused on robust state management, reliable session persistence, and comprehensive IRCv3 support. We welcome contributions and feedback to help make tIRC even better.
 
 {{ ... }}
 
@@ -422,19 +422,19 @@ This section highlights the significant architectural changes and robustness imp
 - **Exclusive State Management (`StateManager`)**: The sole authority for all runtime state, featuring robust validation, thread-safe access, and automatic persistence to `state.json`.
 - **Dynamic Command System**: The `CommandHandler` now uses `pkgutil` for dynamic discovery and loading of all command modules, making the system more robust and extensible.
 - **Refined Event System**: The `EventManager` is a standalone component responsible for all event dispatching, providing a clearer and more consistent API for scripts and internal components.
-- **Inter-Process Communication (IPC)**: A new `IPCManager` enables a running PyRC instance to receive commands from external processes via a local socket, supporting the `--send-raw` CLI functionality for scripting and remote control.
+- **Inter-Process Communication (IPC)**: A new `IPCManager` enables a running tIRC instance to receive commands from external processes via a local socket, supporting the `--send-raw` CLI functionality for scripting and remote control.
 - **Enhanced IRCv3 Feature Handling**: Improved `CapNegotiator`, `SaslAuthenticator`, and `RegistrationHandler` with comprehensive timeout mechanisms and refined registration flows.
-- **Streamlined DCC Command Handling**: DCC commands are now function-based within `pyrc_core/commands/dcc/`, simplifying their structure.
+- **Streamlined DCC Command Handling**: DCC commands are now function-based within `tirc_core/commands/dcc/`, simplifying their structure.
 - **Enhanced Headless Testing Framework**: Updated headless test scripts align with the `StateManager` and `ScriptAPIHandler` paradigms, using event-driven waits for increased reliability.
 
-These architectural improvements significantly enhance PyRC's stability, maintainability, and extensibility, laying a solid foundation for future development.
+These architectural improvements significantly enhance tIRC's stability, maintainability, and extensibility, laying a solid foundation for future development.
 
 ## Key Features
 
 - **Text-based UI:** Clean and navigable interface using the Python `curses` library (optional for headless operation).
 - **Split-Screen Support:** Horizontal split-screen mode with independent scrolling and context management for each pane.
 - **Multi-Server Configuration & Switching:**
-  - Define multiple server connection profiles in `config/pyterm_irc_config.ini`.
+  - Define multiple server connection profiles in `config/tirc_config.ini`.
   - Switch between configured servers using the `/server <config_name>` command (now with event-driven disconnect handling).
 - **Channel and Query Windows:** Separate, consistently managed contexts for channels (case-insensitive handling) and private messages.
 - **Intuitive UI Flow:** The client starts in the "Status" window and reliably switches to the first auto-joined channel upon successful connection and join, providing a smooth and predictable startup experience.
@@ -445,7 +445,7 @@ These architectural improvements significantly enhance PyRC's stability, maintai
 - **Highly Modular Command System:** _All_ core client commands are implemented in individual Python modules within a structured `commands/` directory. These are dynamically discovered and registered at startup. Each command module defines its handler(s), help text (usage, description, supporting dictionary format for richer help), and aliases.
 - **Dynamic & Categorized Help System:** The `/help` system is fully dynamic, sourcing information from core command modules and script registrations. It now displays categories first, allowing users to drill down via `/help <category>` or `/help script <script_name>`. Specific command help (`/help <command>`) provides detailed usage, description, and aliases.
 - **Comprehensive Command Set:** Supports a wide array of standard IRC commands and client-specific utility commands (see "Basic Commands" section).
-- **Dynamic Configuration:** View and modify client settings on-the-fly using `/set`. Changes are saved to `config/pyterm_irc_config.ini`. Reload with `/rehash`.
+- **Dynamic Configuration:** View and modify client settings on-the-fly using `/set`. Changes are saved to `config/tirc_config.ini`. Reload with `/rehash`.
 - **Ignore System:** Powerful ignore list for users/hostmasks with wildcard support, managed via `/ignore`, `/unignore`, `/listignores`.
 - **Extensible Scripting System (Python):**
   - Load custom Python scripts from a `scripts/` directory.
@@ -460,7 +460,7 @@ These architectural improvements significantly enhance PyRC's stability, maintai
   - Full functionality with `--headless` flag. Core logic, scripting (including `ScriptAPIHandler`), `EventManager`, and the trigger system are fully functional, all running on an efficient `asyncio` event loop.
   - Refactored headless test script (`scripts/test_headless.py`) using an event-driven verification framework for increased reliability.
 - **Logging:**
-  - Comprehensive main application log (`logs/pyrc_core.log`).
+  - Comprehensive main application log (`logs/tirc_core.log`).
   - Dedicated Status window log (`logs/client_status_messages.log`).
   - Optional per-channel logging. `logs/` directory created automatically.
   - Raw IRC message logging to UI toggleable with `/rawlog`.
@@ -491,7 +491,7 @@ These architectural improvements significantly enhance PyRC's stability, maintai
 ### Option 1: Install via pip
 
 ```bash
-pip install pyrc
+pip install tirc
 ````
 
 ### Option 2: Install from source
@@ -499,8 +499,8 @@ pip install pyrc
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/edgeof8/PyRC.git
-   cd PyRC
+   git clone https://github.com/edgeof8/tIRC.git
+   cd tIRC
    ```
 
 2. **Create a virtual environment (recommended):**
@@ -527,18 +527,18 @@ pip install pyrc
 
 ### Option 3: Use standalone executable
 
-Download the latest release from the [Releases](https://github.com/edgeof8/PyRC/releases) page and run the executable for your platform:
+Download the latest release from the [Releases](https://github.com/edgeof8/tIRC/releases) page and run the executable for your platform:
 
-- Windows: `pyrc-0.1.0-win64.exe`
-- Linux: `pyrc-0.1.0-linux`
-- macOS: `pyrc-0.1.0-macos`
+- Windows: `tirc-0.1.0-win64.exe`
+- Linux: `tirc-0.1.0-linux`
+- macOS: `tirc-0.1.0-macos`
 
 ## Configuration
 
-PyRC uses `config/pyterm_irc_config.ini` for configuration. To get started:
+tIRC uses `config/tirc_config.ini` for configuration. To get started:
 
 ```bash
-cp config/pyterm_irc_config.ini.example config/pyterm_irc_config.ini
+cp config/tirc_config.ini.example config/tirc_config.ini
 ```
 
 ### Key Configuration Sections
@@ -569,7 +569,7 @@ colorscheme = dark
 ```ini
 [Logging]
 log_enabled = true
-log_file = pyrc.log
+log_file = tirc.log
 log_level = INFO
 ```
 
@@ -600,10 +600,10 @@ Example usage:
 
 ### Basic Operation
 
-Start PyRC:
+Start tIRC:
 
 ```bash
-python pyrc.py
+python tirc.py
 ```
 
 Connect to a server:
@@ -715,24 +715,24 @@ We welcome contributions! Please follow these guidelines:
 
 ## License
 
-PyRC is licensed under the [MIT License](LICENSE).
+tIRC is licensed under the [MIT License](LICENSE).
 
 ---
 
 <p align="center">
-  <a href="https://github.com/edgeof8/PyRC">GitHub</a> •
-  <a href="https://pypi.org/project/pyrc/">PyPI</a> •
-  <a href="https://github.com/edgeof8/PyRC/issues">Issues</a> •
-  <a href="https://github.com/edgeof8/PyRC/pulls">Pull Requests</a>
+  <a href="https://github.com/edgeof8/tIRC">GitHub</a> •
+  <a href="https://pypi.org/project/tirc/">PyPI</a> •
+  <a href="https://github.com/edgeof8/tIRC/issues">Issues</a> •
+  <a href="https://github.com/edgeof8/tIRC/pulls">Pull Requests</a>
 </p>
 
-PyRC uses `config/pyterm_irc_config.ini` in its root directory. To get started:
+tIRC uses `config/tirc_config.ini` in its root directory. To get started:
 
 1. Copy the example configuration file:
    ```bash
-   cp config/pyterm_irc_config.ini.example config/pyterm_irc_config.ini
+   cp config/tirc_config.ini.example config/tirc_config.ini
    ```
-2. Edit `config/pyterm_irc_config.ini` to customize your settings.
+2. Edit `config/tirc_config.ini` to customize your settings.
 
 **Key Config Sections & Settings (Managed by `AppConfig`):**
 
@@ -763,28 +763,28 @@ Use `/set`, `/rehash`, `/save` in-client to manage configuration. These commands
 
 ## Usage
 
-Run PyRC from its root directory:
+Run tIRC from its root directory:
 
 ```bash
-python pyrc.py
+python tirc.py
 ```
 
 Command-line overrides (creates a temporary "CommandLine" server configuration):
 
 ```bash
-python pyrc.py [--server <server>] [--port <port>] [--nick <nick>] [--channel <#channel>] [--ssl] [--password <server_pass>] [--nickserv-password <pass>] [--headless] [--disable-script <script_name>] [--send-raw "<raw_command>"]
+python tirc.py [--server <server>] [--port <port>] [--nick <nick>] [--channel <#channel>] [--ssl] [--password <server_pass>] [--nickserv-password <pass>] [--headless] [--disable-script <script_name>] [--send-raw "<raw_command>"]
 ```
 
 ## Basic Commands
 
-PyRC supports a variety of commands, all dynamically loaded. Type `/help` within the client for a list of commands and their aliases, or `/help <command>` for specific command usage. The help system is dynamically built from command module definitions and script registrations, ensuring up-to-date information.
+tIRC supports a variety of commands, all dynamically loaded. Type `/help` within the client for a list of commands and their aliases, or `/help <command>` for specific command usage. The help system is dynamically built from command module definitions and script registrations, ensuring up-to-date information.
 
 ### Connection & Session Management:
 
 - `/connect <server[:port]> [ssl|nossl]`: Initiates a connection to the specified IRC server.
 - `/server <config_name>` (Alias: `/s`): Switches to a pre-defined server configuration.
 - `/disconnect [reason]` (Alias: `/d`): Gracefully disconnects from the current server.
-- `/quit [message]` (Alias: `/q`): Disconnects from the server and exits PyRC.
+- `/quit [message]` (Alias: `/q`): Disconnects from the server and exits tIRC.
 - `/reconnect`: Reconnects to the current server.
 - `/nick <newnickname>` (Alias: `/n`): Changes your nickname.
 - `/away [message]`: Sets your away status.
@@ -845,7 +845,7 @@ PyRC supports a variety of commands, all dynamically loaded. Type `/help` within
 
 ### Remote Control / Scripting
 
-PyRC can be controlled from a second terminal or a script by sending commands to a running instance.
+tIRC can be controlled from a second terminal or a script by sending commands to a running instance.
 
 - `/raw <command>`: The primary way to send any IRC line.
 - `--send-raw "<command>"`: A command-line flag to send a single command and then exit. This is ideal for scripting.
@@ -853,9 +853,9 @@ PyRC can be controlled from a second terminal or a script by sending commands to
 **Example:**
 
 ```bash
-# In one terminal, PyRC is running.
+# In one terminal, tIRC is running.
 # In a second terminal, send a message to #python:
-python pyrc.py --send-raw "/msg #python Hello from a script!"
+python tirc.py --send-raw "/msg #python Hello from a script!"
 ```
 
 ### Fun Commands (from default_fun_commands.py script):
@@ -885,7 +885,7 @@ Run with `--headless`. Core logic, scripting (including `ScriptAPIHandler`), `Ev
 
 ## Scripting System
 
-PyRC features a Python scripting system in `scripts/`. Scripts inherit from `ScriptBase`, use `ScriptAPIHandler` (`self.api`), and can define dependencies in their `metadata.json`.
+tIRC features a Python scripting system in `scripts/`. Scripts inherit from `ScriptBase`, use `ScriptAPIHandler` (`self.api`), and can define dependencies in their `metadata.json`.
 
 Scripts can define event handlers as either standard synchronous functions or as `async def` coroutines. The `EventManager` will correctly `await` asynchronous handlers, allowing for non-blocking I/O operations (like network requests or disk I/O) within scripts without freezing the client.
 
@@ -930,7 +930,7 @@ Events are dispatched with a consistent `event_data` dictionary including `times
   - `event_data` keys: `attempt` (int), `max_attempts` (int).
 - `CLIENT_MESSAGE_ADDED_TO_CONTEXT`: Fired when any message is added to any context's buffer by `IRCClient_Logic.add_message`.
   - `event_data` keys: `context_name` (str), `text` (str - the full line added, including timestamp/prefix), `color_key_or_attr` (Any), `source_full_ident` (Optional[str]), `is_privmsg_or_notice` (bool).
-- `CLIENT_NICK_CHANGED`: Fired specifically when PyRC's own nickname successfully changes.
+- `CLIENT_NICK_CHANGED`: Fired specifically when tIRC's own nickname successfully changes.
   - `event_data` additional keys: `old_nick` (str), `new_nick` (str).
 - `CLIENT_SHUTDOWN_FINAL`: Fired just before application exit, _after_ `curses` UI is down (if UI was active).
 
@@ -961,7 +961,7 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 
 **Raw IRC Lines & Numerics:**
 
-- `RAW_IRC_LINE`: Fired for _every_ complete raw line received from the server _before_ PyRC's internal parsing.
+- `RAW_IRC_LINE`: Fired for _every_ complete raw line received from the server _before_ tIRC's internal parsing.
   - `event_data` keys: `raw_line` (str).
 - `RAW_IRC_NUMERIC`: Fired for all numeric replies from the server.
   - `event_data` keys: `numeric` (int), `source` (str - server name), `params_list` (List[str] - full parameters), `display_params_list` (List[str] - parameters with client nick removed if first), `trailing` (Optional[str]), `tags` (Dict[str, Any]).
@@ -974,7 +974,7 @@ Events are dispatched with a consistent `event_data` dictionary including `times
 
 ## State Management System
 
-PyRC's `StateManager` provides a robust, thread-safe, and persistent solution for managing all client state. It acts as the **single source of truth** for all connection, session, and client-specific runtime data, ensuring:
+tIRC's `StateManager` provides a robust, thread-safe, and persistent solution for managing all client state. It acts as the **single source of truth** for all connection, session, and client-specific runtime data, ensuring:
 
 - Predictable and consistent state across the application.
 - Easier debugging and testing due to centralized state.
@@ -1000,7 +1000,7 @@ PyRC's `StateManager` provides a robust, thread-safe, and persistent solution fo
 ### Usage Example
 
 ````python
-from pyrc_core.state_manager import StateManager, StateValidator, ConnectionInfo, ConnectionState
+from tirc_core.state_manager import StateManager, StateValidator, ConnectionInfo, ConnectionState
 from typing import Optional, Dict, Any
 
 # Example: A custom validator for connection details
@@ -1091,35 +1091,35 @@ For major changes, please open an issue first to discuss your ideas.
 
 ```bash
 # Install from PyPI
-pip install pyterm-irc
+pip install tirc
 
 # Or install the latest development version
-pip install git+https://github.com/yourusername/pyrc.git
+pip install git+https://github.com/edgeof8/tIRC.git
 ```
 
-### Running PyRC
+### Running tIRC
 
 Start the client with default settings:
 
 ```bash
-pyrc
+tirc
 ```
 
 Connect to a server directly:
 
 ```bash
-pyrc --connect irc.libera.chat
+tirc --connect irc.libera.chat
 ```
 
 Run in headless mode (for testing/automation):
 
 ```bash
-pyrc --headless --connect irc.libera.chat
+tirc --headless --connect irc.libera.chat
 ```
 
 ## Configuration
 
-PyRC uses `config/pyterm_irc_config.ini` in its root directory as the main configuration file.
+tIRC uses `config/tirc_config.ini` in its root directory as the main configuration file.
 The `state.json` (persistent state) and `logs/` (application logs) directories are created in the current working directory.
 
 ### Example `config.ini`
@@ -1142,7 +1142,7 @@ message_format = {timestamp} <{nick}> {message}
 
 [logging]
 level = INFO
-file = pyrc.log
+file = tirc.log
 ```
 
 ## Core Features
@@ -1184,7 +1184,7 @@ file = pyrc.log
 
 ## Scripting API
 
-PyRC provides a powerful Python API for automation and extension. Scripts can:
+tIRC provides a powerful Python API for automation and extension. Scripts can:
 
 - Listen for and respond to events
 - Register custom commands
@@ -1195,7 +1195,7 @@ PyRC provides a powerful Python API for automation and extension. Scripts can:
 ### Example Script
 
 ```python
-# ~/.config/pyrc/scripts/example.py
+# ~/.config/tirc/scripts/example.py
 
 async def on_connect(event_data):
     """Automatically join channels after connecting."""
@@ -1235,8 +1235,8 @@ This project is licensed under the MIT License.
 1. **Clone and setup:**
 
    ```bash
-   git clone https://github.com/edgeof8/PyRC.git
-   cd PyRC
+   git clone https://github.com/edgeof8/tIRC.git
+   cd tIRC
    python -m venv venv
    # Activate virtual environment (see above)
    pip install -r requirements.txt
@@ -1274,27 +1274,27 @@ This will run tests to verify:
 The build process creates the following files in the `dist/` directory:
 
 - Python package:
-  - `pyrc-0.1.0.tar.gz` (source distribution)
-  - `pyrc-0.1.0-py3-none-any.whl` (wheel)
+  - `tirc-0.1.0.tar.gz` (source distribution)
+  - `tirc-0.1.0-py3-none-any.whl` (wheel)
 - Standalone executable:
-  - Windows: `pyrc-0.1.0-win64.exe`
-  - Linux: `pyrc-0.1.0-linux`
-  - macOS: `pyrc-0.1.0-macos`
+  - Windows: `tirc-0.1.0-win64.exe`
+  - Linux: `tirc-0.1.0-linux`
+  - macOS: `tirc-0.1.0-macos`
 
 ## Support
 
-For support, please [open an issue](https://github.com/edgeof8/PyRC/issues) on GitHub.
+For support, please [open an issue](https://github.com/edgeof8/tIRC/issues) on GitHub.
 
 ## Acknowledgments
 
-- Built with ❤️ by the PyRC contributors
+- Built with ❤️ by the tIRC contributors
 - Thanks to all the open source projects that made this possible
 
 ---
 
 <p align="center">
-  <a href="https://github.com/edgeof8/PyRC">GitHub</a> •
-  <a href="https://pypi.org/project/pyrc/">PyPI</a> •
-  <a href="https://github.com/edgeof8/PyRC/issues">Issues</a> •
-  <a href="https://github.com/edgeof8/PyRC/pulls">Pull Requests</a>
+  <a href="https://github.com/edgeof8/tIRC">GitHub</a> •
+  <a href="https://pypi.org/project/tirc/">PyPI</a> •
+  <a href="https://github.com/edgeof8/tIRC/issues">Issues</a> •
+  <a href="https://github.com/edgeof8/tIRC/pulls">Pull Requests</a>
 </p>

@@ -1,9 +1,9 @@
 import curses
 import logging
 from typing import Any, Dict
-from pyrc_core.client.curses_utils import SafeCursesUtils
+from tirc_core.client.curses_utils import SafeCursesUtils
 
-logger = logging.getLogger("pyrc.status_bar_renderer")
+logger = logging.getLogger("tirc.status_bar_renderer")
 
 class StatusBarRenderer:
     def __init__(self, colors: Dict[str, int]):

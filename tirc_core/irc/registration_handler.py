@@ -1,22 +1,22 @@
-# pyrc_core/irc/registration_handler.py
+# tirc_core/irc/registration_handler.py
 import logging
 import asyncio # Import asyncio
 from typing import List, Optional, TYPE_CHECKING
 from dataclasses import asdict # Import asdict
 
-from pyrc_core.context_manager import ChannelJoinStatus # Import ChannelJoinStatus
+from tirc_core.context_manager import ChannelJoinStatus # Import ChannelJoinStatus
 
 if TYPE_CHECKING:
-    from pyrc_core.network_handler import NetworkHandler
-    from pyrc_core.commands.command_handler import CommandHandler
-    from pyrc_core.irc.cap_negotiator import CapNegotiator
-    from pyrc_core.irc.sasl_authenticator import SaslAuthenticator
-    from pyrc_core.state_manager import StateManager
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.network_handler import NetworkHandler
+    from tirc_core.commands.command_handler import CommandHandler
+    from tirc_core.irc.cap_negotiator import CapNegotiator
+    from tirc_core.irc.sasl_authenticator import SaslAuthenticator
+    from tirc_core.state_manager import StateManager
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-from pyrc_core.state_manager import ConnectionState
+from tirc_core.state_manager import ConnectionState
 
-logger = logging.getLogger("pyrc.registration")
+logger = logging.getLogger("tirc.registration")
 
 class RegistrationHandler:
     def __init__(
@@ -30,7 +30,7 @@ class RegistrationHandler:
         self.network_handler = network_handler
         self.command_handler = command_handler
         self.state_manager = state_manager
-        self.logger = logging.getLogger("pyrc.registration")
+        self.logger = logging.getLogger("tirc.registration")
         self.cap_negotiator = cap_negotiator
         self.client_logic_ref = client_logic_ref
         if self.client_logic_ref:
@@ -41,7 +41,7 @@ class RegistrationHandler:
 
         self.nick_user_sent = False
         conn_info = self.state_manager.get_connection_info()
-        self.initial_nick = conn_info.nick if conn_info else "PyRCNick"
+        self.initial_nick = conn_info.nick if conn_info else "tIRCNick"
         self.post_registration_task: Optional[asyncio.Task] = None
         self.end_of_motd_received = asyncio.Event()
         self._post_motd_actions_initiated_flag = False
@@ -259,7 +259,7 @@ class RegistrationHandler:
         logger.debug("Resetting RegistrationHandler state.")
         self.nick_user_sent = False
         conn_info = self.state_manager.get_connection_info()
-        self.initial_nick = conn_info.nick if conn_info else "PyRCNick"
+        self.initial_nick = conn_info.nick if conn_info else "tIRCNick"
         if self.post_registration_task and not self.post_registration_task.done():
             logger.debug("Cancelling pending post_registration_task during reset_registration_state.")
             self.post_registration_task.cancel()

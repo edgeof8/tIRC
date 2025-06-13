@@ -5,8 +5,8 @@
 ; default_server = irc.libera.chat
 ; default_port = 6697
 ; default_ssl = true
-; default_nick = PyTermUser
-; default_channels = #pylounge,#pyrc-test
+; default_nick = tIRCUser
+; default_channels = #pylounge,#tirc-test
 ; password =
 ; nickserv_password =
 ; verify_ssl_cert = true
@@ -20,7 +20,7 @@ auto_reconnect = true
 address = irc.libera.chat
 port = 6697
 ssl = true
-nick = PyRCUserL
+nick = tIRCUserL
 channels = #python,#pylounge
 ; Optional:
 ; username = my_irc_user        ; Defaults to nick if not set
@@ -37,7 +37,7 @@ auto_connect = true             ; Set to true for one server to connect to on st
 address = irc.efnet.org
 port = 6667
 ssl = false
-nick = PyRCUserE
+nick = tIRCUserE
 channels = #efnet,#help
 auto_connect = false
 ; nickserv_password = your_efnet_pass
@@ -49,7 +49,7 @@ colorscheme = default
 
 [Logging]
 log_enabled = true
-log_file = logs/pyrc_core.log   ; Main client log file path, relative to PyRC root
+log_file = logs/tirc_core.log   ; Main client log file path, relative to tIRC root
 log_level = INFO                ; DEBUG, INFO, WARNING, ERROR, CRITICAL
 log_max_bytes = 5242880         ; 5MB before rotation
 log_backup_count = 3            ; Number of old log files to keep
@@ -81,7 +81,7 @@ passive_token_timeout = 120     ; Seconds a passive DCC offer token remains vali
 bandwidth_limit_send_kbps = 0   ; Bandwidth limit for sending files in KB/s (0 for unlimited)
 bandwidth_limit_recv_kbps = 0   ; Bandwidth limit for receiving files in KB/s (0 for unlimited)
 ; virus_scan_cmd = ""           ; (Future feature) Command to run for virus scanning a downloaded file
-; dcc_advertised_ip =           ; If PyRC has trouble auto-detecting your correct external IP for DCC,
+; dcc_advertised_ip =           ; If tIRC has trouble auto-detecting your correct external IP for DCC,
                                 ; you can specify it here. Leave blank or comment out for auto-detection.
                                 ; Example: dcc_advertised_ip = 203.0.113.1
 
@@ -92,7 +92,7 @@ transfer_max_age_seconds = 259200 ; How old a completed/failed transfer can be b
 
 ; DCC Specific Logging:
 log_enabled = true              ; Enable dedicated DCC logging
-log_file = logs/dcc.log         ; Path for the DCC log file, relative to PyRC root
+log_file = logs/dcc.log         ; Path for the DCC log file, relative to tIRC root
 log_level = INFO                ; DEBUG, INFO, WARNING, ERROR, CRITICAL for DCC logs
 log_max_bytes = 5242880         ; 5MB before rotation for DCC log
 log_backup_count = 3            ; Number of old DCC log files to keep

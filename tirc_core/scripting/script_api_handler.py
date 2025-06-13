@@ -1,103 +1,19 @@
-# START OF MODIFIED FILE: script_api_handler.py
+# tirc_core/scripting/script_api_handler.py
 import logging
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Callable,
-    Tuple,
-    Set,
-    TYPE_CHECKING,
-    Union,
-)
-import json
 import os
-from datetime import datetime
-from dataclasses import dataclass
-
-import pyrc_core.app_config as app_config
+import json
+from typing import TYPE_CHECKING, List, Optional, Dict, Any, Callable, Union, Set, Tuple # Added Tuple
+import asyncio # Import asyncio
+from dataclasses import asdict # Added asdict
+from tirc_core.scripting.python_trigger_api import PythonTriggerAPI # Added PythonTriggerAPI
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    from pyrc_core.script_manager import ScriptManager
-    from pyrc_core.app_config import AppConfig
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.script_manager import ScriptManager
+    from tirc_core.state_manager import ConnectionState # Import ConnectionState
 
-
-@dataclass
-class ScriptMetadata:
-    name: str
-    version: str
-    description: str
-    author: str
-    dependencies: List[str]
-    min_pyrc_version: str
-    created_at: datetime
-    updated_at: datetime
-    tags: List[str]
-    is_enabled: bool = True
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert metadata to dictionary for JSON serialization."""
-        return {
-            "name": self.name,
-            "version": self.version,
-            "description": self.description,
-            "author": self.author,
-            "dependencies": self.dependencies,
-            "min_pyrc_version": self.min_pyrc_version,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
-            "tags": self.tags,
-            "is_enabled": self.is_enabled,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ScriptMetadata":
-        """Create metadata from dictionary."""
-        return cls(
-            name=data.get("name", ""),
-            version=data.get("version", "1.0.0"),
-            description=data.get("description", ""),
-            author=data.get("author", "Unknown"),
-            dependencies=data.get("dependencies", []),
-            min_pyrc_version=data.get("min_pyrc_version", "1.0.0"),
-            created_at=datetime.fromisoformat(
-                data.get("created_at", datetime.now().isoformat())
-            ),
-            updated_at=datetime.fromisoformat(
-                data.get("updated_at", datetime.now().isoformat())
-            ),
-            tags=data.get("tags", []),
-            is_enabled=data.get("is_enabled", True),
-        )
-
-    @classmethod
-    def load_from_file(cls, file_path: str) -> Optional["ScriptMetadata"]:
-        """Load metadata from a JSON file."""
-        try:
-            if not os.path.exists(file_path):
-                return None
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return cls.from_dict(data)
-        except Exception as e:
-            logging.getLogger("pyrc.script_metadata").error(
-                f"Error loading metadata from {file_path}: {e}"
-            )
-            return None
-
-    def save_to_file(self, file_path: str) -> bool:
-        """Save metadata to a JSON file."""
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(self.to_dict(), f, indent=4)
-            return True
-        except Exception as e:
-            logging.getLogger("pyrc.script_metadata").error(
-                f"Error saving metadata to {file_path}: {e}"
-            )
-            return False
+# Define ScriptMetadata type alias for clarity
+ScriptMetadata = Dict[str, Any]
 
 class ScriptAPIHandler:
     def __init__(
@@ -108,500 +24,325 @@ class ScriptAPIHandler:
     ):
         self.client_logic = client_logic_ref
         self.script_manager = script_manager_ref
-        self.script_name = script_name
-        self.logger = logging.getLogger(f"pyrc.script_api.{script_name}")
+        self.script_name = script_name # Store the script name
+        self.logger = logging.getLogger(f"tirc.script_api.{script_name}") # Keep logger name for now
         self.metadata: ScriptMetadata = self._load_metadata()
-        self._is_loaded: bool = False
-        self._last_error: Optional[Exception] = None
-        self._performance_metrics: Dict[str, Any] = {
-            "start_time": datetime.now(),
-            "command_calls": 0,
-            "event_handlers": 0,
-            "errors": 0,
-        }
 
     def _load_metadata(self) -> ScriptMetadata:
-        metadata_path = self.script_manager.get_data_file_path_for_script(
-            self.script_name, "metadata.json"
-        )
-        if os.path.exists(metadata_path):
+        """Loads script metadata from script_metadata.json in the script's directory."""
+        metadata_file_path = os.path.join(self.get_script_dir(), "script_metadata.json")
+        default_metadata: ScriptMetadata = {
+            "name": self.script_name,
+            "version": "0.0.0",
+            "description": "No description provided.",
+            "author": "Unknown",
+            "dependencies": [],
+            "min_tirc_version": "0.0.0", # Changed from min_pyrc_version
+            "is_enabled_by_default": True,
+        }
+        if os.path.exists(metadata_file_path):
             try:
-                metadata = ScriptMetadata.load_from_file(metadata_path)
-                if metadata:
-                    return metadata
+                with open(metadata_file_path, "r", encoding="utf-8") as f:
+                    loaded_meta = json.load(f)
+                    # Merge with defaults, ensuring all keys are present
+                    merged_meta = {**default_metadata, **loaded_meta}
+                    # Ensure dependencies is always a list
+                    if not isinstance(merged_meta.get("dependencies"), list):
+                        self.logger.warning(f"Script '{self.script_name}' metadata 'dependencies' is not a list. Defaulting to empty list.")
+                        merged_meta["dependencies"] = []
+                    return merged_meta
+            except json.JSONDecodeError as e:
+                logging.getLogger("tirc.script_metadata").error(
+                    f"Error loading metadata from {metadata_file_path}: {e}"
+                )
             except Exception as e:
-                self.log_error(f"Error loading metadata: {e}")
-        return self._create_default_metadata()
+                 logging.getLogger("tirc.script_metadata").error(
+                    f"Unexpected error loading metadata from {metadata_file_path}: {e}"
+                )
+        return default_metadata
 
-    def _create_default_metadata(self) -> ScriptMetadata:
-        return ScriptMetadata(
-            name=self.script_name,
-            version="1.0.0",
-            description="",
-            author="Unknown",
-            dependencies=[],
-            min_pyrc_version="1.0.0",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-            tags=[],
-            is_enabled=True,
-        )
+    def _save_metadata(self) -> None:
+        """Saves current script metadata to script_metadata.json."""
+        metadata_file_path = os.path.join(self.get_script_dir(), "script_metadata.json")
+        try:
+            os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+            with open(metadata_file_path, "w", encoding="utf-8") as f:
+                json.dump(self.metadata, f, indent=4)
+        except Exception as e:
+            logging.getLogger("tirc.script_metadata").error(
+                f"Error saving metadata to {metadata_file_path}: {e}"
+            )
 
     def check_dependencies(self) -> Tuple[bool, List[str]]:
-        missing = []
-        for dep in self.metadata.dependencies:
-            if not self.script_manager.is_script_enabled(dep):
-                missing.append(dep)
-        return len(missing) == 0, missing
+        """Checks if all declared script dependencies are loaded and enabled."""
+        dependencies = self.metadata.get("dependencies", [])
+        if not dependencies:
+            return True, []
 
-    def log_info(self, message: str):
-        self.logger.info(message)
+        missing_or_disabled_deps = []
+        for dep_name in dependencies:
+            if not self.script_manager.is_script_enabled(dep_name):
+                missing_or_disabled_deps.append(dep_name)
 
-    def log_warning(self, message: str):
-        self.logger.warning(message)
-
-    def log_error(self, message: str):
-        self.logger.error(message)
-
-    def add_trigger(
-        self, event_type: str, pattern: str, action_type: str, action_content: str
-    ) -> Optional[int]:
-        if not self.client_logic.config.enable_trigger_system:
-            self.log_warning("Trigger system is disabled. Cannot add trigger.")
-            return None
-        if (
-            not hasattr(self.client_logic, "trigger_manager")
-            or not self.client_logic.trigger_manager
-        ):
-            self.log_warning("Trigger manager not available. Cannot add trigger.")
-            return None
-        try:
-            return self.client_logic.trigger_manager.add_trigger(
-                event_type_str=event_type,
-                pattern=pattern,
-                action_type_str=action_type,
-                action_content=action_content,
+        if missing_or_disabled_deps:
+            self.logger.warning(
+                f"Script '{self.script_name}' has unmet dependencies: {', '.join(missing_or_disabled_deps)}"
             )
-        except Exception as e:
-            self.log_error(f"Error adding trigger: {e}")
-            return None
+            return False, missing_or_disabled_deps
+        return True, []
 
-    def remove_trigger(self, trigger_id: int) -> bool:
-        if not self.client_logic.config.enable_trigger_system:
-            self.log_warning("Trigger system is disabled. Cannot remove trigger.")
-            return False
-        if (
-            not hasattr(self.client_logic, "trigger_manager")
-            or not self.client_logic.trigger_manager
-        ):
-            self.log_warning("Trigger manager not available. Cannot remove trigger.")
-            return False
-        try:
-            return self.client_logic.trigger_manager.remove_trigger(trigger_id)
-        except Exception as e:
-            self.log_error(f"Error removing trigger: {e}")
-            return False
 
-    def list_triggers(
-        self, event_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        if not self.client_logic.config.enable_trigger_system:
-            self.log_warning("Trigger system is disabled. Cannot list triggers.")
-            return []
-        if (
-            not hasattr(self.client_logic, "trigger_manager")
-            or not self.client_logic.trigger_manager
-        ):
-            self.log_warning("Trigger manager not available. Cannot list triggers.")
-            return []
-        try:
-            return self.client_logic.trigger_manager.list_triggers(
-                event_type=event_type
-            )
-        except Exception as e:
-            self.log_error(f"Error listing triggers: {e}")
-            return []
+    # --- Logging ---
+    def log_debug(self, message: str): self.logger.debug(message)
+    def log_info(self, message: str): self.logger.info(message)
+    def log_warning(self, message: str): self.logger.warning(message)
+    def log_error(self, message: str, exc_info: bool = False): self.logger.error(message, exc_info=exc_info)
+    def log_critical(self, message: str, exc_info: bool = False): self.logger.critical(message, exc_info=exc_info)
 
-    def set_trigger_enabled(self, trigger_id: int, enabled: bool) -> bool:
-        if not self.client_logic.config.enable_trigger_system:
-            self.log_warning("Trigger system is disabled. Cannot set trigger state.")
-            return False
-        if (
-            not hasattr(self.client_logic, "trigger_manager")
-            or not self.client_logic.trigger_manager
-        ):
-            self.log_warning("Trigger manager not available. Cannot set trigger state.")
-            return False
-        try:
-            return self.client_logic.trigger_manager.set_trigger_enabled(
-                trigger_id, enabled
-            )
-        except Exception as e:
-            self.log_error(f"Error setting trigger state: {e}")
-            return False
-
-    def subscribe_to_event(self, event_name: str, handler_function: Callable):
-        # Call EventManager's subscribe method
-        self.client_logic.event_manager.subscribe(
-            event_name, handler_function, self.script_name
-        )
-
-    def unsubscribe_from_event(
-        self, event_name: str, handler_function: Callable
-    ):
-        # Call EventManager's unsubscribe method
-        self.client_logic.event_manager.unsubscribe(
-            event_name, handler_function, self.script_name
-        )
-
-    def create_command_help(
-        self, usage: str, description: str, aliases: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
-        help_data: Dict[str, Any] = {"usage": usage, "description": description}
-        if aliases:
-            help_data["aliases"] = aliases
-        return help_data
-
+    # --- Command Registration ---
     def register_command(
         self,
-        command_name: str,
-        handler_function: Callable,
-        help_info: Union[str, Dict[str, Any]] = "",
+        name: str,
+        handler: Callable, # Changed to generic Callable
+        help_info: Union[str, Dict[str, Any]], # help_info can be str or dict
         aliases: Optional[List[str]] = None,
-    ):
-        effective_aliases: List[str] = aliases if aliases is not None else []
-
-        if isinstance(help_info, dict):
-            # Ensure 'aliases' from help_info is a list of strings if it exists
-            help_info_aliases = help_info.get("aliases")
-            if isinstance(help_info_aliases, list):
-                # Use aliases from help_info if provided and valid, otherwise keep effective_aliases
-                # This prioritizes aliases from the help_info dict if present.
-                effective_aliases = [str(a) for a in help_info_aliases if isinstance(a, str)]
-            # If help_info is a dict but 'aliases' key is missing or not a list,
-            # effective_aliases will retain the value from the 'aliases' parameter.
-
-        # Call the new method on CommandHandler
+    ) -> None:
         self.client_logic.command_handler.register_script_command(
-            command_name=command_name,
-            handler=handler_function, # Parameter name is 'handler' in CommandHandler
-            help_info=help_info,
-            aliases=effective_aliases,
-            script_name=self.script_name,
+            name, handler, help_info, aliases or [], script_name=self.script_name
         )
 
-    def register_help_text(
-        self,
-        command_name: str,
-        usage_str: str,
-        description_str: str = "",
-        aliases: Optional[List[str]] = None,
-    ):
-        if aliases is None:
-            aliases = []
-        help_text = usage_str
-        if description_str:
-            help_text += f"\n{description_str}"
-        # self.script_manager.register_help_text_from_script(
-        #     command_name=command_name,
-        #     help_text=help_text,
-        #     aliases=aliases,
-        #     script_name=self.script_name,
-        # )
-        self.log_warning(
-            "ScriptAPIHandler.register_help_text is deprecated. Help text should be provided "
-            "as part of the help_info dictionary in register_command."
-        )
+    def unregister_command(self, name: str) -> None:
+        # This needs to be implemented in CommandHandler
+        # For now, scripts might not be able to unregister commands dynamically post-load
+        # Or, ScriptManager handles this during script unload.
+        self.logger.warning(f"Unregistering command '{name}' from API is not fully implemented yet in CommandHandler.")
+        # Placeholder: self.client_logic.command_handler.unregister_script_command(name, self.script_name)
 
-    def request_data_file_path(self, data_filename: str) -> str:
-        return self.script_manager.get_data_file_path_for_script(
-            self.script_name, data_filename
-        )
+    # --- Event Handling ---
+    def subscribe_to_event(self, event_name: str, handler_function: Callable) -> None:
+        self.client_logic.event_manager.subscribe(event_name.upper(), handler_function, self.script_name)
 
+    def unsubscribe_from_event(self, event_name: str, handler_function: Callable) -> None:
+        self.client_logic.event_manager.unsubscribe(event_name.upper(), handler_function, self.script_name)
+
+    # --- Client Interaction ---
+    async def send_raw(self, data: str) -> None:
+        await self.client_logic.network_handler.send_raw(data)
+
+    async def send_message(self, target: str, message: str) -> None:
+        await self.client_logic.network_handler.send_raw(f"PRIVMSG {target} :{message}")
+
+    async def send_action(self, target: str, action_text: str) -> None:
+        await self.send_ctcp_privmsg(target, f"ACTION {action_text}")
+
+    async def send_notice(self, target: str, message: str) -> None:
+        await self.client_logic.network_handler.send_raw(f"NOTICE {target} :{message}")
+
+    async def send_ctcp_privmsg(self, target: str, ctcp_message: str) -> None:
+        await self.client_logic.send_ctcp_privmsg(target, ctcp_message)
+
+    async def join_channel(self, channel_name: str, key: Optional[str] = None) -> None:
+        if key:
+            await self.client_logic.network_handler.send_raw(f"JOIN {channel_name} {key}")
+        else:
+            await self.client_logic.network_handler.send_raw(f"JOIN {channel_name}")
+
+    async def part_channel(self, channel_name: str, reason: Optional[str] = None) -> None:
+        if reason:
+            await self.client_logic.network_handler.send_raw(f"PART {channel_name} :{reason}")
+        else:
+            await self.client_logic.network_handler.send_raw(f"PART {channel_name}")
+
+    async def set_nick(self, new_nick: str) -> None:
+        await self.client_logic.network_handler.send_raw(f"NICK {new_nick}")
+
+    async def execute_client_command(self, command_line: str) -> None:
+        """Executes a client command as if the user typed it."""
+        # Ensure command_handler.process_user_command is awaitable if it does async work
+        await self.client_logic.command_handler.process_user_command(command_line)
+
+
+    # --- UI Interaction ---
     async def add_message_to_context(
         self,
         context_name: str,
         text: str,
-        color_key: str = "system",
-        prefix_time: bool = True,
-    ):
-        color_attr = self.client_logic.ui.colors.get(
-            color_key, self.client_logic.ui.colors["system"]
-        )
+        color_key: str = "system", # Use color key, UIManager resolves to pair_id
+        prefix_time: bool = False,
+        source_full_ident: Optional[str] = None,
+        is_privmsg_or_notice: bool = False,
+        **kwargs # Allow other kwargs to be passed through
+    ) -> None:
+        # Get the color pair ID from UIManager using the color_key
+        color_pair_id = self.client_logic.ui.colors.get(color_key, self.client_logic.ui.colors.get("system", 0))
+
         await self.client_logic.add_message(
-            text, color_attr, prefix_time=prefix_time, context_name=context_name
+            text,
+            color_pair_id, # Pass the resolved pair_id
+            context_name,
+            prefix_time,
+            source_full_ident=source_full_ident,
+            is_privmsg_or_notice=is_privmsg_or_notice,
+            **kwargs # Pass through other kwargs
         )
 
-    async def send_raw(self, command_string: str): # Made async
-        await self.client_logic.network_handler.send_raw(command_string) # Added await
-
-    async def send_message(self, target: str, message: str): # Made async
-        await self.send_raw(f"PRIVMSG {target} :{message}") # Added await
-
-    async def send_action(self, target: str, action_text: str): # Made async
-        if not target or not action_text:
-            self.log_warning(
-                f"send_action called with empty target ('{target}') or action_text ('{action_text}')."
-            )
-            return
-        await self.send_raw(f"PRIVMSG {target} :\x01ACTION {action_text}\x01") # Added await
-
-    async def send_notice(self, target: str, message: str): # Made async
-        await self.send_raw(f"NOTICE {target} :{message}") # Added await
-
-    async def join_channel(self, channel_name: str, key: Optional[str] = None): # Made async
-        if not channel_name.startswith(("#", "&", "+", "!")):
-            channel_name = "#" + channel_name
-        cmd = f"JOIN {channel_name}"
-        if key:
-            cmd += f" {key}"
-        await self.send_raw(cmd) # Added await
-
-    async def part_channel(self, channel_name: str, reason: Optional[str] = None): # Made async
-        if not channel_name.startswith(("#", "&", "+", "!")):
-            channel_name = "#" + channel_name
-        cmd = f"PART {channel_name}"
-        if reason:
-            cmd += f" :{reason}"
-        await self.send_raw(cmd) # Added await
-
-    async def set_nick(self, new_nick: str): # Made async
-        await self.send_raw(f"NICK {new_nick}") # Added await
-
-    async def set_topic(self, channel_name: str, new_topic: str): # Made async
-        if not channel_name.startswith(("#", "&", "+", "!")):
-            channel_name = "#" + channel_name
-        await self.send_raw(f"TOPIC {channel_name} :{new_topic}") # Added await
-
-    async def set_channel_mode(self, channel_name: str, modes: str, *mode_params: str): # Made async
-        if not channel_name.startswith(("#", "&", "+", "!")):
-            channel_name = "#" + channel_name
-        cmd = f"MODE {channel_name} {modes}"
-        if mode_params:
-            cmd += " " + " ".join(mode_params)
-        await self.send_raw(cmd) # Added await
-
-    async def kick_user(self, channel_name: str, nick: str, reason: Optional[str] = None): # Made async
-        if not channel_name.startswith(("#", "&", "+", "!")):
-            channel_name = "#" + channel_name
-        cmd = f"KICK {channel_name} {nick}"
-        if reason:
-            cmd += f" :{reason}"
-        await self.send_raw(cmd) # Added await
-
-    async def invite_user(self, nick: str, channel_name: str): # Made async
-        if not channel_name.startswith(("#", "&", "+", "!")):
-            channel_name = "#" + channel_name
-        await self.send_raw(f"INVITE {nick} {channel_name}") # Added await
-
-    def quit_client(self, reason: Optional[str] = None): # This should remain synchronous as it sets an event
-        self.log_info(
-            f"Script '{self.script_name}' initiated client quit. Reason: {reason}"
-        )
-        self.client_logic.should_quit.set()
-
-    async def execute_client_command(self, command_line_with_slash: str) -> bool: # Made async
-        if not command_line_with_slash.startswith("/"):
-            self.log_error(
-                f"execute_client_command: Command line '{command_line_with_slash}' must start with '/'"
-            )
-            return False
-        self.log_info(f"Executing client command via API: {command_line_with_slash}")
-        # Assuming process_user_command becomes async or handles async internally
-        return await self.client_logic.command_handler.process_user_command( # Added await
-            command_line_with_slash
-        )
-
+    # --- Information Retrieval ---
     def get_client_nick(self) -> Optional[str]:
-        return self.client_logic.nick
+        conn_info = self.client_logic.state_manager.get_connection_info()
+        return conn_info.nick if conn_info else None
 
     def get_current_context_name(self) -> Optional[str]:
         return self.client_logic.context_manager.active_context_name
 
-    def get_active_context_type(self) -> Optional[str]:
-        active_ctx = self.client_logic.context_manager.get_active_context()
-        return active_ctx.type if active_ctx else None
+    def get_context_messages(self, context_name: str, count: Optional[int] = None) -> List[Tuple[str, Any]]:
+        """Retrieves messages from a context. Returns list of (text, color_pair_id) tuples."""
+        messages_raw = self.client_logic.context_manager.get_context_messages_raw(context_name, count=count)
+        return messages_raw if messages_raw is not None else []
 
-    def is_connected(self) -> bool:
-        return self.client_logic.network_handler.connected
 
-    def get_connection_state(self) -> Optional[str]:
-        """Returns the current connection state as a string (e.g., 'DISCONNECTED', 'REGISTERED')."""
+    def get_client_state(self, key: str, default: Optional[Any] = None) -> Any:
+        return self.client_logic.state_manager.get(key, default)
+
+    def get_connection_state(self) -> Optional[str]: # Returns ConnectionState enum name
+        """Returns the current connection state as a string (enum name)."""
         state_enum = self.client_logic.state_manager.get_connection_state()
         return state_enum.name if state_enum else None
 
-    def get_server_info(self) -> Dict[str, Any]:
-        return {
-            "server": self.client_logic.server,
-            "port": self.client_logic.port,
-            "ssl": self.client_logic.use_ssl,
-        }
+    def get_connection_info(self) -> Optional[Dict[str, Any]]: # Returns dict representation
+        """Returns the current ConnectionInfo as a dictionary, or None."""
+        conn_info_obj = self.client_logic.state_manager.get_connection_info()
+        return asdict(conn_info_obj) if conn_info_obj else None
 
-    def get_server_capabilities(self) -> Set[str]:
-        """Get currently enabled server capabilities."""
-        if hasattr(self.client_logic, 'cap_negotiator') and self.client_logic.cap_negotiator:
-            return self.client_logic.cap_negotiator.get_enabled_caps()
-        return set()
-
-    def get_joined_channels(self) -> List[str]:
-        return list(self.client_logic.currently_joined_channels)
-
-    def get_channel_users(self, channel_name: str) -> Optional[Dict[str, str]]:
-        context = self.client_logic.context_manager.get_context(channel_name)
-        if context and context.type == "channel":
-            return context.users.copy() if hasattr(context, "users") else {}
-        return None
-
-    def get_channel_topic(self, channel_name: str) -> Optional[str]:
-        context = self.client_logic.context_manager.get_context(channel_name)
-        if context and context.type == "channel":
-            return context.topic if hasattr(context, "topic") else None
-        return None
+    def get_joined_channels(self) -> Set[str]:
+        """Returns a set of currently joined channel names."""
+        conn_info = self.client_logic.state_manager.get_connection_info()
+        return conn_info.currently_joined_channels.copy() if conn_info else set()
 
     def get_context_info(self, context_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves information about a specific context.
+        Returns a dictionary with keys like 'name', 'type', 'topic', 'users', 'join_status', etc.
+        """
         context = self.client_logic.context_manager.get_context(context_name)
         if not context:
             return None
-        info: Dict[str, Any] = {"name": context.name, "type": context.type}
-        if hasattr(context, "unread_count"):
-            info["unread_count"] = context.unread_count
-        if context.type == "channel":
-            if hasattr(context, "topic"):
-                info["topic"] = context.topic
-            if hasattr(context, "users"):
-                info["user_count"] = len(context.users)
-            if hasattr(context, "join_status") and context.join_status:
-                info["join_status"] = context.join_status.name
-        return info
+        return {
+            "name": context.name,
+            "type": context.type,
+            "topic": context.topic,
+            "users": context.users.copy(), # Return a copy
+            "user_prefixes": context.user_prefixes.copy(), # Return a copy
+            "modes": list(context.modes), # Return a copy
+            "unread_count": context.unread_count,
+            "join_status": context.join_status.name if context.join_status else None,
+        }
 
-    def get_context_messages(
-        self, context_name: str, count: Optional[int] = None
-    ) -> Optional[List[Tuple[str, Any]]]:
-        return self.client_logic.context_manager.get_context_messages_raw(
-            context_name, count
-        )
 
-    def DEV_TEST_ONLY_clear_context_messages(self, context_name: str) -> bool:
-        self.log_warning(
-            f"DEV_TEST_ONLY_clear_context_messages called for {context_name}"
-        )
-        ctx = self.client_logic.context_manager.get_context(context_name)
-        if ctx:
-            if hasattr(ctx, "messages") and callable(
-                getattr(ctx.messages, "clear", None)
-            ):
-                ctx.messages.clear()
-                self.client_logic.ui_needs_update.set()
-                self.log_info(
-                    f"DEV_TEST_ONLY: Messages cleared for context {context_name}"
-                )
-                return True
-            else:
-                self.log_error(
-                    f"DEV_TEST_ONLY: Context {context_name} does not have a clearable messages attribute."
-                )
-                return False
+    # --- Script Data Management ---
+    def get_script_dir(self) -> str:
+        """Returns the absolute path to the directory where the current script file is located."""
+        # This assumes scripts are in <base_dir>/scripts/<script_name>.py
+        # or <base_dir>/scripts/<script_name_as_dir>/<main_module>.py
+        # For simplicity, let's assume script_name is the file name without .py
+        # and it's directly in the scripts_dir.
+        # If scripts can be in subdirectories, this needs adjustment.
+        return os.path.join(self.script_manager.scripts_dir, self.script_name.replace('.', os.sep))
+
+
+    def request_data_file_path(self, data_filename: str) -> str:
+        """
+        Requests the full path for a data file specific to this script.
+        The file will be located in <project_root>/scripts/data/<script_name>/<data_filename>.
+        The directory is created if it doesn't exist.
+        """
+        return self.script_manager.get_data_file_path_for_script(self.script_name, data_filename)
+
+    # --- Trigger Management (if TriggerManager is available) ---
+    def add_trigger(self, event_type: str, pattern: str, action_type: str, action_content: str,
+                    is_enabled: bool = True, is_regex: bool = True, ignore_case: bool = True,
+                    created_by: Optional[str] = None, description: str = "") -> Optional[int]:
+        if self.client_logic.trigger_manager:
+            return self.client_logic.trigger_manager.add_trigger(
+                event_type, pattern, action_type, action_content,
+                is_enabled, is_regex, ignore_case,
+                created_by or self.script_name, description
+            )
+        self.log_warning("Trigger system not enabled, cannot add trigger.")
+        return None
+
+    def remove_trigger(self, trigger_id: int) -> bool:
+        if self.client_logic.trigger_manager:
+            return self.client_logic.trigger_manager.remove_trigger(trigger_id)
+        self.log_warning("Trigger system not enabled, cannot remove trigger.")
+        return False
+
+    def set_trigger_enabled(self, trigger_id: int, enabled: bool) -> bool:
+        if self.client_logic.trigger_manager:
+            return self.client_logic.trigger_manager.set_trigger_enabled(trigger_id, enabled)
+        self.log_warning("Trigger system not enabled, cannot enable/disable trigger.")
+        return False
+
+    def list_triggers(self, event_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        if self.client_logic.trigger_manager:
+            return self.client_logic.trigger_manager.list_triggers(event_type)
+        self.log_warning("Trigger system not enabled, cannot list triggers.")
+        return []
+
+    # --- DCC API (Simplified access to DCCManager methods) ---
+    async def dcc_send_file(self, peer_nick: str, local_filepath: str, passive: bool = False) -> Optional[str]:
+        """Initiates a DCC SEND file transfer. Returns transfer ID or None on failure."""
+        if self.client_logic.dcc_manager:
+            transfer_ids = await self.client_logic.dcc_manager.initiate_sends(
+                peer_nick, [local_filepath], passive
+            )
+            return transfer_ids[0] if transfer_ids else None
+        self.log_warning("DCC system not enabled or DCCManager not available.")
+        return None
+
+    async def dcc_accept_passive_offer(self, peer_nick: str, filename: str, token: str) -> Optional[str]:
+        """Accepts a passive DCC SEND offer using a token. Returns transfer ID or None."""
+        if self.client_logic.dcc_manager:
+            transfer = await self.client_logic.dcc_manager.accept_passive_offer_by_token(
+                peer_nick, filename, token
+            )
+            return transfer.id if transfer else None
+        self.log_warning("DCC system not enabled or DCCManager not available.")
+        return None
+
+    def get_dcc_transfer_status(self, transfer_id: str) -> Optional[Dict[str, Any]]:
+        """Gets the status of a DCC transfer by its ID."""
+        if self.client_logic.dcc_manager:
+            return self.client_logic.dcc_manager.get_transfer_status_dict(transfer_id)
+        self.log_warning("DCC system not enabled or DCCManager not available.")
+        return None
+
+    def list_dcc_transfers(self, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Lists DCC transfers, optionally filtered by status (e.g., "ACTIVE", "COMPLETED")."""
+        if self.client_logic.dcc_manager:
+            return self.client_logic.dcc_manager.list_transfers_as_dicts(status_filter)
+        self.log_warning("DCC system not enabled or DCCManager not available.")
+        return []
+
+    async def dcc_cancel_transfer(self, transfer_id_or_token_prefix: str) -> bool:
+        """Cancels an active DCC transfer or a pending passive offer."""
+        if self.client_logic.dcc_manager:
+            return await self.client_logic.dcc_manager.cancel_transfer_by_id_or_token(transfer_id_or_token_prefix)
+        self.log_warning("DCC system not enabled or DCCManager not available.")
+        return False
+
+    # --- Python Trigger API (for /on ... PY <code>) ---
+    def get_python_trigger_api(self) -> "PythonTriggerAPI":
+        """Returns an instance of PythonTriggerAPI for executing Python code triggers."""
+        # This assumes PythonTriggerAPI is initialized by IRCClient_Logic or similar
+        # and made available. For now, let's assume it's on client_logic.
+        if hasattr(self.client_logic, 'python_trigger_api_instance') and self.client_logic.python_trigger_api_instance:
+            return self.client_logic.python_trigger_api_instance
         else:
-            self.log_error(f"DEV_TEST_ONLY: Context {context_name} not found.")
-            return False
-
-    def get_script_stats(self) -> Dict[str, Any]:
-        return {
-            "metadata": self.metadata.to_dict(),
-            "performance": self._performance_metrics,
-            "last_error": str(self._last_error) if self._last_error else None,
-            "is_loaded": self._is_loaded,
-            "uptime": (
-                datetime.now() - self._performance_metrics["start_time"]
-            ).total_seconds(),
-            "command_calls": self._performance_metrics["command_calls"],
-            "event_handlers": self._performance_metrics["event_handlers"],
-            "errors": self._performance_metrics["errors"],
-        }
-
-    def get_script_health(self) -> Dict[str, Any]:
-        satisfied, missing = self.check_dependencies()
-        return {
-            "is_healthy": satisfied and not self._last_error,
-            "dependencies_satisfied": satisfied,
-            "missing_dependencies": missing,
-            "has_error": bool(self._last_error),
-            "last_error": str(self._last_error) if self._last_error else None,
-            "is_enabled": self.metadata.is_enabled,
-            "is_loaded": self._is_loaded,
-        }
-
-    def get_script_config(self) -> Dict[str, Any]:
-        return {
-            "metadata": self.metadata.to_dict(),
-            "data_directory": self.get_script_data_dir(),
-            "is_enabled": self.metadata.is_enabled,
-            "dependencies": self.metadata.dependencies,
-            "min_pyrc_version": self.metadata.min_pyrc_version,
-        }
-
-    def get_script_data_dir(self) -> str:
-        return self.script_manager.get_data_file_path_for_script(self.script_name, "")
-
-    def save_script_data(self, data: Dict[str, Any], filename: str) -> bool:
-        try:
-            file_path = self.script_manager.get_data_file_path_for_script(
-                self.script_name, filename
-            )
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
-            return True
-        except Exception as e:
-            self.log_error(f"Error saving script data: {e}")
-            return False
-
-    def load_script_data(self, filename: str) -> Optional[Dict[str, Any]]:
-        try:
-            file_path = self.script_manager.get_data_file_path_for_script(
-                self.script_name, filename
-            )
-            if not os.path.exists(file_path):
-                return None
-            with open(file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            self.log_error(f"Error loading script data: {e}")
-            return None
-
-    def get_script_events(self) -> List[str]:
-        subscribed_events = []
-        if hasattr(self.client_logic, 'event_manager'):
-            for event_name, subscriptions in self.client_logic.event_manager.subscriptions.items():
-                if any(sub.get("script_name") == self.script_name for sub in subscriptions):
-                    subscribed_events.append(event_name)
-        return subscribed_events
-
-    def get_script_commands(self) -> List[Dict[str, Any]]:
-        # Retrieve script commands from CommandHandler
-        commands_for_this_script = []
-        if hasattr(self.client_logic, 'command_handler'):
-            for cmd_name, cmd_data in self.client_logic.command_handler.script_commands.items():
-                if cmd_data.get("script_name") == self.script_name:
-                    # We might want to format this to match what scripts expect,
-                    # e.g., just the command name, or a dict with name and help_info
-                    commands_for_this_script.append({
-                        "name": cmd_name,
-                        "help_info": cmd_data.get("help_info", ""),
-                        "aliases": cmd_data.get("aliases", []),
-                        # "handler_name": cmd_data.get("handler").__name__ # Might be useful
-                    })
-        return commands_for_this_script
-
-    def get_script_triggers(self) -> List[Dict[str, Any]]:
-        if (
-            not hasattr(self.client_logic, "trigger_manager")
-            or not self.client_logic.trigger_manager
-        ):
-            return []
-        return [
-            trigger.to_dict()
-            for trigger in self.client_logic.trigger_manager.triggers.values()
-            if trigger.created_by == self.script_name
-        ]
-
-# END OF MODIFIED FILE: script_api_handler.py
+            # Fallback or error handling if not found
+            self.log_error("PythonTriggerAPI instance not found on client_logic.")
+            # You might want to raise an exception or return a dummy API
+            # For now, returning a new instance, but this might not be ideal
+            # as it won't be the one used by the trigger manager.
+            # This indicates a setup issue if reached.
+            # from tirc_core.scripting.python_trigger_api import PythonTriggerAPI # Local import - already imported at top
+            return PythonTriggerAPI(self.client_logic)

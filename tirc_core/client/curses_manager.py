@@ -1,12 +1,12 @@
 import curses
 import logging
 from typing import Any, Dict, Tuple
-from pyrc_core.client.curses_utils import SafeCursesUtils
-from pyrc_core.app_config import AppConfig
-from pyrc_core.client.ui_colors import UI_COLOR_PALETTE, FALLBACK_8_COLOR_MAP # Import new color palette
+from tirc_core.client.curses_utils import SafeCursesUtils
+from tirc_core.app_config import AppConfig
+from tirc_core.client.ui_colors import UI_COLOR_PALETTE, FALLBACK_8_COLOR_MAP # Import new color palette
 import colorsys # For hex to RGB conversion
 
-logger = logging.getLogger("pyrc.curses_manager")
+logger = logging.getLogger("tirc.curses_manager")
 
 class CursesManager:
     def __init__(self, stdscr: Any, config: AppConfig):
@@ -265,6 +265,20 @@ class CursesManager:
         except curses.error as e:
             logger.error(f"Curses error getting stdscr dimensions: {e}")
             return 0, 0
+
+    def handle_terminal_resize(self, new_lines: int, new_cols: int):
+        """Handles actual terminal resize by calling curses.resize_term and refreshing stdscr."""
+        try:
+            curses.resize_term(new_lines, new_cols) # Corrected typo: resizeterm -> resize_term
+            self.height, self.width = self.stdscr.getmaxyx() # Update internal dims
+            SafeCursesUtils._safe_clear(self.stdscr, "CursesManager.handle_terminal_resize_clear")
+            SafeCursesUtils._safe_refresh(self.stdscr, "CursesManager.handle_terminal_resize_refresh")
+            logger.info(f"CursesManager: Terminal resized to {new_lines}x{new_cols} and stdscr refreshed.")
+        except curses.error as e:
+            logger.error(f"Curses error in handle_terminal_resize: {e}")
+        except Exception as ex:
+            logger.error(f"Unexpected error in handle_terminal_resize: {ex}", exc_info=True)
+
 
     def resize_term(self, height: int, width: int):
         # curses.resizeterm is not consistently available on all platforms (e.g., Windows)

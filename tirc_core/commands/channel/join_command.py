@@ -1,68 +1,85 @@
+# commands/channel/join_command.py
 import logging
-from typing import TYPE_CHECKING, Optional, List
-
-from pyrc_core.context_manager import ChannelJoinStatus, Context
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.channel.join")
+logger = logging.getLogger("tirc.commands.channel.join")
 
 COMMAND_DEFINITIONS = [
     {
         "name": "join",
         "handler": "handle_join_command",
         "help": {
-            "usage": "/join <channel> [#channel2 ...]",
-            "description": "Joins the specified IRC channel(s).",
+            "usage": "/join <channel>[,<channel2>...] [key[,key2...]]",
+            "description": "Joins one or more IRC channels. Keys can be provided for channels that require them.",
             "aliases": ["j"]
         }
     }
 ]
 
 async def handle_join_command(client: "IRCClient_Logic", args_str: str):
-    """Handle the /join command"""
-    help_data = client.command_handler.get_help_text_for_command("join")
-    usage_msg = help_data["help_text"] if help_data and help_data.get("help_text") else \
-                (help_data["help_info"]["usage"] if help_data and help_data.get("help_info") else "Usage: /join <channel>")
-    parts = await client.command_handler._ensure_args(args_str, usage_msg)
+    """Handles the /join command."""
+    parts = args_str.split()
+    active_context_name = client.context_manager.active_context_name or "Status"
+
     if not parts:
-        return
-    channel_name_arg = parts[0]
-    target_channel_name = (
-        channel_name_arg
-        if channel_name_arg.startswith("#")
-        else f"#{channel_name_arg}"
-    )
-
-    client.last_join_command_target = target_channel_name
-
-    ctx = client.context_manager.get_context(target_channel_name)
-    if not ctx:
-        client.context_manager.create_context(
-            target_channel_name,
-            context_type="channel",
-            initial_join_status_for_channel=ChannelJoinStatus.JOIN_COMMAND_SENT,
-        )
-        logger.info(
-            f"/join: Created context for {target_channel_name} with status JOIN_COMMAND_SENT."
-        )
-    elif ctx.type == "channel":
-        if hasattr(ctx, "join_status"):
-            ctx.join_status = ChannelJoinStatus.JOIN_COMMAND_SENT
-        logger.info(
-            f"/join: Updated context for {target_channel_name} to status JOIN_COMMAND_SENT."
-        )
-    else:
-        await client.add_message(
-            f"Cannot join '{target_channel_name}': A non-channel window with this name already exists.",
-            client.ui.colors["error"], # Use semantic color key
-            context_name=client.context_manager.active_context_name or "Status",
-        )
+        await client.add_message("Usage: /join <channel>[,<channel2>...] [key[,key2...]]", client.ui.colors.get("error", 0), context_name=active_context_name)
         return
 
-    await client.network_handler.send_raw(f"JOIN {target_channel_name}")
-    # Set the new channel as the active context and trigger UI update
-    client.context_manager.set_active_context(target_channel_name)
-    client.ui_needs_update.set()
-    logger.info(f"/join: Set active context to {target_channel_name} and requested UI update.")
+    channels_str = parts[0]
+    keys_str = parts[1] if len(parts) > 1 else None
+
+    raw_channels_to_join: List[str] = [ch.strip() for ch in channels_str.split(',') if ch.strip()]
+    keys: List[Optional[str]] = [k.strip() for k in keys_str.split(',')] if keys_str else []
+
+    if not raw_channels_to_join:
+        await client.add_message("No valid channel names provided.", client.ui.colors.get("error_message", 0), context_name=active_context_name)
+        return
+
+    processed_channels_to_join: List[str] = []
+    for ch_name_raw in raw_channels_to_join:
+        # Ensure channel name starts with a valid prefix, default to '#'
+        if not ch_name_raw.startswith(("#", "&", "!", "+")):
+            processed_channels_to_join.append("#" + ch_name_raw)
+        else:
+            processed_channels_to_join.append(ch_name_raw)
+
+    # Normalize after ensuring prefix, for consistent storage by ContextManager
+    channels_to_join_normalized: List[str] = [client.context_manager._normalize_context_name(ch) for ch in processed_channels_to_join]
+
+
+    # Construct the JOIN command string using the processed (prefixed) names
+    join_cmd_channels = ",".join(processed_channels_to_join)
+    join_cmd_keys = ",".join(k for k in keys if k) if any(keys) else "" # Join keys if any are non-empty
+
+    command = f"JOIN {join_cmd_channels}"
+    if join_cmd_keys:
+        command += f" {join_cmd_keys}"
+
+    await client.network_handler.send_raw(command)
+    logger.info(f"Sent JOIN command for channels: {join_cmd_channels}, Keys: {join_cmd_keys or 'N/A'}")
+
+    # Create contexts for these channels immediately if they don't exist,
+    # so messages related to joining (like MOTD parts if it's the first join) can be buffered.
+    # The actual join status will be updated by server messages.
+    # Use the normalized names for context creation and status messages.
+    first_channel_joined_for_switch: Optional[str] = None
+    for i, chan_name_normalized in enumerate(channels_to_join_normalized):
+        # Use the corresponding processed (prefixed) name for the status message
+        display_chan_name = processed_channels_to_join[i] if i < len(processed_channels_to_join) else chan_name_normalized
+
+        client.context_manager.create_context(chan_name_normalized, context_type="channel")
+        await client.add_status_message(f"Attempting to join {display_chan_name}...", "system_message")
+        if first_channel_joined_for_switch is None:
+            first_channel_joined_for_switch = chan_name_normalized
+
+    # Switch to the first channel being joined.
+    if first_channel_joined_for_switch:
+        # Ensure the context exists before trying to switch (it should, as we just created it)
+        if client.context_manager.get_context(first_channel_joined_for_switch):
+            logger.info(f"Switching active context to newly joined channel: {first_channel_joined_for_switch}")
+            await client.view_manager.switch_active_context(first_channel_joined_for_switch)
+        else:
+            logger.warning(f"Could not switch to {first_channel_joined_for_switch}, context not found after creation attempt.")

@@ -1,21 +1,21 @@
-# pyrc_core/client/connection_orchestrator.py
+# tirc_core/client/connection_orchestrator.py
 import logging
 from typing import TYPE_CHECKING, Optional
 
-from pyrc_core.irc.cap_negotiator import CapNegotiator
-from pyrc_core.irc.sasl_authenticator import SaslAuthenticator
-from pyrc_core.irc.registration_handler import RegistrationHandler
-from pyrc_core.state_manager import ConnectionInfo
-from pyrc_core.context_manager import ChannelJoinStatus # Added for reset_for_new_connection
+from tirc_core.irc.cap_negotiator import CapNegotiator
+from tirc_core.irc.sasl_authenticator import SaslAuthenticator
+from tirc_core.irc.registration_handler import RegistrationHandler
+from tirc_core.state_manager import ConnectionInfo
+from tirc_core.context_manager import ChannelJoinStatus # Added for reset_for_new_connection
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
-    from pyrc_core.network_handler import NetworkHandler
-    from pyrc_core.state_manager import StateManager
-    from pyrc_core.app_config import AppConfig
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.network_handler import NetworkHandler
+    from tirc_core.state_manager import StateManager
+    from tirc_core.app_config import AppConfig
 
 
-logger = logging.getLogger("pyrc.connection_orchestrator")
+logger = logging.getLogger("tirc.connection_orchestrator")
 
 class ConnectionOrchestrator:
     def __init__(self, client_logic_ref: "IRCClient_Logic"):
@@ -39,16 +39,28 @@ class ConnectionOrchestrator:
         # Create and assign handlers to the client_logic_ref instance
         self.client_logic_ref.cap_negotiator = CapNegotiator(
             network_handler=self.network_handler,
-            desired_caps=set(conn_info.desired_caps),
-            registration_handler=None,  # Will be set after RegistrationHandler is created
-            client_logic_ref=self.client_logic_ref,
+            state_manager=self.state_manager, # Pass StateManager
+            client_logic_ref=self.client_logic_ref
+            # desired_caps is handled internally by CapNegotiator using StateManager
+            # registration_handler is set later
         )
+
+        if self.client_logic_ref.cap_negotiator is None:
+            logger.critical("ConnectionOrchestrator: cap_negotiator is None before SASLAuthenticator initialization. This should not happen.")
+            # Depending on how critical SASL is, either raise an error or try to proceed without it.
+            # For now, we'll let it potentially fail at SASLAuthenticator if it can't handle None.
+            # Or, ensure CapNegotiator always initializes or raises.
+            # Based on current typing, SaslAuthenticator expects a CapNegotiator, not Optional.
+            # This indicates a logic flaw if cap_negotiator can be None here.
+            # For now, we'll assert to catch this during development.
+            assert self.client_logic_ref.cap_negotiator is not None, "CapNegotiator must be initialized before SaslAuthenticator"
+
 
         self.client_logic_ref.sasl_authenticator = SaslAuthenticator(
             network_handler=self.network_handler,
-            cap_negotiator=self.client_logic_ref.cap_negotiator,
-            password=conn_info.sasl_password or conn_info.nickserv_password,
-            client_logic_ref=self.client_logic_ref,
+            state_manager=self.state_manager, # Corrected: pass state_manager
+            client_logic_ref=self.client_logic_ref
+            # cap_negotiator and password are not constructor arguments for SaslAuthenticator
         )
 
         self.client_logic_ref.registration_handler = RegistrationHandler(
@@ -60,10 +72,8 @@ class ConnectionOrchestrator:
         )
 
         # Link handlers back
-        if self.client_logic_ref.cap_negotiator:
-            self.client_logic_ref.cap_negotiator.registration_handler = self.client_logic_ref.registration_handler
-            if hasattr(self.client_logic_ref.cap_negotiator, "set_sasl_authenticator"):
-                self.client_logic_ref.cap_negotiator.set_sasl_authenticator(self.client_logic_ref.sasl_authenticator)
+        # CapNegotiator accesses registration_handler and sasl_authenticator via client_logic_ref directly.
+        # No explicit linking back to CapNegotiator instance is needed for these.
 
         if self.client_logic_ref.registration_handler and self.client_logic_ref.sasl_authenticator:
             if hasattr(self.client_logic_ref.registration_handler, "set_sasl_authenticator"):

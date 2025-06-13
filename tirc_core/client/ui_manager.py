@@ -1,17 +1,18 @@
 import curses
 import time
 import logging
+import asyncio # Import asyncio
 from typing import Optional, TYPE_CHECKING, List, Tuple, Any, Deque, Dict
-from pyrc_core.context_manager import ChannelJoinStatus
-from pyrc_core.client.curses_utils import SafeCursesUtils
-from pyrc_core.client.curses_manager import CursesManager
-from pyrc_core.client.window_layout_manager import WindowLayoutManager
-from pyrc_core.client.message_panel_renderer import MessagePanelRenderer
-from pyrc_core.client.sidebar_panel_renderer import SidebarPanelRenderer
-from pyrc_core.client.status_bar_renderer import StatusBarRenderer
-from pyrc_core.client.input_line_renderer import InputLineRenderer
+from tirc_core.context_manager import ChannelJoinStatus
+from tirc_core.client.curses_utils import SafeCursesUtils
+from tirc_core.client.curses_manager import CursesManager
+from tirc_core.client.window_layout_manager import WindowLayoutManager
+from tirc_core.client.message_panel_renderer import MessagePanelRenderer
+from tirc_core.client.sidebar_panel_renderer import SidebarPanelRenderer
+from tirc_core.client.status_bar_renderer import StatusBarRenderer
+from tirc_core.client.input_line_renderer import InputLineRenderer
 
-logger = logging.getLogger("pyrc.ui")
+logger = logging.getLogger("tirc.ui")
 
 MIN_SIDEBAR_USER_LIST_WIDTH = (
     8  # Minimum practical width to attempt drawing user list items
@@ -50,6 +51,7 @@ class UIManager:
         self.msg_win_height: int = 0
         self.msg_win_width: int = 0
         self.ui_is_too_small: bool = False
+        self.resize_pending: bool = False # Flag for resize event
 
         self.setup_layout()
 
@@ -197,33 +199,86 @@ class UIManager:
 
         self.input_line_renderer.draw(self.input_win, current_input_buffer, cursor_pos_in_buffer)
 
+    async def handle_resize(self):
+        """Signal that a UI refresh is needed due to resize and set flag."""
+        logger.info("UIManager.handle_resize called, setting ui_needs_update and resize_pending flag.")
+        # Removed direct curses.resize_term(0,0) call from here.
+        # It will be handled by CursesManager.handle_terminal_resize during the main refresh.
+        self.resize_pending = True
+        self.client.ui_needs_update.set()
 
-    def refresh_all_windows(self):
+    async def refresh_all_windows(self):
         """Refresh all windows in the UI"""
-        try:
-            new_height, new_width = self.curses_manager.get_dimensions()
-        except curses.error as e:
-            logger.error(f"Curses error getting stdscr.getmaxyx() in refresh_all_windows: {e}. UI update aborted.")
-            # Potentially can't even clear or show an error if stdscr is fundamentally broken.
+        process_resize_this_call = self.resize_pending
+
+        if process_resize_this_call:
+            self.resize_pending = False # Consume the flag
+            logger.info("Resize event detected by flag. Performing full resize sequence.")
+            try:
+                new_height, new_width = self.curses_manager.get_dimensions() # Get new dimensions first
+                logger.info(f"New dimensions from get_dimensions: H={new_height}, W={new_width}")
+
+                # Update UIManager's internal dimensions before Curses operations
+                self.height = new_height
+                self.width = new_width
+                self.ui_is_too_small = False # Assume not too small initially
+
+                logger.info("PERFORMING RESIZE OPS (SYNC): Starting.")
+
+                # 1. Delete old windows
+                self.window_layout_manager.delete_windows()
+                logger.debug("UIManager (SYNC): Existing windows deleted.")
+
+                # 2. Notify Curses of the resize (calls resize_term) and refresh stdscr
+                self.curses_manager.handle_terminal_resize(new_height, new_width)
+                logger.debug("UIManager (SYNC): Terminal resized and stdscr refreshed via CursesManager.")
+
+                # 3. Re-create layout with new dimensions
+                self.setup_layout() # This will use self.height, self.width which are now updated
+                logger.debug("UIManager (SYNC): New layout setup complete post-resize.")
+
+                logger.info(f"UIManager state updated to {self.width}x{self.height} after resize ops.")
+
+                self.scroll_messages("end")
+                logger.debug("Called scroll_messages('end') after resize.")
+                logger.info("PERFORMING RESIZE OPS (SYNC): Finished.")
+
+            except curses.error as e_curses_resize:
+                logger.critical(f"Curses error during resize handling: {e_curses_resize}", exc_info=True)
+                self.ui_is_too_small = True
+            except Exception as e_generic_resize:
+                logger.critical(f"Generic error during resize handling: {e_generic_resize}", exc_info=True)
+                self.ui_is_too_small = True
+        else:
+            # Standard refresh if no resize event was pending
+            # Check if dimensions changed unexpectedly (e.g., if flag was missed)
+            try:
+                current_h, current_w = self.curses_manager.get_dimensions()
+                if current_h != self.height or current_w != self.width:
+                    logger.warning(f"Dimensions changed ({current_w}x{current_h} from {self.width}x{self.height}) without resize_pending flag. Forcing resize path.")
+                    self.resize_pending = True # Set flag to re-run with resize logic
+                    self.client.ui_needs_update.set() # Ensure it runs again
+                    return # Exit this refresh, next one will handle resize
+            except curses.error:
+                logger.error("Curses error getting dimensions in non-resize path. UI update aborted.")
+                return
+
+        # If UI is marked as too small (either from this resize or a previous one)
+        if self.ui_is_too_small:
+            SafeCursesUtils._safe_erase(self.stdscr, "UIManager.too_small_repeat_erase") # Ensure clean slate
+            msg = "Terminal too small. Please resize."
+            if self.height > 0 and self.width > 0:
+                msg_y = self.height // 2
+                msg_x = max(0, (self.width - len(msg)) // 2)
+                if msg_x + len(msg) <= self.width: # Check if message can fit
+                    error_attr = self.curses_manager.get_color("error") | curses.A_BOLD
+                    SafeCursesUtils._safe_addstr(self.stdscr, msg_y, msg_x, msg, error_attr, "UIManager.too_small_repeat_addstr")
+            SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.too_small_final_refresh")
             return
 
-        resize_occurred = (new_height != self.height or new_width != self.width)
-
-        if resize_occurred:
-            logger.info(f"Terminal resized from {self.width}x{self.height} to {new_width}x{new_height}.")
-            self.height, self.width = new_height, new_width
-            self.ui_is_too_small = False # Reset flag before attempting layout
-
-                # Clear and refresh stdscr before re-creating subwindows
-            SafeCursesUtils._safe_clear(self.stdscr, "UIManager.resize_clear_stdscr")
-            SafeCursesUtils._safe_refresh(self.stdscr, "UIManager.resize_refresh_stdscr")
-
-            self.window_layout_manager.delete_windows() # Explicitly delete old windows
-            self.setup_layout() # This will re-create windows based on new dimensions
-
-            # Scroll to end of messages on resize to show latest messages
+        # --- Proceed with drawing individual windows only if UI is not too small ---
             try:
-                self.scroll_messages("end")
+                self.scroll_messages("end") # Removed await
                 logger.debug(f"Called scroll_messages('end') after resize.")
             except Exception as e_scroll_end:
                 logger.error(f"Error calling scroll_messages('end') after resize: {e_scroll_end}", exc_info=True)

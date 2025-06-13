@@ -4,7 +4,7 @@ import logging
 import inspect
 
 # Debug: Verify this file is being loaded
-logger = logging.getLogger("pyrc.debug")
+logger = logging.getLogger("tirc.debug")
 logger.debug(f"Loading StateManager from: {os.path.abspath(__file__)}")
 
 import os
@@ -245,7 +245,7 @@ class StateManager:
         save_interval: int = 60,  # seconds
         validate_on_change: bool = True,
     ):
-        self.logger = logging.getLogger("pyrc.state_manager")
+        self.logger = logging.getLogger("tirc.state_manager")
 
         # Debug: Verify methods exist on this instance
         required_methods = ['set_connection_info', 'get_connection_info']

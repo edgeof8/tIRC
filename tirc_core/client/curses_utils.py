@@ -2,7 +2,7 @@ import curses
 import logging
 from typing import Any
 
-logger = logging.getLogger("pyrc.curses_utils")
+logger = logging.getLogger("tirc.curses_utils")
 
 class SafeCursesUtils:
     @staticmethod
@@ -437,3 +437,17 @@ class SafeCursesUtils:
         padded_text = text.ljust(max_x)
 
         SafeCursesUtils._safe_addstr(window, y, 0, padded_text, attr, context_info)
+
+    @staticmethod
+    def _safe_delwin(window: Any, call_site: str = "unknown") -> None:
+        """Safely deletes a curses window."""
+        if not window:
+            logger.debug(f"_safe_delwin ({call_site}): Attempted to delete a non-existent window.")
+            return
+        try:
+            window.delwin()
+            logger.debug(f"_safe_delwin ({call_site}): Successfully deleted window {window!r}.")
+        except curses.error as e:
+            logger.warning(f"_safe_delwin ({call_site}): curses.error deleting window {window!r}: {e}")
+        except Exception as ex:
+            logger.error(f"_safe_delwin ({call_site}): Unexpected error deleting window {window!r}: {ex}", exc_info=True)

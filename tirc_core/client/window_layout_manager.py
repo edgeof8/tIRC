@@ -1,11 +1,11 @@
 import curses
 import logging
 from typing import Optional, Any, Tuple, Dict
-from pyrc_core.client.ui_colors import UI_COLOR_PALETTE # Import new color palette
+from tirc_core.client.ui_colors import UI_COLOR_PALETTE # Import new color palette
 
-logger = logging.getLogger("pyrc.window_layout_manager")
+logger = logging.getLogger("tirc.window_layout_manager")
 
-from pyrc_core.client.curses_utils import SafeCursesUtils # Added import
+from tirc_core.client.curses_utils import SafeCursesUtils # Added import
 
 class WindowLayoutManager:
     def __init__(self, colors: Dict[str, int]):
@@ -131,17 +131,14 @@ class WindowLayoutManager:
         return self.sidebar_width, self.msg_win_height, self.msg_win_width
 
     def delete_windows(self):
-        """Explicitly deletes all window objects to free resources."""
-        for win_name in ["msg_win", "msg_win_top", "msg_win_bottom", "sidebar_win", "status_win", "input_win"]:
-            win = getattr(self, win_name, None)
-            if win:
-                try:
-                    win.erase()
-                    win.refresh()
-                    logger.debug(f"Deleting curses window: {win_name}")
-                    del win
-                except curses.error as e:
-                    logger.warning(f"Error deleting window {win_name}: {e}")
-                except Exception as ex:
-                    logger.warning(f"Unexpected error deleting window {win_name}: {ex}")
-            setattr(self, win_name, None) # Ensure reference is set to None
+        """Explicitly deletes all window objects to free resources using curses delwin()."""
+        window_names = ["msg_win", "msg_win_top", "msg_win_bottom", "sidebar_win", "status_win", "input_win"]
+        for win_name in window_names:
+            win_obj = getattr(self, win_name, None)
+            if win_obj:
+                logger.debug(f"Attempting to delete Curses window: {win_name}")
+                SafeCursesUtils._safe_delwin(win_obj, f"WindowLayoutManager.{win_name}")
+            else:
+                logger.debug(f"Window object {win_name} was already None or not found.")
+            setattr(self, win_name, None) # Ensure Python reference is cleared
+        logger.debug("Finished attempting to delete all managed Curses windows.")

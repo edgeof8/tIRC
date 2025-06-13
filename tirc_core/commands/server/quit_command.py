@@ -2,9 +2,9 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.server.quit")
+logger = logging.getLogger("tirc.commands.server.quit")
 
 COMMAND_DEFINITIONS = [
     {
@@ -12,7 +12,7 @@ COMMAND_DEFINITIONS = [
         "handler": "handle_quit_command",
         "help": {
             "usage": "/quit [message]",
-            "description": "Disconnects from the server and exits PyRC.",
+            "description": "Disconnects from the server and exits tIRC.",
             "aliases": ["q"]
         }
     }
@@ -36,7 +36,7 @@ async def handle_quit_command(client: "IRCClient_Logic", args_str: str):
         if script_reason:
             reason = script_reason
         else:
-            reason = "PyRC Client Exiting"  # Fallback if no script provides a message
+            reason = "tIRC Client Exiting"  # Fallback if no script provides a message
 
     await client.add_message(
         f"Quitting... (Reason: {reason})",

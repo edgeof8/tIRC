@@ -1,11 +1,11 @@
-# pyrc_core/commands/core/help_command.py
+# tirc_core/commands/core/help_command.py
 import logging
 from typing import TYPE_CHECKING, List, Optional, Dict, Any, Union, Tuple
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.help")
+logger = logging.getLogger("tirc.commands.help")
 
 COMMAND_DEFINITIONS = [
     {
@@ -58,8 +58,9 @@ def get_summary_from_help_data(help_data_from_manager: Dict[str, Any]) -> str:
     return lines[0].strip()
 
 async def handle_help_command(client: "IRCClient_Logic", args_str: str):
-    system_color = client.ui.colors["system"]
-    error_color = client.ui.colors["error"]
+    default_color_id = client.ui.colors.get("default", 0) # Fallback to 0 (usually default terminal pair)
+    system_color = client.ui.colors.get("system_message", default_color_id)
+    error_color = client.ui.colors.get("error_message", default_color_id)
     active_context_name = client.context_manager.active_context_name or "Status"
     args = args_str.strip().lower().split()
     target_arg1: Optional[str] = args[0] if len(args) > 0 else None
@@ -76,9 +77,9 @@ async def handle_help_command(client: "IRCClient_Logic", args_str: str):
         for cmd_name_loop, help_data_val_loop in client.command_handler.registered_command_help.items():
             if help_data_val_loop.get("is_alias"): continue
             module_path = help_data_val_loop.get("module_path", "")
-            if module_path.startswith("pyrc_core.commands."): # Corrected check
+            if module_path.startswith("tirc_core.commands."): # Corrected check
                 parts = module_path.split(".")
-                if len(parts) > 2: # pyrc_core.commands.CATEGORY.module
+                if len(parts) > 2: # tirc_core.commands.CATEGORY.module
                     cat_key = parts[2].lower() # Corrected index
                     if cat_key in core_categories_map:
                         active_core_categories.add(cat_key)
@@ -169,7 +170,7 @@ async def handle_help_command(client: "IRCClient_Logic", args_str: str):
             if help_data_val.get("is_alias"): continue
             module_path = help_data_val.get("module_path", "")
             cmd_category_key = "core" # Default
-            if module_path.startswith("pyrc_core.commands."):
+            if module_path.startswith("tirc_core.commands."):
                 parts = module_path.split(".")
                 if len(parts) > 2: cmd_category_key = parts[2].lower()
 

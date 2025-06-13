@@ -3,11 +3,12 @@ import os
 from typing import Optional, Any, Set, Dict, List
 from dataclasses import asdict
 
-from pyrc_core.app_config import AppConfig, ServerConfig, DEFAULT_SSL_PORT, DEFAULT_PORT, DEFAULT_NICK
-from pyrc_core.state_manager import ConnectionInfo
-from pyrc_core.context_manager import ChannelJoinStatus
+from tirc_core.app_config import AppConfig
+from tirc_core.config_defs import ServerConfig, DEFAULT_SSL_PORT, DEFAULT_PORT, DEFAULT_NICK # Corrected import
+from tirc_core.state_manager import ConnectionInfo
+from tirc_core.context_manager import ChannelJoinStatus
 
-logger = logging.getLogger("pyrc.initial_state_builder")
+logger = logging.getLogger("tirc.initial_state_builder")
 
 class InitialStateBuilder:
     def __init__(self, config: AppConfig, args: Any):

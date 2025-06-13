@@ -1,55 +1,60 @@
+# commands/information/whowas_command.py
 import logging
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.information.whowas")
+logger = logging.getLogger("tirc.commands.information.whowas")
 
 COMMAND_DEFINITIONS = [
     {
         "name": "whowas",
         "handler": "handle_whowas_command",
         "help": {
-            "usage": "/whowas <nick> [count] [server]",
-            "description": "Shows WHOWAS information for a user, providing historical data about a nickname.",
+            "usage": "/whowas <nickname> [count] [server]",
+            "description": "Retrieves WHOWAS information for a nickname that recently disconnected.",
             "aliases": []
         }
     }
 ]
 
 async def handle_whowas_command(client: "IRCClient_Logic", args_str: str):
-    help_data = client.script_manager.get_help_text_for_command("whowas")
-    usage_msg = (
-        help_data["help_text"]
-        if help_data
-        else "Usage: /whowas <nick> [count] [server]"
-    )
-    parts = await client.command_handler._ensure_args(
-        args_str,
-        usage_msg,
-        num_expected_parts=1,  # Ensure at least the nick is provided
-    )
+    """Handles the /whowas command."""
+    parts = args_str.split()
+    active_context_name = client.context_manager.active_context_name or "Status"
+
     if not parts:
+        await client.add_message("Usage: /whowas <nickname> [count] [server]", client.ui.colors.get("error", 0), context_name=active_context_name)
         return
 
-    split_args = args_str.strip().split(" ", 2)
-    nick_arg = split_args[0]
-    count_arg: Optional[str] = None
-    target_server_arg: Optional[str] = None
+    nick_to_query = parts[0]
+    count_str = parts[1] if len(parts) > 1 else None
+    server_str = parts[2] if len(parts) > 2 else None # Server is less commonly used by clients for WHOWAS
 
-    if len(split_args) > 1:
-        if split_args[1].isdigit():
-            count_arg = split_args[1]
-            if len(split_args) > 2:
-                target_server_arg = split_args[2]
-        else:
-            target_server_arg = split_args[1]
+    command = f"WHOWAS {nick_to_query}"
+    if count_str:
+        try:
+            # Ensure count is a positive integer if provided
+            count = int(count_str)
+            if count <= 0:
+                await client.add_message("WHOWAS count must be a positive integer.", client.ui.colors.get("error", 0), context_name=active_context_name)
+                return
+            command += f" {count}"
+        except ValueError:
+            await client.add_message("Invalid count for WHOWAS. Must be an integer.", client.ui.colors.get("error", 0), context_name=active_context_name)
+            return
 
-    command_parts = ["WHOWAS", nick_arg]
-    if count_arg:
-        command_parts.append(count_arg)
-    if target_server_arg:
-        command_parts.append(target_server_arg)
+    if server_str: # This parameter is for querying a specific server in a multi-server network, usually not needed.
+        command += f" {server_str}"
 
-    await client.network_handler.send_raw(" ".join(command_parts))
+
+    if not client.network_handler.connected:
+        await client.add_status_message("Not connected to any server.", "error")
+        return
+
+    await client.network_handler.send_raw(command)
+    await client.add_status_message(f"Requesting WHOWAS information for {nick_to_query}...", "system")
+    # Server will respond with RPL_WHOWASUSER (314), RPL_ENDOFWHOWAS (369),
+    # and possibly ERR_WASNOSUCHNICK (406). These are handled by numeric handlers.
+    # Messages will be added to the active_context_name by the numeric handlers.

@@ -1,12 +1,12 @@
-# pyrc_core/client/state_change_ui_handler.py
+# tirc_core/client/state_change_ui_handler.py
 import logging
 from typing import TYPE_CHECKING, Optional
-from pyrc_core.state_manager import StateChange, ConnectionState, ConnectionInfo
+from tirc_core.state_manager import StateChange, ConnectionState, ConnectionInfo
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.state_ui_handler")
+logger = logging.getLogger("tirc.state_ui_handler")
 
 class StateChangeUIHandler:
     def __init__(self, client: "IRCClient_Logic"):

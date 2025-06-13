@@ -8,25 +8,25 @@ import os # New import
 import configparser # New import
 
 # Import the commands package itself to access __path__ and __name__
-import pyrc_core.commands
+import tirc_core.commands
 
-from pyrc_core.features.triggers.trigger_commands import TriggerCommands
-from pyrc_core.context_manager import ChannelJoinStatus, Context
+from tirc_core.features.triggers.trigger_commands import TriggerCommands
+from tirc_core.context_manager import ChannelJoinStatus, Context
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
     CommandHandlerCallable = Callable[["IRCClient_Logic", str], Awaitable[Any]]
     ScriptCommandHandlerCallable = Callable[[str, Dict[str, Any]], Awaitable[Any]] # This is for the script's handler
     # Type for the handler stored in CommandHandler's script_commands
     InternalScriptCommandHandlerCallable = Callable[..., Awaitable[Any]]
 
 
-from pyrc_core.context_manager import Context as CTX_Type
+from tirc_core.context_manager import Context as CTX_Type
 
-logger = logging.getLogger("pyrc.command_handler")
+logger = logging.getLogger("tirc.command_handler")
 
 HELP_INI_FILENAME = "command_help.ini"
-# HELP_INI_PATH is now relative to pyrc_core's base_dir (which is self.client.base_dir)
+# HELP_INI_PATH is now relative to tirc_core's base_dir (which is self.client.base_dir)
 HELP_INI_PATH = os.path.join("data", "default_help", HELP_INI_FILENAME)
 
 
@@ -49,12 +49,12 @@ class CommandHandler:
         self.ini_help_texts: Dict[str, Dict[str, str]] = {}
         self._load_help_texts() # Load INI help texts first
 
-        logger.info(f"Starting dynamic command loading using pkgutil from package: {pyrc_core.commands.__name__}")
-        logger.info(f"pkgutil.walk_packages path: {pyrc_core.commands.__path__}, prefix: {pyrc_core.commands.__name__ + '.'}")
+        logger.info(f"Starting dynamic command loading using pkgutil from package: {tirc_core.commands.__name__}")
+        logger.info(f"pkgutil.walk_packages path: {tirc_core.commands.__path__}, prefix: {tirc_core.commands.__name__ + '.'}")
 
         for module_loader, module_name, is_pkg in pkgutil.walk_packages(
-            path=pyrc_core.commands.__path__,  # Path to the commands package
-            prefix=pyrc_core.commands.__name__ + '.',  # Prefix for full module names
+            path=tirc_core.commands.__path__,  # Path to the commands package
+            prefix=tirc_core.commands.__name__ + '.',  # Prefix for full module names
             onerror=lambda x: logger.error(f"Error importing module during walk_packages: {x}")
         ):
             logger.debug(f"Discovered module: {module_name}, is_pkg: {is_pkg}")
@@ -63,7 +63,7 @@ class CommandHandler:
                 logger.debug(f"Skipping __init__.py module: {module_name}")
                 continue
 
-            # module_name is the full Python path to the module, e.g., 'pyrc_core.commands.core.help_command'
+            # module_name is the full Python path to the module, e.g., 'tirc_core.commands.core.help_command'
             python_module_name = module_name
 
             try:
@@ -134,7 +134,7 @@ class CommandHandler:
                 seen_handlers[handler_func] = cmd_name
 
     def _load_help_texts(self):
-        # Construct path from pyrc_core's directory (self.client.config.BASE_DIR)
+        # Construct path from tirc_core's directory (self.client.config.BASE_DIR)
         help_ini_full_path = os.path.join(self.client.config.BASE_DIR, HELP_INI_PATH)
         if not os.path.exists(help_ini_full_path):
             logger.warning(
@@ -366,6 +366,12 @@ class CommandHandler:
             self._processing_depth -= 1
             return False
 
+        # Define default color for messages, and specific error color
+        default_color_id = self.client.ui.colors.get("default", 0)
+        error_color_id = self.client.ui.colors.get("error_message", default_color_id)
+        my_message_color_id = self.client.ui.colors.get("my_message", default_color_id)
+
+
         try:
             if not line.startswith("/"):
                 active_context_name = self.client.context_manager.active_context_name
@@ -384,7 +390,7 @@ class CommandHandler:
                 else: # Corrected indentation: this else corresponds to 'if active_context_name:'
                     await self.client.add_message(
                         "No active window to send message to.",
-                        self.client.ui.colors["error"], context_name="Status",
+                        error_color_id, context_name="Status",
                     )
                     return False
 
@@ -414,11 +420,11 @@ class CommandHandler:
                             await asyncio.to_thread(handler_func, self.client, args_str)
                         else:
                             logger.error("Executor not available for synchronous command handler.")
-                            await self.client.add_message(f"Error: Executor not available for command /{cmd}.", self.client.ui.colors["error"], context_name="Status")
+                            await self.client.add_message(f"Error: Executor not available for command /{cmd}.", error_color_id, context_name="Status")
                             return False
                 except Exception as e_handler:
                     logger.error(f"Error executing handler for command '{cmd}': {e_handler}", exc_info=True)
-                    await self.client.add_message(f"Error in command /{cmd}: {e_handler}", self.client.ui.colors["error"], context_name=self.client.context_manager.active_context_name or "Status")
+                    await self.client.add_message(f"Error in command /{cmd}: {e_handler}", error_color_id, context_name=self.client.context_manager.active_context_name or "Status")
                 return True
             else: # Not a core command, check script commands
                 script_cmd_data = self.get_script_command_handler(cmd) # Use new method
@@ -453,16 +459,16 @@ class CommandHandler:
                                 await asyncio.to_thread(script_handler, args_str, event_data_for_script)
                             else:
                                 logger.error(f"Executor not available for synchronous script command handler for /{cmd}.")
-                                await self.client.add_message(f"Error: Executor not available for script command /{cmd}.", self.client.ui.colors["error"], context_name="Status")
+                                await self.client.add_message(f"Error: Executor not available for script command /{cmd}.", error_color_id, context_name="Status")
                                 return False
                     except Exception as e:
                         logger.error(f"Error executing script command '/{cmd}' from script '{script_cmd_data.get('script_name')}': {e}", exc_info=True)
-                        await self.client.add_message(f"Error in script command /{cmd}: {e}", self.client.ui.colors["error"],
+                        await self.client.add_message(f"Error in script command /{cmd}: {e}", error_color_id,
                                                 context_name=self.client.context_manager.active_context_name or "Status")
                     return True
                 else:
                     logger.warning(f"CommandHandler: Command '{cmd}' NOT found in core command_map OR script_commands. Treating as unknown.")
-                    await self.client.add_message(f"Unknown command: {cmd}", self.client.ui.colors["error"],
+                    await self.client.add_message(f"Unknown command: {cmd}", error_color_id,
                                             context_name=self.client.context_manager.active_context_name or "Status")
                     return True
         finally:

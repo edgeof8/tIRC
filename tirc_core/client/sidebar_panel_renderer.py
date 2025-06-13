@@ -1,10 +1,10 @@
 import curses
 import logging
 from typing import Any, Dict, List, Optional
-from pyrc_core.client.curses_utils import SafeCursesUtils
-from pyrc_core.context_manager import ChannelJoinStatus, ContextManager
+from tirc_core.client.curses_utils import SafeCursesUtils
+from tirc_core.context_manager import ChannelJoinStatus, ContextManager
 
-logger = logging.getLogger("pyrc.sidebar_panel_renderer")
+logger = logging.getLogger("tirc.sidebar_panel_renderer")
 
 MIN_SIDEBAR_USER_LIST_WIDTH = (
     8  # Minimum practical width to attempt drawing user list items
@@ -230,7 +230,7 @@ class SidebarPanelRenderer:
             window,
             line_num,
             user_header_full,
-            self.colors.get("user_list_panel_bg", 0),
+            self.colors.get("list_panel_bg", 0), # Corrected color key
             "_draw_sidebar_user_list_header_text",
         )
         line_num += 1
@@ -293,7 +293,7 @@ class SidebarPanelRenderer:
                 line_num,
                 0,
                 (" " + up_indicator_text).ljust(max_x),
-                self.colors.get("user_list_panel_bg", 0) | curses.A_DIM,
+                self.colors.get("list_panel_bg", 0) | curses.A_DIM, # Corrected color key
                 "_draw_sidebar_user_list_up_indicator",
             )
             line_num += 1
@@ -338,7 +338,7 @@ class SidebarPanelRenderer:
                 line_num,
                 0,
                 (" " + down_indicator_text).ljust(max_x),
-                self.colors.get("user_list_panel_bg", 0) | curses.A_DIM,
+                self.colors.get("list_panel_bg", 0) | curses.A_DIM, # Corrected color key
                 "_draw_sidebar_user_list_down_indicator",
             )
             line_num += 1

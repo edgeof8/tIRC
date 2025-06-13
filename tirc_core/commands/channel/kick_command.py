@@ -1,64 +1,76 @@
+# commands/channel/kick_command.py
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.channel.kick")
+logger = logging.getLogger("tirc.commands.channel.kick")
 
 COMMAND_DEFINITIONS = [
     {
         "name": "kick",
         "handler": "handle_kick_command",
         "help": {
-            "usage": "/kick <nick> [reason]",
-            "description": "Kicks a user from the current channel.",
+            "usage": "/kick <nickname> [channel] [reason]",
+            "description": "Kicks <nickname> from [channel] (or current channel) with an optional [reason].",
             "aliases": ["k"]
         }
     }
 ]
 
 async def handle_kick_command(client: "IRCClient_Logic", args_str: str):
-    """Handle the /kick command"""
-    help_data = client.script_manager.get_help_text_for_command("kick")
-    usage_msg = (
-        help_data["help_text"] if help_data else "Usage: /kick <nick> [reason]"
-    )
-    parts = client.command_handler._ensure_args(
-        args_str, usage_msg, num_expected_parts=1 # Ensures at least a nick is provided
-    )
-    if not parts:
+    """Handles the /kick command."""
+    parts = args_str.split(" ", 2) # Max 3 parts: nick, optional_channel, optional_reason
+    active_context_name = client.context_manager.active_context_name or "Status"
+
+    if not parts or not parts[0]: # Need at least a nickname
+        await client.add_message("Usage: /kick <nickname> [channel] [reason]", client.ui.colors.get("error", 0), context_name=active_context_name)
         return
 
-    kick_args = args_str.split(" ", 1)
-    target = kick_args[0]
-    reason = kick_args[1] if len(kick_args) > 1 else None
+    nick_to_kick = parts[0]
+    target_channel: Optional[str] = None
+    reason: Optional[str] = None
 
-    current_active_context_name = client.context_manager.active_context_name or "Status"
-    current_context = client.context_manager.get_context(current_active_context_name)
+    if len(parts) == 1: # /kick <nick> (use current channel)
+        if active_context_name != "Status" and client.context_manager.get_context_type(active_context_name) == "channel":
+            target_channel = active_context_name
+        else:
+            await client.add_message("Usage: /kick <nickname> [channel] [reason] - No channel specified or active.", client.ui.colors.get("error", 0), context_name=active_context_name)
+            return
+    elif len(parts) >= 2:
+        # /kick <nick> <channel_or_reason> [reason_if_channel_given]
+        second_arg = parts[1]
+        if second_arg.startswith(("#", "&", "!", "+")) or client.context_manager.get_context(client.context_manager._normalize_context_name(second_arg)):
+            target_channel = second_arg
+            if len(parts) > 2:
+                reason = parts[2]
+        elif active_context_name != "Status" and client.context_manager.get_context_type(active_context_name) == "channel":
+            target_channel = active_context_name
+            reason = " ".join(parts[1:]) # All remaining parts are reason
+        else:
+            await client.add_message("Usage: /kick <nickname> [channel] [reason] - Could not determine channel.", client.ui.colors.get("error", 0), context_name=active_context_name)
+            return
 
-    if not current_context or current_context.type != "channel":
-        await client.add_message(
-            "Not in a channel to kick from.",
-            client.ui.colors["error"],
-            context_name=current_active_context_name,
-        )
+    if not target_channel: # Should be caught
+        await client.add_message("Error: No channel specified for /kick.", client.ui.colors.get("error", 0), context_name=active_context_name)
         return
 
-    channel_name = current_context.name
-    kick_message = f"Kicking {target} from {channel_name}"
-    if reason:
-        kick_message += f" (Reason: {reason})"
-    else:
-        kick_message += "..."
+    normalized_channel = client.context_manager._normalize_context_name(target_channel)
 
-    await client.add_message(kick_message, client.ui.colors["system"], context_name=channel_name)
+    # Ensure channel context exists (though server will ultimately validate channel)
+    if not client.context_manager.get_context(normalized_channel):
+        # Let server handle if channel doesn't exist on client side.
+        pass
 
+    command = f"KICK {normalized_channel} {nick_to_kick}"
     if reason:
-        await client.network_handler.send_raw(
-            f"KICK {channel_name} {target} :{reason}"
-        )
-    else:
-        await client.network_handler.send_raw(
-            f"KICK {channel_name} {target}"
-        )
+        command += f" :{reason}"
+    else: # IRC KICK command requires a reason, even if it's just the kicker's nick.
+          # Some servers default it, but best to provide one.
+        command += f" :{client.nick or nick_to_kick}" # Use own nick as default reason
+
+    await client.network_handler.send_raw(command)
+    logger.info(f"Sent KICK command for {nick_to_kick} from {normalized_channel}. Reason: {reason or (client.nick or nick_to_kick)}")
+    await client.add_status_message(f"Attempting to kick {nick_to_kick} from {normalized_channel}...", "system")
+    # Server will send KICK message back, handled by membership_handlers.

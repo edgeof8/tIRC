@@ -1,114 +1,95 @@
-# START OF MODIFIED FILE: irc_protocol.py
-import re
+# tirc_core/irc/irc_protocol.py
 import logging
-import asyncio
-from collections import deque
-from typing import Optional, Awaitable, TYPE_CHECKING, Coroutine, Any
-import time
-from pyrc_core.context_manager import ChannelJoinStatus
-from pyrc_core.irc.irc_message import IRCMessage
-from pyrc_core.irc.handlers.irc_numeric_handlers import _handle_numeric_command
-from pyrc_core.irc.handlers.message_handlers import handle_privmsg, handle_notice
-from pyrc_core.irc.handlers.membership_handlers import handle_membership_changes # Assuming this also calls process_trigger_event for relevant types
-from pyrc_core.irc.handlers.state_change_handlers import handle_nick_message, handle_mode_message, handle_topic_command_event, handle_chghost_command_event
-from pyrc_core.irc.handlers.protocol_flow_handlers import handle_cap_message, handle_ping_command, handle_authenticate_command, handle_unknown_command, handle_error_command
+from typing import TYPE_CHECKING, Optional, Dict, Any, Callable, Awaitable
+
+from tirc_core.irc.irc_message import IRCMessage
+from tirc_core.irc.handlers import (
+    message_handlers,
+    membership_handlers,
+    state_change_handlers,
+    protocol_flow_handlers,
+    irc_numeric_handlers,
+)
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
+
+logger = logging.getLogger("tirc.protocol")
+
+# Define a type for handler functions
+HandlerFunction = Callable[["IRCClient_Logic", IRCMessage, str, list, Optional[str]], Awaitable[None]]
 
 
-logger = logging.getLogger("pyrc.protocol")
-
-COMMAND_DISPATCH_TABLE = {
-    "CAP": handle_cap_message,
-    "PING": handle_ping_command,
-    "AUTHENTICATE": handle_authenticate_command,
-    "PRIVMSG": handle_privmsg,
-    "JOIN": handle_membership_changes,
-    "PART": handle_membership_changes,
-    "QUIT": handle_membership_changes,
-    "KICK": handle_membership_changes,
-    "NICK": handle_nick_message,
-    "MODE": handle_mode_message,
-    "TOPIC": handle_topic_command_event,
-    "NOTICE": handle_notice,
-    "CHGHOST": handle_chghost_command_event,
-    "ERROR": handle_error_command,
-    # Numeric commands are handled by _handle_numeric_command, which dispatches further
-    # We will explicitly map common numerics that were previously in the if/elif chain
-    # The _handle_numeric_command function already has its own dispatch table.
-    # We just need to make sure the main dispatcher routes to it if the command is a digit.
+COMMAND_HANDLERS: Dict[str, HandlerFunction] = {
+    "PRIVMSG": message_handlers._handle_privmsg,
+    "NOTICE": message_handlers._handle_notice,
+    "JOIN": membership_handlers._handle_join,
+    "PART": membership_handlers._handle_part,
+    "QUIT": membership_handlers._handle_quit,
+    "KICK": membership_handlers._handle_kick,
+    "NICK": state_change_handlers._handle_nick,
+    "MODE": state_change_handlers._handle_mode,
+    "TOPIC": state_change_handlers._handle_topic,
+    "INVITE": state_change_handlers._handle_invite,
+    "PING": protocol_flow_handlers._handle_ping,
+    "PONG": protocol_flow_handlers._handle_pong,
+    "ERROR": protocol_flow_handlers._handle_error,
+    "CAP": protocol_flow_handlers._handle_cap,
+    "AUTHENTICATE": protocol_flow_handlers._handle_authenticate,
+    "CHGHOST": state_change_handlers._handle_chghost,
+    # Add other command handlers here as they are implemented
 }
 
-async def handle_server_message(client: "IRCClient_Logic", line: str) -> Optional[Coroutine[Any, Any, None]]:
-    logger.debug(f"S << {line.strip()}") # Log all incoming raw lines
-    if client is None:
-        logger.warning("handle_server_message: Client is None, skipping message processing.")
-        return None
 
-    parsed_msg = IRCMessage.parse(line)
+async def handle_server_message(client: "IRCClient_Logic", raw_line: str):
+    """
+    Parses a raw IRC line and dispatches it to the appropriate handler.
+    """
+    try:
+        parsed_msg = IRCMessage.parse(raw_line)
+        if not parsed_msg:
+            logger.warning(f"Failed to parse raw line: {raw_line.strip()}")
+            return
+    except Exception as e:
+        logger.error(f"Error parsing IRC message '{raw_line.strip()}': {e}", exc_info=True)
+        return
 
-    if not parsed_msg:
-        logger.error(f"Failed to parse IRC message: {line.strip()}")
-        # Use client.add_status_message for messages to the Status window
-        await client.add_status_message(f"[UNPARSED] {line.strip()}", color_key="error")
-        return None
+    command_upper = parsed_msg.command.upper()
+    params = parsed_msg.params
+    trailing = parsed_msg.trailing
+    active_context_name = client.context_manager.active_context_name or "Status"
 
-    cmd = parsed_msg.command
-    final_trigger_action_to_take: Optional[str] = None
+    # Log the received message if raw logging is enabled
+    if client.show_raw_log_in_ui:
+        await client.add_status_message(f"S << {raw_line.strip()}", "system_dim")
 
-    # Process RAW trigger first
-    if hasattr(client, "trigger_manager") and client.trigger_manager:
-        raw_data = {
-            "event_type": "RAW", "raw_line": line, "timestamp": time.time(),
-            "client_nick": client.nick, "prefix": parsed_msg.prefix,
-            "command": parsed_msg.command, "params_list": list(parsed_msg.params), # Ensure it's a list
-            "trailing": parsed_msg.trailing,
-            "numeric": (int(parsed_msg.command) if parsed_msg.command.isdigit() else None),
-            "tags": parsed_msg.get_all_tags() # Add tags to RAW event
-        }
-        if hasattr(client, "trigger_manager") and client.trigger_manager and hasattr(client.trigger_manager, "process_trigger") and callable(client.trigger_manager.process_trigger):
-            trigger_result = client.trigger_manager.process_trigger("RAW", raw_data)
-            if trigger_result and trigger_result.get("type") == "COMMAND":
-                final_trigger_action_to_take = trigger_result.get("content")
-        else:
-            logger.warning("client.trigger_manager.process_trigger is not defined or trigger_manager is not enabled, skipping RAW trigger processing.")
-            final_trigger_action_to_take = None
-        # If a RAW trigger produces a command, it takes precedence for now.
-        # More sophisticated logic could queue actions or allow multiple.
-    # Specific command handlers (which might also call process_trigger_event for specific event types)
-    # If a specific handler's trigger also produces a command, it could override the RAW trigger's command.
-    # This precedence (specific over RAW) is generally desirable.
-
-    specific_handler_trigger_action: Optional[str] = None
-
-    handler = COMMAND_DISPATCH_TABLE.get(cmd)
-
-    if handler:
-        # Check if the handler is one that returns an Optional[str] (trigger action)
-        # This is a heuristic based on the original code's specific_handler_trigger_action assignments.
-        if handler in [handle_privmsg, handle_membership_changes, handle_nick_message, handle_mode_message, handle_topic_command_event, handle_notice, handle_chghost_command_event]:
-            if client:
-                specific_handler_trigger_action = await handler(client, parsed_msg, line)
-            else:
-                logger.warning(f"Client is None, skipping handler {handler.__name__}")
-                specific_handler_trigger_action = None
-        else:
-            await handler(client, parsed_msg, line)
-    elif cmd.isdigit():
-        await _handle_numeric_command(client, parsed_msg, line, client.context_manager.active_context_name or "Status")
+    # Dispatch to specific command handler or numeric handler
+    if command_upper in COMMAND_HANDLERS:
+        handler = COMMAND_HANDLERS[command_upper]
+        try:
+            await handler(client, parsed_msg, raw_line, list(params), trailing)
+        except Exception as e:
+            logger.error(f"Error in handler for command {command_upper}: {e}", exc_info=True)
+    elif command_upper.isdigit():
+        try:
+            await irc_numeric_handlers._handle_numeric_command(client, parsed_msg, raw_line, active_context_name)
+        except Exception as e:
+            logger.error(f"Error in numeric handler for {command_upper}: {e}", exc_info=True)
     else:
-        # handle_unknown_command is an async function
-        await handle_unknown_command(client, parsed_msg, line)
+        logger.warning(f"No specific handler for command: {command_upper}. Raw: {raw_line.strip()}")
+        # Optionally, add to status window for unknown commands
+        await client.add_status_message(f"Unknown command from server: {command_upper} - {raw_line.strip()}", "warning")
 
-    # If a specific handler generated a command from its own trigger processing, use that.
-    if specific_handler_trigger_action:
-        final_trigger_action_to_take = specific_handler_trigger_action
-
-    if final_trigger_action_to_take:
-        logger.info(f"Executing trigger-generated command: {final_trigger_action_to_take}")
-        await client.command_handler.process_user_command(final_trigger_action_to_take)
-
-    client.ui_needs_update.set() # This is an asyncio.Event, set() is synchronous
-    return None
-# END OF MODIFIED FILE: irc_protocol.py
+    # Generic event dispatch for all parsed messages (after specific handling)
+    # This allows scripts to react to any message type.
+    event_data = {
+        "command": command_upper,
+        "prefix": parsed_msg.prefix,
+        "params": list(params), # Convert tuple to list for mutability if scripts expect it
+        "trailing": trailing,
+        "tags": parsed_msg.get_all_tags(),
+        "active_context_name": active_context_name,
+        # client_logic_ref is implicitly available via the API handler in scripts
+    }
+    # Use a generic event name like "SERVER_MESSAGE_PARSED" or specific if preferred
+    await client.event_manager.dispatch_event(f"SERVER_COMMAND_{command_upper}", event_data, raw_line)

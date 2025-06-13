@@ -1,13 +1,13 @@
 import random
 import logging
 from typing import TYPE_CHECKING, List, Optional
-from pyrc_core.scripting.script_base import ScriptBase
+from tirc_core.scripting.script_base import ScriptBase
 
 if TYPE_CHECKING:
-    from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
+    from tirc_core.scripting.script_api_handler import ScriptAPIHandler
 
 # Use a logger specific to this script for better traceability
-script_logger = logging.getLogger("pyrc.scripts.default_random_messages")
+script_logger = logging.getLogger("tirc.scripts.default_random_messages")
 
 
 class RandomMessagesScript(ScriptBase):

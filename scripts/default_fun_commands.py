@@ -5,13 +5,13 @@ import os
 import logging
 import importlib.util # For checking pyfiglet availability
 from typing import TYPE_CHECKING, List, Dict, Any, Optional, Callable
-from pyrc_core.scripting.script_base import ScriptBase
+from tirc_core.scripting.script_base import ScriptBase
 
 if TYPE_CHECKING:
-    from pyrc_core.scripting.script_api_handler import ScriptAPIHandler
+    from tirc_core.scripting.script_api_handler import ScriptAPIHandler
 
 # Use a logger specific to this script for better traceability
-script_logger = logging.getLogger("pyrc.scripts.default_fun_commands")
+script_logger = logging.getLogger("tirc.scripts.default_fun_commands")
 
 
 class FunCommandsScript(ScriptBase):

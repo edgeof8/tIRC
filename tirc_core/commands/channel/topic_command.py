@@ -1,10 +1,11 @@
+# commands/channel/topic_command.py
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.channel.topic")
+logger = logging.getLogger("tirc.commands.channel.topic")
 
 COMMAND_DEFINITIONS = [
     {
@@ -12,7 +13,7 @@ COMMAND_DEFINITIONS = [
         "handler": "handle_topic_command",
         "help": {
             "usage": "/topic [<channel>] [<new_topic>]",
-            "description": "Views or sets the topic for a channel. If no channel is specified, uses the current channel. If no new_topic is specified, views the current topic.",
+            "description": "Views or sets the topic for a channel. If no channel is given, uses the active channel. If no topic is given, views the current topic.",
             "aliases": ["t"]
         }
     }
@@ -20,75 +21,58 @@ COMMAND_DEFINITIONS = [
 
 async def handle_topic_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /topic command."""
-    topic_parts = args_str.split(" ", 1)
-    current_active_ctx_name = client.context_manager.active_context_name
-    target_channel_ctx_name = current_active_ctx_name
-    new_topic = None
+    parts = args_str.split(" ", 1)
+    target_channel_arg: Optional[str] = None
+    new_topic_arg: Optional[str] = None
+    active_context_name = client.context_manager.active_context_name or "Status"
 
-    if not target_channel_ctx_name:
-        await client.add_message(
-            "No active window to get/set topic from.",
-            client.ui.colors["error"],
-            context_name="Status",
-        )
+    if not args_str: # /topic (view current channel's topic)
+        if active_context_name != "Status" and client.context_manager.get_context_type(active_context_name) == "channel":
+            target_channel_arg = active_context_name
+        else:
+            await client.add_message("Usage: /topic [<channel>] [<new_topic>] - No active channel to view topic for.", client.ui.colors.get("error", 0), context_name=active_context_name)
+            return
+    elif " " not in args_str and (args_str.startswith(("#", "&", "!", "+")) or client.context_manager.get_context(args_str)):
+        # /topic #channel (view specified channel's topic)
+        target_channel_arg = args_str
+    elif " " not in args_str and not (args_str.startswith(("#", "&", "!", "+")) or client.context_manager.get_context(args_str)):
+        # /topic new topic for current channel
+        if active_context_name != "Status" and client.context_manager.get_context_type(active_context_name) == "channel":
+            target_channel_arg = active_context_name
+            new_topic_arg = args_str # The whole string is the topic
+        else:
+            await client.add_message("Usage: /topic [<channel>] [<new_topic>] - No active channel to set topic for.", client.ui.colors.get("error", 0), context_name=active_context_name)
+            return
+    else: # /topic #channel new topic OR /topic new topic (if current is channel)
+        target_channel_arg = parts[0]
+        new_topic_arg = parts[1] if len(parts) > 1 else None
+        # If target_channel_arg is not a channel name, assume it's part of the topic for current channel
+        if not (target_channel_arg.startswith(("#", "&", "!", "+")) or client.context_manager.get_context(target_channel_arg)):
+            if active_context_name != "Status" and client.context_manager.get_context_type(active_context_name) == "channel":
+                new_topic_arg = args_str # Whole string is topic
+                target_channel_arg = active_context_name
+            else: # Cannot determine target channel
+                await client.add_message("Usage: /topic [<channel>] [<new_topic>] - Invalid channel or no active channel.", client.ui.colors.get("error", 0), context_name=active_context_name)
+                return
+
+    if not target_channel_arg: # Should be caught by logic above, but defensive
+        await client.add_message("Could not determine target channel for /topic.", client.ui.colors.get("error", 0), context_name=active_context_name)
         return
 
-    current_context = client.context_manager.get_context(
-        target_channel_ctx_name
-    )
+    normalized_channel = client.context_manager._normalize_context_name(target_channel_arg)
+    context = client.context_manager.get_context(normalized_channel)
 
-    # Determine target channel and new topic based on arguments
-    if not args_str.strip(): # /topic (no args)
-        if not (current_context and current_context.type == "channel"):
-            await client.add_message(
-                "Not in a channel to get topic. Current window is not a channel.",
-                client.ui.colors["error"],
-                context_name=target_channel_ctx_name,
-            )
-            return
-        # Request current topic for the active channel
-        # target_channel_ctx_name is already set to current_active_ctx_name
-        # new_topic remains None
-    elif topic_parts[0].startswith("#"): # /topic #channel [new_topic]
-        target_channel_ctx_name = topic_parts[0]
-        if len(topic_parts) > 1:
-            new_topic = topic_parts[1]
-        # If no new_topic, it's a request for topic of specified channel
-    else: # /topic new topic for current channel
-        if not (current_context and current_context.type == "channel"):
-            await client.add_message(
-                "Not in a channel to set topic. Current window is not a channel.",
-                client.ui.colors["error"],
-                context_name=target_channel_ctx_name,
-            )
-            return
-        # target_channel_ctx_name is already current_active_ctx_name
-        new_topic = args_str # The whole args_str is the new topic
+    if not context or context.type != "channel":
+        await client.add_message(f"'{target_channel_arg}' is not a valid channel window.", client.ui.colors.get("error", 0), context_name=active_context_name)
+        return
 
-    # Ensure context exists if a channel name was explicitly provided or derived
-    if target_channel_ctx_name.startswith("#"):
-        # This will create if not exists, or get existing.
-        # For /topic, if we're just viewing, context might not exist yet locally if not joined.
-        # If setting, server will handle if channel doesn't exist or we can't set.
-        # The original logic did create_context, so we maintain that.
-        client.context_manager.create_context(
-            target_channel_ctx_name, context_type="channel"
-        )
-
-    if new_topic is not None:
-        await client.network_handler.send_raw(
-            f"TOPIC {target_channel_ctx_name} :{new_topic}"
-        )
-        await client.add_message(
-            f"Attempting to set topic for {target_channel_ctx_name}...",
-            client.ui.colors["system"],
-            context_name=target_channel_ctx_name # Feedback in the target channel
-        )
-    else:
-        # Requesting the topic
-        await client.network_handler.send_raw(f"TOPIC {target_channel_ctx_name}")
-        await client.add_message(
-            f"Requesting topic for {target_channel_ctx_name}...",
-            client.ui.colors["system"],
-            context_name=target_channel_ctx_name # Feedback in the target channel
-        )
+    if new_topic_arg is not None: # Set topic
+        await client.network_handler.send_raw(f"TOPIC {normalized_channel} :{new_topic_arg}")
+        logger.info(f"Sent TOPIC command for {normalized_channel} with new topic: {new_topic_arg[:30]}...")
+        # Server will send a TOPIC message back confirming the change, which will be displayed.
+        # No local echo needed here for setting topic.
+    else: # View topic
+        await client.network_handler.send_raw(f"TOPIC {normalized_channel}")
+        logger.info(f"Sent TOPIC command to view topic for {normalized_channel}.")
+        # Server will respond with RPL_TOPIC (332) or RPL_NOTOPIC (331).
+        # These are handled by numeric handlers and will display the topic.

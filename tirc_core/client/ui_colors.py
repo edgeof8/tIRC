@@ -1,6 +1,6 @@
 import curses
 
-# pyrc_core/client/ui_colors.py
+# tirc_core/client/ui_colors.py
 
 # Define the UI color palette using hex codes.
 # These will be converted to curses color numbers (0-255) if 256-color support is available.

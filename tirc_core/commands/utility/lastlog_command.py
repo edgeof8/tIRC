@@ -1,80 +1,61 @@
 # commands/utility/lastlog_command.py
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, List, Tuple, Any
 
 if TYPE_CHECKING:
-    from pyrc_core.client.irc_client_logic import IRCClient_Logic
+    from tirc_core.client.irc_client_logic import IRCClient_Logic
 
-logger = logging.getLogger("pyrc.commands.lastlog")
+logger = logging.getLogger("tirc.commands.lastlog")
 
 COMMAND_DEFINITIONS = [
     {
         "name": "lastlog",
         "handler": "handle_lastlog_command",
         "help": {
-            "usage": "/lastlog <pattern>",
-            "description": "Searches the message history of the active window for lines containing <pattern>.",
-            "aliases": []
+            "usage": "/lastlog [pattern]",
+            "description": "Searches message history in the current window for a pattern. Shows recent messages if no pattern.",
+            "aliases": ["ll"]
         }
     }
 ]
 
 async def handle_lastlog_command(client: "IRCClient_Logic", args_str: str):
     """Handles the /lastlog command."""
-    help_data = client.script_manager.get_help_text_for_command("lastlog")
-    usage_msg = help_data["help_text"] if help_data else "Usage: /lastlog <pattern>"
-    active_context_obj = client.context_manager.get_active_context()
-    active_context_name = client.context_manager.active_context_name or "Status"
-
-    system_color_key = "system"
-    error_color_key = "error"
-
-    if not args_str.strip():
-        await client.add_message(
-            usage_msg,
-            client.ui.colors.get(error_color_key, 0), # Use .get for safety
-            context_name=active_context_name,
-        )
+    active_ctx = client.context_manager.get_active_context()
+    if not active_ctx:
+        await client.add_message("No active window to search.", client.ui.colors.get("error", 0), context_name="Status")
         return
 
     pattern = args_str.strip()
+    messages_to_display: List[Tuple[str, Any]] = []
 
-    if not active_context_obj:
-        await client.add_message(
-            "Cannot use /lastlog: No active window.",
-            client.ui.colors.get(error_color_key, 0), # Use .get for safety
-            context_name="Status", # Error regarding no active window goes to Status
-        )
+    # Retrieve all messages for the context
+    # The messages are stored as (text, color_pair_id)
+    context_messages: Optional[List[Tuple[str, Any]]] = client.context_manager.get_context_messages_raw(active_ctx.name)
+
+    if context_messages is None: # Should not happen if active_ctx exists
+        await client.add_message(f"Could not retrieve messages for {active_ctx.name}.", client.ui.colors.get("error", 0), context_name=active_ctx.name)
         return
 
-    await client.add_message(
-        f'Searching lastlog for "{pattern}" in {active_context_obj.name}...',
-        client.ui.colors.get(system_color_key, 0), # Use .get for safety
-        context_name=active_context_name, # Feedback in the window being searched
-    )
+    if pattern:
+        # Search for pattern
+        for msg_text, color_pair_id in context_messages:
+            if pattern.lower() in msg_text.lower():
+                messages_to_display.append((msg_text, color_pair_id))
+        if not messages_to_display:
+            await client.add_message(f"No messages found matching '{pattern}' in {active_ctx.name}.", client.ui.colors.get("system", 0), context_name=active_ctx.name)
+            return
+        await client.add_message(f"--- Search results for '{pattern}' in {active_ctx.name} ---", client.ui.colors.get("system_highlight", 0), context_name=active_ctx.name)
+    else:
+        # Show last N messages (e.g., last 20)
+        num_recent_messages = 20
+        messages_to_display = list(context_messages)[-num_recent_messages:]
+        if not messages_to_display:
+            await client.add_message(f"No messages in {active_ctx.name}.", client.ui.colors.get("system", 0), context_name=active_ctx.name)
+            return
+        await client.add_message(f"--- Last {len(messages_to_display)} messages in {active_ctx.name} ---", client.ui.colors.get("system_highlight", 0), context_name=active_ctx.name)
 
-    found_matches = False
-    messages_to_search = list(active_context_obj.messages)
-
-    for msg_data in messages_to_search:
-        if isinstance(msg_data, tuple) and len(msg_data) >= 2:
-            msg_text, color_info = msg_data[0], msg_data[1]
-            if isinstance(msg_text, str) and pattern.lower() in msg_text.lower():
-                await client.add_message(
-                    f"[LastLog] {msg_text}",
-                    color_info, # color_info is already an int attribute
-                    context_name=active_context_name,
-                )
-                found_matches = True
-        else:
-            logger.warning(f"Unexpected message format in log buffer for {active_context_name}: {msg_data}")
-
-    if not found_matches:
-        await client.add_message(
-            f'No matches found for "{pattern}" in the current log.',
-            client.ui.colors.get(system_color_key, 0), # Use .get for safety
-            context_name=active_context_name,
-        )
-    await client.add_message(
-        "End of lastlog search.", client.ui.colors.get(system_color_key, 0), context_name=active_context_name
-    )
+    for msg_text, color_pair_id in messages_to_display:
+        # When re-displaying, we pass the original color_pair_id.
+        # The add_message method (and underlying UIManager) will handle converting this pair_id to a curses attribute.
+        await client.add_message(msg_text, color_pair_id, context_name=active_ctx.name)

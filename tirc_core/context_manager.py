@@ -12,7 +12,7 @@ from typing import (
 )
 
 
-logger = logging.getLogger("pyrc.context")
+logger = logging.getLogger("tirc.context")
 
 
 class ChannelJoinStatus(Enum):
