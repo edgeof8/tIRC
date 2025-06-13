@@ -8,8 +8,6 @@
 
 For detailed documentation, command references, and developer guides, please visit the [**Official tIRC Wiki**](https://github.com/edgeof8/tIRC/wiki).
 
-![tIRC Screenshot](image.png)
-
 ## Quick Start
 
 ```bash
