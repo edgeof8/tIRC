@@ -213,25 +213,34 @@ class MessagePanelRenderer:
         # For now, we'll just use the default and apply specific highlights.
 
         # Simple tokenization for demonstration
-        words = message_text.split(' ')
-        for word in words:
-            if word.startswith('#'):
-                segments.append((word + " ", "channel"))
-            elif word.startswith('@'):
-                segments.append((word + " ", "nick"))
-            elif word.startswith('+'):
-                segments.append((word + " ", "mode"))
-            elif re.match(r"^\[\d{2}:\d{2}:\d{2}\]", word):
-                segments.append((word + " ", "timestamp"))
-            elif "irc.libera.chat" in word: # Example server name
-                segments.append((word + " ", "server_name"))
-            else:
-                segments.append((word + " ", base_color_name))
+        # More robust regex-based approach
+        patterns = [
+            (r'#\w+', 'channel'),
+            (r'@\w+', 'nick'),
+            (r'\+\w+', 'mode'),
+            (r'\[\d{2}:\d{2}:\d{2}\]', 'timestamp'),
+            (r'\b\w+\.\w+\.\w+\b', 'server_name'),
+        ]
 
-        # Remove trailing space from the last segment
-        if segments:
-            last_text, last_color = segments[-1]
-            segments[-1] = (last_text.rstrip(), last_color)
+        # Build a combined regex pattern
+        combined_pattern = '|'.join(f'(?P<G{i}>{p})' for i, (p, n) in enumerate(patterns))
+
+        last_end = 0
+        for match in re.finditer(combined_pattern, message_text):
+            start, end = match.span()
+            if start > last_end:
+                segments.append((message_text[last_end:start], base_color_name))
+
+            group_name = match.lastgroup
+            if group_name:
+                pattern_index = int(group_name[1:])
+                color_name = patterns[pattern_index][1]
+                segments.append((match.group(), color_name))
+
+            last_end = end
+
+        if last_end < len(message_text):
+            segments.append((message_text[last_end:], base_color_name))
 
         return segments
 

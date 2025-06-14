@@ -152,11 +152,13 @@ class SidebarPanelRenderer:
             ctx_name_to_draw = display_name_base
             if ctx_obj and ctx_obj.type == "channel" and ctx_name_to_draw.startswith("#"):
                 # Get the foreground color of the 'channel' color pair
-                channel_hash_fg = curses.color_content(self.colors.get("channel", 0))[0]
+                channel_color_pair_id = self.colors.get("channel", 0)
+                try:
+                    channel_fg, _ = curses.pair_content(channel_color_pair_id)
+                except curses.error:
+                    channel_fg = curses.COLOR_GREEN # Fallback
 
                 # Get the background color of the current line's attribute (attr)
-                # attr is already curses.color_pair(some_id)
-                # We need to extract the background color from 'attr'
                 current_attr_pair_id = (attr >> 8) & 0xFF # Extract pair ID from attribute
                 try:
                     _, current_bg_color_id = curses.pair_content(current_attr_pair_id)
@@ -166,7 +168,7 @@ class SidebarPanelRenderer:
                 # Create a new temporary color pair for the '#'
                 temp_pair_id = 200 # Use a high ID for temporary pair
                 try:
-                    curses.init_pair(temp_pair_id, channel_hash_fg, current_bg_color_id)
+                    curses.init_pair(temp_pair_id, channel_fg, current_bg_color_id)
                     channel_hash_attr = curses.color_pair(temp_pair_id)
                 except curses.error as e:
                     logger.error(f"Error initializing temporary color pair {temp_pair_id} for channel hash: {e}. Falling back to main attr.", exc_info=True)
