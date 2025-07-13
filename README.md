@@ -8,11 +8,6 @@
 
 For detailed documentation, command references, and developer guides, please visit the [**Official tIRC Wiki**](https://github.com/edgeof8/tIRC/wiki).
 
-<img width="931" height="822" alt="image" src="https://github.com/user-attachments/assets/8ed0cf3d-9e8e-4591-b16f-6bc9ef4a25f9" />
-
-
-## 🚀 Core Features
-
 ## 🚀 Core Features
 
 - **Modern Async Core**: Fully asynchronous `asyncio`-based core for high performance and responsiveness.
@@ -27,49 +22,6 @@ For detailed documentation, command references, and developer guides, please vis
 ## Architecture Overview
 
 tIRC employs a highly modular, event-driven architecture. The `IRCClient_Logic` acts as the central orchestrator, delegating specialized tasks to dedicated managers and coordinators.
-
-```mermaid
-graph TD
-    subgraph Application Entry
-        A[tirc.py] --> B{CLI Argument Check}
-        B -- headless/UI mode --> C(curses.wrapper)
-        B -- --send-raw --> D[IPC Client Call]
-        C --> E[asyncio.run(IRCClient_Logic.run_main_loop())]
-    end
-
-    subgraph Main tIRC Instance
-        E --> F{IRCClient_Logic (Orchestrator)}
-        F -- Manages --> G[ConnectionOrchestrator]
-        F -- Manages --> H[ClientShutdownCoordinator]
-        F -- Manages --> I[ClientViewManager]
-        F -- Manages --> J[UIManager]
-        F -- Manages --> K[CommandHandler]
-        F -- Manages --> L[StateManager]
-        F -- Manages --> M[EventManager]
-        F -- Manages --> N[ScriptManager]
-        F -- Manages --> O[NetworkHandler]
-        F -- Manages --> P[IPCManager]
-    end
-
-    subgraph IPC Flow
-        D -- Connects to --> Q(Local TCP Socket)
-        Q -- Handled by --> P
-        P -- Injects Command --> K
-    end
-
-    G -- Uses --> O
-    G -- Uses --> L
-    K -- Sends via --> O
-    K -- Updates --> L
-    M -- Dispatches to --> N
-    M -- Dispatches to --> F
-    N -- Uses API --> F
-    I -- Controls --> J
-    J -- Renders via --> R(Modular Renderers)
-
-    style D fill:#f9f,stroke:#333,stroke-width:2px
-    style Q fill:#ccf,stroke:#333,stroke-width:2px
-```
 
 ## Project Status
 
