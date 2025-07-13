@@ -116,7 +116,6 @@ graph TD
 tIRC/
 ├── .git/                       # Git version control data
 ├── .gitignore                  # Specifies intentionally untracked files for Git
-├── image.png                   # Screenshot of tIRC
 ├── pyproject.toml              # Build system requirements and project metadata (PEP 518)
 ├── tirc.py                     # Main application entry point
 ├── README.md                   # This file
