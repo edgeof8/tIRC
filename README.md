@@ -8,18 +8,8 @@
 
 For detailed documentation, command references, and developer guides, please visit the [**Official tIRC Wiki**](https://github.com/edgeof8/tIRC/wiki).
 
-## Quick Start
+<img width="931" height="822" alt="image" src="https://github.com/user-attachments/assets/8ed0cf3d-9e8e-4591-b16f-6bc9ef4a25f9" />
 
-```bash
-# Install from PyPI
-pip install tirc
-
-# Run with default settings
-tirc
-
-# Connect to a server directly
-tirc --connect irc.libera.chat
-```
 
 ## 🚀 Core Features
 
