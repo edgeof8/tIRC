@@ -65,14 +65,6 @@ We welcome contributions and feedback!
    pip install .
    ```
 
-### Standalone Executables
-
-Download pre-built binaries from our [Releases page](https://github.com/edgeof8/tIRC/releases):
-
-- Windows: `tirc-*.exe`
-- Linux: `tirc-*-linux`
-- macOS: `tirc-*-macos`
-
 ## Configuration
 
 ## Architecture Overview - Detailed Event Flow
