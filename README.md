@@ -42,13 +42,7 @@ We welcome contributions and feedback!
 - Python 3.8+
 - `pip` package manager
 - `windows-curses` on Windows (included in requirements.txt)
-
-### From PyPI (Recommended)
-
-```bash
-pip install tirc
-```
-
+- 
 ### From Source
 
 1. Clone the repository:
